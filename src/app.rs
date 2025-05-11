@@ -13,13 +13,10 @@ pub fn App() -> impl IntoView {
     view! {
         <Stylesheet id="leptos" href="/style/output.css"/>
         <Link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✋</text></svg>"/>
-        <Title text="Whoever Wants"/>
         <Router>
-            <main>
-                <Routes fallback=|| "Page not found.">
-                    <Route path=StaticSegment("") view=Home/>
-                </Routes>
-            </main>
+            <Routes fallback=|| "Page not found.">
+                <Route path=StaticSegment("") view=Home/>
+            </Routes>
         </Router>
     }
 }
@@ -90,7 +87,8 @@ pub fn Home() -> impl IntoView {
     };
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/wwaxum.css"/>
+        <Title text="Whoever Wants"/>
+        <main>
         <div class="root">
             <button on:click=add_panel>"Add Panel"</button>
 
@@ -98,6 +96,7 @@ pub fn Home() -> impl IntoView {
                 {columns}
             </div>
         </div>
+        </main>
     }
 }
 
