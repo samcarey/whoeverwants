@@ -14,9 +14,11 @@ pub fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/style/tailwind.css"/>
         <Link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✋</text></svg>"/>
         <Router>
-            <Routes fallback=|| "Page not found.">
-                <Route path=StaticSegment("") view=Home/>
-            </Routes>
+            <main>
+                <Routes fallback=|| "Page not found.">
+                    <Route path=StaticSegment("") view=Home/>
+                </Routes>
+            </main>
         </Router>
     }
 }
@@ -88,7 +90,7 @@ pub fn Home() -> impl IntoView {
 
     view! {
         <Title text="Whoever Wants"/>
-        <main>
+
         <div class="root">
             <button on:click=add_panel>"Add Panel"</button>
 
@@ -96,7 +98,7 @@ pub fn Home() -> impl IntoView {
                 {columns}
             </div>
         </div>
-        </main>
+
     }
 }
 
