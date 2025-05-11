@@ -1,0 +1,27 @@
+{
+    "emmet.includeLanguages": {
+        "rust": "html",
+        "*.rs": "html"
+    },
+    "tailwindCSS.includeLanguages": {
+        "rust": "html",
+        "*.rs": "html"
+    },
+    "files.associations": {
+        "*.rs": "rust"
+    },
+    "editor.quickSuggestions": {
+        "other": "on",
+        "comments": "on",
+        "strings": true
+    },
+    "css.validate": false,
+    "evenBetterToml.formatter.allowedBlankLines": 1,
+    "evenBetterToml.formatter.arrayAutoCollapse": true,
+    "evenBetterToml.formatter.arrayAutoExpand": true,
+    "evenBetterToml.formatter.arrayTrailingComma": true,
+    "evenBetterToml.formatter.reorderKeys": true,
+    "evenBetterToml.formatter.trailingNewline": true,
+    "evenBetterToml.schema.enabled": false,
+    "rust-analyzer.cargo.allTargets": true,
+}
