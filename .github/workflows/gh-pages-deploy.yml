@@ -1,5 +1,7 @@
 name: Release to Github Pages
 
+# noop
+
 on:
   push:
     branches: [main]
