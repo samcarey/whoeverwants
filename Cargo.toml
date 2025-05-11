@@ -1,11 +1,20 @@
 [package]
+edition = "2021"
 name = "tailwind-csr-trunk"
 version = "0.1.0"
-edition = "2021"
 
 [dependencies]
-leptos = { version = "0.8", features = ["csr"] }
-leptos_meta = { version = "0.8" }
-leptos_router = { version = "0.8" }
-gloo-net = { version = "0.6.0", features = ["http"] }
 console_error_panic_hook = { version = "0.1.7" }
+gloo-net = { version = "0.6.0", features = ["http"] }
+js-sys = "0.3.70"
+leptos = { version = "0.8", features = ["csr", "nightly"] }
+leptos_meta = { version = "0.8" }
+leptos_router = { version = "0.8", features = ["nightly"] }
+send_wrapper = "0.6.0"
+web-sys = { version = "0.3.70", features = [
+    "DataTransfer",
+    "Document",
+    "DomRect",
+    "Element",
+    "NodeList",
+] }

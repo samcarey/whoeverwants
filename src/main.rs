@@ -1,4 +1,5 @@
 mod app;
+mod drag_reorder;
 
 use app::*;
 use leptos::{logging, mount};

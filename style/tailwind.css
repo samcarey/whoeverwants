@@ -1,3 +1,65 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    height: 100%;
+    margin: 0;
+    background: linear-gradient(#774477 0%, #555577 60%, #005555 100%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+.root {
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 64px;
+}
+
+button {
+    display: block;
+    background-color: #BBB;
+    margin: 0 auto 8px auto;
+    border: 0;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+button:hover {
+    background-color: #999;
+}
+
+button:active {
+    background-color: #777;
+}
+
+.row {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+}
+
+.column {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    background-color: #333;
+    padding: 16px;
+}
+
+.panel {
+    position: relative;
+    padding: 32px 64px;
+    background-color: #aaa;
+    border-radius: 4px;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Add a placeholder style for the dragged item's empty space */
+.panel--placeholder {
+    opacity: 0.3;
+    background-color: #ddd;
+}

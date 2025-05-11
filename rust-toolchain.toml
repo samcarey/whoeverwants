@@ -1,2 +1,4 @@
 [toolchain]
-channel = "stable" # test change
+channel = "nightly"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
