@@ -56,7 +56,7 @@ jobs:
         # will obviously return error 404 not found.
         # run: ./trunk build --release --public-url "${GITHUB_REPOSITORY#*/}"
         # run: ./trunk build --release --public-url "https://samcarey.github.io/whoeverwants"
-        run: ./trunk build --release --public-url "/whoeverwants"
+        run: ./trunk build --release --public-url "https://whoeverwants.com"
         # The above is false. Maybe there's been changes? It results in an extra /<repo_name>/ prefix
 
       # Deploy to gh-pages branch
