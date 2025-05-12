@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "tailwind-csr-trunk"
+name = "whoeverwants"
 version = "0.1.0"
 
 [dependencies]
