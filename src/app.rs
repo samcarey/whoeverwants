@@ -1,6 +1,5 @@
 use crate::drag_reorder::{provide_drag_reorder, use_drag_reorder, UseDragReorderReturn};
 use leptos::{ev, prelude::*};
-use leptos_meta::*;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use leptos_router::{
     components::{Route, Router, Routes},
