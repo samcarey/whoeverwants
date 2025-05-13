@@ -109,6 +109,8 @@ fn Panel(id: u32, title: String) -> impl IntoView {
         set_draggable,
         on_dragstart,
         on_dragend,
+        on_touchstart,
+        on_touchend,
         is_dragging,
         ..
     } = use_drag_reorder(id.to_string());
@@ -135,6 +137,8 @@ fn Panel(id: u32, title: String) -> impl IntoView {
             draggable=move || draggable.get().then_some("true")
             on:dragstart=on_dragstart
             on:dragend=on_dragend
+            on:touchstart=on_touchstart
+            on:touchend=on_touchend
             on:mousedown=move |_| set_draggable(true)
         >
             {title}

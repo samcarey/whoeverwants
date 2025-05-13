@@ -1,11 +1,11 @@
 use std::{collections::HashMap, ops};
 
 use js_sys::{wasm_bindgen::JsValue, Function};
-use leptos::{ev, html::ElementType, prelude::*, tachys::dom::event_target};
+use leptos::{ev, html::ElementType, logging::log, prelude::*, tachys::dom::event_target};
 use send_wrapper::SendWrapper;
 use web_sys::{
     wasm_bindgen::{prelude::Closure, JsCast},
-    Element,
+    Element, Touch,
 };
 
 /// Indicates whether a panel is being hovered above or below
@@ -55,46 +55,28 @@ struct DragReorderContext {
 }
 
 /// Return type for the use_drag_reorder hook
-pub struct UseDragReorderReturn<E, SetDraggable, OnDragStart, OnDragEnd>
+///
+#[derive(Clone)]
+pub struct UseDragReorderReturn<E, SetDraggable, OnDragStart, OnDragEnd, OnTouchStart, OnTouchEnd>
 where
     E: ElementType,
     E::Output: 'static,
     SetDraggable: Fn(bool) + Copy,
     OnDragStart: Fn(ev::DragEvent) + Clone,
     OnDragEnd: Fn(ev::DragEvent) + Clone,
+    OnTouchStart: Fn(ev::TouchEvent) + Clone,
+    OnTouchEnd: Fn(ev::TouchEvent) + Clone,
 {
-    /// Node ref which should be assigned to the panel element
     pub node_ref: NodeRef<E>,
-    /// Whether this panel is currently being dragged
     pub is_dragging: Signal<bool>,
-    /// The current hover position relative to this panel
     #[allow(unused)]
     pub hover_position: Signal<Option<HoverPosition>>,
-    /// Whether the panel is currently draggable
     pub draggable: Signal<bool>,
-    /// Function to enable/disable draggability
     pub set_draggable: SetDraggable,
-    /// Event handler for drag start
     pub on_dragstart: OnDragStart,
-    /// Event handler for drag end
     pub on_dragend: OnDragEnd,
-}
-
-// Helper function to create and manage event handlers
-fn create_event_handler<F>(element: &web_sys::Document, event_name: &str, handler: F) -> Function
-where
-    F: FnMut(web_sys::DragEvent) + 'static,
-{
-    let js_handler: Function = Closure::wrap(Box::new(handler) as Box<dyn FnMut(_)>)
-        .into_js_value()
-        .dyn_into()
-        .unwrap();
-
-    element
-        .add_event_listener_with_callback_and_bool(event_name, &js_handler, false)
-        .unwrap();
-
-    js_handler
+    pub on_touchstart: OnTouchStart,
+    pub on_touchend: OnTouchEnd,
 }
 
 // Helper function to remove event handlers
@@ -158,6 +140,30 @@ impl From<&ev::DragEvent> for Pos2 {
         }
     }
 }
+impl From<&Touch> for Pos2 {
+    fn from(value: &Touch) -> Self {
+        Self {
+            x: value.client_x() as f64,
+            y: value.client_y() as f64,
+        }
+    }
+}
+
+impl TryFrom<&DragEvent> for Pos2 {
+    type Error = ();
+    fn try_from(value: &DragEvent) -> Result<Self, Self::Error> {
+        match value {
+            DragEvent::Mouse(e) => Ok(e.into()),
+            DragEvent::Touch(e) => {
+                if let Some(touch) = e.touches().get(0) {
+                    Ok((&touch).into())
+                } else {
+                    Err(())
+                }
+            }
+        }
+    }
+}
 
 impl Center for Element {
     fn center_x(&self) -> f64 {
@@ -197,6 +203,231 @@ impl ops::Sub<Pos2> for Pos2 {
     }
 }
 
+enum DragEvent {
+    Mouse(ev::DragEvent),
+    Touch(ev::TouchEvent),
+}
+
+impl From<ev::DragEvent> for DragEvent {
+    fn from(value: ev::DragEvent) -> Self {
+        DragEvent::Mouse(value)
+    }
+}
+impl From<ev::TouchEvent> for DragEvent {
+    fn from(value: ev::TouchEvent) -> Self {
+        DragEvent::Touch(value)
+    }
+}
+
+impl DragReorderContext {
+    fn handle_drag_start(
+        &self,
+        panel_id: Oco<'static, str>,
+        event: impl Into<DragEvent>,
+        dragover_handler: &RwSignal<Option<Function>, LocalStorage>,
+    ) {
+        let panel_id = panel_id.clone();
+
+        let event: DragEvent = event.into();
+        let Self {
+            active_dragged_panel,
+            ..
+        } = self;
+        log!("Drag start");
+        active_dragged_panel.set(Some(panel_id.clone()));
+        let active_dragged_panel = panel_id.clone();
+
+        let dragged_element = match &event {
+            DragEvent::Mouse(event) => event_target::<web_sys::HtmlElement>(&event),
+            DragEvent::Touch(event) => event_target::<web_sys::HtmlElement>(&event),
+        };
+        let element_center = dragged_element.center();
+        let dragged_height = dragged_element.get_bounding_client_rect().height();
+        let Ok(pos) = Pos2::try_from(&event) else {
+            return;
+        };
+        let mouse_offset = pos - element_center;
+
+        // Set data transfer (required for Firefox drag events)
+        if let DragEvent::Mouse(event) = &event {
+            if let Some(data_transfer) = event.data_transfer() {
+                let _ = data_transfer.set_data("text/plain", &panel_id.clone());
+            }
+        }
+
+        if let DragEvent::Touch(event) = &event {
+            // Prevent context menu from popping up on long press
+            event.prevent_default();
+        }
+
+        // Create dragover handler
+        let context = self.clone();
+        match &event {
+            DragEvent::Mouse(_) => {
+                let handler = move |event: web_sys::DragEvent| {
+                    context.handle_dragover(
+                        event,
+                        mouse_offset,
+                        active_dragged_panel.clone(),
+                        dragged_height,
+                    );
+                };
+                let dragover_fn = {
+                    let js_handler: Function =
+                        Closure::wrap(Box::new(handler) as Box<dyn FnMut(_)>)
+                            .into_js_value()
+                            .dyn_into()
+                            .unwrap();
+
+                    document()
+                        .add_event_listener_with_callback_and_bool("dragover", &js_handler, false)
+                        .unwrap();
+
+                    js_handler
+                };
+                // Store handler for cleanup
+                dragover_handler.set(Some(dragover_fn));
+            }
+            DragEvent::Touch(_) => {
+                let handler = move |event: web_sys::TouchEvent| {
+                    context.handle_dragover(
+                        event,
+                        mouse_offset,
+                        active_dragged_panel.clone(),
+                        dragged_height,
+                    );
+                };
+                let dragover_fn = {
+                    let js_handler: Function =
+                        Closure::wrap(Box::new(handler) as Box<dyn FnMut(_)>)
+                            .into_js_value()
+                            .dyn_into()
+                            .unwrap();
+
+                    document()
+                        .add_event_listener_with_callback_and_bool("touchmove", &js_handler, false)
+                        .unwrap();
+
+                    js_handler
+                };
+                // Store handler for cleanup
+                dragover_handler.set(Some(dragover_fn));
+            }
+        }
+    }
+
+    fn handle_dragover(
+        &self,
+        event: impl Into<DragEvent>,
+        mouse_offset: Pos2,
+        active_dragged_panel_id: Oco<'static, str>,
+        dragged_height: f64,
+    ) {
+        let Self {
+            column_refs,
+            panel_order,
+            hover_info,
+            panel_elements,
+            ..
+        } = self;
+        let event: DragEvent = event.into();
+        // match &event {
+        //     DragEvent::Mouse(event) => {
+        //         // event.prevent_default();
+        //     }
+        //     DragEvent::Touch(event) => {
+        //         // event.prevent_default();
+        //     }
+        // }
+
+        let Ok(pos) = Pos2::try_from(&event) else {
+            return;
+        };
+        let adjusted_mouse = pos - mouse_offset;
+
+        // Find closest column to mouse position
+        let (closest_column, _) =
+            find_closest_element(column_refs.iter().enumerate(), |(_, column_ref)| {
+                column_ref
+                    .read_untracked()
+                    .as_ref()
+                    .map(|column_element| (adjusted_mouse.x - column_element.center_x()).abs())
+            });
+
+        // If we found a closest column, find the closest panel in that column
+        if let Some((column_index, _)) = closest_column {
+            let panel_elements = panel_elements.read_untracked();
+            let (closest_panel, _) = {
+                find_closest_element(
+                    panel_elements
+                        .iter()
+                        .filter(|(panel_id, _)| **panel_id != active_dragged_panel_id),
+                    |(panel_id, panel_element)| {
+                        // Check if panel is in the target column
+                        let is_in_column = panel_order
+                            .get(column_index)
+                            .map(|column_panels| column_panels.read_untracked().contains(panel_id))
+                            .unwrap_or(false);
+
+                        if !is_in_column {
+                            return None;
+                        }
+                        Some((adjusted_mouse.y - panel_element.center_y()).abs())
+                    },
+                )
+            };
+
+            // Determine hover position based on closest panel
+            let new_hover_info = if let Some((panel_id, _, panel_center_y)) =
+                closest_panel.map(|(k, v)| (k.clone(), v.clone(), v.center_y()))
+            {
+                let position = if let Some(previous_position) = hover_info
+                    .get_untracked()
+                    .and_then(|i| i.panel)
+                    .filter(|panel| panel.id == panel_id)
+                    .map(|p| p.position)
+                {
+                    if (adjusted_mouse.y - panel_center_y).abs() < (dragged_height / 2.) {
+                        !previous_position
+                    } else {
+                        previous_position
+                    }
+                } else {
+                    if adjusted_mouse.y < panel_center_y {
+                        HoverPosition::Above
+                    } else {
+                        HoverPosition::Below
+                    }
+                };
+
+                Some(HoverInfo {
+                    column_index,
+                    panel: Some(HoveredPanel {
+                        id: panel_id,
+                        position,
+                    }),
+                })
+            } else {
+                // No panel found, just hover over the column
+                Some(HoverInfo {
+                    column_index,
+                    panel: None,
+                })
+            };
+
+            // Update hover info only if it changed
+            hover_info.maybe_update(move |current_hover| {
+                if current_hover != &new_hover_info {
+                    *current_hover = new_hover_info;
+                    true
+                } else {
+                    false
+                }
+            });
+        }
+    }
+}
+
 /// Registers a panel with drag reordering functionality
 pub fn use_drag_reorder<E>(
     panel_id: impl Into<Oco<'static, str>>,
@@ -205,19 +436,20 @@ pub fn use_drag_reorder<E>(
     impl Fn(bool) + Copy,
     impl Fn(ev::DragEvent) + Clone,
     impl Fn(ev::DragEvent) + Clone,
+    impl Fn(ev::TouchEvent) + Clone,
+    impl Fn(ev::TouchEvent) + Clone,
 >
 where
     E: ElementType + 'static,
     E::Output: JsCast + Into<web_sys::Element> + Clone + 'static,
 {
+    let context = expect_context::<DragReorderContext>();
     let DragReorderContext {
-        column_refs,
-        panel_order,
         active_dragged_panel,
         hover_info,
         panel_elements,
         ..
-    } = expect_context();
+    } = context.clone();
 
     // Ensure we have a static string ID
     let mut panel_id: Oco<'static, str> = panel_id.into();
@@ -289,127 +521,51 @@ where
     let dragover_handler: RwSignal<Option<Function>, LocalStorage> = RwSignal::new_local(None);
 
     // Handle drag start
-    let on_drag_start = {
+    let on_dragstart = {
         let panel_id = panel_id.clone();
+        let context = context.clone();
         move |event: ev::DragEvent| {
-            active_dragged_panel.set(Some(panel_id.clone()));
-            let active_dragged_panel_copy = panel_id.clone();
-
-            let dragged_element = event_target::<web_sys::HtmlElement>(&event);
-            let element_center = dragged_element.center();
-            let dragged_height = dragged_element.get_bounding_client_rect().height();
-            let mouse_offset = Pos2::from(&event) - element_center;
-
-            // Set data transfer (required for Firefox drag events)
-            if let Some(data_transfer) = event.data_transfer() {
-                let _ = data_transfer.set_data("text/plain", &panel_id);
-            }
-
-            // Create dragover handler
-            let column_refs = column_refs.clone();
-            let panel_order = panel_order.clone();
-            let dragover_fn =
-                create_event_handler(&document(), "dragover", move |event: web_sys::DragEvent| {
-                    event.prevent_default();
-
-                    let adjusted_mouse = Pos2::from(&event) - mouse_offset;
-
-                    // Find closest column to mouse position
-                    let (closest_column, _) =
-                        find_closest_element(column_refs.iter().enumerate(), |(_, column_ref)| {
-                            column_ref.read_untracked().as_ref().map(|column_element| {
-                                (adjusted_mouse.x - column_element.center_x()).abs()
-                            })
-                        });
-
-                    // If we found a closest column, find the closest panel in that column
-                    if let Some((column_index, _)) = closest_column {
-                        let panel_elements = panel_elements.read_untracked();
-                        let (closest_panel, _) = {
-                            find_closest_element(
-                                panel_elements.iter().filter(|(panel_id, _)| {
-                                    **panel_id != active_dragged_panel_copy
-                                }),
-                                |(panel_id, panel_element)| {
-                                    // Check if panel is in the target column
-                                    let is_in_column = panel_order
-                                        .get(column_index)
-                                        .map(|column_panels| {
-                                            column_panels.read_untracked().contains(panel_id)
-                                        })
-                                        .unwrap_or(false);
-
-                                    if !is_in_column {
-                                        return None;
-                                    }
-                                    Some((adjusted_mouse.y - panel_element.center_y()).abs())
-                                },
-                            )
-                        };
-
-                        // Determine hover position based on closest panel
-                        let new_hover_info = if let Some((panel_id, _, panel_center_y)) =
-                            closest_panel.map(|(k, v)| (k.clone(), v.clone(), v.center_y()))
-                        {
-                            let position = if let Some(previous_position) = hover_info
-                                .get_untracked()
-                                .and_then(|i| i.panel)
-                                .filter(|panel| panel.id == panel_id)
-                                .map(|p| p.position)
-                            {
-                                if (adjusted_mouse.y - panel_center_y).abs() < (dragged_height / 2.)
-                                {
-                                    !previous_position
-                                } else {
-                                    previous_position
-                                }
-                            } else {
-                                if adjusted_mouse.y < panel_center_y {
-                                    HoverPosition::Above
-                                } else {
-                                    HoverPosition::Below
-                                }
-                            };
-
-                            Some(HoverInfo {
-                                column_index,
-                                panel: Some(HoveredPanel {
-                                    id: panel_id,
-                                    position,
-                                }),
-                            })
-                        } else {
-                            // No panel found, just hover over the column
-                            Some(HoverInfo {
-                                column_index,
-                                panel: None,
-                            })
-                        };
-
-                        // Update hover info only if it changed
-                        hover_info.maybe_update(move |current_hover| {
-                            if current_hover != &new_hover_info {
-                                *current_hover = new_hover_info;
-                                true
-                            } else {
-                                false
-                            }
-                        });
-                    }
-                });
-
-            // Store handler for cleanup
-            dragover_handler.set(Some(dragover_fn));
+            context.handle_drag_start(panel_id.clone(), event, &dragover_handler);
+        }
+    };
+    let on_touchstart = {
+        let panel_id = panel_id.clone();
+        let context = context.clone();
+        move |event: ev::TouchEvent| {
+            set_draggable(true);
+            context.handle_drag_start(panel_id.clone(), event, &dragover_handler);
         }
     };
 
     // Handle drag end
-    let on_drag_end = {
+    let on_dragend = {
         let panel_id = panel_id.clone();
         move |_: ev::DragEvent| {
             // Remove dragover event listener
             if let Some(handler) = dragover_handler.write().take() {
                 let _ = remove_event_handler(&document(), "dragover", &handler);
+            }
+
+            // Reset drag state on next animation frame
+            let panel_id = panel_id.clone();
+            request_animation_frame(move || {
+                let mut current = active_dragged_panel.write();
+                if current.as_deref() == Some(&panel_id) {
+                    hover_info.set(None);
+                    draggable_state.set(false);
+                    *current = None;
+                }
+            });
+        }
+    };
+
+    // Handle drag end
+    let on_touchend = {
+        let panel_id = panel_id.clone();
+        move |_: ev::TouchEvent| {
+            // Remove dragover event listener
+            if let Some(handler) = dragover_handler.write().take() {
+                let _ = remove_event_handler(&document(), "touchmove", &handler);
             }
 
             // Reset drag state on next animation frame
@@ -431,8 +587,10 @@ where
         hover_position,
         draggable: draggable_state.into(),
         set_draggable,
-        on_dragstart: on_drag_start,
-        on_dragend: on_drag_end,
+        on_dragstart,
+        on_dragend,
+        on_touchstart,
+        on_touchend,
     }
 }
 
@@ -478,8 +636,8 @@ where
             }
 
             // Create new dragend handler
-            let dragend_handler =
-                create_event_handler(&document(), "dragend", move |_: web_sys::DragEvent| {
+            let dragend_handler = {
+                let handler = move |_: web_sys::DragEvent| {
                     // Apply panel reordering when drag ends
                     if let Some((dragged_panel_id, hover_info)) = context
                         .active_dragged_panel
@@ -489,7 +647,18 @@ where
                     {
                         apply_panel_reordering(&panel_order, dragged_panel_id, hover_info);
                     }
-                });
+                };
+                let js_handler: Function = Closure::wrap(Box::new(handler) as Box<dyn FnMut(_)>)
+                    .into_js_value()
+                    .dyn_into()
+                    .unwrap();
+
+                document()
+                    .add_event_listener_with_callback_and_bool("dragend", &js_handler, false)
+                    .unwrap();
+
+                js_handler
+            };
 
             // Clean up on component unmount
             on_cleanup({
