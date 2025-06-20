@@ -39,3 +39,28 @@ All pages include a "Home" button that routes back to the main page using Next.j
 - Client components use `"use client"` directive when needed (forms, state)
 - Server components by default
 - Form handling with React state and `useRouter` for navigation
+
+## Database Integration
+
+The application uses Supabase as the backend database.
+
+### Setup Requirements
+1. Copy `.env.example` to `.env.local` and add your Supabase credentials:
+   - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase public API key
+
+### Database Schema
+- **polls table**: Stores poll data with `id`, `title`, `created_at`, `updated_at`
+- Row Level Security (RLS) enabled with public read/insert policies
+- Auto-updating timestamps via database triggers
+
+### Migrations
+- Located in `database/migrations/` directory
+- Each migration has corresponding up/down SQL files
+- Apply via Supabase Dashboard SQL Editor
+- See `database/README.md` for detailed instructions
+
+### Database Client
+- Supabase client configured in `lib/supabase.ts`
+- Includes TypeScript interfaces for database entities
+- Error handling and environment variable validation
