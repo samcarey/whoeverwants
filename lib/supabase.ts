@@ -3,18 +3,18 @@ import { createClient } from "@supabase/supabase-js";
 // Automatically switch between test and production databases
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Try environment-specific variables first, then fall back to standard ones
 const supabaseUrl = isProduction 
-  ? process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION!
-  : process.env.NEXT_PUBLIC_SUPABASE_URL_TEST!;
+  ? (process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION || process.env.NEXT_PUBLIC_SUPABASE_URL)
+  : (process.env.NEXT_PUBLIC_SUPABASE_URL_TEST || process.env.NEXT_PUBLIC_SUPABASE_URL);
 
 const supabaseAnonKey = isProduction 
-  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION!
-  : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST!;
+  ? (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  : (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  const env = isProduction ? 'production' : 'test';
   throw new Error(
-    `Missing Supabase ${env} environment variables. Please check your .env.local file.`
+    `Missing Supabase environment variables. Please check your environment configuration.`
   );
 }
 
