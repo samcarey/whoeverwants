@@ -125,15 +125,16 @@ export default function Home() {
           {!loading && !error && polls.length > 0 && (
             <div className="space-y-3 overflow-hidden">
               {polls.map((poll) => (
-                <div
+                <Link
                   key={poll.id}
-                  className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex-shrink-0"
+                  href={`/poll/${poll.id}`}
+                  className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all flex-shrink-0 cursor-pointer"
                 >
-                  <h3 className="font-medium text-lg mb-2 line-clamp-1">{poll.title}</h3>
+                  <h3 className="font-medium text-lg mb-2 line-clamp-1 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{poll.title}</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Created {new Date(poll.created_at).toLocaleDateString()}
                   </p>
-                </div>
+                </Link>
               ))}
             </div>
           )}
