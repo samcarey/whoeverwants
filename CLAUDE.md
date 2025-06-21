@@ -62,5 +62,11 @@ The application uses Supabase as the backend database.
 
 ### Database Client
 - Supabase client configured in `lib/supabase.ts`
+- **Automatic environment switching**: Test DB in development, Production DB in production
 - Includes TypeScript interfaces for database entities
 - Error handling and environment variable validation
+
+### Environment Configuration
+- **Development**: Automatically uses test database
+- **Production**: Automatically uses production database when deployed
+- Environment variables configured in `lib/supabase.ts` based on NODE_ENV

@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase, Poll } from "@/lib/supabase";
 
-const POLLS_PER_LOAD = 10;
-const LOAD_THRESHOLD = 300; // Load more when user is 300px from bottom
 const WINDOW_SIZE = 100; // Keep 100 polls in memory around current position
 const POLL_HEIGHT = 88; // Estimated height of each poll item in pixels
 
@@ -31,6 +29,7 @@ export default function Home() {
   const [windowStart, setWindowStart] = useState(0);
   const [windowEnd, setWindowEnd] = useState(WINDOW_SIZE);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     fetchInitialPolls();
@@ -68,6 +67,7 @@ export default function Home() {
       
       setPollsData(newPollsData);
       setWindowEnd(Math.min(WINDOW_SIZE, count || 0));
+
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred");
@@ -76,8 +76,19 @@ export default function Home() {
     }
   };
 
+  // Track which ranges are currently being fetched to prevent race conditions
+  const fetchingRanges = useRef(new Set<string>());
+
   const fetchPollsInRange = useCallback(async (startIndex: number, endIndex: number) => {
     if (startIndex >= endIndex || startIndex >= totalCount) return;
+
+    // Create a unique key for this range to prevent duplicate fetches
+    const rangeKey = `${startIndex}-${endIndex}`;
+    if (fetchingRanges.current.has(rangeKey)) {
+      return; // Already fetching this range
+    }
+
+    fetchingRanges.current.add(rangeKey);
 
     try {
       setLoadingMore(true);
@@ -96,18 +107,25 @@ export default function Home() {
       setPollsData(prev => {
         const newData = new Map(prev);
         (data || []).forEach((poll, index) => {
-          newData.set(startIndex + index, poll);
+          const pollIndex = startIndex + index;
+          // Only set if not already exists to prevent overwrites
+          if (!newData.has(pollIndex)) {
+            newData.set(pollIndex, poll);
+          }
         });
+
+
         return newData;
       });
     } catch (error) {
       console.error("Unexpected error loading polls:", error);
     } finally {
+      fetchingRanges.current.delete(rangeKey);
       setLoadingMore(false);
     }
   }, [totalCount]);
 
-  const updateWindow = useCallback((scrollTop: number, clientHeight: number) => {
+  const updateWindow = useCallback((scrollTop: number) => {
     if (totalCount === 0) return;
 
     // Calculate which poll index should be at the top of the viewport
@@ -124,6 +142,8 @@ export default function Home() {
       // Use functional update to avoid stale closure and calculate missing ranges
       setPollsData(prev => {
         const newData = new Map();
+        
+        // Copy existing data in the new window range
         for (let i = newWindowStart; i < newWindowEnd; i++) {
           if (prev.has(i)) {
             newData.set(i, prev.get(i)!);
@@ -135,7 +155,11 @@ export default function Home() {
         let rangeStart = newWindowStart;
         
         for (let i = newWindowStart; i < newWindowEnd; i++) {
-          if (prev.has(i)) {
+          if (!prev.has(i)) {
+            // Found a missing poll, extend current range
+            continue;
+          } else {
+            // Found existing poll, close current range if any
             if (rangeStart < i) {
               missingRanges.push([rangeStart, i]);
             }
@@ -143,13 +167,16 @@ export default function Home() {
           }
         }
         
+        // Close final range if needed
         if (rangeStart < newWindowEnd) {
           missingRanges.push([rangeStart, newWindowEnd]);
         }
         
-        // Fetch missing ranges
+        // Batch fetch missing ranges (avoid too many small requests)
         missingRanges.forEach(([start, end]) => {
-          fetchPollsInRange(start, end);
+          if (end - start > 0) {
+            fetchPollsInRange(start, end);
+          }
         });
         
         return newData;
@@ -161,8 +188,8 @@ export default function Home() {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const { scrollTop, clientHeight } = container;
-    updateWindow(scrollTop, clientHeight);
+    const { scrollTop } = container;
+    updateWindow(scrollTop);
   }, [updateWindow]);
 
   useEffect(() => {
@@ -187,6 +214,7 @@ export default function Home() {
     
     return visiblePolls;
   }, [pollsData, windowStart, windowEnd]);
+
 
   return (
     <div className="h-[calc(100vh-128px)] flex flex-col">
@@ -244,7 +272,7 @@ export default function Home() {
                 {getVisiblePolls().map(({ index, poll }) => (
                   poll ? (
                     <Link
-                      key={poll.id}
+                      key={`poll-${index}-${poll.id}`}
                       href={`/poll/${poll.id}`}
                       className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer"
                     >
