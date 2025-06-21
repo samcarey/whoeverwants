@@ -1,10 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 
-export default function Confirmation() {
+function ConfirmationContent() {
   const searchParams = useSearchParams();
   const pollId = searchParams.get("pollId");
   const [copied, setCopied] = useState(false);
@@ -70,5 +70,23 @@ export default function Confirmation() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function Confirmation() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-md mx-auto">
+        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6 text-center">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded mb-6"></div>
+            <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mb-6"></div>
+          </div>
+        </div>
+      </div>
+    }>
+      <ConfirmationContent />
+    </Suspense>
   );
 }
