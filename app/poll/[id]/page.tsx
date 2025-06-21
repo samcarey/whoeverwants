@@ -2,11 +2,12 @@ import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-export default async function PollPage({ params }: { params: { id: string } }) {
+export default async function PollPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const { data: poll, error } = await supabase
     .from("polls")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .single();
 
   if (error || !poll) {
