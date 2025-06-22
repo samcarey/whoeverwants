@@ -125,17 +125,25 @@ export default function Home() {
     }
   }, [totalCount]);
 
-  const updateWindow = useCallback((scrollTop: number) => {
+  const updateWindow = useCallback((scrollTop: number, containerHeight: number) => {
     if (totalCount === 0) return;
 
     // Calculate which poll index should be at the top of the viewport
     const topPollIndex = Math.floor(scrollTop / POLL_HEIGHT);
     
-    // Calculate new window bounds centered around visible area
-    const newWindowStart = Math.max(0, topPollIndex - Math.floor(WINDOW_SIZE / 2));
-    const newWindowEnd = Math.min(totalCount, newWindowStart + WINDOW_SIZE);
+    // Calculate how many polls are visible in the viewport
+    const visiblePollCount = Math.ceil(containerHeight / POLL_HEIGHT) + 2; // +2 for buffer
     
-    if (newWindowStart !== windowStart || newWindowEnd !== windowEnd) {
+    // Calculate new window bounds with some buffer around visible area
+    const bufferSize = Math.max(20, Math.floor(WINDOW_SIZE / 4));
+    const newWindowStart = Math.max(0, topPollIndex - bufferSize);
+    const newWindowEnd = Math.min(totalCount, topPollIndex + visiblePollCount + bufferSize);
+    
+    // Only update if the window has changed significantly (prevent micro-updates)
+    const windowChanged = Math.abs(newWindowStart - windowStart) > 5 || 
+                         Math.abs(newWindowEnd - windowEnd) > 5;
+    
+    if (windowChanged) {
       setWindowStart(newWindowStart);
       setWindowEnd(newWindowEnd);
       
@@ -184,12 +192,22 @@ export default function Home() {
     }
   }, [windowStart, windowEnd, totalCount, fetchPollsInRange]);
 
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const { scrollTop } = container;
-    updateWindow(scrollTop);
+    // Clear previous timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    // Throttle scroll updates to prevent excessive re-renders
+    scrollTimeoutRef.current = setTimeout(() => {
+      const { scrollTop, clientHeight } = container;
+      updateWindow(scrollTop, clientHeight);
+    }, 16); // ~60fps
   }, [updateWindow]);
 
   useEffect(() => {
@@ -197,7 +215,12 @@ export default function Home() {
     if (!container) return;
 
     container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
   }, [handleScroll]);
 
   // Get visible polls for rendering
@@ -291,10 +314,10 @@ export default function Home() {
               
               {/* Bottom spacer for unloaded polls + padding at end */}
               {windowEnd < totalCount ? (
-                <PollSpacer height={(totalCount - windowEnd) * POLL_HEIGHT} />
+                <PollSpacer height={(totalCount - windowEnd) * POLL_HEIGHT + 24} />
               ) : (
                 // Add padding when we're at the last item so it doesn't touch the bottom
-                <div className="h-6" />
+                <div className="h-24" />
               )}
               
               {/* Loading indicator */}
