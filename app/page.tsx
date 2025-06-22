@@ -261,7 +261,7 @@ export default function Home() {
       {/* Scrollable Content Area - takes remaining height */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto scrollbar-hide"
       >
         <div className="max-w-4xl mx-auto px-8">
           {loading && (
