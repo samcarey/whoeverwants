@@ -217,8 +217,8 @@ export default function Home() {
 
 
   return (
-    <div className="h-[calc(100vh-128px)] flex flex-col">
-      {/* Action Buttons Section - Fixed at top */}
+    <div className="flex flex-col h-screen -m-8 pt-8 px-8 pb-0">
+      {/* Action Buttons Section */}
       <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-6">
         <div className="flex flex-col gap-6 items-center">
           <Link
@@ -230,15 +230,17 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Polls List Section - Scrollable */}
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full min-h-0">
-        <h2 className="text-2xl font-bold mb-4 text-center flex-shrink-0">Recent Polls</h2>
-        
-        {/* Scrollable Content Area */}
-        <div 
-          ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto px-4"
-        >
+      {/* Polls List Section Header */}
+      <div className="flex-shrink-0 max-w-4xl mx-auto w-full px-8">
+        <h2 className="text-2xl font-bold mb-4 text-center">Recent Polls</h2>
+      </div>
+      
+      {/* Scrollable Content Area - takes remaining height */}
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto"
+      >
+        <div className="max-w-4xl mx-auto px-8">
           {loading && (
             <div className="flex justify-center items-center py-8">
               <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -287,9 +289,12 @@ export default function Home() {
                 ))}
               </div>
               
-              {/* Bottom spacer for unloaded polls */}
-              {windowEnd < totalCount && (
+              {/* Bottom spacer for unloaded polls + padding at end */}
+              {windowEnd < totalCount ? (
                 <PollSpacer height={(totalCount - windowEnd) * POLL_HEIGHT} />
+              ) : (
+                // Add padding when we're at the last item so it doesn't touch the bottom
+                <div className="h-6" />
               )}
               
               {/* Loading indicator */}
