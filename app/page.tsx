@@ -240,7 +240,7 @@ export default function Home() {
 
 
   return (
-    <div className="flex flex-col h-screen -m-8 pt-8 px-8 pb-0">
+    <div className="flex flex-col h-screen -m-8 pt-8 px-4 sm:px-8 pb-0">
       {/* Action Buttons Section */}
       <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-6">
         <div className="flex flex-col gap-6 items-center">
@@ -254,7 +254,7 @@ export default function Home() {
       </div>
 
       {/* Polls List Section Header */}
-      <div className="flex-shrink-0 max-w-4xl mx-auto w-full px-8">
+      <div className="flex-shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-8">
         <h2 className="text-2xl font-bold mb-4 text-center">Recent Polls</h2>
       </div>
       
@@ -263,7 +263,7 @@ export default function Home() {
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto scrollbar-hide"
       >
-        <div className="max-w-4xl mx-auto px-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-8">
           {loading && (
             <div className="flex justify-center items-center py-8">
               <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
