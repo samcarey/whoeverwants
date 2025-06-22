@@ -192,7 +192,7 @@ export default function Home() {
     }
   }, [windowStart, windowEnd, totalCount, fetchPollsInRange]);
 
-  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
