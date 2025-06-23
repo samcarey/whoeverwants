@@ -30,4 +30,5 @@ export interface Poll {
   title: string;
   created_at: string;
   updated_at: string;
+  response_deadline: string | null;
 }
