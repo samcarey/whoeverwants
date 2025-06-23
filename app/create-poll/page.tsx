@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
-  const [deadlineOption, setDeadlineOption] = useState("1hr");
+  const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
