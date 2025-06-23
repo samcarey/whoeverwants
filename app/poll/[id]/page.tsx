@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Countdown from "@/components/Countdown";
+import PollPageClient from "./PollPageClient";
 
 export default async function PollPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,27 +24,5 @@ export default async function PollPage({ params }: { params: Promise<{ id: strin
     minute: "2-digit",
   });
 
-  return (
-    <div className="max-w-md mx-auto">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
-        <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
-        
-        <Countdown deadline={poll.response_deadline} />
-        
-        <div className="text-center text-gray-600 dark:text-gray-300 mb-6">
-          <p className="text-sm">Created on</p>
-          <p className="font-medium">{createdDate}</p>
-        </div>
-
-        <div className="text-center">
-          <Link
-            href="/"
-            className="inline-block rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
-          >
-            Home
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+  return <PollPageClient poll={poll} createdDate={createdDate} />;
 }
