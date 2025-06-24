@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Countdown from "@/components/Countdown";
@@ -30,6 +30,18 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
 
   const isPollExpired = poll.response_deadline && new Date(poll.response_deadline) <= new Date();
 
+  const fetchPollResults = useCallback(async () => {
+    setLoadingResults(true);
+    try {
+      const results = await getPollResults(poll.id);
+      setPollResults(results);
+    } catch (error) {
+      console.error('Error fetching poll results:', error);
+    } finally {
+      setLoadingResults(false);
+    }
+  }, [poll.id]);
+
   useEffect(() => {
     // Set the poll URL on the client side to avoid SSR issues
     setPollUrl(`${window.location.origin}/poll?id=${poll.id}`);
@@ -43,19 +55,7 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
     if (isPollExpired) {
       fetchPollResults();
     }
-  }, [poll.id, poll.poll_type, poll.options, isPollExpired]);
-
-  const fetchPollResults = async () => {
-    setLoadingResults(true);
-    try {
-      const results = await getPollResults(poll.id);
-      setPollResults(results);
-    } catch (error) {
-      console.error('Error fetching poll results:', error);
-    } finally {
-      setLoadingResults(false);
-    }
-  };
+  }, [poll.id, poll.poll_type, poll.options, isPollExpired, fetchPollResults]);
 
   const handleRankingChange = (newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);

@@ -58,6 +58,16 @@ export interface Vote {
   created_at: string;
 }
 
+export interface RankedChoiceRound {
+  id: string;
+  poll_id: string;
+  round_number: number;
+  option_name: string;
+  vote_count: number;
+  is_eliminated: boolean;
+  created_at: string;
+}
+
 export interface PollResults {
   poll_id: string;
   title: string;
@@ -70,7 +80,8 @@ export interface PollResults {
   total_votes: number;
   yes_percentage: number | null;
   no_percentage: number | null;
-  winner: 'yes' | 'no' | 'tie' | null;
+  winner: 'yes' | 'no' | 'tie' | string | null;
+  total_rounds: number | null;
 }
 
 // Function to get aggregated poll results (no individual votes exposed)
@@ -88,9 +99,50 @@ export async function getPollResults(pollId: string): Promise<PollResults | null
       return null;
     }
 
+    // If this is a ranked choice poll, calculate the winner separately
+    if (data.poll_type === 'ranked_choice') {
+      try {
+        // Call the ranked choice function to get winner and total rounds
+        const { data: rcData, error: rcError } = await supabase
+          .rpc('calculate_ranked_choice_winner', { target_poll_id: pollId });
+
+        if (rcError) {
+          console.error('Error calculating ranked choice winner:', rcError);
+        } else if (rcData && rcData.length > 0) {
+          // Update the result with ranked choice data
+          data.winner = rcData[0].winner;
+          data.total_rounds = rcData[0].total_rounds;
+        }
+      } catch (rcError) {
+        console.error('Unexpected error in ranked choice calculation:', rcError);
+      }
+    }
+
     return data;
   } catch (error) {
     console.error('Unexpected error fetching poll results:', error);
     return null;
+  }
+}
+
+// Function to get ranked choice elimination rounds
+export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoiceRound[]> {
+  try {
+    const { data, error } = await supabase
+      .from('ranked_choice_rounds')
+      .select('*')
+      .eq('poll_id', pollId)
+      .order('round_number', { ascending: true })
+      .order('vote_count', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching ranked choice rounds:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Unexpected error fetching ranked choice rounds:', error);
+    return [];
   }
 }

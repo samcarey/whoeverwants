@@ -26,9 +26,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full overflow-hidden`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
       >
-        <div className="h-screen overflow-hidden p-8 font-[family-name:var(--font-geist-sans)]">
+        <div className="h-screen p-8 font-[family-name:var(--font-geist-sans)] overflow-auto">
           {children}
         </div>
       </body>

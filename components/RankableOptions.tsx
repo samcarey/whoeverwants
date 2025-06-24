@@ -98,12 +98,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     e.preventDefault();
     const coords = getEventCoords(e);
 
-    // Update mouse position
-    setDragState(prev => ({
-      ...prev,
-      mousePosition: coords
-    }));
-
     if (containerRef.current) {
       const containerRect = containerRef.current.getBoundingClientRect();
       const relativeY = coords.y - containerRect.top;
@@ -111,47 +105,57 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       // Get index at current position
       const newTargetIndex = getIndexFromY(relativeY);
 
-      // Update target index if changed
-      if (newTargetIndex !== dragState.targetIndex) {
-        setDragState(prev => ({
-          ...prev,
-          targetIndex: newTargetIndex
-        }));
+      // Update both mouse position and target index together
+      if (newTargetIndex !== dragState.targetIndex || coords.x !== dragState.mousePosition.x || coords.y !== dragState.mousePosition.y) {
+        // Batch the state updates together to avoid multiple renders
+        requestAnimationFrame(() => {
+          setDragState(prev => ({
+            ...prev,
+            mousePosition: coords,
+            targetIndex: newTargetIndex
+          }));
 
-        // Update item positions for visual feedback
-        const updatedOptions = [...rankedOptions];
-        const startIndex = dragState.dragStartIndex!;
+          // Update item positions for visual feedback only if target index changed
+          if (newTargetIndex !== dragState.targetIndex) {
+            setRankedOptions(prev => {
+              const updatedOptions = [...prev];
+              const startIndex = dragState.dragStartIndex!;
 
-        // Reset all items to their base positions
-        updatedOptions.forEach((item, index) => {
-          item.top = index * totalItemHeight;
-        });
+              // Reset all items to their base positions
+              updatedOptions.forEach((item, index) => {
+                item.top = index * totalItemHeight;
+              });
 
-        // Adjust positions based on drag target
-        if (startIndex !== newTargetIndex) {
-          if (startIndex < newTargetIndex) {
-            // Moving down - shift items up
-            for (let i = startIndex + 1; i <= newTargetIndex; i++) {
-              updatedOptions[i].top = (i - 1) * totalItemHeight;
-            }
-          } else {
-            // Moving up - shift items down
-            for (let i = newTargetIndex; i < startIndex; i++) {
-              updatedOptions[i].top = (i + 1) * totalItemHeight;
-            }
+              // Adjust positions based on drag target
+              if (startIndex !== newTargetIndex) {
+                if (startIndex < newTargetIndex) {
+                  // Moving down - shift items up
+                  for (let i = startIndex + 1; i <= newTargetIndex; i++) {
+                    updatedOptions[i].top = (i - 1) * totalItemHeight;
+                  }
+                } else {
+                  // Moving up - shift items down
+                  for (let i = newTargetIndex; i < startIndex; i++) {
+                    updatedOptions[i].top = (i + 1) * totalItemHeight;
+                  }
+                }
+              }
+
+              return updatedOptions;
+            });
           }
-        }
-
-        setRankedOptions(updatedOptions);
+        });
       }
     }
-  }, [dragState, rankedOptions, getEventCoords, getIndexFromY, totalItemHeight]);
+  }, [dragState, getEventCoords, getIndexFromY, totalItemHeight]);
 
   // Complete the drag operation
   const finishDrag = useCallback(() => {
     if (!dragState.isDragging) return;
 
     const { dragStartIndex, targetIndex } = dragState;
+    let shouldNotifyChange = false;
+    let newRanking: string[] = [];
 
     // Reorder items if position changed
     if (dragStartIndex !== null && targetIndex !== null && dragStartIndex !== targetIndex) {
@@ -161,8 +165,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         newOptions.splice(targetIndex, 0, removed);
         const updatedOptions = updateItemPositions(newOptions);
         
-        // Notify parent of ranking change
-        onRankingChange(updatedOptions.map(option => option.text));
+        // Store the new ranking for later notification
+        shouldNotifyChange = true;
+        newRanking = updatedOptions.map(option => option.text);
         
         return updatedOptions;
       });
@@ -180,6 +185,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       mouseOffset: { x: 0, y: 0 },
       mousePosition: { x: 0, y: 0 }
     });
+
+    // Notify parent of ranking change after state updates are complete
+    if (shouldNotifyChange) {
+      // Use setTimeout to ensure this happens after the current render cycle
+      setTimeout(() => {
+        onRankingChange(newRanking);
+      }, 0);
+    }
   }, [dragState, updateItemPositions, onRankingChange]);
 
   // Set up event listeners
