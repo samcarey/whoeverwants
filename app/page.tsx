@@ -301,9 +301,25 @@ export default function Home() {
                       href={`/poll/${poll.id}`}
                       className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer"
                     >
-                      <h3 className="font-medium text-lg mb-2 line-clamp-1 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{poll.title}</h3>
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1 mr-3">{poll.title}</h3>
+                        {poll.response_deadline && (
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
+                            new Date(poll.response_deadline) > new Date()
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          }`}>
+                            {new Date(poll.response_deadline) > new Date() ? 'Open' : 'Closed'}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         Created {new Date(poll.created_at).toLocaleDateString()}
+                        {poll.response_deadline && (
+                          <span className="ml-2">
+                            • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                       </p>
                     </Link>
                   ) : (
