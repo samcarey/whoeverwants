@@ -7,6 +7,61 @@ import { supabase, Poll } from "@/lib/supabase";
 const WINDOW_SIZE = 100; // Keep 100 polls in memory around current position
 const POLL_HEIGHT = 88; // Estimated height of each poll item in pixels
 
+// Compact countdown component for poll list
+const CompactCountdown = ({ deadline, onExpire }: { deadline: string; onExpire?: () => void }) => {
+  const [timeLeft, setTimeLeft] = useState<string>("");
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const deadlineTime = new Date(deadline).getTime();
+      const difference = deadlineTime - now;
+
+      if (difference <= 0) {
+        setTimeLeft("Expired");
+        // Trigger expiration callback to move poll to closed section
+        if (onExpire) {
+          onExpire();
+        }
+        return;
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+      let timeString = "";
+      
+      if (days > 0) {
+        timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+      } else if (hours > 0) {
+        timeString = `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        timeString = `${minutes}m ${seconds}s`;
+      } else {
+        timeString = `${seconds}s`;
+      }
+
+      setTimeLeft(timeString);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(interval);
+  }, [deadline, onExpire]);
+
+  return (
+    <div className="text-right text-sm">
+      <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
+      <div className="font-mono font-semibold text-green-600 dark:text-green-400">
+        {timeLeft}
+      </div>
+    </div>
+  );
+};
+
 // Placeholder component for loading polls
 const PollSkeleton = () => (
   <div className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm animate-pulse">
@@ -28,6 +83,7 @@ export default function Home() {
   const [totalCount, setTotalCount] = useState(0);
   const [windowStart, setWindowStart] = useState(0);
   const [windowEnd, setWindowEnd] = useState(WINDOW_SIZE);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
 
@@ -257,7 +313,12 @@ export default function Home() {
     });
     
     return { openPolls, closedPolls, loadingPolls };
-  }, [pollsData, windowStart, windowEnd]);
+  }, [pollsData, windowStart, windowEnd, refreshTrigger]);
+
+  // Callback to trigger refresh when a poll expires
+  const handlePollExpire = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
 
 
   return (
@@ -326,19 +387,26 @@ export default function Home() {
                               className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer"
                             >
                               <div className="flex items-start justify-between mb-2">
-                                <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors flex-1 mr-3">{poll.title}</h3>
-                                <span className="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                  Open
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">
-                                Created {new Date(poll.created_at).toLocaleDateString()}
+                                <div className="flex-1 mr-4">
+                                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Created {new Date(poll.created_at).toLocaleDateString()}
+                                    {poll.response_deadline && (
+                                      <span className="ml-2">
+                                        • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
                                 {poll.response_deadline && (
-                                  <span className="ml-2">
-                                    • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
+                                  <div className="flex-shrink-0">
+                                    <CompactCountdown 
+                                      deadline={poll.response_deadline} 
+                                      onExpire={handlePollExpire}
+                                    />
+                                  </div>
                                 )}
-                              </p>
+                              </div>
                             </Link>
                           ))}
                         </div>
