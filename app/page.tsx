@@ -388,7 +388,16 @@ export default function Home() {
                             >
                               <div className="flex items-start justify-between mb-2">
                                 <div className="flex-1 mr-4">
-                                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors flex-1">{poll.title}</h3>
+                                    <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
+                                      poll.poll_type === 'yes_no' 
+                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                        : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                                    }`}>
+                                      {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
+                                    </span>
+                                  </div>
                                   <p className="text-sm text-gray-500 dark:text-gray-400">
                                     Created {new Date(poll.created_at).toLocaleDateString()}
                                     {poll.response_deadline && (
@@ -429,19 +438,32 @@ export default function Home() {
                               className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75"
                             >
                               <div className="flex items-start justify-between mb-2">
-                                <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors flex-1 mr-3">{poll.title}</h3>
-                                <span className="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                  Closed
-                                </span>
+                                <div className="flex-1 mr-3">
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors flex-1">{poll.title}</h3>
+                                    <div className="flex gap-2">
+                                      <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
+                                        poll.poll_type === 'yes_no' 
+                                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                          : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                                      }`}>
+                                        {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
+                                      </span>
+                                      <span className="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                        Closed
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Created {new Date(poll.created_at).toLocaleDateString()}
+                                    {poll.response_deadline && (
+                                      <span className="ml-2">
+                                        • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
                               </div>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">
-                                Created {new Date(poll.created_at).toLocaleDateString()}
-                                {poll.response_deadline && (
-                                  <span className="ml-2">
-                                    • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                )}
-                              </p>
                             </Link>
                           ))}
                         </div>
