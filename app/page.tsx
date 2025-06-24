@@ -223,19 +223,40 @@ export default function Home() {
     };
   }, [handleScroll]);
 
-  // Get visible polls for rendering
+  // Get visible polls for rendering, separated by status
   const getVisiblePolls = useCallback(() => {
-    const visiblePolls: Array<{ index: number; poll: Poll | null }> = [];
+    const allVisiblePolls: Array<{ index: number; poll: Poll | null }> = [];
     
     // Only loop through the window range for efficiency
     for (let i = windowStart; i < windowEnd; i++) {
-      visiblePolls.push({
+      allVisiblePolls.push({
         index: i,
         poll: pollsData.get(i) || null
       });
     }
     
-    return visiblePolls;
+    // Separate into open and closed polls
+    const openPolls: Array<{ index: number; poll: Poll }> = [];
+    const closedPolls: Array<{ index: number; poll: Poll }> = [];
+    const loadingPolls: Array<{ index: number; poll: null }> = [];
+    
+    allVisiblePolls.forEach(({ index, poll }) => {
+      if (!poll) {
+        loadingPolls.push({ index, poll });
+        return;
+      }
+      
+      // Check if poll is open (has deadline and deadline is in the future)
+      const isOpen = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+      
+      if (isOpen) {
+        openPolls.push({ index, poll });
+      } else {
+        closedPolls.push({ index, poll });
+      }
+    });
+    
+    return { openPolls, closedPolls, loadingPolls };
   }, [pollsData, windowStart, windowEnd]);
 
 
@@ -253,10 +274,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Polls List Section Header */}
-      <div className="flex-shrink-0 max-w-4xl mx-auto w-full px-4 sm:px-8">
-        <h2 className="text-2xl font-bold mb-4 text-center">Recent Polls</h2>
-      </div>
       
       {/* Scrollable Content Area - takes remaining height */}
       <div 
@@ -292,41 +309,88 @@ export default function Home() {
                 <PollSpacer height={windowStart * POLL_HEIGHT} />
               )}
               
-              {/* Visible polls window */}
-              <div className="space-y-3">
-                {getVisiblePolls().map(({ index, poll }) => (
-                  poll ? (
-                    <Link
-                      key={`poll-${index}-${poll.id}`}
-                      href={`/poll/${poll.id}`}
-                      className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1 mr-3">{poll.title}</h3>
-                        {poll.response_deadline && (
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap ${
-                            new Date(poll.response_deadline) > new Date()
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                          }`}>
-                            {new Date(poll.response_deadline) > new Date() ? 'Open' : 'Closed'}
-                          </span>
-                        )}
+              {(() => {
+                const { openPolls, closedPolls, loadingPolls } = getVisiblePolls();
+                
+                return (
+                  <>
+                    {/* Open Polls Section */}
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Open Polls</h3>
+                      {openPolls.length > 0 ? (
+                        <div className="space-y-3">
+                          {openPolls.map(({ index, poll }) => (
+                            <Link
+                              key={`open-poll-${index}-${poll.id}`}
+                              href={`/poll/${poll.id}`}
+                              className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer"
+                            >
+                              <div className="flex items-start justify-between mb-2">
+                                <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors flex-1 mr-3">{poll.title}</h3>
+                                <span className="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                  Open
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Created {new Date(poll.created_at).toLocaleDateString()}
+                                {poll.response_deadline && (
+                                  <span className="ml-2">
+                                    • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </p>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 dark:text-gray-400 italic">No Open Polls</p>
+                      )}
+                    </div>
+
+                    {/* Closed Polls Section */}
+                    <div className="mb-8">
+                      <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Closed Polls</h3>
+                      {closedPolls.length > 0 ? (
+                        <div className="space-y-3">
+                          {closedPolls.map(({ index, poll }) => (
+                            <Link
+                              key={`closed-poll-${index}-${poll.id}`}
+                              href={`/poll/${poll.id}`}
+                              className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75"
+                            >
+                              <div className="flex items-start justify-between mb-2">
+                                <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors flex-1 mr-3">{poll.title}</h3>
+                                <span className="px-2 py-1 text-xs font-medium rounded-full whitespace-nowrap bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                  Closed
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">
+                                Created {new Date(poll.created_at).toLocaleDateString()}
+                                {poll.response_deadline && (
+                                  <span className="ml-2">
+                                    • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </p>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 dark:text-gray-400 italic">No Closed Polls</p>
+                      )}
+                    </div>
+
+                    {/* Loading skeletons */}
+                    {loadingPolls.length > 0 && (
+                      <div className="space-y-3">
+                        {loadingPolls.map(({ index }) => (
+                          <PollSkeleton key={`skeleton-${index}`} />
+                        ))}
                       </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Created {new Date(poll.created_at).toLocaleDateString()}
-                        {poll.response_deadline && (
-                          <span className="ml-2">
-                            • Deadline: {new Date(poll.response_deadline).toLocaleDateString()} {new Date(poll.response_deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
-                      </p>
-                    </Link>
-                  ) : (
-                    <PollSkeleton key={`skeleton-${index}`} />
-                  )
-                ))}
-              </div>
+                    )}
+                  </>
+                );
+              })()}
               
               {/* Bottom spacer for unloaded polls + padding at end */}
               {windowEnd < totalCount ? (
