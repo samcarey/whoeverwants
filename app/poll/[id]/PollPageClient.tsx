@@ -32,6 +32,31 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
           
           <Countdown deadline={poll.response_deadline} />
           
+          {/* Poll Content Based on Type */}
+          {poll.poll_type === 'yes_no' ? (
+            <div className="mb-6">
+              <div className="flex gap-3">
+                <button className="flex-1 py-3 px-4 bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 rounded-lg font-medium transition-colors">
+                  Yes
+                </button>
+                <button className="flex-1 py-3 px-4 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 rounded-lg font-medium transition-colors">
+                  No
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">Options:</h3>
+              <div className="space-y-2">
+                {poll.options?.map((option, index) => (
+                  <div key={index} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <span className="font-medium">{index + 1}.</span> {option}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
           {pollUrl && <UrlCopy url={pollUrl} />}
           
           <div className="text-center text-gray-600 dark:text-gray-300 mb-6">

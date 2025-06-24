@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase";
 
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
+  const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
+  const [options, setOptions] = useState<string[]>(['', '']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
     const now = new Date();
@@ -34,6 +36,23 @@ export default function CreatePoll() {
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  // Handle options for ranked choice polls
+  const addOption = () => {
+    setOptions([...options, '']);
+  };
+
+  const removeOption = (index: number) => {
+    if (options.length > 2) {
+      setOptions(options.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateOption = (index: number, value: string) => {
+    const newOptions = [...options];
+    newOptions[index] = value;
+    setOptions(newOptions);
   };
 
   const deadlineOptions = [
@@ -87,6 +106,16 @@ export default function CreatePoll() {
     setError(null);
     
     try {
+      // Validate ranked choice options
+      if (pollType === 'ranked_choice') {
+        const filledOptions = options.filter(opt => opt.trim() !== '');
+        if (filledOptions.length < 2) {
+          setError("Ranked choice polls must have at least 2 options.");
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const responseDeadline = calculateDeadline();
       
       if (deadlineOption === "custom") {
@@ -104,12 +133,21 @@ export default function CreatePoll() {
         }
       }
       
+      // Prepare poll data
+      const pollData: any = {
+        title,
+        poll_type: pollType,
+        response_deadline: responseDeadline
+      };
+
+      // Add options for ranked choice polls
+      if (pollType === 'ranked_choice') {
+        pollData.options = options.filter(opt => opt.trim() !== '');
+      }
+      
       const { data, error } = await supabase
         .from("polls")
-        .insert([{ 
-          title,
-          response_deadline: responseDeadline 
-        }])
+        .insert([pollData])
         .select();
 
       if (error) {
@@ -155,6 +193,65 @@ export default function CreatePoll() {
               required
             />
           </div>
+
+          <div>
+            <label htmlFor="pollType" className="block text-sm font-medium mb-2">
+              Poll Type
+            </label>
+            <select
+              id="pollType"
+              value={pollType}
+              onChange={(e) => setPollType(e.target.value as 'yes_no' | 'ranked_choice')}
+              disabled={isLoading}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="yes_no">Yes or No</option>
+              <option value="ranked_choice">Ranked Choice</option>
+            </select>
+          </div>
+
+          {pollType === 'ranked_choice' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Poll Options
+              </label>
+              <div className="space-y-2">
+                {options.map((option, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={option}
+                      onChange={(e) => updateOption(index, e.target.value)}
+                      disabled={isLoading}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      placeholder={`Option ${index + 1}`}
+                      required
+                    />
+                    {options.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeOption(index)}
+                        disabled={isLoading}
+                        className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addOption}
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  + Add Option
+                </button>
+              </div>
+            </div>
+          )}
 
           <div>
             <label htmlFor="deadline" className="block text-sm font-medium mb-2">

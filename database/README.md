@@ -14,6 +14,14 @@ This directory contains SQL migration files for the database schema.
 - **Up**: Creates the `polls` table with basic structure
 - **Down**: Drops the `polls` table and related functions
 
+### 002_add_response_deadline
+- **Up**: Adds `response_deadline` column with index
+- **Down**: Removes `response_deadline` column and index
+
+### 003_add_poll_type_and_options
+- **Up**: Adds `poll_type` and `options` columns with constraints and indexes
+- **Down**: Removes `poll_type` and `options` columns, constraints, and indexes
+
 ## How to Apply Migrations
 
 ### Via Supabase Dashboard
@@ -40,6 +48,8 @@ To rollback a migration:
 
 Migrations should be applied in numerical order:
 1. `001_create_polls_table_up.sql`
+2. `002_add_response_deadline_up.sql`
+3. `003_add_poll_type_and_options_up.sql`
 
 ## Notes
 

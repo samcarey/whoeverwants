@@ -31,4 +31,6 @@ export interface Poll {
   created_at: string;
   updated_at: string;
   response_deadline: string | null;
+  poll_type: 'yes_no' | 'ranked_choice';
+  options: string[] | null;
 }
