@@ -376,9 +376,9 @@ export default function Home() {
                 return (
                   <>
                     {/* Open Polls Section */}
-                    <div className="mb-8">
-                      <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Open Polls</h3>
-                      {openPolls.length > 0 ? (
+                    {openPolls.length > 0 ? (
+                      <div className="mb-8">
+                        <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Open Polls</h3>
                         <div className="space-y-3">
                           {openPolls.map(({ index, poll }) => (
                             <Link
@@ -410,10 +410,12 @@ export default function Home() {
                             </Link>
                           ))}
                         </div>
-                      ) : (
-                        <p className="text-gray-500 dark:text-gray-400 italic">No Open Polls</p>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="mb-8 text-center">
+                        <p className="text-xl text-gray-500 dark:text-gray-400">No Open Polls</p>
+                      </div>
+                    )}
 
                     {/* Closed Polls Section */}
                     <div className="mb-8">
