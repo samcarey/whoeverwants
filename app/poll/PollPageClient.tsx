@@ -7,7 +7,8 @@ import Countdown from "@/components/Countdown";
 import UrlCopy from "@/components/UrlCopy";
 import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
-import { Poll, supabase } from "@/lib/supabase";
+import PollResultsDisplay from "@/components/PollResults";
+import { Poll, supabase, PollResults, getPollResults } from "@/lib/supabase";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -24,6 +25,8 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
+  const [pollResults, setPollResults] = useState<PollResults | null>(null);
+  const [loadingResults, setLoadingResults] = useState(false);
 
   const isPollExpired = poll.response_deadline && new Date(poll.response_deadline) <= new Date();
 
@@ -35,7 +38,24 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
     if (poll.poll_type === 'ranked_choice' && poll.options) {
       setRankedChoices([...poll.options]);
     }
-  }, [poll.id, poll.poll_type, poll.options]);
+
+    // Fetch results if poll is expired
+    if (isPollExpired) {
+      fetchPollResults();
+    }
+  }, [poll.id, poll.poll_type, poll.options, isPollExpired]);
+
+  const fetchPollResults = async () => {
+    setLoadingResults(true);
+    try {
+      const results = await getPollResults(poll.id);
+      setPollResults(results);
+    } catch (error) {
+      console.error('Error fetching poll results:', error);
+    } finally {
+      setLoadingResults(false);
+    }
+  };
 
   const handleRankingChange = (newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
@@ -114,11 +134,26 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
                   </div>
                 </div>
               ) : isPollExpired ? (
-                <div className="text-center py-6">
-                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4">
+                <div className="py-6">
+                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
                     <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
                     <p className="text-red-700 dark:text-red-300">This poll has expired and is no longer accepting votes.</p>
                   </div>
+                  
+                  {loadingResults ? (
+                    <div className="flex justify-center items-center py-8">
+                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  ) : pollResults ? (
+                    <PollResultsDisplay results={pollResults} />
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -184,21 +219,26 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
                   </div>
                 </div>
               ) : isPollExpired ? (
-                <div className="text-center py-6">
-                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-4">
+                <div className="py-6">
+                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
                     <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
                     <p className="text-red-700 dark:text-red-300">This poll has expired and is no longer accepting votes.</p>
                   </div>
-                  <div className="text-left">
-                    <h4 className="font-medium mb-2">Options were:</h4>
-                    <div className="space-y-2">
-                      {poll.options?.map((option, index) => (
-                        <div key={index} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                          <span className="font-medium">{index + 1}.</span> {option}
-                        </div>
-                      ))}
+                  
+                  {loadingResults ? (
+                    <div className="flex justify-center items-center py-8">
+                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
                     </div>
-                  </div>
+                  ) : pollResults ? (
+                    <PollResultsDisplay results={pollResults} />
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>

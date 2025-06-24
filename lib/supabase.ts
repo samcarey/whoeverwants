@@ -57,3 +57,40 @@ export interface Vote {
   ranked_choices?: string[];
   created_at: string;
 }
+
+export interface PollResults {
+  poll_id: string;
+  title: string;
+  poll_type: 'yes_no' | 'ranked_choice';
+  created_at: string;
+  response_deadline: string | null;
+  options: string[] | null;
+  yes_count: number | null;
+  no_count: number | null;
+  total_votes: number;
+  yes_percentage: number | null;
+  no_percentage: number | null;
+  winner: 'yes' | 'no' | 'tie' | null;
+}
+
+// Function to get aggregated poll results (no individual votes exposed)
+export async function getPollResults(pollId: string): Promise<PollResults | null> {
+  try {
+    // Get aggregated results from the database view
+    const { data, error } = await supabase
+      .from('poll_results')
+      .select('*')
+      .eq('poll_id', pollId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching poll results:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Unexpected error fetching poll results:', error);
+    return null;
+  }
+}
