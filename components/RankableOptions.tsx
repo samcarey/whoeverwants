@@ -154,8 +154,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     if (!dragState.isDragging) return;
 
     const { dragStartIndex, targetIndex } = dragState;
-    let shouldNotifyChange = false;
-    let newRanking: string[] = [];
 
     // Reorder items if position changed
     if (dragStartIndex !== null && targetIndex !== null && dragStartIndex !== targetIndex) {
@@ -165,9 +163,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         newOptions.splice(targetIndex, 0, removed);
         const updatedOptions = updateItemPositions(newOptions);
         
-        // Store the new ranking for later notification
-        shouldNotifyChange = true;
-        newRanking = updatedOptions.map(option => option.text);
+        // Notify parent of the new ranking immediately
+        const newRanking = updatedOptions.map(option => option.text);
+        setTimeout(() => {
+          onRankingChange(newRanking);
+        }, 0);
         
         return updatedOptions;
       });
@@ -185,14 +185,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       mouseOffset: { x: 0, y: 0 },
       mousePosition: { x: 0, y: 0 }
     });
-
-    // Notify parent of ranking change after state updates are complete
-    if (shouldNotifyChange) {
-      // Use setTimeout to ensure this happens after the current render cycle
-      setTimeout(() => {
-        onRankingChange(newRanking);
-      }, 0);
-    }
   }, [dragState, updateItemPositions, onRankingChange]);
 
   // Set up event listeners
