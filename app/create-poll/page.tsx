@@ -156,7 +156,6 @@ export default function CreatePoll() {
         return;
       }
 
-      console.log("Poll created:", data);
       router.push(`/poll?id=${data[0].id}&new=true`);
     } catch (error) {
       console.error("Unexpected error:", error);
