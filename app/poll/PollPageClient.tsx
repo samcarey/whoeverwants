@@ -48,7 +48,11 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
     
     // Initialize ranked choices for ranked choice polls
     if (poll.poll_type === 'ranked_choice' && poll.options) {
-      setRankedChoices([...poll.options]);
+      // Parse options if they're stored as JSON string
+      const parsedOptions = typeof poll.options === 'string' 
+        ? JSON.parse(poll.options) 
+        : poll.options;
+      setRankedChoices([...parsedOptions]);
     }
 
     // Fetch results if poll is expired
@@ -244,7 +248,7 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
                 <>
                   {poll.options && (
                     <RankableOptions 
-                      options={poll.options} 
+                      options={typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options} 
                       onRankingChange={handleRankingChange}
                       disabled={isSubmitting}
                     />
