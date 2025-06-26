@@ -15,12 +15,6 @@ interface CandidateResult {
   lastRoundPercentage: number;
   eliminatedInRound?: number;
   isWinner: boolean;
-  voteHistory: Array<{
-    round: number;
-    votes: number;
-    percentage: number;
-    receivedFrom?: Array<{ candidate: string; votes: number }>;
-  }>;
 }
 
 export default function CompactRankedChoiceResults({ results }: CompactRankedChoiceResultsProps) {
@@ -56,8 +50,7 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                 lastRoundParticipated: roundNum,
                 lastRoundVotes: round.vote_count,
                 lastRoundPercentage: Math.round((round.vote_count / results.total_votes) * 100),
-                isWinner: round.option_name === results.winner,
-                voteHistory: []
+                isWinner: round.option_name === results.winner
               });
             }
             
@@ -74,13 +67,6 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
             if (round.is_eliminated) {
               candidate.eliminatedInRound = roundNum;
             }
-            
-            // Add to vote history
-            candidate.voteHistory.push({
-              round: roundNum,
-              votes: round.vote_count,
-              percentage: Math.round((round.vote_count / results.total_votes) * 100)
-            });
           });
         });
 
@@ -113,7 +99,6 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
 
     fetchAndProcessData();
   }, [results.poll_id, results.total_votes, results.winner]);
-
 
   if (loading) {
     return (

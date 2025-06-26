@@ -8,14 +8,15 @@ import UrlCopy from "@/components/UrlCopy";
 import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
-import { Poll, supabase, PollResults, getPollResults } from "@/lib/supabase";
+import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 
 interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
+  onPollUpdate?: (updatedPoll: Poll) => void;
 }
 
-export default function PollPageClient({ poll, createdDate }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, onPollUpdate }: PollPageClientProps) {
   const searchParams = useSearchParams();
   const isNewPoll = searchParams.get("new") === "true";
   const [showSuccessPopup, setShowSuccessPopup] = useState(isNewPoll);
@@ -27,8 +28,11 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
   const [voteError, setVoteError] = useState<string | null>(null);
   const [pollResults, setPollResults] = useState<PollResults | null>(null);
   const [loadingResults, setLoadingResults] = useState(false);
+  const [isClosingPoll, setIsClosingPoll] = useState(false);
+  const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
 
   const isPollExpired = poll.response_deadline && new Date(poll.response_deadline) <= new Date();
+  const isPollClosed = pollClosed || isPollExpired;
 
   const fetchPollResults = useCallback(async () => {
     setLoadingResults(true);
@@ -55,11 +59,11 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
       setRankedChoices([...parsedOptions]);
     }
 
-    // Fetch results if poll is expired
-    if (isPollExpired) {
+    // Fetch results if poll is closed
+    if (isPollClosed) {
       fetchPollResults();
     }
-  }, [poll.id, poll.poll_type, poll.options, isPollExpired, fetchPollResults]);
+  }, [poll.id, poll.poll_type, poll.options, isPollClosed, fetchPollResults]);
 
   const handleRankingChange = (newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
@@ -69,8 +73,39 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
     setYesNoChoice(choice);
   };
 
+  const handleClosePoll = async () => {
+    if (isClosingPoll) return;
+    
+    setIsClosingPoll(true);
+    try {
+      const success = await closePoll(poll.id);
+      if (success) {
+        // Refetch the poll data to get the updated is_closed value
+        const { data: updatedPoll, error } = await supabase
+          .from("polls")
+          .select("*")
+          .eq("id", poll.id)
+          .single();
+        
+        if (!error && updatedPoll && onPollUpdate) {
+          onPollUpdate(updatedPoll);
+        }
+        
+        setPollClosed(true);
+        await fetchPollResults();
+      } else {
+        alert('Failed to close poll. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error closing poll:', error);
+      alert('Failed to close poll. Please try again.');
+    } finally {
+      setIsClosingPoll(false);
+    }
+  };
+
   const submitVote = async () => {
-    if (isSubmitting || hasVoted || isPollExpired) return;
+    if (isSubmitting || hasVoted || isPollClosed) return;
 
     setIsSubmitting(true);
     setVoteError(null);
@@ -125,7 +160,7 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
-          <Countdown deadline={poll.response_deadline} />
+          {!isPollClosed && <Countdown deadline={poll.response_deadline} />}
           
           {/* Poll Content Based on Type */}
           {poll.poll_type === 'yes_no' ? (
@@ -137,11 +172,11 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
                     <p className="text-green-700 dark:text-green-300">Your vote for &ldquo;{yesNoChoice}&rdquo; has been recorded.</p>
                   </div>
                 </div>
-              ) : isPollExpired ? (
+              ) : isPollClosed ? (
                 <div className="py-6">
                   <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
                     <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
-                    <p className="text-red-700 dark:text-red-300">This poll has expired and is no longer accepting votes.</p>
+                    <p className="text-red-700 dark:text-red-300">This poll is closed and no longer accepting votes.</p>
                   </div>
                   
                   {loadingResults ? (
@@ -222,11 +257,11 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
                     </div>
                   </div>
                 </div>
-              ) : isPollExpired ? (
+              ) : isPollClosed ? (
                 <div className="py-6">
                   <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
                     <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
-                    <p className="text-red-700 dark:text-red-300">This poll has expired and is no longer accepting votes.</p>
+                    <p className="text-red-700 dark:text-red-300">This poll is closed and no longer accepting votes.</p>
                   </div>
                   
                   {loadingResults ? (
@@ -273,6 +308,29 @@ export default function PollPageClient({ poll, createdDate }: PollPageClientProp
           )}
           
           {pollUrl && <UrlCopy url={pollUrl} />}
+          
+          {/* Close Poll Button for Testing */}
+          {!isPollClosed && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={handleClosePoll}
+                disabled={isClosingPoll}
+                className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                {isClosingPoll ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Closing Poll...
+                  </>
+                ) : (
+                  'Close Poll (Testing)'
+                )}
+              </button>
+            </div>
+          )}
           
           <div className="text-center text-gray-600 dark:text-gray-300 mb-6">
             <p className="text-sm">Created on</p>

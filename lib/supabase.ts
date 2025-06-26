@@ -47,6 +47,7 @@ export interface Poll {
   response_deadline: string | null;
   poll_type: 'yes_no' | 'ranked_choice';
   options: string[] | null;
+  is_closed: boolean;
 }
 
 export interface Vote {
@@ -144,5 +145,31 @@ export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoic
   } catch (error) {
     console.error('Unexpected error fetching ranked choice rounds:', error);
     return [];
+  }
+}
+
+// Function to manually close a poll
+export async function closePoll(pollId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('polls')
+      .update({ is_closed: true })
+      .eq('id', pollId)
+      .select();
+
+    if (error) {
+      console.error('Error closing poll:', error);
+      return false;
+    }
+
+    if (!data || data.length === 0) {
+      console.error('No rows updated when closing poll');
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Unexpected error closing poll:', error);
+    return false;
   }
 }

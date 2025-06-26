@@ -58,7 +58,11 @@ function PollContent() {
     minute: "2-digit",
   });
 
-  return <PollPageClient poll={poll} createdDate={createdDate} />;
+  const handlePollUpdate = (updatedPoll: Poll) => {
+    setPoll(updatedPoll);
+  };
+
+  return <PollPageClient poll={poll} createdDate={createdDate} onPollUpdate={handlePollUpdate} />;
 }
 
 export default function PollPage() {

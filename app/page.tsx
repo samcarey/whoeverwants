@@ -89,6 +89,20 @@ export default function Home() {
 
   useEffect(() => {
     fetchInitialPolls();
+    
+    // Add visibility change listener to refresh when user returns to page
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // User returned to the page, refresh the data
+        fetchInitialPolls();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const fetchInitialPolls = async () => {
@@ -302,8 +316,10 @@ export default function Home() {
         return;
       }
       
-      // Check if poll is open (has deadline and deadline is in the future)
-      const isOpen = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+      // Check if poll is open (has deadline, deadline is in the future, and not manually closed)
+      const hasDeadline = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+      const isManuallyClosed = poll.is_closed;
+      const isOpen = hasDeadline && !isManuallyClosed;
       
       if (isOpen) {
         openPolls.push({ index, poll });
