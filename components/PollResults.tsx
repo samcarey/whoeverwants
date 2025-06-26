@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
+import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 
 interface PollResultsProps {
   results: PollResults;
@@ -13,7 +14,7 @@ export default function PollResultsDisplay({ results }: PollResultsProps) {
   }
 
   if (results.poll_type === 'ranked_choice') {
-    return <RankedChoiceResults results={results} />;
+    return <CompactRankedChoiceResults results={results} />;
   }
 
   return null;
