@@ -269,19 +269,7 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   {/* Position number */}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    isTiedCandidate
-                      ? 'bg-green-400 text-green-900'
-                      : candidate.position === 1 && !candidate.isEliminated
-                      ? 'bg-yellow-400 text-yellow-900' 
-                      : candidate.position === 2 && !candidate.isEliminated
-                      ? 'bg-gray-300 text-gray-700'
-                      : candidate.position === 3 && !candidate.isEliminated
-                      ? 'bg-orange-300 text-orange-800'
-                      : candidate.isEliminated && !isTiedCandidate
-                      ? 'bg-red-200 text-red-700'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200">
                     {isTiedCandidate ? 'T' : candidate.position}
                   </div>
                   
