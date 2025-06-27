@@ -261,9 +261,6 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                     {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && (
                       <span className="ml-2 text-sm">👑 Winner</span>
                     )}
-                    {candidate.isEliminated && (
-                      <span className="ml-2 text-xs text-red-600 dark:text-red-400">ELIMINATED</span>
-                    )}
                   </div>
                 </div>
 
