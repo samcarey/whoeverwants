@@ -68,6 +68,18 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
             .filter(round => round.is_eliminated)
             .map(round => round.option_name);
           
+          // Check for ties in the final round
+          const isFinalRound = roundNum === totalRounds;
+          
+          // Detect ties by checking if multiple candidates have the same highest vote count
+          const sortedByVotes = currentRoundData.sort((a, b) => b.vote_count - a.vote_count);
+          const highestVoteCount = sortedByVotes[0]?.vote_count || 0;
+          const candidatesWithHighestVotes = sortedByVotes.filter(c => c.vote_count === highestVoteCount);
+          const isTieByVotes = isFinalRound && candidatesWithHighestVotes.length > 1;
+          
+          // Use either database tie detection or our own vote-based detection
+          const isTie = isFinalRound && (results.winner === 'tie' || isTieByVotes);
+          
           const candidates = currentRoundData
             .sort((a, b) => b.vote_count - a.vote_count)
             .map((round, index) => {
@@ -81,13 +93,17 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                                             nextVotes > round.vote_count;
               const donatedVotes = willReceiveDonatedVotes ? nextVotes - round.vote_count : 0;
               
+              // In case of a tie, don't show anyone as eliminated if they have the highest vote count
+              const hasHighestVotes = round.vote_count === highestVoteCount;
+              const isEliminated = isTie && hasHighestVotes ? false : round.is_eliminated;
+              
               return {
                 name: round.option_name,
                 votes: round.vote_count,
                 percentage: Math.round((round.vote_count / results.total_votes) * 100),
                 previousVotes: roundNum > 1 ? previousVotes : undefined,
                 donatedVotes: donatedVotes > 0 ? donatedVotes : undefined,
-                isEliminated: round.is_eliminated,
+                isEliminated: isEliminated,
                 position: index + 1
               };
             });
@@ -224,9 +240,21 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
         onTouchEnd={handleTouchEnd}
       >
         <div className="space-y-2">
-          {currentRound.candidates.map((candidate) => (
+          {currentRound.candidates.map((candidate) => {
+            // Find the highest vote count in the current round
+            const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
+            const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
+            const isTieByVotes = candidatesWithHighestVotes.length > 1;
+            
+            const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
+                                  (results.winner === 'tie' || isTieByVotes) &&
+                                  candidate.votes === highestVotes;
+            
+            return (
             <div key={candidate.name} className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
-              candidate.isEliminated
+              isTiedCandidate
+                ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
+                : candidate.isEliminated && !isTiedCandidate
                 ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
                 : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
                 ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
@@ -236,30 +264,37 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                 <div className="flex items-center space-x-4">
                   {/* Position number */}
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    candidate.position === 1 && !candidate.isEliminated
+                    isTiedCandidate
+                      ? 'bg-green-400 text-green-900'
+                      : candidate.position === 1 && !candidate.isEliminated
                       ? 'bg-yellow-400 text-yellow-900' 
                       : candidate.position === 2 && !candidate.isEliminated
                       ? 'bg-gray-300 text-gray-700'
                       : candidate.position === 3 && !candidate.isEliminated
                       ? 'bg-orange-300 text-orange-800'
-                      : candidate.isEliminated
+                      : candidate.isEliminated && !isTiedCandidate
                       ? 'bg-red-200 text-red-700'
                       : 'bg-gray-200 text-gray-600'
                   }`}>
-                    {candidate.position}
+                    {isTiedCandidate ? 'T' : candidate.position}
                   </div>
                   
                   {/* Candidate name */}
                   <div className={`font-semibold ${
-                    candidate.isEliminated
+                    isTiedCandidate
+                      ? 'text-green-800 dark:text-green-200'
+                      : candidate.isEliminated && !isTiedCandidate
                       ? 'text-red-700 dark:text-red-300 line-through'
                       : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
                       ? 'text-green-800 dark:text-green-200'
                       : 'text-gray-900 dark:text-white'
                   }`}>
                     {candidate.name}
-                    {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && (
+                    {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && !isTiedCandidate && (
                       <span className="ml-2 text-sm">👑 Winner</span>
+                    )}
+                    {isTiedCandidate && (
+                      <span className="ml-2 text-sm">🤝 Tied</span>
                     )}
                   </div>
                 </div>
@@ -267,7 +302,9 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                 {/* Vote count and percentage */}
                 <div className="text-right">
                   <div className={`text-lg font-bold ${
-                    candidate.isEliminated
+                    isTiedCandidate
+                      ? 'text-green-800 dark:text-green-200'
+                      : candidate.isEliminated && !isTiedCandidate
                       ? 'text-red-700 dark:text-red-300'
                       : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
                       ? 'text-green-800 dark:text-green-200'
@@ -286,9 +323,11 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
                 </div>
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       </div>
+      
       
       {/* Swipe hint */}
       <div className="text-center mt-4 text-xs text-gray-500 dark:text-gray-400">

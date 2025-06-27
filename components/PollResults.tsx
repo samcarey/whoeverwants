@@ -126,42 +126,7 @@ function YesNoResults({ results }: { results: PollResults }) {
         </div>
       </div>
 
-      {/* Visual Progress Bars */}
-      <div className="space-y-3">
-        <div>
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-sm font-medium text-green-700 dark:text-green-300">Yes</span>
-            <span className="text-sm text-green-600 dark:text-green-400">{yesPercentage}%</span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-            <div 
-              className="bg-green-600 h-2 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${yesPercentage}%` }}
-            ></div>
-          </div>
-        </div>
-        
-        <div>
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-sm font-medium text-red-700 dark:text-red-300">No</span>
-            <span className="text-sm text-red-600 dark:text-red-400">{noPercentage}%</span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-            <div 
-              className="bg-red-600 h-2 rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${noPercentage}%` }}
-            ></div>
-          </div>
-        </div>
-      </div>
 
-      {winner === 'tie' && (
-        <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-600 rounded-lg text-center">
-          <span className="text-yellow-800 dark:text-yellow-200 font-medium">
-            🤝 It&apos;s a tie! Both choices received equal votes.
-          </span>
-        </div>
-      )}
     </div>
   );
 }
