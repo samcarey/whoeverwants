@@ -160,14 +160,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
-          <div className="text-center text-gray-600 dark:text-gray-300">
-            <p className="text-sm">
-              Created {createdDate}
-              {isPollClosed && pollResults && (
-                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
-              )}
-            </p>
-          </div>
           
           {!isPollClosed && <Countdown deadline={poll.response_deadline} />}
           
@@ -175,7 +167,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
           {poll.poll_type === 'yes_no' ? (
             <div>
               {hasVoted ? (
-                <div className="text-center py-6">
+                <div className="text-center">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
                     <p className="text-green-700 dark:text-green-300">Your vote for &ldquo;{yesNoChoice}&rdquo; has been recorded.</p>
@@ -262,7 +254,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
                   </div>
                 </div>
               ) : isPollClosed ? (
-                <div className="py-6">
+                <div>
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
                       <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -329,6 +321,15 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
             </div>
           )}
           
+          {/* Created date line */}
+          <div className="text-center text-gray-600 dark:text-gray-300 mt-4 mb-4">
+            <p className="text-sm">
+              Created {createdDate}
+              {isPollClosed && pollResults && (
+                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
+              )}
+            </p>
+          </div>
 
           {/* Bottom navigation */}
           <div className="flex justify-between items-center mt-1">
