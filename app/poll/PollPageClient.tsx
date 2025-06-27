@@ -157,7 +157,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
   return (
     <>
       <div className="max-w-md mx-auto">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
           
@@ -356,7 +355,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
             
             {pollUrl && <UrlCopy url={pollUrl} />}
           </div>
-        </div>
       </div>
 
       <SuccessPopup 
