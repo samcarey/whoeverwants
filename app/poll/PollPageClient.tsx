@@ -162,9 +162,9 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
           
           <div className="text-center text-gray-600 dark:text-gray-300">
             <p className="text-sm">
-              Created on {createdDate}
+              Created {createdDate}
               {isPollClosed && pollResults && (
-                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}{pollResults.total_rounds ? ` • ${pollResults.total_rounds} round${pollResults.total_rounds !== 1 ? 's' : ''}` : ''}</span>
+                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
               )}
             </p>
           </div>
