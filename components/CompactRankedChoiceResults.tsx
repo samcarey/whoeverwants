@@ -201,43 +201,49 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
 
   return (
     <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 relative">
-      {/* Navigation buttons for desktop */}
-      <div className="flex justify-between items-center mb-4">
-        <button
-          onClick={() => navigateRound(-1)}
-          className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-          aria-label="Previous round"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {currentRoundIndex + 1} of {roundVisualizations.length}
-          </p>
+      {/* Navigation buttons for desktop - only show if multiple rounds */}
+      {roundVisualizations.length > 1 ? (
+        <div className="flex justify-between items-center mb-4">
+          <button
+            onClick={() => navigateRound(-1)}
+            className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Previous round"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          
+          <div className="text-center">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {currentRoundIndex + 1} of {roundVisualizations.length}
+            </p>
+          </div>
+          
+          <button
+            onClick={() => navigateRound(1)}
+            className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Next round"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
-        
-        <button
-          onClick={() => navigateRound(1)}
-          className="p-2 rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-          aria-label="Next round"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      </div>
+      ) : (
+        <div className="text-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+        </div>
+      )}
 
       {/* Swipeable content area */}
       <div 
         ref={containerRef}
         className="overflow-hidden touch-pan-y"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onTouchStart={roundVisualizations.length > 1 ? handleTouchStart : undefined}
+        onTouchMove={roundVisualizations.length > 1 ? handleTouchMove : undefined}
+        onTouchEnd={roundVisualizations.length > 1 ? handleTouchEnd : undefined}
       >
         <div className="space-y-2">
           {currentRound.candidates.map((candidate) => {
