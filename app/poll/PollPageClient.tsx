@@ -9,6 +9,7 @@ import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
+import { isCreatedByThisDevice, getPollCreatorSecret } from "@/lib/pollCreator";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -30,6 +31,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
   const [loadingResults, setLoadingResults] = useState(false);
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
+  const [isCreator, setIsCreator] = useState(false);
 
   const isPollExpired = poll.response_deadline && new Date(poll.response_deadline) <= new Date();
   const isPollClosed = pollClosed || isPollExpired;
@@ -49,6 +51,9 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
   useEffect(() => {
     // Set the poll URL on the client side to avoid SSR issues
     setPollUrl(`${window.location.origin}/poll?id=${poll.id}`);
+    
+    // Check if this device created the poll
+    setIsCreator(isCreatedByThisDevice(poll.id));
     
     // Initialize ranked choices for ranked choice polls
     if (poll.poll_type === 'ranked_choice' && poll.options) {
@@ -74,11 +79,17 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
   };
 
   const handleClosePoll = async () => {
-    if (isClosingPoll) return;
+    if (isClosingPoll || !isCreator) return;
+    
+    const creatorSecret = getPollCreatorSecret(poll.id);
+    if (!creatorSecret) {
+      alert('You do not have permission to close this poll.');
+      return;
+    }
     
     setIsClosingPoll(true);
     try {
-      const success = await closePoll(poll.id);
+      const success = await closePoll(poll.id, creatorSecret);
       if (success) {
         // Refetch the poll data to get the updated is_closed value
         const { data: updatedPoll, error } = await supabase
@@ -297,8 +308,8 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
             </div>
           )}
           
-          {/* Close Poll Button for Testing */}
-          {!isPollClosed && (
+          {/* Close Poll Button for Poll Creators */}
+          {!isPollClosed && isCreator && (
             <div className="mt-4 text-center">
               <button
                 onClick={handleClosePoll}
@@ -314,7 +325,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
                     Closing Poll...
                   </>
                 ) : (
-                  'Close Poll (Testing)'
+                  'Close Poll'
                 )}
               </button>
             </div>

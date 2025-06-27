@@ -48,6 +48,7 @@ export interface Poll {
   poll_type: 'yes_no' | 'ranked_choice';
   options: string[] | null;
   is_closed: boolean;
+  creator_secret?: string; // Optional for security - only returned on creation
 }
 
 export interface Vote {
@@ -148,13 +149,14 @@ export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoic
   }
 }
 
-// Function to manually close a poll
-export async function closePoll(pollId: string): Promise<boolean> {
+// Function to manually close a poll (requires creator secret)
+export async function closePoll(pollId: string, creatorSecret: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from('polls')
       .update({ is_closed: true })
       .eq('id', pollId)
+      .eq('creator_secret', creatorSecret)
       .select();
 
     if (error) {
@@ -163,7 +165,7 @@ export async function closePoll(pollId: string): Promise<boolean> {
     }
 
     if (!data || data.length === 0) {
-      console.error('No rows updated when closing poll');
+      console.error('No rows updated when closing poll - invalid poll ID or creator secret');
       return false;
     }
 

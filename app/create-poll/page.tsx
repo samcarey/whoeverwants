@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { generateCreatorSecret, storePollCreation, cleanupOldPolls } from "@/lib/pollCreator";
 
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
@@ -133,11 +134,15 @@ export default function CreatePoll() {
         }
       }
       
+      // Generate creator secret
+      const creatorSecret = generateCreatorSecret();
+      
       // Prepare poll data
       const pollData: any = {
         title,
         poll_type: pollType,
-        response_deadline: responseDeadline
+        response_deadline: responseDeadline,
+        creator_secret: creatorSecret
       };
 
       // Add options for ranked choice polls
@@ -155,6 +160,12 @@ export default function CreatePoll() {
         setError("Failed to create poll. Please try again.");
         return;
       }
+
+      // Store the poll creation locally so this device can manage it
+      storePollCreation(data[0].id, creatorSecret, title);
+      
+      // Clean up old poll records occasionally
+      cleanupOldPolls();
 
       router.push(`/poll?id=${data[0].id}&new=true`);
     } catch (error) {
