@@ -328,11 +328,6 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
         </div>
       </div>
       
-      
-      {/* Swipe hint */}
-      <div className="text-center mt-4 text-xs text-gray-500 dark:text-gray-400">
-        Swipe left/right or use buttons to navigate rounds
-      </div>
     </div>
   );
 }
