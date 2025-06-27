@@ -174,11 +174,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
                 </div>
               ) : isPollClosed ? (
                 <div className="py-6">
-                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
-                    <p className="text-red-700 dark:text-red-300">This poll is closed and no longer accepting votes.</p>
-                  </div>
-                  
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
                       <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -259,11 +254,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
                 </div>
               ) : isPollClosed ? (
                 <div className="py-6">
-                  <div className="bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-red-800 dark:text-red-200 mb-2">Poll Closed</h3>
-                    <p className="text-red-700 dark:text-red-300">This poll is closed and no longer accepting votes.</p>
-                  </div>
-                  
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
                       <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
