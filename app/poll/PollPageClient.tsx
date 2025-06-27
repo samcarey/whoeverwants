@@ -173,7 +173,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
           
           {/* Poll Content Based on Type */}
           {poll.poll_type === 'yes_no' ? (
-            <div className="mb-6">
+            <div>
               {hasVoted ? (
                 <div className="text-center py-6">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
@@ -240,7 +240,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
               )}
             </div>
           ) : (
-            <div className="mb-6">
+            <div>
               {hasVoted ? (
                 <div className="text-center py-6">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
