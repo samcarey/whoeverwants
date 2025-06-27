@@ -52,10 +52,8 @@ function PollContent() {
 
   const createdDate = new Date(poll.created_at).toLocaleDateString("en-US", {
     year: "numeric",
-    month: "long",
+    month: "numeric",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 
   const handlePollUpdate = (updatedPoll: Poll) => {

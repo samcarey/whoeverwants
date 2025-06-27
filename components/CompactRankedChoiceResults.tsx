@@ -126,14 +126,11 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
     <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Final Rankings</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {results.total_votes} total vote{results.total_votes !== 1 ? 's' : ''} • {results.total_rounds} round{results.total_rounds !== 1 ? 's' : ''}
-        </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {candidates.map((candidate) => (
-          <div key={candidate.name} className={`border border-gray-200 dark:border-gray-600 rounded-lg p-4 ${
+          <div key={candidate.name} className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 ${
             candidate.isWinner 
               ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
               : 'bg-white dark:bg-gray-700'

@@ -160,6 +160,15 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
         <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
+          <div className="text-center text-gray-600 dark:text-gray-300">
+            <p className="text-sm">
+              Created on {createdDate}
+              {isPollClosed && pollResults && (
+                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}{pollResults.total_rounds ? ` • ${pollResults.total_rounds} round${pollResults.total_rounds !== 1 ? 's' : ''}` : ''}</span>
+              )}
+            </p>
+          </div>
+          
           {!isPollClosed && <Countdown deadline={poll.response_deadline} />}
           
           {/* Poll Content Based on Type */}
@@ -297,8 +306,6 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
             </div>
           )}
           
-          {pollUrl && <UrlCopy url={pollUrl} />}
-          
           {/* Close Poll Button for Testing */}
           {!isPollClosed && (
             <div className="mt-4 text-center">
@@ -322,12 +329,9 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
             </div>
           )}
           
-          <div className="text-center text-gray-600 dark:text-gray-300 mb-6">
-            <p className="text-sm">Created on</p>
-            <p className="font-medium">{createdDate}</p>
-          </div>
 
-          <div className="text-center">
+          {/* Bottom navigation */}
+          <div className="flex justify-between items-center mt-1">
             <Link
               href="/"
               className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
@@ -348,6 +352,8 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
               </svg>
               Home
             </Link>
+            
+            {pollUrl && <UrlCopy url={pollUrl} />}
           </div>
         </div>
       </div>
