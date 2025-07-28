@@ -9,11 +9,13 @@
     "start": "npx serve@latest out",
     "lint": "next lint",
     "db:seed-5000": "node scripts/seed-only.js",
-    "db:verify-config": "node scripts/verify-env.js"
+    "db:verify-config": "node scripts/verify-env.js",
+    "db:rebuild-dev": "node scripts/rebuild-dev-database.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
     "next": "15.3.3",
+    "pg": "^8.16.3",
     "puppeteer": "^24.10.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
