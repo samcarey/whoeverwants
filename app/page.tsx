@@ -375,7 +375,7 @@ export default function Home() {
 
           {!loading && !error && totalCount === 0 && (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              No polls created yet. Be the first to create one!
+              No polls created yet... Be the first to create one!
             </div>
           )}
 

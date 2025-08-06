@@ -8,9 +8,9 @@
     "build": "next build",
     "start": "npx serve@latest out",
     "lint": "next lint",
-    "db:seed-5000": "node scripts/seed-only.js",
-    "db:verify-config": "node scripts/verify-env.js",
-    "db:rebuild-dev": "node scripts/rebuild-dev-database.js"
+    "db:rebuild-test": "./scripts/complete-migration.sh",
+    "db:rebuild-production": "./scripts/complete-migration-production.sh",
+    "db:clear-test": "./scripts/direct-api-migration.sh clear"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
