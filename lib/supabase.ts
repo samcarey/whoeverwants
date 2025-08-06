@@ -34,17 +34,19 @@ export interface Vote {
 }
 
 export interface PollResults {
-  id: string;
+  poll_id: string;
   title: string;
   poll_type: 'yes_no' | 'ranked_choice';
-  options?: string[];
-  yes_votes?: number;
-  no_votes?: number;
-  total_votes: number;
-  ranked_choice_winner?: string;
-  ranked_choice_results?: any[];
-  is_closed?: boolean;
+  created_at: string;
   response_deadline?: string;
+  options?: string[];
+  yes_count?: number;
+  no_count?: number;
+  total_votes: number;
+  yes_percentage?: number;
+  no_percentage?: number;
+  winner?: string;
+  total_rounds?: number;
 }
 
 export interface RankedChoiceRound {
@@ -59,7 +61,7 @@ export async function getPollResults(pollId: string): Promise<PollResults> {
   const { data, error } = await supabase
     .from('poll_results')
     .select('*')
-    .eq('id', pollId)
+    .eq('poll_id', pollId)
     .single();
 
   if (error) {
@@ -84,6 +86,18 @@ export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoic
 }
 
 export async function closePoll(pollId: string, creatorSecret: string): Promise<Poll> {
+  // First get the poll to check if it's ranked choice
+  const { data: pollData, error: pollError } = await supabase
+    .from('polls')
+    .select('poll_type')
+    .eq('id', pollId)
+    .single();
+
+  if (pollError) {
+    throw new Error(`Failed to fetch poll: ${pollError.message}`);
+  }
+
+  // Close the poll
   const { data, error } = await supabase
     .from('polls')
     .update({ is_closed: true, updated_at: new Date().toISOString() })
@@ -94,6 +108,16 @@ export async function closePoll(pollId: string, creatorSecret: string): Promise<
 
   if (error) {
     throw new Error(`Failed to close poll: ${error.message}`);
+  }
+
+  // If it's a ranked choice poll, calculate the results
+  if (pollData.poll_type === 'ranked_choice') {
+    try {
+      await supabase.rpc('calculate_ranked_choice_winner', { target_poll_id: pollId });
+    } catch (rpcError) {
+      console.error('Failed to calculate ranked choice results:', rpcError);
+      // Don't fail the close operation if ranked choice calculation fails
+    }
   }
 
   return data;
