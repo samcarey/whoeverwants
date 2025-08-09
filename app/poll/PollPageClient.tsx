@@ -171,7 +171,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
           
-          {!isPollClosed && <Countdown deadline={poll.response_deadline} />}
+          {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
           
           {/* Poll Content Based on Type */}
           {poll.poll_type === 'yes_no' ? (

@@ -162,7 +162,7 @@ export default function CreatePoll() {
       }
 
       // Store the poll creation locally so this device can manage it
-      storePollCreation(data[0].id, creatorSecret, title);
+      storePollCreation(data[0].id, creatorSecret);
       
       // Clean up old poll records occasionally
       cleanupOldPolls();

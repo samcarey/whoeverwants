@@ -50,10 +50,13 @@ export interface PollResults {
 }
 
 export interface RankedChoiceRound {
+  id: string;
+  poll_id: string;
   round_number: number;
-  eliminated_candidate?: string;
-  vote_counts: Record<string, number>;
-  total_votes: number;
+  option_name: string;
+  vote_count: number;
+  is_eliminated: boolean;
+  created_at: string;
 }
 
 // Utility functions
