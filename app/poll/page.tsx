@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import PollPageClient from "./PollPageClient";
 
+export const dynamic = 'force-dynamic';
+
 function PollContent() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id');

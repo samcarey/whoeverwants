@@ -4,14 +4,17 @@ import { createClient } from '@supabase/supabase-js';
 const isProduction = process.env.NODE_ENV === 'production';
 
 const supabaseUrl = isProduction 
-  ? process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION!
-  : process.env.NEXT_PUBLIC_SUPABASE_URL_TEST!;
+  ? (process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION || '')
+  : (process.env.NEXT_PUBLIC_SUPABASE_URL_TEST || '');
 
 const supabaseAnonKey = isProduction
-  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION!
-  : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST!;
+  ? (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION || '')
+  : (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST || '');
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co', 
+  supabaseAnonKey || 'placeholder-key'
+);
 
 // Type definitions
 export interface Poll {

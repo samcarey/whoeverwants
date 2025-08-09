@@ -6,6 +6,8 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { generateCreatorSecret, storePollCreation, cleanupOldPolls } from "@/lib/pollCreator";
 
+export const dynamic = 'force-dynamic';
+
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
