@@ -3,12 +3,24 @@
   "version": "0.1.0",
   "private": false,
   "license": "(MIT OR Apache-2.0)",
+  "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
     "tunnel": "ssh -p 443 -R0:localhost:3001 -L4300:localhost:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 wrr0fLztB5P@pro.pinggy.io",
     "build": "next build",
     "start": "npx serve@latest out",
     "lint": "next lint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest --watch",
+    "test:algorithms": "node tests/run-specific-tests.js algorithm",
+    "test:zero-vote-bug": "node tests/run-specific-tests.js zero-vote-bug",
+    "test:tie-breaking": "node tests/run-specific-tests.js tie-breaking",
+    "test:edge-cases": "node tests/run-specific-tests.js edge-cases",
+    "test:basic": "node tests/run-specific-tests.js basic",
+    "test:validate": "node tests/run-specific-tests.js all --coverage",
     "db:rebuild-test": "./scripts/complete-migration.sh",
     "db:rebuild-production": "./scripts/complete-migration-production.sh",
     "db:clear-test": "./scripts/direct-api-migration.sh clear"
@@ -23,13 +35,16 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/ui": "^3.2.4",
+    "c8": "^10.1.3",
     "dotenv": "^16.0.0",
     "eslint": "^9.29.0",
     "eslint-config-next": "^15.3.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
