@@ -65,9 +65,12 @@ describe('Tie Breaking Scenarios', () => {
             ['D', 0, true]    // D: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['A', 3, false],  // A: gets D's transfers, should win
+            ['A', 2, false],  // A: 2 votes, no majority yet (need 3/4)
             ['B', 1, true],   // B: eliminated in tie for last
             ['C', 1, true]    // C: eliminated in tie for last
+          ]},
+          { round: 3, results: [
+            ['A', 4, false]   // A: gets all remaining transfers, wins
           ]}
         ])
         .expectWinner('A')
@@ -123,13 +126,11 @@ describe('Tie Breaking Scenarios', () => {
         .expectRounds([
           { round: 1, results: [
             ['A', 2, false],  // A: 2 votes, survives
-            ['B', 1, false],  // B: 1 vote, survives  
-            ['C', 1, false]   // C: 1 vote, survives
+            ['B', 1, true],   // B: 1 vote, tied for last, eliminated
+            ['C', 1, true]    // C: 1 vote, tied for last, eliminated
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: no change, wins
-            ['B', 1, true],   // B and C tied for elimination
-            ['C', 1, true]    
+            ['A', 4, false]   // A: gets all transfers, wins
           ]}
         ])
         .expectWinner('A')

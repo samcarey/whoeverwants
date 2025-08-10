@@ -45,8 +45,8 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
             ['B', 1, true]    // B: 1 vote, eliminated
           ]},
           { round: 2, results: [
-            ['A', 3, false],  // A: gets B's vote, wins
-            ['C', 2, true]    // C: eliminated
+            ['A', 3, false],  // A: gets B's vote, wins with majority
+            ['C', 2, false]   // C: not eliminated, A won
           ]}
         ])
         .expectWinner('A')
@@ -138,12 +138,12 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: gets B's transfer from voter 1
-            ['C', 1, true],   // C and D tied, eliminated
-            ['D', 1, true]    
+            ['A', 1, true],   // A: tied with others, all eliminated
+            ['C', 1, true],   // C: tied, eliminated
+            ['D', 1, true]    // D: tied, eliminated
           ]}
         ])
-        .expectWinner('A')
+        .expectWinner(null)  // Perfect tie results in no winner
         .run()
     })
   })

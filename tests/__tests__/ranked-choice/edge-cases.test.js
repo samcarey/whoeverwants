@@ -61,16 +61,12 @@ describe('Edge Cases and Boundary Conditions', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote
-            ['B', 1, false],  // B: 1 vote  
-            ['C', 1, false]   // C: 1 vote
-          ]},
-          { round: 2, results: [
-            ['A', 1, true],   // All eliminated in tie
+            ['A', 1, true],   // All tied at 1 vote, all eliminated
             ['B', 1, true],   
             ['C', 1, true]    
           ]}
         ])
+        .expectWinner(null)  // Perfect tie results in no winner
         .run()
     })
 
@@ -90,9 +86,12 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['D', 0, true]    // D: 0 votes, eliminated
           ]},
           { round: 2, results: [
-            ['A', 3, false],  // A: gets D's transfer, wins
+            ['A', 2, false],  // A: 2 votes, no transfers from D
             ['B', 1, true],   // B and C tied for elimination
             ['C', 1, true]    
+          ]},
+          { round: 3, results: [
+            ['A', 3, false]   // A: gets B&C transfers, wins
           ]}
         ])
         .expectWinner('A')
@@ -120,9 +119,12 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['G', 0, true]    
           ]},
           { round: 2, results: [
-            ['A', 4, false],  // A: gets all transfers, wins
-            ['B', 1, true],   
+            ['A', 2, false],  // A: 2 votes, no transfers from D,E,F,G
+            ['B', 1, true],   // B and C tied for elimination
             ['C', 1, true]    
+          ]},
+          { round: 3, results: [
+            ['A', 4, false]   // A: gets B&C transfers, wins
           ]}
         ])
         .expectWinner('A')
@@ -140,12 +142,7 @@ describe('Edge Cases and Boundary Conditions', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // All tied at 1 vote
-            ['B', 1, false],  
-            ['C', 1, false]   
-          ]},
-          { round: 2, results: [
-            ['A', 1, true],   // All eliminated in tie
+            ['A', 1, true],   // All tied at 1 vote, all eliminated
             ['B', 1, true],   
             ['C', 1, true]    
           ]}
@@ -169,9 +166,12 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['D', 0, true]    // D: 0 votes, eliminated despite being ranked high
           ]},
           { round: 2, results: [
-            ['A', 4, false],  // A: gets D's transfers, wins
-            ['B', 1, true],   
+            ['A', 2, false],  // A: 2 votes, no transfers from D
+            ['B', 1, true],   // B and C tied for elimination
             ['C', 1, true]    
+          ]},
+          { round: 3, results: [
+            ['A', 4, false]   // A: gets B&C transfers, wins
           ]}
         ])
         .expectWinner('A')
@@ -195,10 +195,11 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['C', 0, true]    // C: 0 votes, eliminated
           ]},
           { round: 2, results: [
-            ['A', 2, true],   // Still tied after C elimination
+            ['A', 2, true],   // Still tied after C elimination, both eliminated
             ['B', 2, true]    
           ]}
         ])
+        .expectWinner(null)  // Perfect tie results in no winner
         .run()
     })
   })
