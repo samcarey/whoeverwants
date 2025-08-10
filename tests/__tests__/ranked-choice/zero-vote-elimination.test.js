@@ -18,18 +18,29 @@ describe('Zero Vote Elimination Bug Fix', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
             ['D', 1, false],  // D: 1 vote, survives
             ['E', 1, false],  // E: 1 vote, survives
-            ['B', 0, true],   // B: 0 votes, eliminated
-            ['C', 0, true]    // C: 0 votes, eliminated
+            ['A', 1, false],  // A: 1 vote, survives
+            ['C', 0, true],   // C: 0 votes, eliminated (lowest Borda score)
+            ['B', 0, false]   // B: 0 votes, survives (higher Borda than C)
           ]},
           { round: 2, results: [
-            ['A', 1, true],   // A: eliminated in 3-way tie
-            ['D', 1, true],   // D: eliminated in 3-way tie  
-            ['E', 1, true]    // E: eliminated in 3-way tie
+            ['A', 1, false],  // A: 1 vote, survives
+            ['E', 1, false],  // E: 1 vote, survives
+            ['D', 1, false],  // D: 1 vote, survives
+            ['B', 0, true]    // B: 0 votes, eliminated (lowest Borda score)
+          ]},
+          { round: 3, results: [
+            ['E', 1, false],  // E: 1 vote, survives
+            ['A', 1, false],  // A: 1 vote, survives
+            ['D', 1, true]    // D: 1 vote, eliminated (Borda tiebreaker)
+          ]},
+          { round: 4, results: [
+            ['E', 2, false],  // E: gets D's transfer, wins
+            ['A', 1, false]   // A: 1 vote, survives
           ]}
         ])
+        .expectWinner('E')
         .run()
     })
 
@@ -46,10 +57,14 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['A', 1, true],   // A: eliminated in tie
-            ['C', 1, true]    // C: eliminated in tie
+            ['C', 1, false],  // C: 1 vote, survives
+            ['A', 1, true]    // A: eliminated (alphabetical tiebreaker)
+          ]},
+          { round: 3, results: [
+            ['C', 2, false]   // C: gets A's transfer, wins
           ]}
         ])
+        .expectWinner('C')
         .run()
     })
   })
@@ -80,24 +95,36 @@ describe('Zero Vote Elimination Bug Fix', () => {
           ['A', 'B', 'C', 'D', 'E'],  // A=1
           ['C', 'A', 'B', 'D', 'E'],  // C=1  
           ['D', 'A', 'C', 'B', 'E'],  // D=1
-          ['E', 'C', 'A', 'B', 'D']   // E=1, B=0 first place, perfect tie results in null
+          ['E', 'C', 'A', 'B', 'D']   // E=1, B=0 first place
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
             ['C', 1, false],  // C: 1 vote, survives
             ['D', 1, false],  // D: 1 vote, survives
+            ['A', 1, false],  // A: 1 vote, survives
             ['E', 1, false],  // E: 1 vote, survives
-            ['B', 0, true]    // B: 0 votes, eliminated first
+            ['B', 0, true]    // B: 0 votes, eliminated first (lowest Borda)
           ]},
           { round: 2, results: [
-            ['A', 1, true],   // A: tied, all eliminated
-            ['C', 1, true],   // C: tied, all eliminated
-            ['D', 1, true],   // D: tied, all eliminated
-            ['E', 1, true]    // E: tied, all eliminated
+            ['D', 1, false],  // D: 1 vote, survives
+            ['A', 1, false],  // A: 1 vote, survives
+            ['C', 1, false],  // C: 1 vote, survives
+            ['E', 1, true]    // E: eliminated (lowest Borda among remaining)
+          ]},
+          { round: 3, results: [
+            ['C', 2, false],  // C: gets E's transfer, survives
+            ['A', 1, false],  // A: 1 vote, survives
+            ['D', 1, true]    // D: eliminated (lowest Borda)
+          ]},
+          { round: 4, results: [
+            ['A', 2, false],  // A: gets D's transfer, survives
+            ['C', 2, true]    // C: eliminated (Borda tiebreaker)
+          ]},
+          { round: 5, results: [
+            ['A', 4, false]   // A: gets all transfers, wins
           ]}
         ])
-        .expectWinner(null)  // Perfect tie results in no winner
+        .expectWinner('A')
         .run()
     })
   })
@@ -135,11 +162,15 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated (never ranked first)
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes, survives (C and D tied for elimination)
-            ['C', 1, true],   // C: tied for last, eliminated
-            ['D', 1, true]    // D: tied for last, eliminated
+            ['A', 2, false],  // A: 2 votes, survives 
+            ['D', 1, false],  // D: 1 vote, survives
+            ['C', 1, true]    // C: eliminated (Borda tiebreaker)
           ]},
           { round: 3, results: [
+            ['A', 2, false],  // A: 2 votes, survives
+            ['D', 2, true]    // D: gets C's transfer but eliminated
+          ]},
+          { round: 4, results: [
             ['A', 4, false]   // A: gets all remaining transfers, wins
           ]}
         ])

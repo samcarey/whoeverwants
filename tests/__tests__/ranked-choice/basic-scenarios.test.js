@@ -67,12 +67,14 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
         .expectRounds([
           { round: 1, results: [
             ['A', 2, false],  // A: 2 votes, survives
-            ['B', 1, true],   // B, C, D tied at 1 vote, all eliminated
-            ['C', 1, true],   
-            ['D', 1, true]    
+            ['B', 1, false],  // B: 1 vote, survives (higher Borda score than D)
+            ['C', 1, false],  // C: 1 vote, survives (higher Borda score than D)
+            ['D', 1, true]    // D: 1 vote, eliminated (lowest Borda score: 7 pts)
           ]},
           { round: 2, results: [
-            ['A', 5, false]   // A: gets all remaining votes, wins
+            ['A', 3, false],  // A: gets D's transfer, wins majority
+            ['B', 1, false],  
+            ['C', 1, false]   
           ]}
         ])
         .expectWinner('A')
@@ -92,12 +94,14 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
         .expectRounds([
           { round: 1, results: [
             ['D', 3, false],  // D: 3 votes, survives
-            ['A', 1, true],   // A, B, C tied at 1, eliminated
-            ['B', 1, true],   
-            ['C', 1, true]    
+            ['B', 1, false],  // B: 1 vote, survives (higher Borda: 14 pts)
+            ['A', 1, false],  // A: 1 vote, survives (higher Borda: 13 pts)  
+            ['C', 1, true]    // C: 1 vote, eliminated (lowest Borda: 12 pts)
           ]},
           { round: 2, results: [
-            ['D', 6, false]   // D: gets all transfers, wins
+            ['D', 4, false],  // D: gets C's transfer, wins majority
+            ['A', 1, false],  
+            ['B', 1, false]   
           ]}
         ])
         .expectWinner('D')
@@ -115,11 +119,16 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, true],   // All tied at 1, all eliminated
-            ['B', 1, true],   
-            ['C', 1, true]    
+            ['B', 1, false],  // B: 1 vote, survives
+            ['C', 1, false],  // C: 1 vote, survives
+            ['A', 1, true]    // A: 1 vote, eliminated first (alphabetical order when Borda tied)
+          ]},
+          { round: 2, results: [
+            ['B', 2, false],  // B: gets A's transfer, wins
+            ['C', 1, false]   
           ]}
         ])
+        .expectWinner('B')
         .run()
     })
 
@@ -138,12 +147,16 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['A', 1, true],   // A: tied with others, all eliminated
-            ['C', 1, true],   // C: tied, eliminated
-            ['D', 1, true]    // D: tied, eliminated
+            ['A', 1, false],  // A: 1 vote, survives  
+            ['C', 1, false],  // C: 1 vote, survives
+            ['D', 1, true]    // D: 1 vote, eliminated by Borda count
+          ]},
+          { round: 3, results: [
+            ['C', 2, false],  // C: gets D's transfer, wins
+            ['A', 1, false]   
           ]}
         ])
-        .expectWinner(null)  // Perfect tie results in no winner
+        .expectWinner('C')
         .run()
     })
   })
