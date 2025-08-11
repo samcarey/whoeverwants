@@ -17,20 +17,26 @@ export const metadata: Metadata = {
   title: "WhoeverWants",
   description: "Coordinate with friends!",
   manifest: "/manifest.json",
-  themeColor: "#ffffff",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "WhoeverWants",
   },
-  viewport: {
+};
+
+export function generateViewport() {
+  return {
     width: "device-width",
     initialScale: 1,
     maximumScale: 1,
     userScalable: false,
     viewportFit: "cover",
-  },
-};
+    themeColor: [
+      { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+      { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }
+    ]
+  };
+}
 
 export default function RootLayout({
   children,
