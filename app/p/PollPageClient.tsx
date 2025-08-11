@@ -14,10 +14,10 @@ import { isCreatedByThisDevice, getPollCreatorSecret } from "@/lib/pollCreator";
 interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
-  onPollUpdate?: (updatedPoll: Poll) => void;
+  pollId: string | null;
 }
 
-export default function PollPageClient({ poll, createdDate, onPollUpdate }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
   const searchParams = useSearchParams();
   const isNewPoll = searchParams.get("new") === "true";
   const [showSuccessPopup, setShowSuccessPopup] = useState(isNewPoll);
@@ -49,8 +49,10 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
   }, [poll.id]);
 
   useEffect(() => {
-    // Set the poll URL on the client side to avoid SSR issues
-    setPollUrl(`${window.location.origin}/poll?id=${poll.id}`);
+    if (typeof window !== 'undefined') {
+      // Set the poll URL using query parameter format
+      setPollUrl(`${window.location.origin}/p?id=${poll.id}`);
+    }
     
     // Check if this device created the poll
     setIsCreator(isCreatedByThisDevice(poll.id));
@@ -98,9 +100,7 @@ export default function PollPageClient({ poll, createdDate, onPollUpdate }: Poll
           .eq("id", poll.id)
           .single();
         
-        if (!error && updatedPoll && onPollUpdate) {
-          onPollUpdate(updatedPoll);
-        }
+        // Poll updated successfully
         
         setPollClosed(true);
         await fetchPollResults();

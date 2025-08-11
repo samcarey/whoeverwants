@@ -1,3 +1,94 @@
+# WhoeverWants Development Environment
+
+## 🚀 AUTO-STARTING SERVICES
+
+This project has systemd services configured to automatically run the development server and Pinggy tunnel on system boot.
+
+### Service Status Check
+**IMPORTANT**: Always check that these services are running when working on this project:
+
+```bash
+# Check if services are running
+sudo systemctl status whoeverwants-dev whoeverwants-tunnel
+
+# If not running, start them:
+sudo systemctl start whoeverwants-dev
+sudo systemctl start whoeverwants-tunnel
+```
+
+### Development URL
+When services are running, the application is accessible at:
+- **Public URL**: http://decisionbot.a.pinggy.link (requires Pinggy Pro)
+- **Local URL**: http://localhost:3000
+
+### Pinggy Pro Configuration
+To use the persistent `decisionbot.a.pinggy.link` subdomain, you need to set your Pinggy Pro token:
+
+```bash
+# Add to ~/.bashrc or set before running tunnel
+export PINGGY_TOKEN=your_pinggy_token_here
+```
+
+Without the token, the tunnel will use a free temporary URL that expires in 60 minutes.
+
+### Service Details
+
+#### 1. **whoeverwants-dev.service**
+- Runs the Next.js development server (`npm run dev`)
+- Auto-restarts on failure
+- Listens on port 3000
+
+#### 2. **whoeverwants-tunnel.service**
+- Creates a Pinggy tunnel to expose port 3000 to the internet
+- Domain: decisionbot.a.pinggy.link
+- Depends on the dev service
+
+### Service Management Commands
+
+```bash
+# View logs
+sudo journalctl -u whoeverwants-dev -f      # Dev server logs
+sudo journalctl -u whoeverwants-tunnel -f   # Tunnel logs
+
+# Control services
+sudo systemctl restart whoeverwants-dev     # Restart dev server
+sudo systemctl restart whoeverwants-tunnel  # Restart tunnel
+sudo systemctl stop whoeverwants-dev whoeverwants-tunnel    # Stop both
+sudo systemctl start whoeverwants-dev whoeverwants-tunnel   # Start both
+
+# Check status
+sudo systemctl status whoeverwants-dev
+sudo systemctl status whoeverwants-tunnel
+```
+
+### Initial Setup (If Services Not Installed)
+
+If the services are not yet installed on the system:
+
+```bash
+# Run the setup script
+sudo /home/ubuntu/whoeverwants/scripts/setup-services.sh
+```
+
+This will:
+1. Copy service files to `/etc/systemd/system/`
+2. Enable services to start on boot
+3. Start the services immediately
+
+### Service Files Location
+- Service definitions: `/home/ubuntu/whoeverwants/services/`
+- Setup script: `/home/ubuntu/whoeverwants/scripts/setup-services.sh`
+
+### Troubleshooting
+
+If services fail to start:
+1. Check Node.js is available: `which node`
+2. Check npm packages are installed: `cd /home/ubuntu/whoeverwants && npm install`
+3. Check port 3000 is free: `sudo lsof -i :3000`
+4. View detailed logs: `sudo journalctl -u whoeverwants-dev -n 100`
+
+---
+
 # Database Migration System
 
 This project has a complete automated database migration system for Supabase test databases.

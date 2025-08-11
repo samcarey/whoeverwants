@@ -1,74 +1,35 @@
 "use client";
 
-import { supabase, Poll } from "@/lib/supabase";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, Suspense } from "react";
-import PollPageClient from "./PollPageClient";
+import { useEffect, Suspense } from "react";
+import { useRouter } from "next/navigation";
 
 export const dynamic = 'force-dynamic';
 
-function PollContent() {
+function PollRedirect() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const id = searchParams.get('id');
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const isNew = searchParams.get('new');
 
   useEffect(() => {
-    if (!id) {
-      setError(true);
-      setLoading(false);
-      return;
+    if (id) {
+      // Redirect to new URL structure, preserving the 'new' parameter if it exists
+      const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
+      router.replace(newUrl);
+    } else {
+      // If no id, redirect to home
+      router.replace('/');
     }
+  }, [id, isNew, router]);
 
-    async function fetchPoll() {
-      try {
-        const { data, error } = await supabase
-          .from("polls")
-          .select("*")
-          .eq("id", id)
-          .single();
-
-        if (error || !data) {
-          setError(true);
-        } else {
-          setPoll(data);
-        }
-      } catch (err) {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchPoll();
-  }, [id]);
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-
-  if (error || !poll) {
-    return <div className="min-h-screen flex items-center justify-center">Poll not found</div>;
-  }
-
-  const createdDate = new Date(poll.created_at).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  });
-
-  const handlePollUpdate = (updatedPoll: Poll) => {
-    setPoll(updatedPoll);
-  };
-
-  return <PollPageClient poll={poll} createdDate={createdDate} onPollUpdate={handlePollUpdate} />;
+  return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
 }
 
 export default function PollPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <PollContent />
+      <PollRedirect />
     </Suspense>
   );
 }

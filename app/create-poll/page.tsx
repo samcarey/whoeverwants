@@ -169,7 +169,7 @@ export default function CreatePoll() {
       // Clean up old poll records occasionally
       cleanupOldPolls();
 
-      router.push(`/poll?id=${data[0].id}&new=true`);
+      router.push(`/p?id=${data[0].id}&new=true`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");

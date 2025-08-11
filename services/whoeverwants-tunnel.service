@@ -1,0 +1,19 @@
+[Unit]
+Description=WhoeverWants Pinggy Tunnel
+After=network.target whoeverwants-dev.service
+Requires=whoeverwants-dev.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/whoeverwants
+ExecStart=/usr/bin/npm run tunnel
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=whoeverwants-tunnel
+Environment="PATH=/usr/bin:/usr/local/bin:/home/ubuntu/.nvm/versions/node/v20.11.1/bin"
+
+[Install]
+WantedBy=multi-user.target
