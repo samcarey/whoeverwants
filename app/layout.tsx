@@ -17,10 +17,10 @@ export const metadata: Metadata = {
   title: "WhoeverWants",
   description: "Coordinate with friends!",
   manifest: "/manifest.json",
-  themeColor: "#000000",
+  themeColor: "#ffffff",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "WhoeverWants",
   },
   viewport: {
@@ -28,6 +28,7 @@ export const metadata: Metadata = {
     initialScale: 1,
     maximumScale: 1,
     userScalable: false,
+    viewportFit: "cover",
   },
 };
 
@@ -40,8 +41,10 @@ export default function RootLayout({
     <html lang="en" className="h-full">
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="WhoeverWants" />
+        <meta name="theme-color" content="#ffffff" />
+        <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
         <link rel="apple-touch-icon" href="/icon-192x192.svg" />
         <link rel="icon" type="image/svg+xml" sizes="192x192" href="/icon-192x192.svg" />
         <link rel="icon" type="image/svg+xml" sizes="512x512" href="/icon-512x512.svg" />
