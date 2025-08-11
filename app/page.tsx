@@ -354,24 +354,42 @@ export default function Home() {
   return (
     <div className="h-screen -m-8">
       {/* Fixed Action Buttons Section */}
-      <div className="fixed left-0 right-0 z-10 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800" style={{ top: `env(safe-area-inset-top)` }}>
-        <div className="flex flex-col items-center py-4">
-          <Link
-            href="/create-poll"
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
-          >
-            Create Poll
-          </Link>
+      <div className="fixed left-0 right-0 z-20" style={{ top: `env(safe-area-inset-top)` }}>
+        <div className="bg-white dark:bg-black">
+          <div className="flex flex-col items-center py-4">
+            <Link
+              href="/create-poll"
+              className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
+            >
+              Create Poll
+            </Link>
+          </div>
         </div>
       </div>
+
+      {/* Fade overlay that sits above scrolling content */}
+      <div 
+        className="fixed left-0 right-0 z-10 h-6 pointer-events-none"
+        style={{
+          top: `calc(env(safe-area-inset-top) + 5rem)`,
+          background: 'linear-gradient(to bottom, rgb(255,255,255) 0%, rgba(255,255,255,0) 100%)'
+        }}
+      ></div>
+      <div 
+        className="fixed left-0 right-0 z-10 h-6 pointer-events-none hidden dark:block"
+        style={{
+          top: `calc(env(safe-area-inset-top) + 5rem)`,
+          background: 'linear-gradient(to bottom, rgb(0,0,0) 0%, rgba(0,0,0,0) 100%)'
+        }}
+      ></div>
 
       {/* Scrollable Content Area - offset by fixed header height */}
       <div 
         ref={scrollContainerRef}
-        className="h-full overflow-y-auto scrollbar-hide pt-4"
-        style={{ marginTop: `calc(env(safe-area-inset-top) + 4rem + 1rem + 1px)` }}
+        className="h-full overflow-y-auto scrollbar-hide"
+        style={{ paddingTop: `calc(env(safe-area-inset-top) + 5rem + 0.75rem)` }}
       >
-        <div className="max-w-4xl mx-auto px-4 sm:px-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-8 pt-2">
           {loading && (
             <div className="flex justify-center items-center py-8">
               <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
