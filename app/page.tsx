@@ -352,10 +352,10 @@ export default function Home() {
 
 
   return (
-    <div className="flex flex-col h-screen -m-8 pt-8 px-4 sm:px-8 pb-0">
-      {/* Action Buttons Section */}
-      <div className="flex-shrink-0 flex flex-col items-center pt-4 pb-6">
-        <div className="flex flex-col gap-6 items-center">
+    <div className="h-screen -m-8">
+      {/* Fixed Action Buttons Section */}
+      <div className="fixed left-0 right-0 z-10 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800" style={{ top: `env(safe-area-inset-top)` }}>
+        <div className="flex flex-col items-center py-4">
           <Link
             href="/create-poll"
             className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
@@ -365,11 +365,11 @@ export default function Home() {
         </div>
       </div>
 
-      
-      {/* Scrollable Content Area - takes remaining height */}
+      {/* Scrollable Content Area - offset by fixed header height */}
       <div 
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto scrollbar-hide"
+        className="h-full overflow-y-auto scrollbar-hide pt-4"
+        style={{ marginTop: `calc(env(safe-area-inset-top) + 4rem + 1rem + 1px)` }}
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-8">
           {loading && (
