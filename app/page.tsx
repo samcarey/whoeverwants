@@ -328,6 +328,20 @@ export default function Home() {
       }
     });
     
+    // Sort open polls by response_deadline (soonest first)
+    openPolls.sort((a, b) => {
+      const deadlineA = a.poll.response_deadline ? new Date(a.poll.response_deadline).getTime() : Infinity;
+      const deadlineB = b.poll.response_deadline ? new Date(b.poll.response_deadline).getTime() : Infinity;
+      return deadlineA - deadlineB;
+    });
+    
+    // Sort closed polls by created_at (newest first)
+    closedPolls.sort((a, b) => {
+      const createdA = new Date(a.poll.created_at).getTime();
+      const createdB = new Date(b.poll.created_at).getTime();
+      return createdB - createdA;
+    });
+    
     return { openPolls, closedPolls, loadingPolls };
   }, [pollsData, windowStart, windowEnd, refreshTrigger]);
 
