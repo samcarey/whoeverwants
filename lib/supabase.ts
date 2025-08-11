@@ -27,6 +27,8 @@ export interface Poll {
   updated_at: string;
   creator_secret?: string;
   is_closed?: boolean;
+  sequential_id?: number;
+  short_id?: string;
 }
 
 export interface Vote {
@@ -144,7 +146,7 @@ export async function submitVote(pollId: string, voteData: any): Promise<void> {
   }
 }
 
-export async function createPoll(poll: Omit<Poll, 'id' | 'created_at' | 'updated_at'>): Promise<Poll> {
+export async function createPoll(poll: Omit<Poll, 'id' | 'created_at' | 'updated_at' | 'sequential_id' | 'short_id'>): Promise<Poll> {
   const { data, error } = await supabase
     .from('polls')
     .insert({
@@ -157,6 +159,34 @@ export async function createPoll(poll: Omit<Poll, 'id' | 'created_at' | 'updated
 
   if (error) {
     throw new Error(`Failed to create poll: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function getPollByShortId(shortId: string): Promise<Poll> {
+  const { data, error } = await supabase
+    .from('polls')
+    .select('*')
+    .eq('short_id', shortId)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to fetch poll by short_id: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function getPollById(id: string): Promise<Poll> {
+  const { data, error } = await supabase
+    .from('polls')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to fetch poll by id: ${error.message}`);
   }
 
   return data;

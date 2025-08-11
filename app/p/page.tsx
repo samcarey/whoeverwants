@@ -1,98 +1,58 @@
 "use client";
 
-import { supabase, Poll } from "@/lib/supabase";
-import { useEffect, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
-import PollPageClient from "./PollPageClient";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, Suspense } from "react";
+import { supabase } from "@/lib/supabase";
 
-function PollContent() {
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [pollId, setPollId] = useState<string | null>(null);
+export const dynamic = 'force-dynamic';
+
+function PollRedirect() {
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const id = searchParams.get('id');
+  const isNew = searchParams.get('new');
 
   useEffect(() => {
-    // Check if we're in the browser
-    if (typeof window === 'undefined') {
-      return;
-    }
+    async function handleRedirect() {
+      if (id) {
+        try {
+          // Try to get the poll to check if it has a short_id
+          const { data: poll, error } = await supabase
+            .from("polls")
+            .select("short_id")
+            .eq("id", id)
+            .single();
 
-    // Extract poll ID from URL search params
-    const urlParams = new URLSearchParams(window.location.search);
-    let id = urlParams.get('id');
-    
-    // Backward compatibility: check for hash format and redirect
-    if (!id && window.location.hash) {
-      const hashId = window.location.hash.substring(1);
-      if (hashId) {
-        window.location.replace(`/p?id=${hashId}${window.location.search ? '&' + window.location.search.substring(1) : ''}`);
-        return;
-      }
-    }
-    
-    // Backward compatibility: check for path format (/p/id) and redirect
-    if (!id) {
-      const pathSegments = window.location.pathname.split('/').filter(Boolean);
-      if (pathSegments.length >= 2 && pathSegments[0] === 'p') {
-        const pathId = pathSegments[1];
-        window.location.replace(`/p?id=${pathId}${window.location.search}`);
-        return;
-      }
-    }
-    
-    if (!id) {
-      // If no ID provided, redirect to home
-      router.replace('/');
-      return;
-    }
-
-    setPollId(id);
-
-    async function fetchPoll() {
-      try {
-        const { data, error } = await supabase
-          .from("polls")
-          .select("*")
-          .eq("id", id)
-          .single();
-
-        if (error || !data) {
-          setError(true);
-        } else {
-          setPoll(data);
+          if (!error && poll?.short_id) {
+            // Redirect to new short URL format
+            const newUrl = isNew ? `/p/${poll.short_id}?new=true` : `/p/${poll.short_id}`;
+            router.replace(newUrl);
+          } else {
+            // Fallback: redirect to UUID format (backward compatibility)
+            const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
+            router.replace(newUrl);
+          }
+        } catch (error) {
+          // If we can't fetch the poll, just redirect with the ID
+          const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
+          router.replace(newUrl);
         }
-      } catch (err) {
-        setError(true);
-      } finally {
-        setLoading(false);
+      } else {
+        // If no id, redirect to home
+        router.replace('/');
       }
     }
 
-    fetchPoll();
-  }, [router]);
+    handleRedirect();
+  }, [id, isNew, router]);
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-  }
-
-  if (error || !poll) {
-    return <div className="min-h-screen flex items-center justify-center">Poll not found</div>;
-  }
-
-  const createdDate = new Date(poll.created_at).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  });
-
-  return <PollPageClient poll={poll} createdDate={createdDate} pollId={pollId} />;
+  return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
 }
 
 export default function PollPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <PollContent />
+      <PollRedirect />
     </Suspense>
   );
 }

@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export',
+  // Removed 'output: export' to support dynamic routes
+  // Static export doesn't work with dynamic poll IDs
   trailingSlash: true,
   images: {
     unoptimized: true,
   },
-  distDir: 'out',
 };
 
 export default nextConfig;

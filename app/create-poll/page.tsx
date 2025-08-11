@@ -169,7 +169,9 @@ export default function CreatePoll() {
       // Clean up old poll records occasionally
       cleanupOldPolls();
 
-      router.push(`/p?id=${data[0].id}&new=true`);
+      // Use short_id if available, otherwise fall back to UUID
+      const redirectId = data[0].short_id || data[0].id;
+      router.push(`/p/${redirectId}?new=true`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
