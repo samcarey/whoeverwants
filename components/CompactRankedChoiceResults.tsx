@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
+import React, { useState, useEffect, useRef } from "react";
+import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
@@ -243,7 +243,7 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
         onTouchEnd={roundVisualizations.length > 1 ? handleTouchEnd : undefined}
       >
         <div className="space-y-2">
-          {currentRound.candidates.map((candidate) => {
+          {currentRound.candidates.map((candidate, index) => {
             // Find the highest vote count in the current round
             const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
             const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
@@ -252,73 +252,191 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
             const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
                                   (results.winner === 'tie' || isTieByVotes) &&
                                   candidate.votes === highestVotes;
+
+            // Check if we should show Borda explanation after this candidate
+            // Show it after ANY eliminated candidate in a round where tie-breaking occurred
+            const hasBordaTieBreaking = candidate.isEliminated && 
+                                      currentRound.eliminatedCandidates.length > 0;
             
             return (
-            <div key={candidate.name} className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
-              isTiedCandidate
-                ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
-                : candidate.isEliminated && !isTiedCandidate
-                ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
-                : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
-                : 'bg-white dark:bg-gray-700'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  {/* Position number */}
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200">
-                    {isTiedCandidate ? 'T' : candidate.position}
-                  </div>
-                  
-                  {/* Candidate name */}
-                  <div className={`font-semibold ${
-                    isTiedCandidate
-                      ? 'text-green-800 dark:text-green-200'
-                      : candidate.isEliminated && !isTiedCandidate
-                      ? 'text-red-700 dark:text-red-300 line-through'
-                      : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                      ? 'text-green-800 dark:text-green-200'
-                      : 'text-gray-900 dark:text-white'
-                  }`}>
-                    {candidate.name}
-                    {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && !isTiedCandidate && (
-                      <span className="ml-2 text-sm">👑 Winner</span>
-                    )}
-                    {isTiedCandidate && (
-                      <span className="ml-2 text-sm">🤝 Tied</span>
-                    )}
+              <React.Fragment key={candidate.name}>
+                <div className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
+                  isTiedCandidate
+                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
+                    : candidate.isEliminated && !isTiedCandidate
+                    ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
+                    : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
+                    : 'bg-white dark:bg-gray-700'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      {/* Position number */}
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200">
+                        {isTiedCandidate ? 'T' : candidate.position}
+                      </div>
+                      
+                      {/* Candidate name */}
+                      <div className={`font-semibold ${
+                        isTiedCandidate
+                          ? 'text-green-800 dark:text-green-200'
+                          : candidate.isEliminated && !isTiedCandidate
+                          ? 'text-red-700 dark:text-red-300 line-through'
+                          : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                          ? 'text-green-800 dark:text-green-200'
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {candidate.name}
+                        {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && !isTiedCandidate && (
+                          <span className="ml-2 text-sm">👑 Winner</span>
+                        )}
+                        {isTiedCandidate && (
+                          <span className="ml-2 text-sm">🤝 Tied</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Vote count and percentage */}
+                    <div className="text-right">
+                      <div className={`text-lg font-bold ${
+                        isTiedCandidate
+                          ? 'text-green-800 dark:text-green-200'
+                          : candidate.isEliminated && !isTiedCandidate
+                          ? 'text-red-700 dark:text-red-300'
+                          : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                          ? 'text-green-800 dark:text-green-200'
+                          : 'text-gray-900 dark:text-white'
+                      }`}>
+                        {candidate.percentage}%
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
+                        {candidate.donatedVotes && candidate.donatedVotes > 0 && (
+                          <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                            +{candidate.donatedVotes}
+                          </span>
+                        )}
+                        <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Vote count and percentage */}
-                <div className="text-right">
-                  <div className={`text-lg font-bold ${
-                    isTiedCandidate
-                      ? 'text-green-800 dark:text-green-200'
-                      : candidate.isEliminated && !isTiedCandidate
-                      ? 'text-red-700 dark:text-red-300'
-                      : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                      ? 'text-green-800 dark:text-green-200'
-                      : 'text-gray-900 dark:text-white'
-                  }`}>
-                    {candidate.percentage}%
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
-                    {candidate.donatedVotes && candidate.donatedVotes > 0 && (
-                      <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                        +{candidate.donatedVotes}
-                      </span>
-                    )}
-                    <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
+                {/* Show Borda count explanation when tie-breaking occurs */}
+                {hasBordaTieBreaking && (
+                  <BordaCountExplanation 
+                    pollId={results.poll_id}
+                    roundNumber={currentRound.roundNumber}
+                  />
+                )}
+              </React.Fragment>
+            );
           })}
         </div>
       </div>
       
+    </div>
+  );
+}
+
+// Component to show Borda count explanation when tie-breaking occurs
+interface BordaCountExplanationProps {
+  pollId: string;
+  roundNumber: number;
+}
+
+function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationProps) {
+  const [bordaData, setBordaData] = useState<Array<{name: string, borda_score: number, is_eliminated: boolean}>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchBordaScores() {
+      try {
+        const { data, error } = await supabase
+          .from('ranked_choice_rounds')
+          .select('option_name, borda_score, is_eliminated, tie_broken_by_borda')
+          .eq('poll_id', pollId)
+          .eq('round_number', roundNumber)
+          .eq('tie_broken_by_borda', true)
+          .order('borda_score', { ascending: false });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setBordaData(data.map(d => ({
+            name: d.option_name,
+            borda_score: d.borda_score || 0,
+            is_eliminated: d.is_eliminated
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching Borda scores:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchBordaScores();
+  }, [pollId, roundNumber]);
+
+  if (loading || bordaData.length === 0) return null;
+
+  // Find the eliminated candidate and the survivor(s)
+  const eliminatedCandidate = bordaData.find(c => c.is_eliminated);
+  const survivors = bordaData.filter(c => !c.is_eliminated);
+
+  if (!eliminatedCandidate || survivors.length === 0) return null;
+
+  return (
+    <div className="mx-2 my-2 p-3 bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 rounded-r-lg">
+      <div className="flex items-start">
+        <div className="flex-shrink-0">
+          <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <div className="ml-3 flex-1">
+          <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
+            🎯 Borda Count Tie-Breaking Used
+          </h4>
+          <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
+            Multiple candidates tied with the same vote count. Eliminated candidate chosen by Borda score (broader appeal):
+          </p>
+          <div className="space-y-1">
+            {bordaData
+              .sort((a, b) => b.borda_score - a.borda_score)
+              .map((candidate, index) => (
+                <div 
+                  key={candidate.name} 
+                  className={`text-xs flex justify-between items-center px-2 py-1 rounded ${
+                    candidate.is_eliminated 
+                      ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                      : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                  }`}
+                >
+                  <span className="font-medium">
+                    {candidate.name}
+                    {candidate.is_eliminated && ' ❌'}
+                    {!candidate.is_eliminated && ' ✅'}
+                  </span>
+                  <span className="font-mono font-bold">
+                    {candidate.borda_score} Borda pts
+                  </span>
+                </div>
+              ))}
+          </div>
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 italic">
+            {eliminatedCandidate.borda_score === Math.max(...survivors.map(s => s.borda_score)) ? (
+              <span>
+                <strong>{eliminatedCandidate.name}</strong> eliminated by alphabetical tiebreaker (tied at {eliminatedCandidate.borda_score} Borda points with {survivors.map(s => s.name).join(', ')})
+              </span>
+            ) : (
+              <span>
+                <strong>{eliminatedCandidate.name}</strong> eliminated with {eliminatedCandidate.borda_score} Borda points vs {Math.max(...survivors.map(s => s.borda_score))} for survivors
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

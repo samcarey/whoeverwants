@@ -60,6 +60,8 @@ export interface RankedChoiceRound {
   vote_count: number;
   is_eliminated: boolean;
   created_at: string;
+  borda_score?: number;
+  tie_broken_by_borda?: boolean;
 }
 
 // Utility functions
