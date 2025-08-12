@@ -8,6 +8,19 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
+  // Inject build timestamp for development timer
+  webpack: (config, { dev, webpack }) => {
+    if (dev) {
+      // Inject current timestamp when dev server builds
+      config.plugins.push(
+        new webpack.DefinePlugin({
+          'process.env.BUILD_TIMESTAMP': JSON.stringify(Date.now().toString())
+        })
+      );
+    }
+    return config;
+  },
+
   // Headers for tunnel compatibility and environment-specific caching
   async headers() {
     const isDev = process.env.NODE_ENV === 'development';
