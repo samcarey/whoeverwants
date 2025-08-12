@@ -284,6 +284,12 @@ export default function CreatePoll() {
                       type="text"
                       value={option}
                       onChange={(e) => updateOption(index, e.target.value)}
+                      onFocus={(e) => {
+                        // Auto-select pre-filled option text for easy replacement
+                        if (option.startsWith('Option ')) {
+                          e.target.select();
+                        }
+                      }}
                       disabled={isLoading}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={
