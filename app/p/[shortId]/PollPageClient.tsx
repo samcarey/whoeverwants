@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Countdown from "@/components/Countdown";
@@ -23,6 +23,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showSuccessPopup, setShowSuccessPopup] = useState(isNewPoll);
   const [pollUrl, setPollUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
+  const [optionsInitialized, setOptionsInitialized] = useState(false);
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
@@ -48,6 +49,26 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.id]);
 
+  // Initialize ranked choices with randomized options - runs only once
+  useEffect(() => {
+    if (poll.poll_type === 'ranked_choice' && poll.options && !optionsInitialized) {
+      // Parse options if they're stored as JSON string
+      const parsedOptions = typeof poll.options === 'string' 
+        ? JSON.parse(poll.options) 
+        : poll.options;
+      
+      // Randomize the order of options for voters (Fisher-Yates shuffle)
+      const shuffledOptions = [...parsedOptions];
+      for (let i = shuffledOptions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+      }
+      
+      setRankedChoices(shuffledOptions);
+      setOptionsInitialized(true);
+    }
+  }, []); // Empty dependency array - runs only once
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Set the poll URL using query parameter format
@@ -56,21 +77,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     
     // Check if this device created the poll
     setIsCreator(isCreatedByThisDevice(poll.id));
-    
-    // Initialize ranked choices for ranked choice polls
-    if (poll.poll_type === 'ranked_choice' && poll.options) {
-      // Parse options if they're stored as JSON string
-      const parsedOptions = typeof poll.options === 'string' 
-        ? JSON.parse(poll.options) 
-        : poll.options;
-      setRankedChoices([...parsedOptions]);
-    }
 
     // Fetch results if poll is closed
     if (isPollClosed) {
       fetchPollResults();
     }
-  }, [poll.id, poll.poll_type, poll.options, isPollClosed, fetchPollResults]);
+  }, [poll.id, isPollClosed, fetchPollResults]);
 
   const handleRankingChange = (newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
@@ -284,7 +296,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <>
                   {poll.options && (
                     <RankableOptions 
-                      options={typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options} 
+                      options={rankedChoices.length > 0 ? rankedChoices : (typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options)} 
                       onRankingChange={handleRankingChange}
                       disabled={isSubmitting}
                     />
