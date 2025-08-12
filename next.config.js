@@ -10,6 +10,17 @@ export default {
     removeConsole: process.env.NODE_ENV === 'production',
   },
 
+  // Inject build-time constants
+  webpack: (config, { webpack }) => {
+    config.plugins.push(
+      new webpack.DefinePlugin({
+        'process.env.BUILD_TIMESTAMP': JSON.stringify(Date.now()),
+        'process.env.BUILD_TIME_ISO': JSON.stringify(new Date().toISOString()),
+      })
+    );
+    return config;
+  },
+
   // Headers for better caching and mobile performance
   async headers() {
     return [
