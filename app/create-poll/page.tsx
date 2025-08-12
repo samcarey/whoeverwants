@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -31,6 +31,8 @@ export default function CreatePoll() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
 
   // Get today's date in YYYY-MM-DD format (local timezone)
   const getTodayDate = () => {
@@ -41,9 +43,28 @@ export default function CreatePoll() {
     return `${year}-${month}-${day}`;
   };
 
+  // Auto-focus new option fields
+  useEffect(() => {
+    if (shouldFocusNewOption && optionRefs.current.length > 0) {
+      const lastInput = optionRefs.current[optionRefs.current.length - 1];
+      if (lastInput) {
+        // Small delay to ensure DOM is updated
+        setTimeout(() => {
+          lastInput.focus();
+          // For iOS, also trigger click to ensure keyboard appears
+          if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            lastInput.click();
+          }
+        }, 50);
+      }
+      setShouldFocusNewOption(false);
+    }
+  }, [options.length, shouldFocusNewOption]);
+
   // Handle options for ranked choice polls
   const addOption = () => {
     setOptions([...options, '']);
+    setShouldFocusNewOption(true);
   };
 
   const removeOption = (index: number) => {
@@ -56,6 +77,17 @@ export default function CreatePoll() {
     const newOptions = [...options];
     newOptions[index] = value;
     setOptions(newOptions);
+  };
+
+  const handleOptionKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    // If Tab is pressed on the last field and it has content, add a new field
+    if (e.key === 'Tab' && !e.shiftKey && index === options.length - 1) {
+      const currentValue = (e.target as HTMLInputElement).value.trim();
+      if (currentValue !== '') {
+        e.preventDefault();
+        addOption();
+      }
+    }
   };
 
   const deadlineOptions = [
@@ -233,9 +265,13 @@ export default function CreatePoll() {
                 {options.map((option, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <input
+                      ref={(el) => {
+                        optionRefs.current[index] = el;
+                      }}
                       type="text"
                       value={option}
                       onChange={(e) => updateOption(index, e.target.value)}
+                      onKeyDown={(e) => handleOptionKeyDown(index, e)}
                       disabled={isLoading}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={`Option ${index + 1}`}
