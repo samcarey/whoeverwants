@@ -421,55 +421,32 @@ function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationPro
 
   if (!eliminatedCandidate || survivors.length === 0) return null;
 
+  // Determine tie-breaking method
+  const isAlphabeticalTieBreak = eliminatedCandidate.borda_score === Math.max(...survivors.map(s => s.borda_score));
+
   return (
     <div className="mx-2 my-2 p-3 bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 rounded-r-lg">
-      <div className="flex items-start">
-        <div className="flex-shrink-0">
-          <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-          </svg>
+      <div className="text-xs text-amber-700 dark:text-amber-300">
+        <div className="mb-1">Borda scores:</div>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {bordaData
+            .sort((a, b) => b.borda_score - a.borda_score)
+            .map((candidate) => (
+              <span 
+                key={candidate.name}
+                className={`px-2 py-1 rounded font-mono ${
+                  candidate.is_eliminated 
+                    ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                    : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                }`}
+              >
+                {candidate.name}: {candidate.borda_score}
+                {candidate.is_eliminated && ' ❌'}
+              </span>
+            ))}
         </div>
-        <div className="ml-3 flex-1">
-          <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
-            🎯 Borda Count Tie-Breaking Used
-          </h4>
-          <p className="text-xs text-amber-700 dark:text-amber-300 mb-2">
-            Multiple candidates tied with the same vote count. Eliminated candidate chosen by Borda score (broader appeal):
-          </p>
-          <div className="space-y-1">
-            {bordaData
-              .sort((a, b) => b.borda_score - a.borda_score)
-              .map((candidate, index) => (
-                <div 
-                  key={candidate.name} 
-                  className={`text-xs flex justify-between items-center px-2 py-1 rounded ${
-                    candidate.is_eliminated 
-                      ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                      : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                  }`}
-                >
-                  <span className="font-medium">
-                    {candidate.name}
-                    {candidate.is_eliminated && ' ❌'}
-                    {!candidate.is_eliminated && ' ✅'}
-                  </span>
-                  <span className="font-mono font-bold">
-                    {candidate.borda_score} Borda pts
-                  </span>
-                </div>
-              ))}
-          </div>
-          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 italic">
-            {eliminatedCandidate.borda_score === Math.max(...survivors.map(s => s.borda_score)) ? (
-              <span>
-                <strong>{eliminatedCandidate.name}</strong> eliminated by alphabetical tiebreaker (tied at {eliminatedCandidate.borda_score} Borda points with {survivors.map(s => s.name).join(', ')})
-              </span>
-            ) : (
-              <span>
-                <strong>{eliminatedCandidate.name}</strong> eliminated with {eliminatedCandidate.borda_score} Borda points vs {Math.max(...survivors.map(s => s.borda_score))} for survivors
-              </span>
-            )}
-          </p>
+        <div className="italic">
+          Tie broken by {isAlphabeticalTieBreak ? 'alphabetical order' : 'Borda count'}
         </div>
       </div>
     </div>
