@@ -207,14 +207,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           {/* Poll Content Based on Type */}
           {poll.poll_type === 'yes_no' ? (
             <div>
-              {hasVoted ? (
-                <div className="text-center">
-                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
-                    <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
-                    <p className="text-green-700 dark:text-green-300">Your vote for &ldquo;{yesNoChoice}&rdquo; has been recorded.</p>
-                  </div>
-                </div>
-              ) : isPollClosed ? (
+              {isPollClosed ? (
                 <div className="py-6">
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
@@ -230,6 +223,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
                     </div>
                   )}
+                </div>
+              ) : hasVoted ? (
+                <div className="text-center">
+                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
+                    <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
+                    <p className="text-green-700 dark:text-green-300">Your vote for &ldquo;{yesNoChoice}&rdquo; has been recorded.</p>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -274,7 +274,24 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             </div>
           ) : (
             <div>
-              {hasVoted ? (
+              {isPollClosed ? (
+                <div>
+                  {loadingResults ? (
+                    <div className="flex justify-center items-center py-8">
+                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  ) : pollResults ? (
+                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
+                    </div>
+                  )}
+                </div>
+              ) : hasVoted ? (
                 <div className="text-center py-6">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
@@ -293,23 +310,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       ))}
                     </div>
                   </div>
-                </div>
-              ) : isPollClosed ? (
-                <div>
-                  {loadingResults ? (
-                    <div className="flex justify-center items-center py-8">
-                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    </div>
-                  ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
