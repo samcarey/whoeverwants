@@ -51,8 +51,11 @@ export default function CreatePoll() {
     }
   }, [title, options, deadlineOption, customDate, customTime]);
 
-  // Get default date/time values
+  // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
+    if (typeof window === 'undefined') {
+      return { date: '', time: '' };
+    }
     const now = new Date();
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
     const year = oneHourLater.getFullYear();
@@ -73,24 +76,14 @@ export default function CreatePoll() {
       if (saved) {
         try {
           const formState = JSON.parse(saved);
-          const defaultDateTime = getDefaultDateTime();
           setTitle(formState.title || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '5min');
-          setCustomDate(formState.customDate || defaultDateTime.date);
-          setCustomTime(formState.customTime || defaultDateTime.time);
+          setCustomDate(formState.customDate || '');
+          setCustomTime(formState.customTime || '');
         } catch (error) {
           console.error('Failed to load form state:', error);
-          // Set defaults on error
-          const defaultDateTime = getDefaultDateTime();
-          setCustomDate(defaultDateTime.date);
-          setCustomTime(defaultDateTime.time);
         }
-      } else {
-        // No saved state, set defaults
-        const defaultDateTime = getDefaultDateTime();
-        setCustomDate(defaultDateTime.date);
-        setCustomTime(defaultDateTime.time);
       }
     }
   };
@@ -171,8 +164,11 @@ export default function CreatePoll() {
     return getValidationError() === null;
   };
 
-  // Get today's date in YYYY-MM-DD format (local timezone)
+  // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -185,6 +181,15 @@ export default function CreatePoll() {
     setIsClient(true);
     loadFormState();
   }, []);
+
+  // Set default date/time values after client initialization
+  useEffect(() => {
+    if (isClient && !customDate && !customTime) {
+      const defaultDateTime = getDefaultDateTime();
+      setCustomDate(defaultDateTime.date);
+      setCustomTime(defaultDateTime.time);
+    }
+  }, [isClient, customDate, customTime]);
 
   // Save form state whenever form data changes
   useEffect(() => {
@@ -448,29 +453,6 @@ export default function CreatePoll() {
   return (
     <div className="max-w-md mx-auto">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
-        <div className="flex justify-between items-center mb-6">
-          <Link
-            href="/"
-            prefetch={true}
-            className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
-          >
-            <svg
-              className="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12v0"
-              />
-            </svg>
-            Home
-          </Link>
-        </div>
         <h1 className="text-2xl font-bold mb-6 text-center">Create New Poll</h1>
         
         {error && (
@@ -596,7 +578,7 @@ export default function CreatePoll() {
                     value={customDate}
                     onChange={(e) => setCustomDate(e.target.value)}
                     disabled={isLoading}
-                    min={isClient ? getTodayDate() : undefined}
+                    min={isClient ? getTodayDate() : ''}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     required
                   />
@@ -611,7 +593,6 @@ export default function CreatePoll() {
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
                     disabled={isLoading}
-                    min={isClient && customDate === getTodayDate() ? new Date().toTimeString().slice(0, 5) : undefined}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     required
                   />
@@ -652,6 +633,30 @@ export default function CreatePoll() {
               "Submit"
             )}
           </button>
+          
+          <div className="mt-4">
+            <Link
+              href="/"
+              prefetch={true}
+              className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
+            >
+              <svg
+                className="w-4 h-4 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12v0"
+                />
+              </svg>
+              Home
+            </Link>
+          </div>
         </form>
       </div>
     </div>

@@ -15,6 +15,84 @@ curl -s -I https://decisionbot.a.pinggy.link | head -3
 
 **Only mention URLs after confirming 200 OK responses.** Services showing "active" in systemctl does NOT guarantee URL accessibility. The tunnel frequently drops connection while showing active status.
 
+## ⚠️ CRITICAL: HYDRATION ERROR PREVENTION
+
+**React hydration errors occur when server-rendered HTML doesn't match client-rendered HTML.** This breaks the external tunnel site rendering.
+
+### Common Causes & Solutions
+
+#### ❌ **NEVER do this:**
+```typescript
+// Date/time calculations that differ between server/client
+const getTodayDate = () => {
+  const today = new Date(); // ← Different on server vs client!
+  return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+};
+
+// Conditional rendering based on client-side checks
+min={isClient ? getTodayDate() : undefined} // ← Hydration mismatch!
+
+// Direct access to window/localStorage in render
+const value = localStorage.getItem('key') || 'default'; // ← Server doesn't have localStorage
+```
+
+#### ✅ **DO this instead:**
+```typescript
+// Guard date calculations with typeof window check
+const getTodayDate = () => {
+  if (typeof window === 'undefined') {
+    return ''; // ← Same empty value on server
+  }
+  const today = new Date(); // ← Only runs on client
+  return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+};
+
+// Use useEffect for client-only operations
+useEffect(() => {
+  if (isClient && !customDate) {
+    setCustomDate(getTodayDate()); // ← Set after hydration
+  }
+}, [isClient, customDate]);
+
+// Initialize with empty values, populate in useEffect
+const [customDate, setCustomDate] = useState(''); // ← Server/client both start empty
+```
+
+### Testing for Hydration Issues
+
+After making changes that involve:
+- Date/time calculations
+- localStorage access
+- Conditional rendering based on `typeof window`
+- Math.random() or other non-deterministic functions
+
+**ALWAYS test the external tunnel URL immediately** as hydration errors may only appear there due to different rendering conditions.
+
+### Quick Fix Checklist
+
+1. **Replace `new Date()` calls** with `typeof window` guards
+2. **Move client-specific logic** to `useEffect` hooks
+3. **Initialize state with empty/neutral values** that match server rendering
+4. **Test both localhost:3000 AND tunnel URL** after changes
+
+### Emergency Fix Pattern
+
+If you encounter hydration errors:
+
+```typescript
+// Emergency pattern - always works
+const [isClient, setIsClient] = useState(false);
+
+useEffect(() => {
+  setIsClient(true);
+}, []);
+
+// Only render dynamic content after client hydration
+{isClient ? <DynamicComponent /> : <div>Loading...</div>}
+```
+
+---
+
 ## Custom Claude Commands
 
 ### /restart-services
