@@ -23,8 +23,7 @@
     "test:validate": "node tests/run-specific-tests.js all --coverage",
     "db:rebuild-test": "./scripts/complete-migration.sh",
     "db:rebuild-production": "./scripts/complete-migration-production.sh",
-    "db:clear-test": "./scripts/direct-api-migration.sh clear",
-    "tunnel": "ssh -p 443 -R0:localhost:3002 -o StrictHostKeyChecking=no wrr0fLztB5P@a.pinggy.io"
+    "db:clear-test": "./scripts/direct-api-migration.sh clear"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",

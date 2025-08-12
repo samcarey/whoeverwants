@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
-  const [options, setOptions] = useState<string[]>(['', '', '']);
+  const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
     const now = new Date();
@@ -33,6 +33,32 @@ export default function CreatePoll() {
   const router = useRouter();
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
+
+  // Validation for ranked choice options
+  const validateRankedChoiceOptions = () => {
+    if (pollType !== 'ranked_choice') return true;
+    
+    const filledOptions = options.filter(opt => opt.trim() !== '');
+    
+    // Must have at least 2 options
+    if (filledOptions.length < 2) return false;
+    
+    // Each option must have at least 1 character
+    const hasValidLength = filledOptions.every(opt => opt.trim().length >= 1);
+    if (!hasValidLength) return false;
+    
+    // No two options should be exactly the same
+    const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
+    if (uniqueOptions.size !== filledOptions.length) return false;
+    
+    return true;
+  };
+
+  const isFormValid = () => {
+    if (!title.trim()) return false;
+    if (!validateRankedChoiceOptions()) return false;
+    return true;
+  };
 
   // Get today's date in YYYY-MM-DD format (local timezone)
   const getTodayDate = () => {
@@ -71,8 +97,8 @@ export default function CreatePoll() {
       newOptions.push('');
     }
     
-    // Remove trailing empty fields but always keep minimum 3 fields total
-    while (newOptions.length > 3) {
+    // Remove trailing empty fields but always keep at least 1 field
+    while (newOptions.length > 1) {
       const lastIndex = newOptions.length - 1;
       const secondLastIndex = newOptions.length - 2;
       
@@ -84,8 +110,8 @@ export default function CreatePoll() {
       }
     }
     
-    // Ensure we always have at least 3 fields
-    while (newOptions.length < 3) {
+    // Ensure we always have at least 1 field
+    if (newOptions.length === 0) {
       newOptions.push('');
     }
     
@@ -96,8 +122,8 @@ export default function CreatePoll() {
     // Remove the specific option and collapse array
     const newOptions = options.filter((_, i) => i !== index);
     
-    // Ensure we always have at least 3 fields total (2 options + 1 expansion)
-    while (newOptions.length < 3) {
+    // Ensure we always have at least 1 field
+    if (newOptions.length === 0) {
       newOptions.push('');
     }
     
@@ -288,16 +314,21 @@ export default function CreatePoll() {
                       disabled={isLoading}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={
-                        index === 0 ? "Option 1" :
-                        index === 1 ? "Option 2" :
-                        index === options.length - 1 ? "Add another option..." :
-                        `Option ${index + 1}`
+                        (() => {
+                          const filledOptions = options.filter(opt => opt.trim() !== '');
+                          const isLastField = index === options.length - 1;
+                          
+                          if (isLastField) {
+                            return filledOptions.length === 0 ? "Add an option" : "Add another option...";
+                          }
+                          return `Option ${index + 1}`;
+                        })()
                       }
                     />
                     {(() => {
                       const filledOptions = options.filter(opt => opt.trim() !== '');
                       const isLastField = index === options.length - 1;
-                      const canDelete = filledOptions.length >= 3;
+                      const canDelete = filledOptions.length >= 1;
                       
                       if (isLastField) {
                         // Empty space for alignment on the last "Add another option" field
@@ -387,7 +418,7 @@ export default function CreatePoll() {
           
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !isFormValid()}
             className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
