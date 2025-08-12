@@ -93,21 +93,12 @@ export default function CreatePoll() {
   };
 
   const removeOption = (index: number) => {
-    // Always allow clicking trash can, but smart removal logic
-    const newOptions = [...options];
-    newOptions[index] = ''; // Clear the field instead of removing it
+    // Remove the specific option and collapse array
+    const newOptions = options.filter((_, i) => i !== index);
     
-    // Clean up: remove trailing empty fields but keep minimum 3 total
-    while (newOptions.length > 3) {
-      const lastIndex = newOptions.length - 1;
-      const secondLastIndex = newOptions.length - 2;
-      
-      // Only remove if last two fields are empty
-      if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
-        newOptions.pop();
-      } else {
-        break;
-      }
+    // Ensure we always have at least 3 fields total (2 options + 1 expansion)
+    while (newOptions.length < 3) {
+      newOptions.push('');
     }
     
     setOptions(newOptions);
