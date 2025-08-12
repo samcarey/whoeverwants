@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase, Poll } from "@/lib/supabase";
+import { usePrefetch, useViewportPrefetch } from "@/lib/prefetch";
+import { useMobileOptimization, useTouchOptimizedPrefetch, useIOSOptimizations, useBackgroundCompilation } from "@/lib/mobile-optimization";
+import { useInstantLoading, createInstantLink } from "@/lib/instant-loading";
 
 const WINDOW_SIZE = 100; // Keep 100 polls in memory around current position
 const POLL_HEIGHT = 88; // Estimated height of each poll item in pixels
@@ -76,6 +80,17 @@ const PollSpacer = ({ height }: { height: number }) => (
 );
 
 export default function Home() {
+  const router = useRouter();
+  const { prefetch, prefetchOnHover, prefetchBatch } = usePrefetch();
+  const { observeElement } = useViewportPrefetch();
+  const { warmupPage } = useMobileOptimization();
+  const { createTouchHandlers } = useTouchOptimizedPrefetch();
+  
+  // Initialize aggressive mobile optimizations
+  useIOSOptimizations();
+  useBackgroundCompilation();
+  useInstantLoading();
+  
   const [pollsData, setPollsData] = useState<Map<number, Poll>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -104,6 +119,11 @@ export default function Home() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
+
+  // Prefetch critical pages on component mount
+  useEffect(() => {
+    prefetchBatch(['/create-poll'], { priority: 'high' });
+  }, [prefetchBatch]);
 
   const fetchInitialPolls = async () => {
     try {
@@ -343,12 +363,32 @@ export default function Home() {
     });
     
     return { openPolls, closedPolls, loadingPolls };
-  }, [pollsData, windowStart, windowEnd, refreshTrigger]);
+  }, [pollsData, windowStart, windowEnd]);
 
   // Callback to trigger refresh when a poll expires
   const handlePollExpire = useCallback(() => {
     setRefreshTrigger(prev => prev + 1);
   }, []);
+
+  // Prefetch visible polls proactively
+  useEffect(() => {
+    const visiblePolls = Array.from(pollsData.values()).slice(0, 5); // Prefetch first 5 visible polls
+    const pollPaths = visiblePolls.map(poll => `/p/${poll.short_id || poll.id}`);
+    prefetchBatch(pollPaths, { priority: 'low', delay: 1000 }); // Delay to not interfere with initial load
+  }, [pollsData, prefetchBatch]);
+
+  // Set up element refs for viewport-based prefetching
+  const pollRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
+  
+  const setPollRef = useCallback((element: HTMLAnchorElement | null, pollId: string, shortId: string | null | undefined) => {
+    const pollPath = `/p/${shortId || pollId}`;
+    if (element) {
+      pollRefs.current.set(pollPath, element);
+      observeElement(element, pollPath);
+    } else {
+      pollRefs.current.delete(pollPath);
+    }
+  }, [observeElement]);
 
 
   return (
@@ -379,9 +419,11 @@ export default function Home() {
               </svg>
             </a>
             
-            {/* Create Poll button - center */}
+            {/* Create Poll button - center with instant loading */}
             <Link
-              href="/create-poll"
+              {...createInstantLink('/create-poll')}
+              prefetch={true}
+              {...createTouchHandlers('/create-poll')}
               className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
             >
               Create Poll
@@ -455,6 +497,9 @@ export default function Home() {
                             <Link
                               key={`open-poll-${index}-${poll.id}`}
                               href={`/p/${poll.short_id || poll.id}`}
+                              prefetch={false}
+                              ref={(el) => setPollRef(el, poll.id, poll.short_id)}
+                              {...prefetchOnHover(`/p/${poll.short_id || poll.id}`)}
                               className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                             >
                               <div className="flex items-start justify-between mb-2">
@@ -515,6 +560,9 @@ export default function Home() {
                             <Link
                               key={`closed-poll-${index}-${poll.id}`}
                               href={`/p/${poll.short_id || poll.id}`}
+                              prefetch={false}
+                              ref={(el) => setPollRef(el, poll.id, poll.short_id)}
+                              {...prefetchOnHover(`/p/${poll.short_id || poll.id}`)}
                               className="block bg-red-50 dark:bg-red-950/20 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
                             >
                               <div className="mb-2">

@@ -66,12 +66,33 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js')
+                  // Register enhanced service worker for mobile optimization
+                  navigator.serviceWorker.register('/sw-mobile.js')
                     .then(function(registration) {
                       console.log('SW registered: ', registration);
+                      
+                      // Send message to precache critical pages
+                      if (registration.active) {
+                        registration.active.postMessage({
+                          type: 'PRECACHE_PAGES',
+                          pages: ['/', '/create-poll']
+                        });
+                      }
+                      
+                      // Warm up critical pages immediately
+                      setTimeout(() => {
+                        if (registration.active) {
+                          registration.active.postMessage({
+                            type: 'WARM_PAGE',
+                            page: '/create-poll'
+                          });
+                        }
+                      }, 500);
                     })
                     .catch(function(registrationError) {
                       console.log('SW registration failed: ', registrationError);
+                      // Fallback to basic service worker
+                      navigator.serviceWorker.register('/sw.js').catch(() => {});
                     });
                 });
               }

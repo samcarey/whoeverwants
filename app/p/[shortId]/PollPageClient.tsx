@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
 import UrlCopy from "@/components/UrlCopy";
 import SuccessPopup from "@/components/SuccessPopup";
@@ -18,6 +19,8 @@ interface PollPageClientProps {
 }
 
 export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
+  const router = useRouter();
+  const { prefetch } = useAppPrefetch();
   const searchParams = useSearchParams();
   const isNewPoll = searchParams.get("new") === "true";
   const [showSuccessPopup, setShowSuccessPopup] = useState(isNewPoll);
@@ -67,7 +70,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setRankedChoices(shuffledOptions);
       setOptionsInitialized(true);
     }
-  }, []); // Empty dependency array - runs only once
+  }, [poll.poll_type, poll.options, optionsInitialized]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -357,6 +360,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           <div className="flex justify-between items-center mt-1">
             <Link
               href="/"
+              prefetch={true}
               className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
             >
               <svg

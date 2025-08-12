@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, storePollCreation, cleanupOldPolls } from "@/lib/pollCreator";
 
 export const dynamic = 'force-dynamic';
 
 export default function CreatePoll() {
+  const { prefetch } = useAppPrefetch();
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
@@ -34,7 +36,7 @@ export default function CreatePoll() {
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
 
   // Save form state to localStorage
-  const saveFormState = () => {
+  const saveFormState = useCallback(() => {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
@@ -45,7 +47,7 @@ export default function CreatePoll() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  };
+  }, [title, options, deadlineOption, customDate, customTime]);
 
   // Load form state from localStorage
   const loadFormState = () => {
@@ -172,7 +174,7 @@ export default function CreatePoll() {
   // Save form state whenever form data changes
   useEffect(() => {
     saveFormState();
-  }, [title, options, deadlineOption, customDate, customTime]);
+  }, [saveFormState]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -571,6 +573,7 @@ export default function CreatePoll() {
         <div className="text-center mt-6">
           <Link
             href="/"
+            prefetch={true}
             className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
           >
             <svg
