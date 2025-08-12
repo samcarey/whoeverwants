@@ -80,10 +80,12 @@ export default function CreatePoll() {
   };
 
   const handleOptionKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    // If Tab is pressed on the last field and it has content, add a new field
-    if (e.key === 'Tab' && !e.shiftKey && index === options.length - 1) {
-      const currentValue = (e.target as HTMLInputElement).value.trim();
-      if (currentValue !== '') {
+    const currentValue = (e.target as HTMLInputElement).value.trim();
+    const isLastField = index === options.length - 1;
+    
+    // If Tab or ArrowDown is pressed on the last field and it has content, add a new field
+    if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'ArrowDown') {
+      if (isLastField && currentValue !== '') {
         e.preventDefault();
         addOption();
       }
