@@ -241,7 +241,19 @@ export default function Home() {
       setPollsData(prev => {
         const newData = new Map();
         
-        // Copy existing data in the new window range
+        // First, preserve all open polls regardless of window position
+        // This prevents open polls from disappearing during scroll
+        for (const [index, poll] of prev) {
+          const hasDeadline = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+          const isManuallyClosed = poll.is_closed;
+          const isOpen = hasDeadline && !isManuallyClosed;
+          
+          if (isOpen) {
+            newData.set(index, poll);
+          }
+        }
+        
+        // Then copy existing data in the new window range
         for (let i = newWindowStart; i < newWindowEnd; i++) {
           if (prev.has(i)) {
             newData.set(i, prev.get(i)!);
