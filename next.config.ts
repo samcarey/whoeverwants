@@ -8,8 +8,10 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
-  // Headers for tunnel compatibility
+  // Headers for tunnel compatibility and environment-specific caching
   async headers() {
+    const isDev = process.env.NODE_ENV === 'development';
+    
     return [
       {
         source: '/(.*)',
@@ -22,6 +24,13 @@ const nextConfig: NextConfig = {
             key: 'Access-Control-Allow-Origin',
             value: '*'
           },
+          // Cache control for pages
+          {
+            key: 'Cache-Control',
+            value: isDev 
+              ? 'no-cache, no-store, must-revalidate, max-age=0'
+              : 'public, max-age=3600, stale-while-revalidate=3600'
+          },
         ],
       },
       {
@@ -29,11 +38,25 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value: isDev
+              ? 'no-cache, no-store, must-revalidate, max-age=0'
+              : 'public, max-age=31536000, immutable',
           },
           {
             key: 'Access-Control-Allow-Origin',
             value: '*'
+          },
+        ],
+      },
+      // API routes caching
+      {
+        source: '/api/(.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: isDev
+              ? 'no-cache, no-store, must-revalidate, max-age=0'
+              : 'public, max-age=3600, stale-while-revalidate=3600'
           },
         ],
       },
