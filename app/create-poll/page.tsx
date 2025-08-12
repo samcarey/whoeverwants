@@ -93,18 +93,24 @@ export default function CreatePoll() {
   };
 
   const removeOption = (index: number) => {
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    // Only allow removal if we have more than 2 filled options and not removing required fields
-    if (filledOptions.length > 2 && options.length > 3) {
-      const newOptions = options.filter((_, i) => i !== index);
+    // Always allow clicking trash can, but smart removal logic
+    const newOptions = [...options];
+    newOptions[index] = ''; // Clear the field instead of removing it
+    
+    // Clean up: remove trailing empty fields but keep minimum 3 total
+    while (newOptions.length > 3) {
+      const lastIndex = newOptions.length - 1;
+      const secondLastIndex = newOptions.length - 2;
       
-      // Ensure we always have at least 3 fields total
-      while (newOptions.length < 3) {
-        newOptions.push('');
+      // Only remove if last two fields are empty
+      if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
+        newOptions.pop();
+      } else {
+        break;
       }
-      
-      setOptions(newOptions);
     }
+    
+    setOptions(newOptions);
   };
 
   const deadlineOptions = [
@@ -297,22 +303,16 @@ export default function CreatePoll() {
                         `Option ${index + 1}`
                       }
                     />
-                    {(() => {
-                      const filledOptions = options.filter(opt => opt.trim() !== '');
-                      // Only show remove button for extra fields (beyond first 3) that have content
-                      return index >= 3 && option.trim() !== '' && filledOptions.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => removeOption(index)}
-                        disabled={isLoading}
-                        className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                      );
-                    })()}
+                    <button
+                      type="button"
+                      onClick={() => removeOption(index)}
+                      disabled={isLoading}
+                      className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
