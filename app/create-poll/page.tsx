@@ -448,6 +448,29 @@ export default function CreatePoll() {
   return (
     <div className="max-w-md mx-auto">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
+        <div className="flex justify-between items-center mb-6">
+          <Link
+            href="/"
+            prefetch={true}
+            className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
+          >
+            <svg
+              className="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12v0"
+              />
+            </svg>
+            Home
+          </Link>
+        </div>
         <h1 className="text-2xl font-bold mb-6 text-center">Create New Poll</h1>
         
         {error && (
@@ -630,30 +653,6 @@ export default function CreatePoll() {
             )}
           </button>
         </form>
-        
-        <div className="text-center mt-6">
-          <Link
-            href="/"
-            prefetch={true}
-            className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
-          >
-            <svg
-              className="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12v0"
-              />
-            </svg>
-            Home
-          </Link>
-        </div>
       </div>
     </div>
   );

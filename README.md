@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Whoever Wants
 
-## Getting Started
+A simple tool for helping people decide what to do.
 
-First, run the development server:
+**Try it out: [whoeverwants.com](https://whoeverwants.com)**
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## What is this?
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Whoever Wants is a lightweight, anonymous polling app that helps groups make decisions together. Whether you're deciding where to eat, what movie to watch, or any other group decision - this tool makes it easy to collect everyone's preferences without the hassle of accounts or sign-ups.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **No accounts required** - Create and vote on polls completely anonymously
+- **Yes/No polls** - Simple binary decisions
+- **Ranked choice voting** - For when you have multiple options and want to find the best consensus
+- **Time-limited polls** - Set deadlines to keep decisions moving
+- **Share via link** - Just send the URL to collect responses
+- **Mobile optimized** - Works great on any device
 
-## Learn More
+## About the Code
 
-To learn more about Next.js, take a look at the following resources:
+This app is mostly vibe coded - built with intuition and iteration rather than rigid planning. It's a Next.js app with Supabase for the backend, but the real magic is in keeping things simple and functional.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Contributing
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
-## Deploy on Vercel
+## License
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open source - do whatever you want with it.
