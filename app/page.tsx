@@ -414,11 +414,11 @@ export default function Home() {
               href="https://github.com/samcarey/whoeverwants"
               target="_blank"
               rel="noopener noreferrer"
-              className="absolute left-4 rounded-full transition-colors flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 h-6 w-6"
+              className="absolute left-4 rounded-full transition-colors flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 h-9 w-9"
               title="View on GitHub"
             >
               <svg
-                className="w-6 h-6"
+                className="w-9 h-9"
                 fill="currentColor"
                 viewBox="0 0 24 24"
                 xmlns="http://www.w3.org/2000/svg"
