@@ -153,12 +153,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
         }
         
         setCurrentRoundIndex(initialRoundIndex);
-        
-        // Set URL hash to reflect the initial round
-        const initialRoundNumber = initialRoundIndex + 1;
-        if (!window.location.hash || !window.location.hash.match(/^#round\d+$/)) {
-          window.history.replaceState(null, '', `#round${initialRoundNumber}`);
-        }
       } catch (error) {
         console.error('Error processing ranked choice data:', error);
       } finally {
@@ -168,6 +162,14 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
 
     fetchAndProcessData();
   }, [results.poll_id, results.total_votes, results.winner]);
+
+  // Update URL hash when round index changes
+  useEffect(() => {
+    if (roundVisualizations.length > 0) {
+      const roundNumber = currentRoundIndex + 1;
+      window.history.replaceState(null, '', `#round${roundNumber}`);
+    }
+  }, [currentRoundIndex, roundVisualizations.length]);
 
   // Touch handlers for swipe functionality
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -205,10 +207,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
       } else {
         finalIndex = newIndex;
       }
-      
-      // Update URL hash to reflect current round
-      const roundNumber = finalIndex + 1; // Convert to 1-based round number
-      window.history.replaceState(null, '', `#round${roundNumber}`);
       
       return finalIndex;
     });
