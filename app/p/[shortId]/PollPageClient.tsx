@@ -37,8 +37,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   const [isCreator, setIsCreator] = useState(false);
 
-  const isPollExpired = poll.response_deadline && new Date(poll.response_deadline) <= new Date();
-  const isPollClosed = pollClosed || isPollExpired;
+  const isPollExpired = useMemo(() => 
+    poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
+    [poll.response_deadline]
+  );
+  
+  const isPollClosed = useMemo(() => 
+    pollClosed || isPollExpired, 
+    [pollClosed, isPollExpired]
+  );
 
   const fetchPollResults = useCallback(async () => {
     setLoadingResults(true);
@@ -80,12 +87,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     
     // Check if this device created the poll
     setIsCreator(isCreatedByThisDevice(poll.id));
+  }, [poll.id]);
 
-    // Fetch results if poll is closed
-    if (isPollClosed) {
+  // Separate effect to fetch results when poll closes
+  useEffect(() => {
+    // Fetch results if poll is closed (reactive to state changes)
+    const isClosed = pollClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
+    if (isClosed) {
       fetchPollResults();
     }
-  }, [poll.id, isPollClosed, fetchPollResults]);
+  }, [pollClosed, poll.response_deadline, fetchPollResults]);
 
   const handleRankingChange = (newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
@@ -172,6 +183,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       setHasVoted(true);
+      
+      // If the poll is closed, fetch results immediately after voting
+      if (isPollClosed) {
+        await fetchPollResults();
+      }
     } catch (error) {
       console.error('Unexpected error:', error);
       setVoteError("An unexpected error occurred. Please try again.");

@@ -15,6 +15,23 @@ curl -s -I https://decisionbot.a.pinggy.link | head -3
 
 **Only mention URLs after confirming 200 OK responses.** Services showing "active" in systemctl does NOT guarantee URL accessibility. The tunnel frequently drops connection while showing active status.
 
+## Custom Claude Commands
+
+### /restart-services
+Restart both the development server and tunnel services:
+
+```bash
+./scripts/restart-services.sh
+```
+
+This script will:
+- Kill any existing processes on port 3000
+- Kill any running tunnel processes  
+- Start dev server on port 3000
+- Wait for dev server to initialize
+- Start Pinggy tunnel to expose port 3000
+- Test both services and report status
+
 ## 🚀 AUTO-STARTING SERVICES
 
 This project has systemd services configured to automatically run the development server and Pinggy tunnel on system boot.
