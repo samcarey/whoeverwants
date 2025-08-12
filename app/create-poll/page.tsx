@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
-  const [options, setOptions] = useState<string[]>(['Option 1', 'Option 2', '']);
+  const [options, setOptions] = useState<string[]>(['', '', '']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
     const now = new Date();
@@ -66,25 +66,27 @@ export default function CreatePoll() {
     const newOptions = [...options];
     newOptions[index] = value;
     
-    // If this is the last field and now has content, add a new empty field
+    // If typing in the last field and it now has content, add expansion field
     if (index === options.length - 1 && value.trim() !== '') {
       newOptions.push('');
-      setShouldFocusNewOption(false); // Don't auto-focus the new empty field
     }
     
-    // Remove trailing empty fields (except always keep at least one empty field at the end)
-    const filledOptions = newOptions.filter(opt => opt.trim() !== '');
-    if (filledOptions.length >= 2) {
-      // Keep all filled options plus one empty field at the end
-      const lastEmptyIndex = newOptions.length - 1;
-      while (newOptions.length > filledOptions.length + 1 && newOptions[lastEmptyIndex - 1] === '') {
-        newOptions.splice(lastEmptyIndex - 1, 1);
+    // Remove trailing empty fields but always keep minimum 3 fields total
+    while (newOptions.length > 3) {
+      const lastIndex = newOptions.length - 1;
+      const secondLastIndex = newOptions.length - 2;
+      
+      // Only remove if last two fields are empty
+      if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
+        newOptions.pop();
+      } else {
+        break;
       }
-    } else {
-      // Ensure we always have at least 2 fields (for minimum requirement)
-      while (newOptions.length < 2) {
-        newOptions.push('');
-      }
+    }
+    
+    // Ensure we always have at least 3 fields
+    while (newOptions.length < 3) {
+      newOptions.push('');
     }
     
     setOptions(newOptions);
@@ -92,13 +94,15 @@ export default function CreatePoll() {
 
   const removeOption = (index: number) => {
     const filledOptions = options.filter(opt => opt.trim() !== '');
-    // Only allow removal if we have more than 2 filled options
-    if (filledOptions.length > 2) {
+    // Only allow removal if we have more than 2 filled options and not removing required fields
+    if (filledOptions.length > 2 && options.length > 3) {
       const newOptions = options.filter((_, i) => i !== index);
-      // Ensure we always have an empty field at the end
-      if (newOptions.length === 0 || newOptions[newOptions.length - 1].trim() !== '') {
+      
+      // Ensure we always have at least 3 fields total
+      while (newOptions.length < 3) {
         newOptions.push('');
       }
+      
       setOptions(newOptions);
     }
   };
@@ -284,24 +288,19 @@ export default function CreatePoll() {
                       type="text"
                       value={option}
                       onChange={(e) => updateOption(index, e.target.value)}
-                      onFocus={(e) => {
-                        // Auto-select pre-filled option text for easy replacement
-                        if (option.startsWith('Option ')) {
-                          e.target.select();
-                        }
-                      }}
                       disabled={isLoading}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={
-                        index === options.length - 1 && option === '' 
-                          ? "Add another option..." 
-                          : `Option ${index + 1}`
+                        index === 0 ? "Option 1" :
+                        index === 1 ? "Option 2" :
+                        index === options.length - 1 ? "Add another option..." :
+                        `Option ${index + 1}`
                       }
-                      required={option.trim() !== ''}
                     />
                     {(() => {
                       const filledOptions = options.filter(opt => opt.trim() !== '');
-                      return filledOptions.length > 2 && option.trim() !== '' && (
+                      // Only show remove button for extra fields (beyond first 3) that have content
+                      return index >= 3 && option.trim() !== '' && filledOptions.length > 2 && (
                       <button
                         type="button"
                         onClick={() => removeOption(index)}
