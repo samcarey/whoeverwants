@@ -14,26 +14,28 @@ export default function CreatePoll() {
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
-  const [customDate, setCustomDate] = useState(() => {
-    const now = new Date();
-    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    const year = oneHourLater.getFullYear();
-    const month = String(oneHourLater.getMonth() + 1).padStart(2, '0');
-    const day = String(oneHourLater.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  });
-  const [customTime, setCustomTime] = useState(() => {
-    const now = new Date();
-    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-    const hours = String(oneHourLater.getHours()).padStart(2, '0');
-    const minutes = String(oneHourLater.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
-  });
+  const [customDate, setCustomDate] = useState('');
+  const [customTime, setCustomTime] = useState('');
+  const [isClient, setIsClient] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
+  const isSubmittingRef = useRef(false);
+
+  // Helper to re-enable form elements
+  const reEnableForm = useCallback((form: HTMLFormElement | null) => {
+    if (form) {
+      const inputs = form.querySelectorAll('input, select, button');
+      inputs.forEach(input => {
+        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
+          input.disabled = false;
+        }
+      });
+    }
+  }, []);
 
   // Save form state to localStorage
   const saveFormState = useCallback(() => {
@@ -49,6 +51,21 @@ export default function CreatePoll() {
     }
   }, [title, options, deadlineOption, customDate, customTime]);
 
+  // Get default date/time values
+  const getDefaultDateTime = () => {
+    const now = new Date();
+    const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+    const year = oneHourLater.getFullYear();
+    const month = String(oneHourLater.getMonth() + 1).padStart(2, '0');
+    const day = String(oneHourLater.getDate()).padStart(2, '0');
+    const hours = String(oneHourLater.getHours()).padStart(2, '0');
+    const minutes = String(oneHourLater.getMinutes()).padStart(2, '0');
+    return {
+      date: `${year}-${month}-${day}`,
+      time: `${hours}:${minutes}`
+    };
+  };
+
   // Load form state from localStorage
   const loadFormState = () => {
     if (typeof window !== 'undefined') {
@@ -56,27 +73,24 @@ export default function CreatePoll() {
       if (saved) {
         try {
           const formState = JSON.parse(saved);
+          const defaultDateTime = getDefaultDateTime();
           setTitle(formState.title || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '5min');
-          setCustomDate(formState.customDate || (() => {
-            const now = new Date();
-            const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-            const year = oneHourLater.getFullYear();
-            const month = String(oneHourLater.getMonth() + 1).padStart(2, '0');
-            const day = String(oneHourLater.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          })());
-          setCustomTime(formState.customTime || (() => {
-            const now = new Date();
-            const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-            const hours = String(oneHourLater.getHours()).padStart(2, '0');
-            const minutes = String(oneHourLater.getMinutes()).padStart(2, '0');
-            return `${hours}:${minutes}`;
-          })());
+          setCustomDate(formState.customDate || defaultDateTime.date);
+          setCustomTime(formState.customTime || defaultDateTime.time);
         } catch (error) {
           console.error('Failed to load form state:', error);
+          // Set defaults on error
+          const defaultDateTime = getDefaultDateTime();
+          setCustomDate(defaultDateTime.date);
+          setCustomTime(defaultDateTime.time);
         }
+      } else {
+        // No saved state, set defaults
+        const defaultDateTime = getDefaultDateTime();
+        setCustomDate(defaultDateTime.date);
+        setCustomTime(defaultDateTime.time);
       }
     }
   };
@@ -166,8 +180,9 @@ export default function CreatePoll() {
     return `${year}-${month}-${day}`;
   };
 
-  // Load saved form state on component mount
+  // Initialize client-side state
   useEffect(() => {
+    setIsClient(true);
     loadFormState();
   }, []);
 
@@ -315,10 +330,30 @@ export default function CreatePoll() {
     return ` (${displayParts.join(', ')})`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent duplicate submissions - check ref first for immediate blocking
+    if (isSubmittingRef.current) {
+      return;
+    }
+    
+    // Set ref immediately to block subsequent clicks
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
+    
+    // Disable the entire form to prevent any interaction
+    const form = e.target instanceof HTMLElement ? e.target.closest('form') : null;
+    if (form) {
+      const inputs = form.querySelectorAll('input, select, button');
+      inputs.forEach(input => {
+        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
+          input.disabled = true;
+        }
+      });
+    }
     
     try {
       // Check for validation errors before submission
@@ -326,6 +361,8 @@ export default function CreatePoll() {
       if (validationError) {
         setError(validationError);
         setIsLoading(false);
+        isSubmittingRef.current = false;
+        reEnableForm(form);
         return;
       }
       
@@ -339,6 +376,8 @@ export default function CreatePoll() {
         if (!customDate || !customTime) {
           setError("Please select both a custom deadline date and time.");
           setIsLoading(false);
+          isSubmittingRef.current = false;
+          reEnableForm(form);
           return;
         }
         
@@ -346,6 +385,8 @@ export default function CreatePoll() {
         if (customDateTime <= new Date()) {
           setError("Custom deadline must be in the future.");
           setIsLoading(false);
+          isSubmittingRef.current = false;
+          reEnableForm(form);
           return;
         }
       }
@@ -374,6 +415,9 @@ export default function CreatePoll() {
       if (error) {
         console.error("Error creating poll:", error);
         setError("Failed to create poll. Please try again.");
+        setIsLoading(false);
+        isSubmittingRef.current = false;
+        reEnableForm(form);
         return;
       }
 
@@ -385,6 +429,9 @@ export default function CreatePoll() {
 
       // Clear saved form state since poll was created successfully
       clearFormState();
+      
+      // Mark as submitted to prevent further submissions
+      setIsSubmitted(true);
 
       // Use short_id if available, otherwise fall back to UUID
       const redirectId = data[0].short_id || data[0].id;
@@ -392,8 +439,9 @@ export default function CreatePoll() {
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
-    } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
+      reEnableForm(form);
     }
   };
 
@@ -409,7 +457,11 @@ export default function CreatePoll() {
         )}
         
         
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // Do nothing - all submission is handled by button onClick
+        }} className="space-y-6">
           <div>
             <label htmlFor="title" className="block text-sm font-medium mb-2">
               Poll Title
@@ -521,7 +573,7 @@ export default function CreatePoll() {
                     value={customDate}
                     onChange={(e) => setCustomDate(e.target.value)}
                     disabled={isLoading}
-                    min={getTodayDate()}
+                    min={isClient ? getTodayDate() : undefined}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     required
                   />
@@ -536,7 +588,7 @@ export default function CreatePoll() {
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
                     disabled={isLoading}
-                    min={customDate === getTodayDate() ? new Date().toTimeString().slice(0, 5) : undefined}
+                    min={isClient && customDate === getTodayDate() ? new Date().toTimeString().slice(0, 5) : undefined}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     required
                   />
@@ -552,11 +604,20 @@ export default function CreatePoll() {
           )}
           
           <button
-            type="submit"
-            disabled={isLoading || !isFormValid()}
+            type="button"
+            onClick={handleSubmit}
+            disabled={isLoading || isSubmitted || !isFormValid()}
             className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? (
+            {isSubmitted ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Redirecting...
+              </>
+            ) : isLoading ? (
               <>
                 <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
