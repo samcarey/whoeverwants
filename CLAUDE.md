@@ -1,5 +1,20 @@
 # WhoeverWants Development Environment
 
+## ⚠️ CRITICAL: URL TESTING PROTOCOL
+
+**NEVER mention a URL as working without testing it first.**
+
+Before claiming any URL is accessible, ALWAYS run:
+```bash
+# Test local dev server
+curl -s -I http://localhost:3002 | head -3
+
+# Test public tunnel  
+curl -s -I https://decisionbot.a.pinggy.link | head -3
+```
+
+**Only mention URLs after confirming 200 OK responses.** Services showing "active" in systemctl does NOT guarantee URL accessibility. The tunnel frequently drops connection while showing active status.
+
 ## 🚀 AUTO-STARTING SERVICES
 
 This project has systemd services configured to automatically run the development server and Pinggy tunnel on system boot.
