@@ -46,6 +46,18 @@ export default function CreatePoll() {
       return "Please enter a poll title.";
     }
 
+    // Check custom deadline if selected
+    if (deadlineOption === "custom") {
+      if (!customDate || !customTime) {
+        return "Please select both a custom deadline date and time.";
+      }
+      
+      const customDateTime = new Date(`${customDate}T${customTime}`);
+      if (customDateTime <= new Date()) {
+        return "Custom deadline must be in the future.";
+      }
+    }
+
     const filledOptions = options.filter(opt => opt.trim() !== '');
     const emptyOptions = options.filter(opt => opt.trim() === '');
     const pollType = getPollType();
@@ -203,6 +215,39 @@ export default function CreatePoll() {
     const timeString = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     return `${selected.label} (${timeString})`;
+  };
+
+  // Calculate and format time until custom deadline
+  const getCustomDeadlineDisplay = () => {
+    if (!customDate || !customTime) return "";
+    
+    const now = new Date();
+    const customDateTime = new Date(`${customDate}T${customTime}`);
+    const diff = customDateTime.getTime() - now.getTime();
+    
+    if (diff <= 0) return " (in the past)";
+    
+    const totalMinutes = Math.floor(diff / (1000 * 60));
+    const totalHours = Math.floor(totalMinutes / 60);
+    const totalDays = Math.floor(totalHours / 24);
+    const totalYears = Math.floor(totalDays / 365);
+    
+    const years = totalYears;
+    const days = totalDays - (years * 365);
+    const hours = totalHours - (totalDays * 24);
+    const minutes = totalMinutes - (totalHours * 60);
+    
+    const parts = [];
+    if (years > 0) parts.push(`${years} year${years !== 1 ? 's' : ''}`);
+    if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+    if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+    if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'min' : 'mins'}`);
+    
+    // Return only the two most significant non-zero parts
+    const displayParts = parts.slice(0, 2);
+    if (displayParts.length === 0) return " (less than 1 min)";
+    
+    return ` (${displayParts.join(', ')})`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -395,7 +440,7 @@ export default function CreatePoll() {
           {deadlineOption === "custom" && (
             <div>
               <label className="block text-sm font-medium mb-2">
-                Custom Deadline
+                Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -423,6 +468,7 @@ export default function CreatePoll() {
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
                     disabled={isLoading}
+                    min={customDate === getTodayDate() ? new Date().toTimeString().slice(0, 5) : undefined}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     required
                   />
