@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
 
 interface CompactRankedChoiceResultsProps {
@@ -24,6 +25,7 @@ interface RoundVisualization {
 }
 
 export default function CompactRankedChoiceResults({ results, isPollClosed }: CompactRankedChoiceResultsProps) {
+  const router = useRouter();
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -120,8 +122,26 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
         }
         
         setRoundVisualizations(visualizations);
-        // Start at the final round (last index)
-        setCurrentRoundIndex(visualizations.length - 1);
+        
+        // Check if there's a round specified in the URL hash
+        const hashMatch = window.location.hash.match(/^#round(\d+)$/);
+        let initialRoundIndex = visualizations.length - 1; // Default to final round
+        
+        if (hashMatch) {
+          const roundNumber = parseInt(hashMatch[1], 10);
+          const roundIndex = roundNumber - 1; // Convert to 0-based index
+          if (roundIndex >= 0 && roundIndex < visualizations.length) {
+            initialRoundIndex = roundIndex;
+          }
+        }
+        
+        setCurrentRoundIndex(initialRoundIndex);
+        
+        // Set URL hash to reflect the initial round
+        const initialRoundNumber = initialRoundIndex + 1;
+        if (!window.location.hash || !window.location.hash.match(/^#round\d+$/)) {
+          window.history.replaceState(null, '', `#round${initialRoundNumber}`);
+        }
       } catch (error) {
         console.error('Error processing ranked choice data:', error);
       } finally {
@@ -159,12 +179,21 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
   const navigateRound = (direction: number) => {
     setCurrentRoundIndex(prevIndex => {
       const newIndex = prevIndex + direction;
+      let finalIndex: number;
+      
       if (newIndex < 0) {
-        return roundVisualizations.length - 1; // Loop to end
+        finalIndex = roundVisualizations.length - 1; // Loop to end
       } else if (newIndex >= roundVisualizations.length) {
-        return 0; // Loop to beginning
+        finalIndex = 0; // Loop to beginning
+      } else {
+        finalIndex = newIndex;
       }
-      return newIndex;
+      
+      // Update URL hash to reflect current round
+      const roundNumber = finalIndex + 1; // Convert to 1-based round number
+      window.history.replaceState(null, '', `#round${roundNumber}`);
+      
+      return finalIndex;
     });
   };
 
