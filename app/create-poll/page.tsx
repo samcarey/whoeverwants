@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
-  const [options, setOptions] = useState<string[]>(['', '']);
+  const [options, setOptions] = useState<string[]>(['Option 1', 'Option 2', '']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
     const now = new Date();
