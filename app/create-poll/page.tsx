@@ -62,33 +62,44 @@ export default function CreatePoll() {
   }, [options.length, shouldFocusNewOption]);
 
   // Handle options for ranked choice polls
-  const addOption = () => {
-    setOptions([...options, '']);
-    setShouldFocusNewOption(true);
-  };
-
-  const removeOption = (index: number) => {
-    if (options.length > 2) {
-      setOptions(options.filter((_, i) => i !== index));
-    }
-  };
-
   const updateOption = (index: number, value: string) => {
     const newOptions = [...options];
     newOptions[index] = value;
+    
+    // If this is the last field and now has content, add a new empty field
+    if (index === options.length - 1 && value.trim() !== '') {
+      newOptions.push('');
+      setShouldFocusNewOption(false); // Don't auto-focus the new empty field
+    }
+    
+    // Remove trailing empty fields (except always keep at least one empty field at the end)
+    const filledOptions = newOptions.filter(opt => opt.trim() !== '');
+    if (filledOptions.length >= 2) {
+      // Keep all filled options plus one empty field at the end
+      const lastEmptyIndex = newOptions.length - 1;
+      while (newOptions.length > filledOptions.length + 1 && newOptions[lastEmptyIndex - 1] === '') {
+        newOptions.splice(lastEmptyIndex - 1, 1);
+      }
+    } else {
+      // Ensure we always have at least 2 fields (for minimum requirement)
+      while (newOptions.length < 2) {
+        newOptions.push('');
+      }
+    }
+    
     setOptions(newOptions);
   };
 
-  const handleOptionKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    const currentValue = (e.target as HTMLInputElement).value.trim();
-    const isLastField = index === options.length - 1;
-    
-    // If Tab or ArrowDown is pressed on the last field and it has content, add a new field
-    if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'ArrowDown') {
-      if (isLastField && currentValue !== '') {
-        e.preventDefault();
-        addOption();
+  const removeOption = (index: number) => {
+    const filledOptions = options.filter(opt => opt.trim() !== '');
+    // Only allow removal if we have more than 2 filled options
+    if (filledOptions.length > 2) {
+      const newOptions = options.filter((_, i) => i !== index);
+      // Ensure we always have an empty field at the end
+      if (newOptions.length === 0 || newOptions[newOptions.length - 1].trim() !== '') {
+        newOptions.push('');
       }
+      setOptions(newOptions);
     }
   };
 
@@ -273,13 +284,18 @@ export default function CreatePoll() {
                       type="text"
                       value={option}
                       onChange={(e) => updateOption(index, e.target.value)}
-                      onKeyDown={(e) => handleOptionKeyDown(index, e)}
                       disabled={isLoading}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder={`Option ${index + 1}`}
-                      required
+                      placeholder={
+                        index === options.length - 1 && option === '' 
+                          ? "Add another option..." 
+                          : `Option ${index + 1}`
+                      }
+                      required={option.trim() !== ''}
                     />
-                    {options.length > 2 && (
+                    {(() => {
+                      const filledOptions = options.filter(opt => opt.trim() !== '');
+                      return filledOptions.length > 2 && option.trim() !== '' && (
                       <button
                         type="button"
                         onClick={() => removeOption(index)}
@@ -290,17 +306,10 @@ export default function CreatePoll() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
-                    )}
+                      );
+                    })()}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={addOption}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  + Add Option
-                </button>
               </div>
             </div>
           )}
