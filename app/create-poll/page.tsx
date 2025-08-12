@@ -39,32 +39,55 @@ export default function CreatePoll() {
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
   };
 
-  // Validation for poll options
-  const validateOptions = () => {
+  // Validation for poll options with specific error messages
+  const getValidationError = (): string | null => {
+    // Check title first
+    if (!title.trim()) {
+      return "Please enter a poll title.";
+    }
+
     const filledOptions = options.filter(opt => opt.trim() !== '');
+    const emptyOptions = options.filter(opt => opt.trim() === '');
     const pollType = getPollType();
     
+    // If we have any filled options, check that there are no empty fields in between
+    if (filledOptions.length > 0) {
+      // Find the last filled option index
+      let lastFilledIndex = -1;
+      for (let i = options.length - 1; i >= 0; i--) {
+        if (options[i].trim() !== '') {
+          lastFilledIndex = i;
+          break;
+        }
+      }
+      
+      // Check if there are any empty fields before the last filled option
+      for (let i = 0; i <= lastFilledIndex; i++) {
+        if (options[i].trim() === '') {
+          return "Please fill in all option fields or remove empty ones.";
+        }
+      }
+    }
+    
     // If no options (yes/no poll), that's valid
-    if (filledOptions.length === 0) return true;
+    if (filledOptions.length === 0) return null;
     
     // If there are options (ranked choice), must have at least 2
-    if (filledOptions.length < 2) return false;
-    
-    // Each option must have at least 1 character
-    const hasValidLength = filledOptions.every(opt => opt.trim().length >= 1);
-    if (!hasValidLength) return false;
+    if (filledOptions.length === 1) {
+      return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
+    }
     
     // No two options should be exactly the same
     const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
-    if (uniqueOptions.size !== filledOptions.length) return false;
+    if (uniqueOptions.size !== filledOptions.length) {
+      return "All poll options must be unique (no duplicates).";
+    }
     
-    return true;
+    return null;
   };
 
   const isFormValid = () => {
-    if (!title.trim()) return false;
-    if (!validateOptions()) return false;
-    return true;
+    return getValidationError() === null;
   };
 
   // Get today's date in YYYY-MM-DD format (local timezone)
@@ -188,15 +211,17 @@ export default function CreatePoll() {
     setError(null);
     
     try {
-      // Determine poll type and validate options
-      const pollType = getPollType();
-      const filledOptions = options.filter(opt => opt.trim() !== '');
-      
-      if (pollType === 'ranked_choice' && filledOptions.length < 2) {
-        setError("Please provide at least 2 options for a ranked choice poll.");
+      // Check for validation errors before submission
+      const validationError = getValidationError();
+      if (validationError) {
+        setError(validationError);
         setIsLoading(false);
         return;
       }
+      
+      // Determine poll type and get options
+      const pollType = getPollType();
+      const filledOptions = options.filter(opt => opt.trim() !== '');
 
       const responseDeadline = calculateDeadline();
       
@@ -269,6 +294,7 @@ export default function CreatePoll() {
             {error}
           </div>
         )}
+        
         
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -402,6 +428,12 @@ export default function CreatePoll() {
                   />
                 </div>
               </div>
+            </div>
+          )}
+          
+          {!isFormValid() && !isLoading && (
+            <div className="text-center text-red-600 dark:text-red-400 text-sm mb-3">
+              {getValidationError()}
             </div>
           )}
           
