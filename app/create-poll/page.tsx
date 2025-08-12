@@ -33,6 +33,59 @@ export default function CreatePoll() {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
 
+  // Save form state to localStorage
+  const saveFormState = () => {
+    if (typeof window !== 'undefined') {
+      const formState = {
+        title,
+        options,
+        deadlineOption,
+        customDate,
+        customTime
+      };
+      localStorage.setItem('pollFormState', JSON.stringify(formState));
+    }
+  };
+
+  // Load form state from localStorage
+  const loadFormState = () => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('pollFormState');
+      if (saved) {
+        try {
+          const formState = JSON.parse(saved);
+          setTitle(formState.title || '');
+          setOptions(formState.options || ['']);
+          setDeadlineOption(formState.deadlineOption || '5min');
+          setCustomDate(formState.customDate || (() => {
+            const now = new Date();
+            const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+            const year = oneHourLater.getFullYear();
+            const month = String(oneHourLater.getMonth() + 1).padStart(2, '0');
+            const day = String(oneHourLater.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })());
+          setCustomTime(formState.customTime || (() => {
+            const now = new Date();
+            const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+            const hours = String(oneHourLater.getHours()).padStart(2, '0');
+            const minutes = String(oneHourLater.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+          })());
+        } catch (error) {
+          console.error('Failed to load form state:', error);
+        }
+      }
+    }
+  };
+
+  // Clear saved form state
+  const clearFormState = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('pollFormState');
+    }
+  };
+
   // Determine poll type based on options
   const getPollType = (): 'yes_no' | 'ranked_choice' => {
     const filledOptions = options.filter(opt => opt.trim() !== '');
@@ -110,6 +163,16 @@ export default function CreatePoll() {
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  // Load saved form state on component mount
+  useEffect(() => {
+    loadFormState();
+  }, []);
+
+  // Save form state whenever form data changes
+  useEffect(() => {
+    saveFormState();
+  }, [title, options, deadlineOption, customDate, customTime]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -317,6 +380,9 @@ export default function CreatePoll() {
       
       // Clean up old poll records occasionally
       cleanupOldPolls();
+
+      // Clear saved form state since poll was created successfully
+      clearFormState();
 
       // Use short_id if available, otherwise fall back to UUID
       const redirectId = data[0].short_id || data[0].id;
