@@ -5,6 +5,7 @@ import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from 
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
+  isPollClosed?: boolean;
 }
 
 interface RoundVisualization {
@@ -22,7 +23,7 @@ interface RoundVisualization {
   eliminatedCandidates: string[];
 }
 
-export default function CompactRankedChoiceResults({ results }: CompactRankedChoiceResultsProps) {
+export default function CompactRankedChoiceResults({ results, isPollClosed }: CompactRankedChoiceResultsProps) {
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -181,10 +182,15 @@ export default function CompactRankedChoiceResults({ results }: CompactRankedCho
   }
 
   if (results.total_votes === 0) {
+    const title = isPollClosed ? "No Votes Received" : "No Votes Yet";
+    const message = isPollClosed 
+      ? "This poll did not receive any votes." 
+      : "This poll hasn't received any votes.";
+    
     return (
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">No Votes Yet</h3>
-        <p className="text-gray-600 dark:text-gray-400">This poll hasn&apos;t received any votes.</p>
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
+        <p className="text-gray-600 dark:text-gray-400">{message}</p>
       </div>
     );
   }

@@ -205,7 +205,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} />
+                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -285,7 +285,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} />
+                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>

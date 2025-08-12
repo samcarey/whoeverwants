@@ -6,21 +6,22 @@ import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 
 interface PollResultsProps {
   results: PollResults;
+  isPollClosed?: boolean;
 }
 
-export default function PollResultsDisplay({ results }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} />;
   }
 
   if (results.poll_type === 'ranked_choice') {
-    return <CompactRankedChoiceResults results={results} />;
+    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} />;
   }
 
   return null;
 }
 
-function YesNoResults({ results }: { results: PollResults }) {
+function YesNoResults({ results, isPollClosed }: { results: PollResults, isPollClosed?: boolean }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -29,10 +30,15 @@ function YesNoResults({ results }: { results: PollResults }) {
   const totalVotes = results.total_votes;
 
   if (totalVotes === 0) {
+    const title = isPollClosed ? "No Votes Received" : "No Votes Yet";
+    const message = isPollClosed 
+      ? "This poll did not receive any votes." 
+      : "This poll hasn't received any votes.";
+    
     return (
       <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">No Votes Yet</h3>
-        <p className="text-gray-600 dark:text-gray-400">This poll hasn&apos;t received any votes.</p>
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
+        <p className="text-gray-600 dark:text-gray-400">{message}</p>
       </div>
     );
   }
