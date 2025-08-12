@@ -84,7 +84,24 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
           const isTie = isFinalRound && (results.winner === 'tie' || isTieByVotes);
           
           const candidates = currentRoundData
-            .sort((a, b) => b.vote_count - a.vote_count)
+            .sort((a, b) => {
+              // If vote counts are different, sort by vote count (highest first)
+              if (a.vote_count !== b.vote_count) {
+                return b.vote_count - a.vote_count;
+              }
+              
+              // If both have tie_broken_by_borda flag, put eliminated candidate last
+              if (a.tie_broken_by_borda && b.tie_broken_by_borda) {
+                if (a.is_eliminated !== b.is_eliminated) {
+                  return a.is_eliminated ? 1 : -1; // Eliminated goes to bottom
+                }
+                // If both eliminated or both surviving, sort by Borda score (highest first)
+                return (b.borda_score || 0) - (a.borda_score || 0);
+              }
+              
+              // Default: maintain original vote count order
+              return b.vote_count - a.vote_count;
+            })
             .map((round, index) => {
               const previousVotes = previousVotesMap.get(round.option_name) || 0;
               const nextVotes = nextVotesMap.get(round.option_name) || round.vote_count;
@@ -289,8 +306,10 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
                                   candidate.votes === highestVotes;
 
             // Check if we should show Borda explanation after this candidate
-            // Show it after ANY eliminated candidate in a round where tie-breaking occurred
-            const hasBordaTieBreaking = candidate.isEliminated && 
+            // Show it only after the LAST eliminated candidate in a tie-breaking round
+            const isLastEliminatedCandidate = candidate.isEliminated && 
+                                            index === currentRound.candidates.length - 1;
+            const hasBordaTieBreaking = isLastEliminatedCandidate && 
                                       currentRound.eliminatedCandidates.length > 0;
             
             return (
