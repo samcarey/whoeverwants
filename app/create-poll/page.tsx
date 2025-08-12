@@ -10,7 +10,6 @@ export const dynamic = 'force-dynamic';
 
 export default function CreatePoll() {
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'yes_no' | 'ranked_choice'>('yes_no');
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
   const [customDate, setCustomDate] = useState(() => {
@@ -34,13 +33,21 @@ export default function CreatePoll() {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
 
-  // Validation for ranked choice options
-  const validateRankedChoiceOptions = () => {
-    if (pollType !== 'ranked_choice') return true;
-    
+  // Determine poll type based on options
+  const getPollType = (): 'yes_no' | 'ranked_choice' => {
     const filledOptions = options.filter(opt => opt.trim() !== '');
+    return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
+  };
+
+  // Validation for poll options
+  const validateOptions = () => {
+    const filledOptions = options.filter(opt => opt.trim() !== '');
+    const pollType = getPollType();
     
-    // Must have at least 2 options
+    // If no options (yes/no poll), that's valid
+    if (filledOptions.length === 0) return true;
+    
+    // If there are options (ranked choice), must have at least 2
     if (filledOptions.length < 2) return false;
     
     // Each option must have at least 1 character
@@ -56,7 +63,7 @@ export default function CreatePoll() {
 
   const isFormValid = () => {
     if (!title.trim()) return false;
-    if (!validateRankedChoiceOptions()) return false;
+    if (!validateOptions()) return false;
     return true;
   };
 
@@ -181,14 +188,14 @@ export default function CreatePoll() {
     setError(null);
     
     try {
-      // Validate ranked choice options
-      if (pollType === 'ranked_choice') {
-        const filledOptions = options.filter(opt => opt.trim() !== '');
-        if (filledOptions.length < 2) {
-          setError("Ranked choice polls must have at least 2 options.");
-          setIsLoading(false);
-          return;
-        }
+      // Determine poll type and validate options
+      const pollType = getPollType();
+      const filledOptions = options.filter(opt => opt.trim() !== '');
+      
+      if (pollType === 'ranked_choice' && filledOptions.length < 2) {
+        setError("Please provide at least 2 options for a ranked choice poll.");
+        setIsLoading(false);
+        return;
       }
 
       const responseDeadline = calculateDeadline();
@@ -221,7 +228,7 @@ export default function CreatePoll() {
 
       // Add options for ranked choice polls
       if (pollType === 'ranked_choice') {
-        pollData.options = options.filter(opt => opt.trim() !== '');
+        pollData.options = filledOptions;
       }
       
       const { data, error } = await supabase
@@ -281,26 +288,9 @@ export default function CreatePoll() {
           </div>
 
           <div>
-            <label htmlFor="pollType" className="block text-sm font-medium mb-2">
-              Poll Type
+            <label className="block text-sm font-medium mb-2">
+              Poll Options <span className="text-gray-500 font-normal">(blank for yes/no)</span>
             </label>
-            <select
-              id="pollType"
-              value={pollType}
-              onChange={(e) => setPollType(e.target.value as 'yes_no' | 'ranked_choice')}
-              disabled={isLoading}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <option value="yes_no">Yes or No</option>
-              <option value="ranked_choice">Ranked Choice</option>
-            </select>
-          </div>
-
-          {pollType === 'ranked_choice' && (
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Poll Options
-              </label>
               <div className="space-y-2">
                 {options.map((option, index) => (
                   <div key={index} className="flex items-center gap-2">
@@ -355,8 +345,7 @@ export default function CreatePoll() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+          </div>
 
           <div>
             <label htmlFor="deadline" className="block text-sm font-medium mb-2">
