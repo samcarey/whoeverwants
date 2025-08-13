@@ -89,6 +89,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     mousePosition: { x: 0, y: 0 }
   });
 
+  // Dynamic container heights for drag preview
+  const [containerHeights, setContainerHeights] = useState({
+    main: 0,
+    noPreference: 0
+  });
+
   // Configuration
   const itemHeight = 56;
   const gapSize = 8;
@@ -564,6 +570,63 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [keyboardMode, setKeyboardMode] = useState(false);
 
+  // Calculate dynamic container heights based on drag state
+  const calculateContainerHeights = useCallback(() => {
+    const baseMainHeight = Math.max(mainList.length * totalItemHeight - gapSize, totalItemHeight);
+    const baseNoPreferenceHeight = Math.max(noPreferenceList.length * totalItemHeight - gapSize, totalItemHeight);
+
+    // If not dragging, return normal heights
+    if (!dragState.isDragging || !dragState.sourceList) {
+      return {
+        main: baseMainHeight,
+        noPreference: baseNoPreferenceHeight
+      };
+    }
+
+    // Only apply height changes when dragging between different lists
+    if (dragState.targetList && dragState.sourceList !== dragState.targetList) {
+      // Cross-list drag: source loses item, target gains item
+      let newMainHeight = baseMainHeight;
+      let newNoPreferenceHeight = baseNoPreferenceHeight;
+
+      if (dragState.sourceList === 'main' && dragState.targetList === 'noPreference') {
+        // Dragging from main to no preference - main shrinks, no preference grows
+        newMainHeight = Math.max((mainList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
+        newNoPreferenceHeight = Math.max((noPreferenceList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
+      } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
+        // Dragging from no preference to main - main grows, no preference shrinks
+        newMainHeight = Math.max((mainList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
+        newNoPreferenceHeight = Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
+      }
+
+      return {
+        main: newMainHeight,
+        noPreference: newNoPreferenceHeight
+      };
+    }
+
+    // Same-list drag or no target yet: heights don't change
+    return {
+      main: baseMainHeight,
+      noPreference: baseNoPreferenceHeight
+    };
+  }, [mainList.length, noPreferenceList.length, dragState, totalItemHeight, gapSize]);
+
+  // Update container heights when drag state or lists change
+  useEffect(() => {
+    const newHeights = calculateContainerHeights();
+    setContainerHeights(newHeights);
+  }, [calculateContainerHeights]);
+
+  // Initialize container heights when component mounts or lists are first populated
+  useEffect(() => {
+    if ((mainList.length > 0 || noPreferenceList.length >= 0) && 
+        (containerHeights.main === 0 || containerHeights.noPreference === 0)) {
+      const initialHeights = calculateContainerHeights();
+      setContainerHeights(initialHeights);
+    }
+  }, [mainList.length, noPreferenceList.length, containerHeights, calculateContainerHeights]);
+
   const handlePointerStart = useCallback((e: React.PointerEvent, id: string) => {
     if (disabled) return;
     
@@ -748,7 +811,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     title?: string,
     description?: string
   ) => {
-    const listHeight = Math.max(listItems.length * totalItemHeight - gapSize, totalItemHeight);
+    // Use dynamic height from state with smooth transitions
+    const dynamicHeight = containerHeights[listType];
     
     return (
       <div className={listType === 'main' ? 'mb-4' : ''}>
@@ -767,13 +831,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         
         <div
           ref={containerRef}
-          className={`rounded-lg p-3 relative ${
+          className={`rounded-lg p-3 relative transition-all duration-200 ease-out ${
             listType === 'main' 
               ? 'bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600' 
               : 'bg-orange-50 dark:bg-orange-900/20 border-2 border-dashed border-orange-300 dark:border-orange-600'
           }`}
           style={{
-            height: `${listHeight}px`,
+            height: `${dynamicHeight}px`,
             touchAction: 'none',
             minHeight: `${totalItemHeight}px`
           }}
