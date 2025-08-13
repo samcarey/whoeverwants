@@ -585,16 +585,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
     // Only apply height changes when dragging between different lists
     if (dragState.targetList && dragState.sourceList !== dragState.targetList) {
-      // Cross-list drag: source loses item, target gains item
+      // Cross-list drag: asymmetric behavior for better UX
       let newMainHeight = baseMainHeight;
       let newNoPreferenceHeight = baseNoPreferenceHeight;
 
       if (dragState.sourceList === 'main' && dragState.targetList === 'noPreference') {
-        // Dragging from main to no preference - main shrinks, no preference grows
-        newMainHeight = Math.max((mainList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
+        // Dragging from main to no preference - DON'T shrink main (keep stable), but grow no preference
+        newMainHeight = baseMainHeight; // Keep main list at original size during preview
         newNoPreferenceHeight = Math.max((noPreferenceList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
       } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
-        // Dragging from no preference to main - main grows, no preference shrinks
+        // Dragging from no preference to main - grow main, shrink no preference (real-time feedback)
         newMainHeight = Math.max((mainList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
         newNoPreferenceHeight = Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
       }
