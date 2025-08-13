@@ -98,9 +98,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [pollClosed, poll.response_deadline, fetchPollResults]);
 
-  const handleRankingChange = (newRankedChoices: string[]) => {
+  const handleRankingChange = useCallback((newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
-  };
+  }, []);
+
+  // Memoize parsed options to prevent re-parsing on every render
+  const pollOptions = useMemo(() => {
+    if (!poll.options) return [];
+    return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
+  }, [poll.options]);
 
   const handleYesNoVote = (choice: 'yes' | 'no') => {
     setYesNoChoice(choice);
@@ -161,14 +167,28 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           yes_no_choice: yesNoChoice
         };
       } else {
-        if (rankedChoices.length === 0) {
-          setVoteError("Please rank the options");
+        // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
+        const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
+        
+        if (filteredRankedChoices.length === 0) {
+          setVoteError("Please rank at least one option");
           return;
         }
+        
+        // Additional validation: ensure choices are valid poll options
+        const pollOptions = typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
+        const invalidChoices = filteredRankedChoices.filter(choice => !pollOptions.includes(choice));
+        
+        if (invalidChoices.length > 0) {
+          console.error('Invalid choices detected:', invalidChoices);
+          setVoteError("Invalid options detected. Please refresh and try again.");
+          return;
+        }
+        
         voteData = {
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
-          ranked_choices: rankedChoices
+          ranked_choices: filteredRankedChoices
         };
       }
 
@@ -313,9 +333,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
-                  {poll.options && (
+                  {pollOptions.length > 0 && (
                     <RankableOptions 
-                      options={rankedChoices.length > 0 ? rankedChoices : (typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options)} 
+                      options={pollOptions} 
                       onRankingChange={handleRankingChange}
                       disabled={isSubmitting}
                     />

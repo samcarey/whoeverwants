@@ -7,6 +7,7 @@ import { supabase, Poll } from "@/lib/supabase";
 import { usePrefetch, useViewportPrefetch } from "@/lib/prefetch";
 import { useMobileOptimization, useTouchOptimizedPrefetch, useIOSOptimizations, useBackgroundCompilation } from "@/lib/mobile-optimization";
 import { useInstantLoading, createInstantLink } from "@/lib/instant-loading";
+import ClientOnly from "@/components/ClientOnly";
 
 const WINDOW_SIZE = 100; // Keep 100 polls in memory around current position
 const POLL_HEIGHT = 88; // Estimated height of each poll item in pixels
@@ -16,6 +17,7 @@ const CompactCountdown = ({ deadline, onExpire }: { deadline: string; onExpire?:
   const [timeLeft, setTimeLeft] = useState<string>("");
 
   useEffect(() => {
+    
     const updateCountdown = () => {
       const now = new Date().getTime();
       const deadlineTime = new Date(deadline).getTime();
@@ -244,7 +246,8 @@ export default function Home() {
         // First, preserve all open polls regardless of window position
         // This prevents open polls from disappearing during scroll
         for (const [index, poll] of prev) {
-          const hasDeadline = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+          // Skip date calculations during SSR to prevent hydration issues
+          const hasDeadline = poll.response_deadline && (typeof window !== 'undefined' ? new Date(poll.response_deadline) > new Date() : true);
           const isManuallyClosed = poll.is_closed;
           const isOpen = hasDeadline && !isManuallyClosed;
           
@@ -349,7 +352,8 @@ export default function Home() {
       }
       
       // Check if poll is open (has deadline, deadline is in the future, and not manually closed)
-      const hasDeadline = poll.response_deadline && new Date(poll.response_deadline) > new Date();
+      // Skip date calculations during SSR to prevent hydration issues
+      const hasDeadline = poll.response_deadline && (typeof window !== 'undefined' ? new Date(poll.response_deadline) > new Date() : true);
       const isManuallyClosed = poll.is_closed;
       const isOpen = hasDeadline && !isManuallyClosed;
       
@@ -529,27 +533,40 @@ export default function Home() {
                                 </div>
                                 {poll.response_deadline && (
                                   <div className="flex-shrink-0">
-                                    <CompactCountdown 
-                                      deadline={poll.response_deadline} 
-                                      onExpire={handlePollExpire}
-                                    />
+                                    <ClientOnly 
+                                      fallback={
+                                        <div className="text-right text-sm">
+                                          <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
+                                          <div className="font-mono font-semibold text-green-600 dark:text-green-400">
+                                            Loading...
+                                          </div>
+                                        </div>
+                                      }
+                                    >
+                                      <CompactCountdown 
+                                        deadline={poll.response_deadline} 
+                                        onExpire={handlePollExpire}
+                                      />
+                                    </ClientOnly>
                                   </div>
                                 )}
                               </div>
                               {poll.response_deadline && (
                                 <div className="absolute bottom-4 right-4">
                                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    Deadline: {(() => {
-                                      const deadlineDate = new Date(poll.response_deadline);
-                                      const today = new Date();
-                                      const isToday = deadlineDate.toDateString() === today.toDateString();
-                                      
-                                      if (isToday) {
-                                        return deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                      } else {
-                                        return deadlineDate.toLocaleDateString();
-                                      }
-                                    })()}
+                                    Deadline: <ClientOnly fallback="Loading...">
+                                      {(() => {
+                                        const deadlineDate = new Date(poll.response_deadline);
+                                        const today = new Date();
+                                        const isToday = deadlineDate.toDateString() === today.toDateString();
+                                        
+                                        if (isToday) {
+                                          return deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                        } else {
+                                          return deadlineDate.toLocaleDateString();
+                                        }
+                                      })()}
+                                    </ClientOnly>
                                   </span>
                                 </div>
                               )}
@@ -591,17 +608,19 @@ export default function Home() {
                               </div>
                               <div className="absolute bottom-4 right-4">
                                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                                  Expired: {(() => {
-                                    const expiredDate = new Date(poll.response_deadline!);
-                                    const today = new Date();
-                                    const isToday = expiredDate.toDateString() === today.toDateString();
-                                    
-                                    if (isToday) {
-                                      return expiredDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                    } else {
-                                      return expiredDate.toLocaleDateString();
-                                    }
-                                  })()}
+                                  Expired: <ClientOnly fallback="Loading...">
+                                    {(() => {
+                                      const expiredDate = new Date(poll.response_deadline!);
+                                      const today = new Date();
+                                      const isToday = expiredDate.toDateString() === today.toDateString();
+                                      
+                                      if (isToday) {
+                                        return expiredDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                      } else {
+                                        return expiredDate.toLocaleDateString();
+                                      }
+                                    })()}
+                                  </ClientOnly>
                                 </span>
                               </div>
                             </Link>
