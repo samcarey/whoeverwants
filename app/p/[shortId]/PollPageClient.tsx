@@ -384,13 +384,41 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
           
           {/* Created date line */}
-          <div className="text-center text-gray-600 dark:text-gray-300 mt-4 mb-4">
-            <p className="text-sm">
+          <div className="flex justify-between items-center text-gray-600 dark:text-gray-300 mt-4 mb-4">
+            <p className="text-xs">
               Created {createdDate}
               {isPollClosed && pollResults && (
                 <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
               )}
             </p>
+            {poll.response_deadline && (
+              <p className="text-xs">
+                Expires {(() => {
+                  const deadline = new Date(poll.response_deadline);
+                  const now = new Date();
+                  const hoursUntilDeadline = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+                  
+                  if (hoursUntilDeadline <= 24 && hoursUntilDeadline > 0) {
+                    // Within 24 hours, show date and time
+                    return deadline.toLocaleString("en-US", {
+                      month: "numeric",
+                      day: "numeric",
+                      year: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true
+                    });
+                  } else {
+                    // More than 24 hours away or expired, just show date
+                    return deadline.toLocaleDateString("en-US", {
+                      month: "numeric",
+                      day: "numeric",
+                      year: "numeric"
+                    });
+                  }
+                })()}
+              </p>
+            )}
           </div>
 
           {/* Bottom navigation */}

@@ -67,23 +67,20 @@ export default function Countdown({ deadline }: CountdownProps) {
   });
 
   return (
-    <div className="text-center mb-6">
-      <div className={`p-4 rounded-lg ${isExpired 
+    <div className="mb-4">
+      <div className={`px-3 py-1.5 rounded-lg flex items-center justify-between ${isExpired 
         ? 'bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700' 
         : 'bg-blue-100 dark:bg-blue-900 border border-blue-200 dark:border-blue-700'
       }`}>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">
-          {isExpired ? "Poll Ended" : "Time Remaining"}
-        </p>
-        <p className={`text-2xl font-bold ${isExpired 
+        <span className="text-sm text-gray-600 dark:text-gray-300">
+          {isExpired ? "Poll Ended" : "Time Remaining:"}
+        </span>
+        <span className={`text-sm font-bold ${isExpired 
           ? 'text-red-700 dark:text-red-300' 
           : 'text-blue-700 dark:text-blue-300'
         }`}>
           {timeLeft}
-        </p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Deadline: {deadlineDate}
-        </p>
+        </span>
       </div>
     </div>
   );

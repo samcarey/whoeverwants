@@ -752,17 +752,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     
     return (
       <div className={listType === 'main' ? 'mb-4' : ''}>
-        {title && description && (
+        {title && (
           <div className="mb-2">
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {title}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400" id={`${listType}-description`}>
-              {description}
-            </p>
-            {!disabled && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Use mouse to drag or keyboard: Tab to navigate, Enter to select, Arrow keys to move
+            {description && (
+              <p className="text-xs text-gray-500 dark:text-gray-400" id={`${listType}-description`}>
+                {description}
               </p>
             )}
           </div>
@@ -887,8 +884,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         mainList,
         mainContainerRef,
         'main',
-        'Rank your choices by dragging (1st choice at top)',
-        'Drag the options to reorder them according to your preference'
+        'Drag to reorder from most to least preferred',
+        ''
       )}
       
       {/* Divider with "No Preference" text */}
@@ -910,7 +907,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       
       {/* Explanation text under the exclude section */}
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-        Items in the no preference section will not be counted in your vote
+        Your ballot will not count toward these candidates at all
       </p>
 
       {/* Render dragged item if dragging */}
