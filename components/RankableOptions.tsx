@@ -114,11 +114,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   }, [totalItemHeight]);
 
   // Determine which index a specific Y coordinate falls into for a given list
-  const getIndexFromY = useCallback((y: number, listLength: number) => {
+  const getIndexFromY = useCallback((y: number, listLength: number, allowAppend: boolean = false) => {
     const index = Math.floor(y / totalItemHeight);
     // For empty lists, allow insertion at index 0
     if (listLength === 0) return 0;
-    return Math.max(0, Math.min(listLength - 1, index));
+    
+    // If allowAppend is true, allow insertion at the end (listLength position)
+    const maxIndex = allowAppend ? listLength : listLength - 1;
+    return Math.max(0, Math.min(maxIndex, index));
   }, [totalItemHeight]);
 
   // Determine which list and index a screen coordinate falls into
@@ -131,7 +134,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       if (screenX >= mainRect.left && screenX <= mainRect.right && 
           screenY >= mainRect.top && screenY <= mainRect.bottom) {
         const relativeY = screenY - mainRect.top;
-        const index = getIndexFromY(relativeY, mainList.length);
+        // Allow appending to main list when dragging from noPreference list
+        const allowAppend = dragState.sourceList === 'noPreference';
+        const index = getIndexFromY(relativeY, mainList.length, allowAppend);
         return { list: 'main' as const, index };
       }
     }
@@ -141,13 +146,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right && 
           screenY >= noPreferenceRect.top && screenY <= noPreferenceRect.bottom) {
         const relativeY = screenY - noPreferenceRect.top;
-        const index = getIndexFromY(relativeY, noPreferenceList.length);
+        // Allow appending to noPreference list when dragging from main list
+        const allowAppend = dragState.sourceList === 'main';
+        const index = getIndexFromY(relativeY, noPreferenceList.length, allowAppend);
         return { list: 'noPreference' as const, index };
       }
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList]);
 
   // Get coordinates from either mouse or touch event
   const getEventCoords = useCallback((e: React.PointerEvent | PointerEvent) => {
