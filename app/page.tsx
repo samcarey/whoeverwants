@@ -450,7 +450,7 @@ export default function Home() {
 
       {/* Fade overlay that sits above scrolling content */}
       <div 
-        className="fixed left-0 right-0 z-10 h-6 pointer-events-none"
+        className="fixed left-0 right-0 z-10 h-6 pointer-events-none dark:hidden"
         style={{
           top: `calc(env(safe-area-inset-top) + 5rem)`,
           background: 'linear-gradient(to bottom, rgb(255,255,255) 0%, rgba(255,255,255,0) 100%)'
