@@ -39,13 +39,13 @@ export default function SuccessPopup({ show, onClose }: SuccessPopupProps) {
 
   return (
     <div 
-      className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
+      className={`fixed top-2 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
         isAnimatingOut 
           ? '-translate-y-full opacity-0' 
           : 'translate-y-0 opacity-100'
       }`}
     >
-      <div className="bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 whitespace-nowrap">
+      <div className="bg-green-600 text-white px-2 py-0.5 rounded-lg shadow-lg flex items-center space-x-2 whitespace-nowrap">
         <div className="flex-shrink-0">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
