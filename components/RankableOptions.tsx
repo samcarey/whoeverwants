@@ -745,26 +745,28 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     listItems: RankableOption[],
     containerRef: React.RefObject<HTMLDivElement | null>,
     listType: 'main' | 'noPreference',
-    title: string,
-    description: string
+    title?: string,
+    description?: string
   ) => {
     const listHeight = Math.max(listItems.length * totalItemHeight - gapSize, totalItemHeight);
     
     return (
-      <div className="mb-4">
-        <div className="mb-2">
-          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            {title}
-          </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400" id={`${listType}-description`}>
-            {description}
-          </p>
-          {!disabled && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-              Use mouse to drag or keyboard: Tab to navigate, Enter to select, Arrow keys to move
+      <div className={listType === 'main' ? 'mb-4' : ''}>
+        {title && description && (
+          <div className="mb-2">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              {title}
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400" id={`${listType}-description`}>
+              {description}
             </p>
-          )}
-        </div>
+            {!disabled && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Use mouse to drag or keyboard: Tab to navigate, Enter to select, Arrow keys to move
+              </p>
+            )}
+          </div>
+        )}
         
         <div
           ref={containerRef}
@@ -889,14 +891,29 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         'Drag the options to reorder them according to your preference'
       )}
       
+      {/* Divider with "No Preference" text */}
+      <div className="relative my-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-white dark:bg-gray-900 px-3 text-sm text-gray-500 dark:text-gray-400">
+            No Preference
+          </span>
+        </div>
+      </div>
+      
       {/* No preference list */}
       {renderListContainer(
         noPreferenceList,
         noPreferenceContainerRef,
-        'noPreference',
-        'No Preference',
-        'Items here will not be counted in your vote'
+        'noPreference'
       )}
+      
+      {/* Explanation text under the exclude section */}
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+        Items in the no preference section will not be counted in your vote
+      </p>
 
       {/* Render dragged item if dragging */}
       {dragState.isDragging && renderDraggedItem()}
