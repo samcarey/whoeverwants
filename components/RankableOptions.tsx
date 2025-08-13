@@ -129,10 +129,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const mainContainer = mainContainerRef.current;
     const noPreferenceContainer = noPreferenceContainerRef.current;
     
+    // Buffer zone to make drop areas more responsive near the divider
+    const dropZoneBuffer = 30; // pixels to extend drop zones toward divider
+    
     if (mainContainer) {
       const mainRect = mainContainer.getBoundingClientRect();
+      // Extend main list drop zone downward (toward divider) when dragging from no preference
+      const extendedBottom = dragState.sourceList === 'noPreference' ? mainRect.bottom + dropZoneBuffer : mainRect.bottom;
+      
       if (screenX >= mainRect.left && screenX <= mainRect.right && 
-          screenY >= mainRect.top && screenY <= mainRect.bottom) {
+          screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
         // Allow appending to main list when dragging from noPreference list
         const allowAppend = dragState.sourceList === 'noPreference';
@@ -143,8 +149,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     
     if (noPreferenceContainer) {
       const noPreferenceRect = noPreferenceContainer.getBoundingClientRect();
+      // Extend no preference list drop zone upward (toward divider) when dragging from main
+      const extendedTop = dragState.sourceList === 'main' ? noPreferenceRect.top - dropZoneBuffer : noPreferenceRect.top;
+      
       if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right && 
-          screenY >= noPreferenceRect.top && screenY <= noPreferenceRect.bottom) {
+          screenY >= extendedTop && screenY <= noPreferenceRect.bottom) {
         const relativeY = screenY - noPreferenceRect.top;
         // Allow appending to noPreference list when dragging from main list
         const allowAppend = dragState.sourceList === 'main';
