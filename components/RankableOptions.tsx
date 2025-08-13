@@ -13,9 +13,48 @@ interface RankableOptionsProps {
   options: string[];
   onRankingChange: (rankedOptions: string[]) => void;
   disabled?: boolean;
+  storageKey?: string; // Optional key for localStorage persistence
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey }: RankableOptionsProps) {
+
+  // Load saved state from localStorage
+  const loadSavedState = useCallback(() => {
+    if (!storageKey || typeof window === 'undefined') return null;
+    
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Validate that saved options match current options
+        const allSavedTexts = [...parsed.mainList, ...parsed.noPreferenceList].map((opt: RankableOption) => opt.text).sort();
+        const currentTexts = [...options].sort();
+        
+        if (allSavedTexts.length === currentTexts.length && 
+            allSavedTexts.every((text: string, index: number) => text === currentTexts[index])) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load saved ranking state:', e);
+    }
+    return null;
+  }, [storageKey, options]);
+
+  // Save state to localStorage
+  const saveState = useCallback((mainList: RankableOption[], noPreferenceList: RankableOption[]) => {
+    if (!storageKey || typeof window === 'undefined') return;
+    
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({
+        mainList,
+        noPreferenceList,
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      console.error('Failed to save ranking state:', e);
+    }
+  }, [storageKey]);
 
   // Create ranked options from props
   const createRankedOptions = useCallback((optionTexts: string[]) => {
@@ -380,16 +419,43 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       !previousOptionsRef.current.every((opt, index) => opt === options[index]);
     
     if (optionsChanged) {
-      const newRankedOptions = options.map((text, index) => ({
-        id: `option-${index}`,
-        text: text,
-        top: index * totalItemHeight
-      }));
-      setMainList(newRankedOptions);
-      setNoPreferenceList([]); // Start with empty no preference list
+      // Try to load saved state first
+      const savedState = loadSavedState();
+      
+      if (savedState) {
+        // Apply positions to saved state
+        const positionedMainList = savedState.mainList.map((item: RankableOption, index: number) => ({
+          ...item,
+          top: index * totalItemHeight
+        }));
+        const positionedNoPreferenceList = savedState.noPreferenceList.map((item: RankableOption, index: number) => ({
+          ...item,
+          top: index * totalItemHeight
+        }));
+        
+        setMainList(positionedMainList);
+        setNoPreferenceList(positionedNoPreferenceList);
+      } else {
+        // Initialize with default state
+        const newRankedOptions = options.map((text, index) => ({
+          id: `option-${index}`,
+          text: text,
+          top: index * totalItemHeight
+        }));
+        setMainList(newRankedOptions);
+        setNoPreferenceList([]);
+      }
+      
       previousOptionsRef.current = options;
     }
-  }, [options, totalItemHeight]);
+  }, [options, totalItemHeight, loadSavedState]);
+
+  // Save state whenever lists change
+  useEffect(() => {
+    if (hasMountedRef.current && storageKey) {
+      saveState(mainList, noPreferenceList);
+    }
+  }, [mainList, noPreferenceList, saveState, storageKey]);
 
   // Get the dragged item
   const getDraggedOption = () => {

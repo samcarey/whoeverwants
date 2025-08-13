@@ -338,6 +338,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       options={pollOptions} 
                       onRankingChange={handleRankingChange}
                       disabled={isSubmitting}
+                      storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                     />
                   )}
                   
