@@ -56,6 +56,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [storageKey]);
 
+  // Shuffle array using Fisher-Yates algorithm for fair randomization
+  const shuffleArray = useCallback(<T>(array: T[]): T[] => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }, []);
+
   // Create ranked options from props
   const createRankedOptions = useCallback((optionTexts: string[]) => {
     return optionTexts.map((text, index) => ({
@@ -436,8 +446,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         setMainList(positionedMainList);
         setNoPreferenceList(positionedNoPreferenceList);
       } else {
-        // Initialize with default state
-        const newRankedOptions = options.map((text, index) => ({
+        // Initialize with randomized order to prevent position bias
+        const shuffledOptions = shuffleArray(options);
+        const newRankedOptions = shuffledOptions.map((text, index) => ({
           id: `option-${index}`,
           text: text,
           top: index * totalItemHeight
@@ -448,7 +459,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       
       previousOptionsRef.current = options;
     }
-  }, [options, totalItemHeight, loadSavedState]);
+  }, [options, totalItemHeight, loadSavedState, shuffleArray]);
 
   // Save state whenever lists change
   useEffect(() => {
@@ -456,6 +467,33 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       saveState(mainList, noPreferenceList);
     }
   }, [mainList, noPreferenceList, saveState, storageKey]);
+
+  // Reset to random order (for testing/debugging)
+  const resetToRandomOrder = useCallback(() => {
+    if (storageKey) {
+      localStorage.removeItem(storageKey);
+    }
+    const shuffledOptions = shuffleArray(options);
+    const newRankedOptions = shuffledOptions.map((text, index) => ({
+      id: `option-${index}`,
+      text: text,
+      top: index * totalItemHeight
+    }));
+    setMainList(newRankedOptions);
+    setNoPreferenceList([]);
+  }, [storageKey, options, shuffleArray, totalItemHeight]);
+
+  // Expose reset function to window for testing
+  useEffect(() => {
+    if (typeof window !== 'undefined' && storageKey) {
+      (window as any).resetPollRanking = resetToRandomOrder;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).resetPollRanking;
+      }
+    };
+  }, [resetToRandomOrder, storageKey]);
 
   // Get the dragged item
   const getDraggedOption = () => {
