@@ -59,11 +59,8 @@ const CompactCountdown = ({ deadline, onExpire }: { deadline: string; onExpire?:
   }, [deadline, onExpire]);
 
   return (
-    <div className="text-right text-sm">
-      <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
-      <div className="font-mono font-semibold text-green-600 dark:text-green-400">
-        {timeLeft}
-      </div>
+    <div className="font-mono font-semibold text-green-600 dark:text-green-400 text-sm">
+      {timeLeft}
     </div>
   );
 };
@@ -518,31 +515,15 @@ export default function Home() {
                               {...prefetchOnHover(`/p/${poll.short_id || poll.id}`)}
                               className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                             >
-                              <div className="flex items-start justify-between mb-2">
-                                <div className="flex-1 mr-4">
-                                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
-                                  <div className="flex items-center gap-3">
-                                    <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
-                                      poll.poll_type === 'yes_no' 
-                                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                        : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                                    }`}>
-                                      {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
-                                    </span>
-                                  </div>
-                                </div>
+                              <div>
+                                <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors">{poll.title}</h3>
                                 {poll.response_deadline && (
-                                  <div className="flex-shrink-0">
-                                    <ClientOnly 
-                                      fallback={
-                                        <div className="text-right text-sm">
-                                          <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
-                                          <div className="font-mono font-semibold text-green-600 dark:text-green-400">
-                                            Loading...
-                                          </div>
-                                        </div>
-                                      }
-                                    >
+                                  <div className="mt-2 text-right">
+                                    <ClientOnly fallback={
+                                      <div className="font-mono font-semibold text-green-600 dark:text-green-400 text-sm">
+                                        Loading...
+                                      </div>
+                                    }>
                                       <CompactCountdown 
                                         deadline={poll.response_deadline} 
                                         onExpire={handlePollExpire}
@@ -551,25 +532,6 @@ export default function Home() {
                                   </div>
                                 )}
                               </div>
-                              {poll.response_deadline && (
-                                <div className="absolute bottom-4 right-4">
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    Deadline: <ClientOnly fallback="Loading...">
-                                      {(() => {
-                                        const deadlineDate = new Date(poll.response_deadline);
-                                        const today = new Date();
-                                        const isToday = deadlineDate.toDateString() === today.toDateString();
-                                        
-                                        if (isToday) {
-                                          return deadlineDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                        } else {
-                                          return deadlineDate.toLocaleDateString();
-                                        }
-                                      })()}
-                                    </ClientOnly>
-                                  </span>
-                                </div>
-                              )}
                             </Link>
                           ))}
                         </div>
