@@ -831,11 +831,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         
         <div
           ref={containerRef}
-          className={`rounded-lg p-3 relative transition-all duration-200 ease-out ${
-            listType === 'main' 
-              ? 'bg-gray-50 dark:bg-gray-800 border-2 border-dashed border-gray-300 dark:border-gray-600' 
-              : 'bg-orange-50 dark:bg-orange-900/20 border-2 border-dashed border-orange-300 dark:border-orange-600'
-          }`}
+          className="p-3 relative transition-all duration-200 ease-out"
           style={{
             height: `${dynamicHeight}px`,
             touchAction: 'none',
@@ -848,11 +844,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           {/* Show empty state message if list is empty */}
           {listItems.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <p className={`text-sm ${
-                listType === 'main' 
-                  ? 'text-gray-400 dark:text-gray-500' 
-                  : 'text-orange-400 dark:text-orange-500'
-              }`}>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
                 {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
               </p>
             </div>
