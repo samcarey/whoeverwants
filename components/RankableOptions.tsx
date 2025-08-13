@@ -57,7 +57,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   }, [storageKey]);
 
   // Shuffle array using Fisher-Yates algorithm for fair randomization
-  const shuffleArray = useCallback(<T>(array: T[]): T[] => {
+  const shuffleArray = useCallback(<T,>(array: T[]): T[] => {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
