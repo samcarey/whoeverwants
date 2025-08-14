@@ -894,12 +894,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   height: `${itemHeight}px`,
                   transition: dragState.isDragging ? 'top 0.2s ease' : 'top 0.3s ease',
                   zIndex: 1,
-                  touchAction: 'none',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
                   WebkitTouchCallout: 'none'
                 }}
-                onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
                 onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={disabled ? -1 : 0}
@@ -910,13 +908,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               >
                 <div className="flex items-center justify-between h-full">
                   <div className="flex items-center">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium mr-3 ${
-                      disabled 
-                        ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
-                        : listType === 'main'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-orange-500 text-white'
-                    }`}>
+                    <div 
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium mr-3 cursor-grab active:cursor-grabbing ${
+                        disabled 
+                          ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
+                          : listType === 'main'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-orange-500 text-white'
+                      }`}
+                      style={{
+                        touchAction: 'none'
+                      }}
+                      onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
+                      title="Drag to reorder"
+                    >
                       {rankNumber}
                     </div>
                     <span className={`font-medium ${
@@ -928,7 +933,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     </span>
                   </div>
                   {!disabled && (
-                    <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
+                    <div 
+                      className="w-6 h-6 flex flex-col items-center justify-center ml-2 cursor-grab active:cursor-grabbing"
+                      style={{
+                        touchAction: 'none'
+                      }}
+                      onPointerDown={(e) => handlePointerStart(e, option.id)}
+                      title="Drag to reorder"
+                    >
                       <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
                       <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
                       <div className="w-4 h-0.5 bg-gray-400"></div>
