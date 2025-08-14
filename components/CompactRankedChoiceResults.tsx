@@ -439,7 +439,8 @@ function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationPro
   if (!eliminatedCandidate || survivors.length === 0) return null;
 
   // Determine tie-breaking method
-  const isAlphabeticalTieBreak = eliminatedCandidate.borda_score === Math.max(...survivors.map(s => s.borda_score));
+  // If any survivor has the same Borda score as the eliminated candidate, it was alphabetical tie-breaking
+  const isAlphabeticalTieBreak = survivors.some(s => s.borda_score === eliminatedCandidate.borda_score);
 
   return (
     <div className="mx-2 my-2 p-3 bg-amber-50 dark:bg-amber-950 border-l-4 border-amber-400 dark:border-amber-600 rounded-r-lg">
