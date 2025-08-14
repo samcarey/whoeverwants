@@ -96,7 +96,7 @@ function PollContent() {
   }
 
   const createdDate = new Date(poll.created_at).toLocaleDateString("en-US", {
-    year: "numeric",
+    year: "2-digit",
     month: "numeric",
     day: "numeric",
   });

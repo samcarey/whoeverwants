@@ -58,34 +58,32 @@ function YesNoResults({ results, isPollClosed }: { results: PollResults, isPollC
           winner === 'yes' 
             ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-lg' 
             : winner === 'tie'
-            ? 'bg-green-50 dark:bg-green-950 border-green-300 dark:border-green-700'
-            : 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
+            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
+            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
         }`}>
           <div className="text-center">
             <div className={`text-2xl font-bold mb-1 ${
               winner === 'yes' 
-                ? 'text-green-800 dark:text-green-200' 
-                : 'text-green-700 dark:text-green-300'
+                ? 'text-green-800 dark:text-green-200'
+                : winner === 'tie'
+                ? 'text-yellow-800 dark:text-yellow-200'
+                : 'text-gray-700 dark:text-gray-300'
             }`}>
               {yesPercentage}%
             </div>
-            <div className={`text-lg font-semibold mb-2 ${
+            <div className={`text-lg mb-2 ${
               winner === 'yes' 
-                ? 'text-green-800 dark:text-green-200' 
-                : 'text-green-700 dark:text-green-300'
+                ? 'text-green-900 dark:text-green-100 font-bold'
+                : winner === 'tie'
+                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
+                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
             }`}>
               Yes
-              {winner === 'yes' && (
-                <span className="ml-2 text-sm">👑 Winner</span>
-              )}
-              {winner === 'tie' && (
-                <span className="ml-2 text-sm">🤝 Tie</span>
-              )}
             </div>
             <div className={`text-sm ${
               winner === 'yes' 
                 ? 'text-green-700 dark:text-green-300' 
-                : 'text-green-600 dark:text-green-400'
+                : 'text-gray-500 dark:text-gray-400'
             }`}>
               {yesCount} vote{yesCount !== 1 ? 's' : ''}
             </div>
@@ -97,34 +95,32 @@ function YesNoResults({ results, isPollClosed }: { results: PollResults, isPollC
           winner === 'no' 
             ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-lg' 
             : winner === 'tie'
-            ? 'bg-red-50 dark:bg-red-950 border-red-300 dark:border-red-700'
-            : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
+            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
+            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
         }`}>
           <div className="text-center">
             <div className={`text-2xl font-bold mb-1 ${
               winner === 'no' 
-                ? 'text-red-800 dark:text-red-200' 
-                : 'text-red-700 dark:text-red-300'
+                ? 'text-red-800 dark:text-red-200'
+                : winner === 'tie'
+                ? 'text-yellow-800 dark:text-yellow-200'
+                : 'text-gray-700 dark:text-gray-300'
             }`}>
               {noPercentage}%
             </div>
-            <div className={`text-lg font-semibold mb-2 ${
+            <div className={`text-lg mb-2 ${
               winner === 'no' 
-                ? 'text-red-800 dark:text-red-200' 
-                : 'text-red-700 dark:text-red-300'
+                ? 'text-red-900 dark:text-red-100 font-bold'
+                : winner === 'tie'
+                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
+                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
             }`}>
               No
-              {winner === 'no' && (
-                <span className="ml-2 text-sm">👑 Winner</span>
-              )}
-              {winner === 'tie' && (
-                <span className="ml-2 text-sm">🤝 Tie</span>
-              )}
             </div>
             <div className={`text-sm ${
               winner === 'no' 
                 ? 'text-red-700 dark:text-red-300' 
-                : 'text-red-600 dark:text-red-400'
+                : 'text-gray-500 dark:text-gray-400'
             }`}>
               {noCount} vote{noCount !== 1 ? 's' : ''}
             </div>
@@ -199,8 +195,8 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
         </p>
         {winner && (
           <div className="mt-3 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg">
-            <span className="text-green-800 dark:text-green-200 font-semibold">
-              👑 Winner: {winner}
+            <span className="text-green-900 dark:text-green-100 font-bold">
+              Winner: {winner}
             </span>
           </div>
         )}
@@ -246,23 +242,18 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
                           }`}
                         >
                           <div className="flex items-center space-x-3">
-                            <span className={`font-medium ${
+                            <span className={`${
                               option.is_eliminated 
-                                ? 'text-red-700 dark:text-red-300'
+                                ? 'text-gray-500/70 dark:text-gray-400/70 font-medium'
                                 : option.option_name === winner && roundNumber === totalRounds
-                                ? 'text-green-800 dark:text-green-200'
-                                : 'text-gray-900 dark:text-white'
+                                ? 'text-green-900 dark:text-green-100 font-bold'
+                                : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
                             }`}>
                               {option.option_name}
                             </span>
                             {option.is_eliminated && (
                               <span className="text-xs text-red-600 dark:text-red-400 font-medium">
                                 ❌ ELIMINATED
-                              </span>
-                            )}
-                            {option.option_name === winner && roundNumber === totalRounds && (
-                              <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-                                👑 WINNER
                               </span>
                             )}
                           </div>

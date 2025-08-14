@@ -396,9 +396,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
               )}
             </p>
-            {poll.response_deadline && (
+{poll.response_deadline && (
               <p className="text-xs">
-                Expires {(() => {
+                {isPollClosed ? 'Closed' : 'Expires'} {(() => {
                   const deadline = new Date(poll.response_deadline);
                   const now = new Date();
                   const hoursUntilDeadline = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
@@ -408,7 +408,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     return deadline.toLocaleString("en-US", {
                       month: "numeric",
                       day: "numeric",
-                      year: "numeric",
+                      year: "2-digit",
                       hour: "numeric",
                       minute: "2-digit",
                       hour12: true
@@ -418,7 +418,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     return deadline.toLocaleDateString("en-US", {
                       month: "numeric",
                       day: "numeric",
-                      year: "numeric"
+                      year: "2-digit"
                     });
                   }
                 })()}

@@ -329,22 +329,16 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
                       </div>
                       
                       {/* Candidate name */}
-                      <div className={`font-semibold ${
+                      <div className={`${
                         isTiedCandidate
-                          ? 'text-green-800 dark:text-green-200'
+                          ? 'text-green-900 dark:text-green-100 font-bold'
                           : candidate.isEliminated && !isTiedCandidate
-                          ? 'text-red-700 dark:text-red-300 line-through'
+                          ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
                           : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                          ? 'text-green-800 dark:text-green-200'
-                          : 'text-gray-900 dark:text-white'
+                          ? 'text-green-900 dark:text-green-100 font-bold'
+                          : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
                       }`}>
                         {candidate.name}
-                        {results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length && !isTiedCandidate && (
-                          <span className="ml-2 text-sm">👑 Winner</span>
-                        )}
-                        {isTiedCandidate && (
-                          <span className="ml-2 text-sm">🤝 Tied</span>
-                        )}
                       </div>
                     </div>
 
