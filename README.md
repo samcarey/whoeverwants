@@ -21,6 +21,8 @@ Whoever Wants is a lightweight, anonymous polling app that helps groups make dec
 
 This app is mostly vibe coded - built with intuition and iteration rather than rigid planning. It's a Next.js app with Supabase for the backend, but the real magic is in keeping things simple and functional.
 
+**Latest Updates**: Fixed React 19 compatibility issues and restored poll list functionality (August 2024).
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
