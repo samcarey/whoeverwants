@@ -72,7 +72,10 @@ export default function HomeDebug() {
       }
     }
 
-    fetchPolls();
+    // Add small delay to test timing hypothesis
+    setTimeout(async () => {
+      await fetchPolls();
+    }, 1000);
   }, []);
 
   // Separate polls into open and closed with debug info
