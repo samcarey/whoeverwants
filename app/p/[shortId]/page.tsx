@@ -101,7 +101,11 @@ function PollContent() {
     day: "numeric",
   });
 
-  return <PollPageClient poll={poll} createdDate={createdDate} pollId={pollId} />;
+  return (
+    <div className="pb-4">
+      <PollPageClient poll={poll} createdDate={createdDate} pollId={pollId} />
+    </div>
+  );
 }
 
 export default function PollPage() {

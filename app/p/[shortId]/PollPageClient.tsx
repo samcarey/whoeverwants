@@ -427,7 +427,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
 
           {/* Bottom navigation */}
-          <div className="flex justify-between items-center mt-1">
+          <div className="flex justify-between items-center mt-6 mb-6">
             <Link
               href="/"
               prefetch={true}

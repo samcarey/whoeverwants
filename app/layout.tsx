@@ -60,8 +60,15 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
       >
         <BuildTimer />
-        <div className="h-screen p-8 font-[family-name:var(--font-geist-sans)] overflow-auto">
-          {children}
+        <div className="h-screen font-[family-name:var(--font-geist-sans)] overflow-auto">
+          <div className="h-full" style={{ 
+            paddingLeft: 'max(2rem, env(safe-area-inset-left))', 
+            paddingRight: 'max(2rem, env(safe-area-inset-right))', 
+            paddingTop: '2rem', 
+            paddingBottom: '2rem' 
+          }}>
+            {children}
+          </div>
         </div>
         <script
           dangerouslySetInnerHTML={{

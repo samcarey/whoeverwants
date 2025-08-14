@@ -111,9 +111,9 @@ export default function Home() {
   });
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 -mx-8 -my-8">
       {/* Fixed Header */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white dark:bg-black">
+      <div className="fixed top-0 left-0 right-0 z-20 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-center py-4 relative">
           <a
             href="https://github.com/samcarey/whoeverwants"
@@ -180,7 +180,7 @@ export default function Home() {
                       <Link
                         key={poll.id}
                         href={`/p/${poll.short_id || poll.id}`}
-                        className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
+                        className="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 mr-4">
@@ -229,12 +229,12 @@ export default function Home() {
                       <Link
                         key={poll.id}
                         href={`/p/${poll.short_id || poll.id}`}
-                        className="block bg-red-50 dark:bg-red-950/20 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
+                        className="block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
                       >
                         <div className="mb-2">
-                          <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors">{poll.title}</h3>
+                          <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">{poll.title}</h3>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between">
                           <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
                             poll.poll_type === 'yes_no' 
                               ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
@@ -242,6 +242,31 @@ export default function Home() {
                           }`}>
                             {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
                           </span>
+                          {poll.response_deadline && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Closed {(() => {
+                                const deadline = new Date(poll.response_deadline);
+                                const now = new Date();
+                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                                
+                                if (hoursAgo <= 24) {
+                                  // Within 24 hours, show only time
+                                  return deadline.toLocaleTimeString("en-US", {
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true
+                                  });
+                                } else {
+                                  // More than 24 hours ago, show only date
+                                  return deadline.toLocaleDateString("en-US", {
+                                    month: "numeric",
+                                    day: "numeric",
+                                    year: "2-digit"
+                                  });
+                                }
+                              })()}
+                            </span>
+                          )}
                         </div>
                       </Link>
                     ))}
