@@ -47,6 +47,49 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     [pollClosed, isPollExpired]
   );
 
+  // Check if user has voted on this poll (stored in localStorage)
+  const hasVotedOnPoll = useCallback((pollId: string): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      return votedPolls[pollId] === true;
+    } catch (error) {
+      console.error('Error checking vote status:', error);
+      return false;
+    }
+  }, []);
+
+  // Mark poll as voted (save to localStorage)
+  const markPollAsVoted = useCallback((pollId: string, voteData: any = null) => {
+    if (typeof window === 'undefined') return;
+    try {
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      votedPolls[pollId] = true;
+      localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+      
+      // Also store the vote data if provided (for displaying what they voted)
+      if (voteData) {
+        const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}');
+        pollVotes[pollId] = voteData;
+        localStorage.setItem('pollVotes', JSON.stringify(pollVotes));
+      }
+    } catch (error) {
+      console.error('Error marking poll as voted:', error);
+    }
+  }, []);
+
+  // Get stored vote data for a poll
+  const getStoredVoteData = useCallback((pollId: string) => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}');
+      return pollVotes[pollId] || null;
+    } catch (error) {
+      console.error('Error getting stored vote data:', error);
+      return null;
+    }
+  }, []);
+
   const fetchPollResults = useCallback(async () => {
     setLoadingResults(true);
     try {
@@ -62,6 +105,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Initialize ranked choices with randomized options - runs only once
   useEffect(() => {
     if (poll.poll_type === 'ranked_choice' && poll.options && !optionsInitialized) {
+      // Don't initialize if we already have choices from localStorage
+      if (hasVoted && rankedChoices.length > 0) {
+        setOptionsInitialized(true);
+        return;
+      }
+      
       // Parse options if they're stored as JSON string
       const parsedOptions = typeof poll.options === 'string' 
         ? JSON.parse(poll.options) 
@@ -77,7 +126,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setRankedChoices(shuffledOptions);
       setOptionsInitialized(true);
     }
-  }, [poll.poll_type, poll.options, optionsInitialized]);
+  }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -92,7 +141,22 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     
     // Check if this device created the poll
     setIsCreator(isCreatedByThisDevice(poll.id));
-  }, [poll.id]);
+    
+    // Check if user has already voted on this poll
+    if (hasVotedOnPoll(poll.id)) {
+      setHasVoted(true);
+      
+      // Restore vote data if available
+      const storedVoteData = getStoredVoteData(poll.id);
+      if (storedVoteData) {
+        if (poll.poll_type === 'yes_no' && storedVoteData.yesNoChoice) {
+          setYesNoChoice(storedVoteData.yesNoChoice);
+        } else if (poll.poll_type === 'ranked_choice' && storedVoteData.rankedChoices) {
+          setRankedChoices(storedVoteData.rankedChoices);
+        }
+      }
+    }
+  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteData]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -208,6 +272,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       setHasVoted(true);
+      
+      // Save vote to localStorage so user can't vote again
+      const voteInfo = poll.poll_type === 'yes_no' 
+        ? { yesNoChoice } 
+        : { rankedChoices };
+      markPollAsVoted(poll.id, voteInfo);
       
       // If the poll is closed, fetch results immediately after voting
       if (isPollClosed) {
