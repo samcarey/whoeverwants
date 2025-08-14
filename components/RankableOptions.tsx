@@ -850,7 +850,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           className="p-3 relative transition-all duration-200 ease-out"
           style={{
             height: `${dynamicHeight}px`,
-            touchAction: 'none',
             minHeight: `${totalItemHeight}px`
           }}
           role="listbox"
@@ -893,10 +892,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   top: `${option.top}px`,
                   height: `${itemHeight}px`,
                   transition: dragState.isDragging ? 'top 0.2s ease' : 'top 0.3s ease',
-                  zIndex: 1,
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none'
+                  zIndex: 1
                 }}
                 onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
                 onContextMenu={(e) => e.preventDefault()}
