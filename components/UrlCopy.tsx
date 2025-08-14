@@ -10,14 +10,40 @@ export default function UrlCopy({ url }: UrlCopyProps) {
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = async () => {
-    if (url) {
-      try {
+    if (!url) return;
+
+    try {
+      // Try modern clipboard API first (requires HTTPS and browser support)
+      if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      } catch (error) {
-        console.error("Failed to copy:", error);
+        return;
       }
+
+      // Fallback for older browsers or non-secure contexts
+      const textArea = document.createElement('textarea');
+      textArea.value = url;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        throw new Error('Copy command was unsuccessful');
+      }
+    } catch (error) {
+      console.error("Failed to copy:", error);
+      // Show a simple alert as final fallback
+      alert(`Copy this link: ${url}`);
     }
   };
 

@@ -81,8 +81,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Set the poll URL using query parameter format
-      setPollUrl(`${window.location.origin}/p?id=${poll.id}`);
+      // Use the current URL or construct using short_id if available
+      if (poll.short_id) {
+        setPollUrl(`${window.location.origin}/p/${poll.short_id}`);
+      } else {
+        // Fallback to using the current page URL
+        setPollUrl(window.location.href.split('?')[0]);
+      }
     }
     
     // Check if this device created the poll
