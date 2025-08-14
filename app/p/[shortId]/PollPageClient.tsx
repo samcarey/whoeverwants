@@ -38,6 +38,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
+  const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -183,7 +184,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setYesNoChoice(choice);
   };
 
+  const handleCloseClick = () => {
+    if (isClosingPoll || !isCreator) return;
+    
+    const creatorSecret = getPollCreatorSecret(poll.id);
+    if (!creatorSecret) {
+      alert('You do not have permission to close this poll.');
+      return;
+    }
+    
+    setShowCloseConfirmModal(true);
+  };
+
   const handleClosePoll = async () => {
+    setShowCloseConfirmModal(false);
+    
     if (isClosingPoll || !isCreator) return;
     
     const creatorSecret = getPollCreatorSecret(poll.id);
@@ -464,7 +479,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           {!isPollClosed && isCreator && (
             <div className="mt-4 text-center">
               <button
-                onClick={handleClosePoll}
+                onClick={handleCloseClick}
                 disabled={isClosingPoll}
                 className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
               >
@@ -565,6 +580,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmText="Submit Vote"
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
+      />
+      
+      <ConfirmationModal
+        isOpen={showCloseConfirmModal}
+        onConfirm={handleClosePoll}
+        onCancel={() => setShowCloseConfirmModal(false)}
+        title="Close Poll"
+        message="Are you sure you want to close this poll? This action cannot be undone and voting will end immediately."
+        confirmText="Close Poll"
+        cancelText="Cancel"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
     </>
   );
