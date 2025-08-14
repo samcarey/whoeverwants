@@ -977,10 +977,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         'noPreference'
       )}
       
-      {/* Explanation text under the exclude section */}
-      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
-        Your ballot will not count toward these candidates at all
-      </p>
 
       {/* Render dragged item if dragging */}
       {dragState.isDragging && renderDraggedItem()}
