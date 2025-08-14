@@ -9,6 +9,7 @@ import UrlCopy from "@/components/UrlCopy";
 import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 import { isCreatedByThisDevice, getPollCreatorSecret } from "@/lib/pollCreator";
 
@@ -36,6 +37,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   const [isCreator, setIsCreator] = useState(false);
+  const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -216,7 +218,30 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   };
 
+  const handleVoteClick = () => {
+    if (isSubmitting || hasVoted || isPollClosed) return;
+    
+    // Validate vote choice first
+    if (poll.poll_type === 'yes_no' && !yesNoChoice) {
+      setVoteError("Please select Yes or No");
+      return;
+    }
+    
+    if (poll.poll_type === 'ranked_choice') {
+      const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
+      if (filteredRankedChoices.length === 0) {
+        setVoteError("Please rank at least one option");
+        return;
+      }
+    }
+    
+    setVoteError(null);
+    setShowVoteConfirmModal(true);
+  };
+
   const submitVote = async () => {
+    setShowVoteConfirmModal(false);
+    
     if (isSubmitting || hasVoted || isPollClosed) return;
 
     setIsSubmitting(true);
@@ -358,7 +383,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                   
                   <button
-                    onClick={submitVote}
+                    onClick={handleVoteClick}
                     disabled={isSubmitting || !yesNoChoice}
                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
                   >
@@ -424,7 +449,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                   
                   <button
-                    onClick={submitVote}
+                    onClick={handleVoteClick}
                     disabled={isSubmitting || rankedChoices.length === 0}
                     className="w-full mt-4 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
                   >
@@ -527,6 +552,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       <SuccessPopup 
         show={showSuccessPopup} 
         onClose={() => setShowSuccessPopup(false)} 
+      />
+      
+      <ConfirmationModal
+        isOpen={showVoteConfirmModal}
+        onConfirm={submitVote}
+        onCancel={() => setShowVoteConfirmModal(false)}
+        title="Submit Vote"
+        message={poll.poll_type === 'yes_no' 
+          ? `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?` 
+          : `Are you sure you want to submit your ranking?`}
+        confirmText="Submit Vote"
+        cancelText="Cancel"
+        confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
       />
     </>
   );

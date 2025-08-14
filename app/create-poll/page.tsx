@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, storePollCreation, cleanupOldPolls } from "@/lib/pollCreator";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ export default function CreatePoll() {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -335,9 +337,24 @@ export default function CreatePoll() {
     return ` (${displayParts.join(', ')})`;
   };
 
-  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
+  const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Check for validation errors before showing modal
+    const validationError = getValidationError();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    
+    // Show confirmation modal
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    // Hide modal
+    setShowConfirmModal(false);
     
     // Prevent duplicate submissions - check ref first for immediate blocking
     if (isSubmittingRef.current) {
@@ -350,7 +367,7 @@ export default function CreatePoll() {
     setError(null);
     
     // Disable the entire form to prevent any interaction
-    const form = e.target instanceof HTMLElement ? e.target.closest('form') : null;
+    const form = document.querySelector('form');
     if (form) {
       const inputs = form.querySelectorAll('input, select, button');
       inputs.forEach(input => {
@@ -609,7 +626,7 @@ export default function CreatePoll() {
           
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={handleSubmitClick}
             disabled={isLoading || isSubmitted || !isFormValid()}
             className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -659,6 +676,16 @@ export default function CreatePoll() {
           </div>
         </form>
       </div>
+      
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => setShowConfirmModal(false)}
+        title="Create Poll"
+        message={`Are you sure you want to create this ${getPollType() === 'yes_no' ? 'Yes/No' : 'Ranked Choice'} poll?`}
+        confirmText="Create Poll"
+        cancelText="Cancel"
+      />
     </div>
   );
 }
