@@ -40,6 +40,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
+  const [userVoteData, setUserVoteData] = useState<any>(null);
+  const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -64,19 +66,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, []);
 
   // Mark poll as voted (save to localStorage)
-  const markPollAsVoted = useCallback((pollId: string, voteData: any = null, voteId?: string) => {
+  const markPollAsVoted = useCallback((pollId: string, voteId?: string) => {
     if (typeof window === 'undefined') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       votedPolls[pollId] = true;
       localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
-      
-      // Also store the vote data if provided (for displaying what they voted)
-      if (voteData) {
-        const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}');
-        pollVotes[pollId] = voteData;
-        localStorage.setItem('pollVotes', JSON.stringify(pollVotes));
-      }
       
       // Store the vote ID if provided
       if (voteId) {
@@ -89,17 +84,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, []);
 
-  // Get stored vote data for a poll
-  const getStoredVoteData = useCallback((pollId: string) => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}');
-      return pollVotes[pollId] || null;
-    } catch (error) {
-      console.error('Error getting stored vote data:', error);
-      return null;
-    }
-  }, []);
 
   // Get stored vote ID for a poll
   const getStoredVoteId = useCallback((pollId: string): string | null => {
@@ -109,6 +93,27 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       return voteIds[pollId] || null;
     } catch (error) {
       console.error('Error getting stored vote ID:', error);
+      return null;
+    }
+  }, []);
+
+  // Fetch vote data from database by vote ID
+  const fetchVoteData = useCallback(async (voteId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('votes')
+        .select('poll_id, vote_type, yes_no_choice, ranked_choices')
+        .eq('id', voteId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching vote data:', error);
+        return null;
+      }
+
+      return data || null;
+    } catch (error) {
+      console.error('Error fetching vote data:', error);
       return null;
     }
   }, []);
@@ -164,21 +169,32 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (hasVotedOnPoll(poll.id)) {
       setHasVoted(true);
       
-      // Restore vote data if available
-      const storedVoteData = getStoredVoteData(poll.id);
-      if (storedVoteData) {
-        if (poll.poll_type === 'yes_no' && storedVoteData.yesNoChoice) {
-          setYesNoChoice(storedVoteData.yesNoChoice);
-        } else if (poll.poll_type === 'ranked_choice' && storedVoteData.rankedChoices) {
-          setRankedChoices(storedVoteData.rankedChoices);
-        }
-      }
-      
       // Get the vote ID if available
       const voteId = getStoredVoteId(poll.id);
       setUserVoteId(voteId);
+      
+      // Fetch vote data from database if we have a vote ID
+      if (voteId) {
+        setIsLoadingVoteData(true);
+        fetchVoteData(voteId).then(voteData => {
+          if (voteData) {
+            setUserVoteData(voteData);
+            
+            // Set UI state based on vote data from database columns
+            if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
+              setYesNoChoice(voteData.yes_no_choice);
+            } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
+              setRankedChoices(voteData.ranked_choices);
+            }
+          }
+        }).catch(err => {
+          console.error('Error in fetchVoteData promise:', err);
+        }).finally(() => {
+          setIsLoadingVoteData(false);
+        });
+      }
     }
-  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteData, getStoredVoteId]);
+  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -342,10 +358,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(insertedVote.id);
       
       // Save vote to localStorage so user can't vote again
-      const voteInfo = poll.poll_type === 'yes_no' 
-        ? { yesNoChoice } 
-        : { rankedChoices };
-      markPollAsVoted(poll.id, voteInfo, insertedVote.id);
+      markPollAsVoted(poll.id, insertedVote.id);
       
       // If the poll is closed, fetch results immediately after voting
       if (isPollClosed) {
@@ -394,26 +407,38 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
                   <div className="text-left">
                     <h4 className="font-medium mb-2">Your vote:</h4>
-                    <div className={`flex items-center p-3 rounded-lg ${
-                      yesNoChoice === 'yes' 
-                        ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
-                        : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
-                    }`}>
-                      <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
-                        yesNoChoice === 'yes'
-                          ? 'bg-green-600 text-white'
-                          : 'bg-red-600 text-white'
+                    {isLoadingVoteData ? (
+                      <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                          <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                        <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                      </div>
+                    ) : (
+                      <div className={`flex items-center p-3 rounded-lg ${
+                        yesNoChoice === 'yes' 
+                          ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
+                          : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                       }`}>
-                        {yesNoChoice === 'yes' ? '✓' : '✗'}
-                      </span>
-                      <span className={`font-medium ${
-                        yesNoChoice === 'yes'
-                          ? 'text-green-800 dark:text-green-200'
-                          : 'text-red-800 dark:text-red-200'
-                      }`}>
-                        {yesNoChoice === 'yes' ? 'Yes' : 'No'}
-                      </span>
-                    </div>
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                          yesNoChoice === 'yes'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-red-600 text-white'
+                        }`}>
+                          {yesNoChoice === 'yes' ? '✓' : '✗'}
+                        </span>
+                        <span className={`font-medium ${
+                          yesNoChoice === 'yes'
+                            ? 'text-green-800 dark:text-green-200'
+                            : 'text-red-800 dark:text-red-200'
+                        }`}>
+                          {yesNoChoice === 'yes' ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   {userVoteId && (
                     <div className="mt-4 text-left">
@@ -491,16 +516,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
                   <div className="text-left">
                     <h4 className="font-medium mb-2">Your ranking:</h4>
-                    <div className="space-y-2">
-                      {rankedChoices.map((choice, index) => (
-                        <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                          <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
-                            {index + 1}
-                          </span>
-                          <span>{choice}</span>
-                        </div>
-                      ))}
-                    </div>
+                    {isLoadingVoteData ? (
+                      <div className="space-y-2">
+                        {[1, 2, 3].map((num) => (
+                          <div key={num} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
+                            <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                              <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            </div>
+                            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
+                          </div>
+                        ))}
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading your ranking...</div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {rankedChoices.map((choice, index) => (
+                          <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                            <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                              {index + 1}
+                            </span>
+                            <span>{choice}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   {userVoteId && (
                     <div className="mt-4 text-left">

@@ -23,7 +23,9 @@
     "test:validate": "node tests/run-specific-tests.js all --coverage",
     "db:rebuild-test": "./scripts/complete-migration.sh",
     "db:rebuild-production": "./scripts/complete-migration-production.sh",
-    "db:clear-test": "./scripts/direct-api-migration.sh clear"
+    "db:clear-test": "./scripts/direct-api-migration.sh clear",
+    "debug:console": "node scripts/debug-console.cjs",
+    "debug:react": "node scripts/debug-react-state.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",

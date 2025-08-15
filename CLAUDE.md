@@ -93,6 +93,82 @@ useEffect(() => {
 
 ---
 
+## 🔍 BROWSER CONSOLE DEBUGGING
+
+**Claude can read browser console output using Playwright/Puppeteer to debug React applications.**
+
+### When to Use Browser Console Debugging
+
+- **React state issues** that don't appear in server logs
+- **Client-side JavaScript errors** and warnings
+- **Database fetch errors** visible only in browser
+- **localStorage/sessionStorage debugging**
+- **Component lifecycle debugging** with console.log statements
+
+### Quick Console Capture Method
+
+```bash
+# Use the permanent console debugging utility
+node scripts/debug-console.cjs [poll-id-or-url]
+
+# Or use npm scripts:
+npm run debug:console [poll-id-or-url]
+npm run debug:react [poll-id] [action]
+
+# Examples:
+node scripts/debug-console.cjs f1eb5036-fb77-4baa-9f23-a2774c576c5b
+node scripts/debug-console.cjs /create-poll
+node scripts/debug-console.cjs  # captures homepage
+
+# React-specific debugging:
+npm run debug:react poll-123 vote      # Debug voting process
+npm run debug:react poll-123 revisit   # Debug vote retrieval
+```
+
+### Manual Browser Console Debugging
+
+1. **Add console.log statements** to React components
+2. **Run the console capture script** to visit the page
+3. **Analyze captured output** for errors and state issues
+4. **Clean up debug statements** after fixing the issue
+
+### Debugging React Components
+
+Add temporary debugging to React components:
+```typescript
+// In React component
+useEffect(() => {
+  console.log('Component state:', { someState, anotherState });
+  console.log('Props received:', props);
+}, [someState, anotherState, props]);
+
+// For debugging API calls
+const fetchData = async () => {
+  console.log('Fetching data with params:', params);
+  try {
+    const result = await apiCall(params);
+    console.log('API result:', result);
+  } catch (error) {
+    console.error('API error:', error);
+  }
+};
+```
+
+### Browser Console vs Server Logs
+
+- **Server logs** (`sudo journalctl -u whoeverwants-dev -f`) - server-side errors, API routes
+- **Browser console** - client-side React state, component lifecycle, database fetch errors
+- **Use browser console for React debugging** - state management, component rendering, client-side API calls
+
+### Important Notes
+
+- **Playwright captures real browser console output** - works with actual React app
+- **React Testing Library uses jsdom** - simulated DOM, no real browser console
+- **Always clean up debug statements** after fixing issues
+- **Use sparingly** - too many console.logs can impact performance
+
+---
+
 ## Custom Claude Commands
 
 ### /restart-services
