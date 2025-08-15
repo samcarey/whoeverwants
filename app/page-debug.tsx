@@ -149,7 +149,7 @@ export default function HomeDebug() {
                     {openPolls.map((poll) => (
                       <Link
                         key={poll.id}
-                        href={`/p/${poll.short_id || poll.id}`}
+                        href={`/p/${poll.id}`}
                         className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                       >
                         <h3 className="font-medium text-lg text-gray-900 dark:text-white">{poll.title}</h3>
@@ -173,7 +173,7 @@ export default function HomeDebug() {
                     {closedPolls.map((poll) => (
                       <Link
                         key={poll.id}
-                        href={`/p/${poll.short_id || poll.id}`}
+                        href={`/p/${poll.id}`}
                         className="block bg-red-50 dark:bg-red-950/20 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
                       >
                         <h3 className="font-medium text-lg text-gray-900 dark:text-white">{poll.title}</h3>
