@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase, Poll } from "@/lib/supabase";
+import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import ClientOnly from "@/components/ClientOnly";
 
 // Simple countdown component
@@ -72,31 +73,16 @@ export default function Home() {
         setLoading(true);
         setError(null);
 
-        console.log("🔍 HOMEPAGE DEBUG: About to make API call");
-        console.log("🔍 HOMEPAGE DEBUG: NODE_ENV =", process.env.NODE_ENV);
-        console.log("🔍 HOMEPAGE DEBUG: Supabase URL =", (supabase as any).supabaseUrl);
-        console.log("🔍 HOMEPAGE DEBUG: Test URL env =", process.env.NEXT_PUBLIC_SUPABASE_URL_TEST);
-        console.log("🔍 HOMEPAGE DEBUG: Prod URL env =", process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION);
+        // Get polls this browser has access to
+        const data = await getAccessiblePolls();
 
-        const { data, error } = await supabase
-          .from("polls")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        console.log("🔍 HOMEPAGE DEBUG: API call completed");
-        console.log("🔍 HOMEPAGE DEBUG: Error =", error);
-        console.log("🔍 HOMEPAGE DEBUG: Data length =", Array.isArray(data) ? data.length : 'not array');
-        console.log("🔍 HOMEPAGE DEBUG: Raw data =", data);
-
-        if (error) {
-          console.error("Error fetching polls:", error);
+        if (!data) {
+          console.error("Error fetching accessible polls");
           setError("Failed to load polls");
           return;
         }
 
-        setPolls(data || []);
-        console.log("🔍 HOMEPAGE DEBUG: Set polls state with", (data || []).length, "items");
+        setPolls(data);
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppPrefetch } from "@/lib/prefetch";
-import { generateCreatorSecret, storePollCreation, cleanupOldPolls } from "@/lib/pollCreator";
+import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
 
 export const dynamic = 'force-dynamic';
@@ -447,11 +447,8 @@ export default function CreatePoll() {
         return;
       }
 
-      // Store the poll creation locally so this device can manage it
-      storePollCreation(data[0].id, creatorSecret);
-      
-      // Clean up old poll records occasionally
-      cleanupOldPolls();
+      // Record poll creation in browser storage
+      recordPollCreation(data[0].id, creatorSecret);
 
       // Clear saved form state since poll was created successfully
       clearFormState();

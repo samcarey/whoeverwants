@@ -11,7 +11,7 @@ import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
-import { isCreatedByThisDevice, getPollCreatorSecret } from "@/lib/pollCreator";
+import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -142,8 +142,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
     }
     
-    // Check if this device created the poll
-    setIsCreator(isCreatedByThisDevice(poll.id));
+    // Check if this browser created the poll
+    setIsCreator(isCreatedByThisBrowser(poll.id));
     
     // Check if user has already voted on this poll
     if (hasVotedOnPoll(poll.id)) {
@@ -187,7 +187,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const handleCloseClick = () => {
     if (isClosingPoll || !isCreator) return;
     
-    const creatorSecret = getPollCreatorSecret(poll.id);
+    const creatorSecret = getCreatorSecret(poll.id);
     if (!creatorSecret) {
       alert('You do not have permission to close this poll.');
       return;
@@ -201,7 +201,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     
     if (isClosingPoll || !isCreator) return;
     
-    const creatorSecret = getPollCreatorSecret(poll.id);
+    const creatorSecret = getCreatorSecret(poll.id);
     if (!creatorSecret) {
       alert('You do not have permission to close this poll.');
       return;

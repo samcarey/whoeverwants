@@ -27,7 +27,7 @@ async function debugConsole() {
   
   try {
     console.log('📍 Navigating to homepage...');
-    await page.goto('http://localhost:3002', { waitUntil: 'networkidle' });
+    await page.goto('http://localhost:3001', { waitUntil: 'networkidle' });
     
     // Wait a bit for any async operations
     console.log('⏳ Waiting for page to load...');
