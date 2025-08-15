@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "tunnel": "ssh -p 443 -R0:localhost:3000 -L4300:localhost:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 wrr0fLztB5P@pro.pinggy.io",
+    "tunnel": "ssh -p 443 -R0:localhost:3001 -L4300:localhost:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 wrr0fLztB5P@pro.pinggy.io",
     "build": "next build",
     "start": "npx serve@latest out",
     "lint": "next lint",

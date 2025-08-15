@@ -6,8 +6,8 @@
 
 Before claiming any URL is accessible, ALWAYS run:
 ```bash
-# Test local dev server
-curl -s -I http://localhost:3002 | head -3
+# Test local dev server (check which port Next.js is actually using)
+curl -s -I http://localhost:3001 | head -3
 
 # Test public tunnel  
 curl -s -I https://decisionbot.a.pinggy.link | head -3
@@ -73,7 +73,7 @@ After making changes that involve:
 1. **Replace `new Date()` calls** with `typeof window` guards
 2. **Move client-specific logic** to `useEffect` hooks
 3. **Initialize state with empty/neutral values** that match server rendering
-4. **Test both localhost:3000 AND tunnel URL** after changes
+4. **Test both localhost:3001 AND tunnel URL** after changes
 
 ### Emergency Fix Pattern
 
@@ -105,9 +105,9 @@ Restart both the development server and tunnel services:
 This script will:
 - Kill any existing processes on port 3000
 - Kill any running tunnel processes  
-- Start dev server on port 3000
+- Start dev server (Next.js will auto-select available port)
 - Wait for dev server to initialize
-- Start Pinggy tunnel to expose port 3000
+- Start Pinggy tunnel to expose the correct port
 - Test both services and report status
 
 ## 🚀 AUTO-STARTING SERVICES
@@ -128,8 +128,8 @@ sudo systemctl start whoeverwants-tunnel
 
 ### Development URL
 When services are running, the application is accessible at:
-- **Public URL**: http://decisionbot.a.pinggy.link (requires Pinggy Pro)
-- **Local URL**: http://localhost:3000
+- **Public URL**: https://decisionbot.a.pinggy.link (requires Pinggy Pro)
+- **Local URL**: http://localhost:3001 (port varies - Next.js auto-selects available port)
 
 ### Pinggy Pro Configuration
 To use the persistent `decisionbot.a.pinggy.link` subdomain, you need to set your Pinggy Pro token:
@@ -146,11 +146,12 @@ Without the token, the tunnel will use a free temporary URL that expires in 60 m
 #### 1. **whoeverwants-dev.service**
 - Runs the Next.js development server (`npm run dev`)
 - Auto-restarts on failure
-- Listens on port 3000
+- Next.js auto-selects available port (usually 3001 if 3000 is busy)
 
 #### 2. **whoeverwants-tunnel.service**
-- Creates a Pinggy tunnel to expose port 3000 to the internet
+- Creates a Pinggy tunnel to expose the dev server port to the internet
 - Domain: decisionbot.a.pinggy.link
+- **IMPORTANT**: Tunnel port must match actual dev server port
 - Depends on the dev service
 
 ### Service Management Commands
@@ -194,8 +195,117 @@ This will:
 If services fail to start:
 1. Check Node.js is available: `which node`
 2. Check npm packages are installed: `cd /home/ubuntu/whoeverwants && npm install`
-3. Check port 3000 is free: `sudo lsof -i :3000`
+3. Check ports are free: `sudo lsof -i :3000` and `sudo lsof -i :3001`
 4. View detailed logs: `sudo journalctl -u whoeverwants-dev -n 100`
+
+## 🔧 TROUBLESHOOTING: Development Server Issues
+
+### Problem: Dev Server Not Rendering (Hydration + Port Conflicts)
+
+If the development server appears to be running but the site doesn't load properly, check these issues:
+
+#### **1. Port Conflicts**
+Next.js automatically switches ports when 3000 is busy:
+- Dev server may start on 3001 instead of 3000
+- Tunnel service must be updated to match the correct port
+
+**Fix Process:**
+1. Check which port Next.js actually started on:
+   ```bash
+   sudo systemctl status whoeverwants-dev
+   # Look for: "Local: http://localhost:3001" in the logs
+   ```
+
+2. Update tunnel configuration in `package.json`:
+   ```json
+   "tunnel": "ssh -p 443 -R0:localhost:3001 -L4300:localhost:4300 ..."
+   ```
+
+3. Restart tunnel service:
+   ```bash
+   sudo systemctl restart whoeverwants-tunnel
+   ```
+
+#### **2. React Hydration Errors**
+Hydration errors cause the app to show permanent loading spinners.
+
+**Common Cause:** Date/time calculations in render functions
+```typescript
+// ❌ BAD - causes hydration mismatch
+const now = new Date(); // Different on server vs client
+const openPolls = polls.filter(poll => 
+  new Date(poll.response_deadline) > now
+);
+```
+
+**Fix:** Move date logic to `useEffect`
+```typescript
+// ✅ GOOD - avoids hydration issues  
+const [openPolls, setOpenPolls] = useState<Poll[]>([]);
+
+useEffect(() => {
+  if (typeof window === 'undefined') return;
+  
+  const now = new Date(); // Only runs on client
+  const open = polls.filter(poll => 
+    new Date(poll.response_deadline) > now
+  );
+  setOpenPolls(open);
+}, [polls]);
+```
+
+#### **3. Missing JavaScript Build Assets**
+404 errors for `main-app.js`, `webpack.js` files indicate build corruption.
+
+**Fix:** Clear Next.js cache and restart
+```bash
+rm -rf .next/
+npm run dev
+```
+
+#### **4. Complete Recovery Steps**
+When dev server has multiple issues:
+
+1. **Clear build cache:**
+   ```bash
+   rm -rf .next/
+   ```
+
+2. **Check for hydration errors in code:**
+   - Search for `new Date()` in render functions
+   - Move to `useEffect` hooks with `typeof window` guards
+
+3. **Identify actual port:**
+   ```bash
+   sudo systemctl status whoeverwants-dev
+   ```
+
+4. **Update tunnel port in package.json** to match dev server port
+
+5. **Restart services:**
+   ```bash
+   sudo systemctl restart whoeverwants-dev
+   sudo systemctl restart whoeverwants-tunnel
+   ```
+
+6. **Verify both URLs work:**
+   ```bash
+   curl -s -I http://localhost:3001 | head -3
+   curl -s -I https://decisionbot.a.pinggy.link | head -3
+   ```
+
+#### **5. Debug Browser Console**
+Use the included debug script to capture browser console logs:
+```bash
+node debug-console.cjs
+```
+This helps identify hydration errors and JavaScript loading issues.
+
+**Success Indicators:**
+- No hydration warnings in browser console
+- "Loading spinner present: false"
+- API calls successfully loading data
+- Both local and tunnel URLs return HTTP 200
 
 ---
 

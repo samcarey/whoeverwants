@@ -31,16 +31,16 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated (lowest Borda score)
           ]},
           { round: 3, results: [
-            ['E', 1, false],  // E: 1 vote, survives
-            ['A', 1, false],  // A: 1 vote, survives
-            ['D', 1, true]    // D: 1 vote, eliminated (Borda tiebreaker)
+            ['A', 1, false],  // A: 1 vote, survives (alphabetically first)
+            ['D', 1, false],  // D: 1 vote, survives
+            ['E', 1, true]    // E: 1 vote, eliminated (alphabetical tiebreaker - E comes after D)
           ]},
           { round: 4, results: [
-            ['E', 2, false],  // E: gets D's transfer, wins
-            ['A', 1, false]   // A: 1 vote, survives
+            ['A', 2, false],  // A: gets E's transfer, wins
+            ['D', 1, false]   // D: 1 vote, survives
           ]}
         ])
-        .expectWinner('E')
+        .expectWinner('A')
         .run()
     })
 
@@ -57,14 +57,14 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['C', 1, false],  // C: 1 vote, survives
-            ['A', 1, true]    // A: eliminated (alphabetical tiebreaker)
+            ['A', 1, false],  // A: 1 vote, survives (alphabetically first)
+            ['C', 1, true]    // C: eliminated (alphabetical tiebreaker)
           ]},
           { round: 3, results: [
-            ['C', 2, false]   // C: gets A's transfer, wins
+            ['A', 2, false]   // A: gets C's transfer, wins
           ]}
         ])
-        .expectWinner('C')
+        .expectWinner('A')
         .run()
     })
   })
@@ -163,15 +163,12 @@ describe('Zero Vote Elimination Bug Fix', () => {
           ]},
           { round: 2, results: [
             ['A', 2, false],  // A: 2 votes, survives 
-            ['D', 1, false],  // D: 1 vote, survives
-            ['C', 1, true]    // C: eliminated (Borda tiebreaker)
+            ['C', 1, false],  // C: 1 vote, survives
+            ['D', 1, true]    // D: eliminated (alphabetical tiebreaker - D comes after C)
           ]},
           { round: 3, results: [
-            ['A', 2, false],  // A: 2 votes, survives
-            ['D', 2, true]    // D: gets C's transfer but eliminated
-          ]},
-          { round: 4, results: [
-            ['A', 4, false]   // A: gets all remaining transfers, wins
+            ['A', 3, false],  // A: 3 votes, wins with majority
+            ['C', 1, false]   // C: 1 vote, not eliminated - A wins
           ]}
         ])
         .expectWinner('A')
