@@ -1,6 +1,6 @@
 "use client";
 
-import { supabase, Poll, getPollByShortId, getPollById } from "@/lib/supabase";
+import { supabase, Poll } from "@/lib/supabase";
 import { getPollWithAccess } from "@/lib/simplePollQueries";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
@@ -25,9 +25,9 @@ function PollContent() {
   }, [router]);
 
   useEffect(() => {
-    const shortId = params.shortId as string;
+    const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
     
-    if (!shortId) {
+    if (!pollId) {
       router.replace('/');
       return;
     }
@@ -35,7 +35,7 @@ function PollContent() {
     async function fetchPoll() {
       try {
         // Get poll and grant access to this browser
-        const pollData = await getPollWithAccess(shortId);
+        const pollData = await getPollWithAccess(pollId);
         
         if (!pollData) {
           setError(true);

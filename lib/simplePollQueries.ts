@@ -32,18 +32,18 @@ export async function getAccessiblePolls(): Promise<Poll[]> {
   }
 }
 
-// Get a specific poll by ID or short_id, and grant access if found
-export async function getPollWithAccess(idOrShortId: string): Promise<Poll | null> {
+// Get a specific poll by ID and grant access if found
+export async function getPollWithAccess(pollId: string): Promise<Poll | null> {
   try {
-    // Try to find the poll by ID or short_id
+    // Try to find the poll by ID
     const { data, error } = await supabase
       .from('polls')
       .select('*')
-      .or(`id.eq.${idOrShortId},short_id.eq.${idOrShortId}`)
+      .eq('id', pollId)
       .single();
 
     if (error || !data) {
-      console.log('Poll not found:', idOrShortId);
+      console.log('Poll not found:', pollId);
       return null;
     }
 
@@ -69,12 +69,12 @@ export async function recordPollCreation(pollId: string): Promise<void> {
 }
 
 // Check if a poll exists (without granting access)
-export async function pollExists(idOrShortId: string): Promise<boolean> {
+export async function pollExists(pollId: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from('polls')
       .select('id')
-      .or(`id.eq.${idOrShortId},short_id.eq.${idOrShortId}`)
+      .eq('id', pollId)
       .single();
 
     return !error && !!data;
