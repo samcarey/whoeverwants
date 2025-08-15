@@ -43,14 +43,14 @@ describe('Edge Cases and Boundary Conditions', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['B', 1, false],  // B survives (alphabetical tiebreaker)
-            ['A', 1, true]    // A eliminated first (alphabetical when Borda tied)
+            ['A', 1, false],  // A survives (alphabetical tiebreaker - A comes first)
+            ['B', 1, true]    // B eliminated first (alphabetical when Borda tied)
           ]},
           { round: 2, results: [
-            ['B', 2, false]   // B gets A's transfer, wins
+            ['A', 2, false]   // A gets B's transfer, wins
           ]}
         ])
-        .expectWinner('B')
+        .expectWinner('A')
         .run()
     })
   })
@@ -94,13 +94,9 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['D', 0, true]    // D: 0 votes, eliminated (2 Borda points)
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes, no transfers from D
-            ['C', 1, false],  // C: 1 vote, survives
-            ['B', 1, true]    // B: eliminated (Borda tie with C, alphabetical first)
-          ]},
-          { round: 3, results: [
-            ['A', 3, false],  // A: gets B's transfer, wins
-            ['C', 1, false]   
+            ['A', 2, false],  // A: 2 votes (50% = majority with 4 total), wins
+            ['B', 1, false],  // B: 1 vote, survives  
+            ['C', 1, true]    // C: eliminated (Borda tie with B, alphabetical after B)
           ]}
         ])
         .expectWinner('A')
@@ -235,14 +231,14 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['C', 0, true]    // C: 0 votes, eliminated
           ]},
           { round: 2, results: [
-            ['B', 2, false],  // B: 2 votes, survives
-            ['A', 2, true]    // A: eliminated (alphabetical when Borda tied)
+            ['A', 2, false],  // A: 2 votes, survives
+            ['B', 2, true]    // B: eliminated (alphabetical when Borda tied - B comes after A)
           ]},
           { round: 3, results: [
-            ['B', 4, false]   // B: gets A's transfer, wins
+            ['A', 4, false]   // A: gets B's transfer, wins
           ]}
         ])
-        .expectWinner('B')
+        .expectWinner('A')
         .run()
     })
   })

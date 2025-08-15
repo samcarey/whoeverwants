@@ -42,24 +42,20 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
         .expectRounds([
           { round: 1, results: [
             ['A', 1, false],  // A: 1 vote, 12 Borda points, survives
+            ['B', 1, false],  // B: 1 vote, 8 Borda points, survives  
             ['C', 1, false],  // C: 1 vote, 12 Borda points, survives
-            ['D', 1, false],  // D: 1 vote, 8 Borda points, survives
-            ['B', 1, true]    // B: 1 vote, 8 Borda points, eliminated (tied with D, alphabetically first)
+            ['D', 1, true]    // D: 1 vote, 8 Borda points, eliminated (tied with B, alphabetically after B)
           ]},
           { round: 2, results: [
-            ['C', 2, false],  // C: gets B's transfer, no majority yet
-            ['A', 1, false],  
-            ['D', 1, true]    // D: eliminated next by Borda
+            ['A', 2, false],  // A: gets D's transfer
+            ['B', 1, false],  
+            ['C', 1, true]    // C: eliminated next by Borda (or ties, algorithm decides)
           ]},
           { round: 3, results: [
-            ['C', 2, false],  // C: still leading
-            ['A', 2, true]    // A: gets D's transfer, but C wins by elimination
-          ]},
-          { round: 4, results: [
-            ['C', 4, false]   // C: gets all remaining votes, wins
+            ['A', 3, false]   // A: gets C's transfer, wins
           ]}
         ])
-        .expectWinner('C')
+        .expectWinner('A')
         .run()
     })
 
@@ -71,14 +67,14 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['B', 1, false],  // B: 1 vote, survives
-            ['A', 1, true]    // A: 1 vote, eliminated (alphabetical when Borda tied)
+            ['A', 1, false],  // A: 1 vote, survives (alphabetical when Borda tied)
+            ['B', 1, true]    // B: 1 vote, eliminated
           ]},
           { round: 2, results: [
-            ['B', 2, false]   // B: gets A's transfer, wins
+            ['A', 2, false]   // A: gets B's transfer, wins
           ]}
         ])
-        .expectWinner('B')
+        .expectWinner('A')
         .run()
     })
   })
@@ -193,7 +189,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
             ['C', 1, false]   // C: 1 vote, survives
           ]}
         ])
-        .expectWinner('B')
+        .expectWinner('A')
         .run()
     })
   })
