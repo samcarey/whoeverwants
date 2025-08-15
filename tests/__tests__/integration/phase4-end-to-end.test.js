@@ -25,6 +25,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'E2E Integration Test Poll',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Option A', 'Option B', 'Option C', 'Option D', 'Option E'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'e2e-test-' + Date.now()
@@ -116,6 +117,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'Concurrent Voting Test Poll',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Choice 1', 'Choice 2', 'Choice 3', 'Choice 4'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'concurrent-test-' + Date.now()
@@ -184,6 +186,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'Lifecycle Management Test Poll',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Alpha', 'Beta', 'Gamma', 'Delta'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'lifecycle-test-' + Date.now()
@@ -260,6 +263,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'Mixed Voting Patterns Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Candidate A', 'Candidate B', 'Candidate C', 'Candidate D', 'Candidate E'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'mixed-patterns-' + Date.now()
@@ -360,6 +364,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'All Incomplete Ballots Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Option X', 'Option Y', 'Option Z'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'all-incomplete-' + Date.now()
@@ -417,6 +422,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'Vote Immutability Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Item 1', 'Item 2', 'Item 3'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'immutability-' + Date.now()
@@ -473,6 +479,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'No Preference Exclusion Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Red', 'Blue', 'Green', 'Yellow', 'Purple'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'exclusion-test-' + Date.now()
@@ -522,6 +529,7 @@ describe('Phase 4: End-to-End Integration Tests', () => {
       const testPoll = {
         title: 'Transaction Integrity Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['A', 'B', 'C', 'D'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'transaction-' + Date.now()

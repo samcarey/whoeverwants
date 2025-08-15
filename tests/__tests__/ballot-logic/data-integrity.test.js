@@ -13,6 +13,7 @@ describe('Phase 2: Data Integrity Tests', () => {
     const testPoll = {
       title: 'Test Poll for Data Integrity',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Secure Option A', 'Secure Option B', 'Secure Option C', 'Secure Option D'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'integrity-test-secret-' + Date.now()

@@ -13,6 +13,7 @@ describe('Phase 3: Borda Count - Point Compensation Algorithm', () => {
     const testPoll = {
       title: 'Borda Count Compensation Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'borda-compensation-test-' + Date.now()

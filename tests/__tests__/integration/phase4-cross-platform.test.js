@@ -13,6 +13,7 @@ describe('Phase 4: Cross-Platform Compatibility Tests', () => {
     const testPoll = {
       title: 'Cross-Platform Compatibility Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Platform A', 'Platform B', 'Platform C', 'Platform D'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'cross-platform-' + Date.now()
@@ -339,6 +340,7 @@ describe('Phase 4: Cross-Platform Compatibility Tests', () => {
       const unicodePoll = {
         title: 'Unicode Compatibility Test 🗳️',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Option α', 'Option β', 'Option γ', 'Emoji 🎯', 'Accent café'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'unicode-test-' + Date.now()

@@ -14,6 +14,7 @@ describe('Phase 4: Regression Testing Suite', () => {
     const testPoll = {
       title: 'Regression Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Legacy A', 'Legacy B', 'Legacy C', 'Legacy D', 'Legacy E'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'regression-test-' + Date.now()
@@ -36,6 +37,7 @@ describe('Phase 4: Regression Testing Suite', () => {
     const legacyPoll = {
       title: 'Legacy Poll Format Test',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Option 1', 'Option 2', 'Option 3'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'legacy-format-' + Date.now()
@@ -71,6 +73,7 @@ describe('Phase 4: Regression Testing Suite', () => {
       const standardPoll = {
         title: 'Standard Regression Poll',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Existing A', 'Existing B', 'Existing C'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'standard-' + Date.now()
@@ -94,6 +97,7 @@ describe('Phase 4: Regression Testing Suite', () => {
       const compatibilityPoll = {
         title: 'Compatibility Test Poll',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Yes', 'No'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'compat-' + Date.now()
@@ -124,6 +128,7 @@ describe('Phase 4: Regression Testing Suite', () => {
       const metadataPoll = {
         title: 'Metadata Preservation Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Meta A', 'Meta B', 'Meta C', 'Meta D'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'metadata-' + Date.now(),
@@ -171,6 +176,7 @@ describe('Phase 4: Regression Testing Suite', () => {
         {
           title: 'Minimum Options Test',
           poll_type: 'ranked_choice',
+        is_private: false,
           options: ['Single Option'],
           response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           creator_secret: 'min-' + Date.now()
@@ -179,6 +185,7 @@ describe('Phase 4: Regression Testing Suite', () => {
         {
           title: 'Many Options Test',
           poll_type: 'ranked_choice',
+        is_private: false,
           options: Array.from({ length: 20 }, (_, i) => `Option ${i + 1}`),
           response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           creator_secret: 'max-' + Date.now()
@@ -187,6 +194,7 @@ describe('Phase 4: Regression Testing Suite', () => {
         {
           title: 'Unicode Options Test',
           poll_type: 'ranked_choice',
+        is_private: false,
           options: ['Café ☕', 'Naïve 🎭', 'Résumé 📄', 'Piña Colada 🍹'],
           response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           creator_secret: 'unicode-' + Date.now()
@@ -213,6 +221,7 @@ describe('Phase 4: Regression Testing Suite', () => {
       const votingPoll = {
         title: 'Single Choice Voting Regression',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Yes', 'No', 'Maybe'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'single-voting-' + Date.now()

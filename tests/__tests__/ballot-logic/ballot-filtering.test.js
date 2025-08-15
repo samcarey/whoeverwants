@@ -13,6 +13,7 @@ describe('Phase 2: Ballot Filtering Logic', () => {
     const testPoll = {
       title: 'Test Poll for Ballot Filtering',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Candidate A', 'Candidate B', 'Candidate C', 'Candidate D', 'Candidate E'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours from now
       creator_secret: 'test-secret-' + Date.now()

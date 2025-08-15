@@ -13,6 +13,7 @@ describe('Phase 3: Mathematical Verification - Voting Theory Compliance', () => 
     const testPoll = {
       title: 'Mathematical Verification Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Candidate A', 'Candidate B', 'Candidate C', 'Candidate D'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'math-verification-test-' + Date.now()

@@ -13,6 +13,7 @@ describe('Phase 4: Security and Data Integrity Tests', () => {
     const testPoll = {
       title: 'Security and Integrity Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Secure A', 'Secure B', 'Secure C', 'Secure D'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'security-test-' + Date.now()
@@ -356,6 +357,7 @@ describe('Phase 4: Security and Data Integrity Tests', () => {
       const openPoll = {
         title: 'Open Poll Security Test',
         poll_type: 'ranked_choice',
+        is_private: false,
         options: ['Option 1', 'Option 2', 'Option 3'],
         response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         creator_secret: 'open-poll-' + Date.now(),

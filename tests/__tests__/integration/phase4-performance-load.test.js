@@ -14,6 +14,7 @@ describe('Phase 4: Performance and Load Testing', () => {
     const testPoll = {
       title: 'Performance Load Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Load A', 'Load B', 'Load C', 'Load D', 'Load E'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'perf-load-' + Date.now()
@@ -37,6 +38,7 @@ describe('Phase 4: Performance and Load Testing', () => {
     const largePoll = {
       title: 'Large Scale Performance Test',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: largeOptions,
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'large-perf-' + Date.now()
@@ -378,6 +380,7 @@ describe('Phase 4: Performance and Load Testing', () => {
         const sizePoll = {
           title: `Scale Test ${candidates}C ${votes}V`,
           poll_type: 'ranked_choice',
+        is_private: false,
           options: Array.from({ length: candidates }, (_, i) => `Option${i + 1}`),
           response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           creator_secret: `scale-test-${candidates}-${Date.now()}`

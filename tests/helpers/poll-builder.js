@@ -39,7 +39,8 @@ class PollBuilder {
         .insert({
           title: `Test Poll ${Date.now()}`,
           poll_type: 'ranked_choice',
-          options: this.pollOptions
+          options: this.pollOptions,
+          is_private: false // Make test polls public for easier testing
         })
         .select()
         .single()

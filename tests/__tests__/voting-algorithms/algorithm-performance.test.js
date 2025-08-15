@@ -14,6 +14,7 @@ describe('Phase 3: Algorithm Performance and Scalability', () => {
     const testPoll = {
       title: 'Algorithm Performance Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Option 1', 'Option 2', 'Option 3', 'Option 4', 'Option 5'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'performance-test-' + Date.now()
@@ -37,6 +38,7 @@ describe('Phase 3: Algorithm Performance and Scalability', () => {
     const largePoll = {
       title: 'Large Scale Performance Test Poll',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: largeOptions,
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'large-performance-test-' + Date.now()

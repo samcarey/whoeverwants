@@ -13,6 +13,7 @@ describe('Phase 2: Ballot Validation Tests', () => {
     const testPoll = {
       title: 'Test Poll for Ballot Validation',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'validation-test-secret-' + Date.now()

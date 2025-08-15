@@ -14,6 +14,7 @@ describe('Phase 2: Edge Cases and Performance Tests', () => {
     const testPoll = {
       title: 'Test Poll for Edge Cases',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: ['Edge A', 'Edge B', 'Edge C', 'Edge D', 'Edge E'],
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'edge-test-secret-' + Date.now()
@@ -37,6 +38,7 @@ describe('Phase 2: Edge Cases and Performance Tests', () => {
     const largePoll = {
       title: 'Large Test Poll for Performance',
       poll_type: 'ranked_choice',
+        is_private: false,
       options: largeOptions,
       response_deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       creator_secret: 'large-test-secret-' + Date.now()
