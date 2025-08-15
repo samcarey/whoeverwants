@@ -29,6 +29,7 @@ export interface Poll {
   is_closed?: boolean;
   sequential_id?: number;
   short_id?: string;
+  is_private?: boolean;
 }
 
 export interface Vote {

@@ -8,8 +8,15 @@ import ClientOnly from "@/components/ClientOnly";
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    
     const updateCountdown = () => {
       const now = new Date().getTime();
       const deadlineTime = new Date(deadline).getTime();
@@ -42,7 +49,7 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [deadline]);
+  }, [deadline, isClient]);
 
   return (
     <div className="text-right text-sm">
@@ -68,6 +75,8 @@ export default function Home() {
         console.log("🔍 HOMEPAGE DEBUG: About to make API call");
         console.log("🔍 HOMEPAGE DEBUG: NODE_ENV =", process.env.NODE_ENV);
         console.log("🔍 HOMEPAGE DEBUG: Supabase URL =", (supabase as any).supabaseUrl);
+        console.log("🔍 HOMEPAGE DEBUG: Test URL env =", process.env.NEXT_PUBLIC_SUPABASE_URL_TEST);
+        console.log("🔍 HOMEPAGE DEBUG: Prod URL env =", process.env.NEXT_PUBLIC_SUPABASE_URL_PRODUCTION);
 
         const { data, error } = await supabase
           .from("polls")
@@ -99,16 +108,27 @@ export default function Home() {
     fetchPolls();
   }, []);
 
-  // Separate polls into open and closed
-  const openPolls = polls.filter(poll => {
-    if (!poll.response_deadline) return false;
-    return new Date(poll.response_deadline) > new Date() && !poll.is_closed;
-  });
+  // Separate polls into open and closed (client-side only to avoid hydration mismatch)
+  const [openPolls, setOpenPolls] = useState<Poll[]>([]);
+  const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
+  
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const now = new Date();
+    const open = polls.filter(poll => {
+      if (!poll.response_deadline) return false;
+      return new Date(poll.response_deadline) > now && !poll.is_closed;
+    });
 
-  const closedPolls = polls.filter(poll => {
-    if (!poll.response_deadline) return true;
-    return new Date(poll.response_deadline) <= new Date() || poll.is_closed;
-  });
+    const closed = polls.filter(poll => {
+      if (!poll.response_deadline) return true;
+      return new Date(poll.response_deadline) <= now || poll.is_closed;
+    });
+    
+    setOpenPolls(open);
+    setClosedPolls(closed);
+  }, [polls]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 -mx-8 -my-8">
