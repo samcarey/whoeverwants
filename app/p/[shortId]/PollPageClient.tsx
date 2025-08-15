@@ -39,6 +39,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
+  const [userVoteId, setUserVoteId] = useState<string | null>(null);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -63,7 +64,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, []);
 
   // Mark poll as voted (save to localStorage)
-  const markPollAsVoted = useCallback((pollId: string, voteData: any = null) => {
+  const markPollAsVoted = useCallback((pollId: string, voteData: any = null, voteId?: string) => {
     if (typeof window === 'undefined') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
@@ -75,6 +76,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}');
         pollVotes[pollId] = voteData;
         localStorage.setItem('pollVotes', JSON.stringify(pollVotes));
+      }
+      
+      // Store the vote ID if provided
+      if (voteId) {
+        const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+        voteIds[pollId] = voteId;
+        localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
       }
     } catch (error) {
       console.error('Error marking poll as voted:', error);
@@ -89,6 +97,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       return pollVotes[pollId] || null;
     } catch (error) {
       console.error('Error getting stored vote data:', error);
+      return null;
+    }
+  }, []);
+
+  // Get stored vote ID for a poll
+  const getStoredVoteId = useCallback((pollId: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      return voteIds[pollId] || null;
+    } catch (error) {
+      console.error('Error getting stored vote ID:', error);
       return null;
     }
   }, []);
@@ -153,8 +173,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setRankedChoices(storedVoteData.rankedChoices);
         }
       }
+      
+      // Get the vote ID if available
+      const voteId = getStoredVoteId(poll.id);
+      setUserVoteId(voteId);
     }
-  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteData]);
+  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteData, getStoredVoteId]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -296,9 +320,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         };
       }
 
-      const { error } = await supabase
+      const { data: insertedVote, error } = await supabase
         .from('votes')
-        .insert([voteData]);
+        .insert([voteData])
+        .select('id')
+        .single();
 
       if (error) {
         console.error('Error submitting vote:', error);
@@ -306,13 +332,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         return;
       }
 
+      if (!insertedVote?.id) {
+        console.error('No vote ID returned from database');
+        setVoteError("Failed to submit vote. Please try again.");
+        return;
+      }
+
       setHasVoted(true);
+      setUserVoteId(insertedVote.id);
       
       // Save vote to localStorage so user can't vote again
       const voteInfo = poll.poll_type === 'yes_no' 
         ? { yesNoChoice } 
         : { rankedChoices };
-      markPollAsVoted(poll.id, voteInfo);
+      markPollAsVoted(poll.id, voteInfo, insertedVote.id);
       
       // If the poll is closed, fetch results immediately after voting
       if (isPollClosed) {
@@ -382,6 +415,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </span>
                     </div>
                   </div>
+                  {userVoteId && (
+                    <div className="mt-4 text-left">
+                      <h4 className="font-medium mb-2 text-sm text-gray-600 dark:text-gray-400">Vote ID:</h4>
+                      <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <span className="font-mono text-sm text-gray-800 dark:text-gray-200">{userVoteId}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -461,6 +502,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       ))}
                     </div>
                   </div>
+                  {userVoteId && (
+                    <div className="mt-4 text-left">
+                      <h4 className="font-medium mb-2 text-sm text-gray-600 dark:text-gray-400">Vote ID:</h4>
+                      <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <span className="font-mono text-sm text-gray-800 dark:text-gray-200">{userVoteId}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
