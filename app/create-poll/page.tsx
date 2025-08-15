@@ -21,6 +21,7 @@ export default function CreatePoll() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPrivate, setIsPrivate] = useState(true);
   const router = useRouter();
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
@@ -47,11 +48,12 @@ export default function CreatePoll() {
         options,
         deadlineOption,
         customDate,
-        customTime
+        customTime,
+        isPrivate
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, options, deadlineOption, customDate, customTime]);
+  }, [title, options, deadlineOption, customDate, customTime, isPrivate]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -83,6 +85,7 @@ export default function CreatePoll() {
           setDeadlineOption(formState.deadlineOption || '5min');
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
+          setIsPrivate(formState.isPrivate !== undefined ? formState.isPrivate : true);
         } catch (error) {
           console.error('Failed to load form state:', error);
         }
@@ -421,7 +424,8 @@ export default function CreatePoll() {
         title,
         poll_type: pollType,
         response_deadline: responseDeadline,
-        creator_secret: creatorSecret
+        creator_secret: creatorSecret,
+        is_private: isPrivate
       };
 
       // Add options for ranked choice polls
@@ -618,6 +622,21 @@ export default function CreatePoll() {
             </div>
           )}
           
+          <div className="mb-4">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={(e) => setIsPrivate(e.target.checked)}
+                disabled={isLoading}
+                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <span className="text-sm font-medium text-gray-900 dark:text-white">
+                Private
+              </span>
+            </label>
+          </div>
+          
           {!isFormValid() && !isLoading && (
             <div className="text-center text-red-600 dark:text-red-400 text-sm mb-3">
               {getValidationError()}
@@ -682,7 +701,7 @@ export default function CreatePoll() {
         onConfirm={handleConfirmSubmit}
         onCancel={() => setShowConfirmModal(false)}
         title="Create Poll"
-        message={`Are you sure you want to create this ${getPollType() === 'yes_no' ? 'Yes/No' : 'Ranked Choice'} poll?`}
+        message={`Are you sure you want to create this ${getPollType() === 'yes_no' ? 'Yes/No' : 'Ranked Choice'} poll?${isPrivate ? ' It will be private and require the full link to access.' : ' It will be public with a short shareable URL.'}`}
         confirmText="Create Poll"
         cancelText="Cancel"
       />
