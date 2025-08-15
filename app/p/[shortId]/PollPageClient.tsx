@@ -355,10 +355,32 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                 </div>
               ) : hasVoted ? (
-                <div className="text-center">
-                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
-                    <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
-                    <p className="text-green-700 dark:text-green-300">Your vote for &ldquo;{yesNoChoice}&rdquo; has been recorded.</p>
+                <div className="text-center py-6">
+                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
+                    <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
+                  </div>
+                  <div className="text-left">
+                    <h4 className="font-medium mb-2">Your vote:</h4>
+                    <div className={`flex items-center p-3 rounded-lg ${
+                      yesNoChoice === 'yes' 
+                        ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
+                        : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
+                    }`}>
+                      <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                        yesNoChoice === 'yes'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-red-600 text-white'
+                      }`}>
+                        {yesNoChoice === 'yes' ? '✓' : '✗'}
+                      </span>
+                      <span className={`font-medium ${
+                        yesNoChoice === 'yes'
+                          ? 'text-green-800 dark:text-green-200'
+                          : 'text-red-800 dark:text-red-200'
+                      }`}>
+                        {yesNoChoice === 'yes' ? 'Yes' : 'No'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -423,9 +445,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : hasVoted ? (
                 <div className="text-center py-6">
-                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg p-4 mb-4">
-                    <h3 className="font-semibold text-green-800 dark:text-green-200 mb-2">Vote Submitted!</h3>
-                    <p className="text-green-700 dark:text-green-300">Your ranked choices have been recorded.</p>
+                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
+                    <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
                   </div>
                   <div className="text-left">
                     <h4 className="font-medium mb-2">Your ranking:</h4>
