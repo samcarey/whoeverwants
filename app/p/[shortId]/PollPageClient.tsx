@@ -440,14 +440,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
-                  {userVoteId && (
-                    <div className="mt-4 text-left">
-                      <h4 className="font-medium mb-2 text-sm text-gray-600 dark:text-gray-400">Vote ID:</h4>
-                      <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                        <span className="font-mono text-sm text-gray-800 dark:text-gray-200">{userVoteId}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -544,14 +536,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
-                  {userVoteId && (
-                    <div className="mt-4 text-left">
-                      <h4 className="font-medium mb-2 text-sm text-gray-600 dark:text-gray-400">Vote ID:</h4>
-                      <div className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-                        <span className="font-mono text-sm text-gray-800 dark:text-gray-200">{userVoteId}</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
