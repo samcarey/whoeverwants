@@ -45,12 +45,25 @@ export const lastCompileISO = "${new Date(timestamp).toISOString()}";
     return config;
   },
 
-  // Headers for better caching and mobile performance
+  // Headers for cache control and mobile performance
   async headers() {
     return [
       {
+        // Apply to all HTML documents - ensure fresh content on refresh
         source: '/(.*)',
         headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-cache, no-store, must-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on'
@@ -58,7 +71,8 @@ export const lastCompileISO = "${new Date(timestamp).toISOString()}";
         ],
       },
       {
-        source: '/_next/static/(.*)',
+        // Cache static assets aggressively (they have hashed names)
+        source: '/_next/static/:path*',
         headers: [
           {
             key: 'Cache-Control',
