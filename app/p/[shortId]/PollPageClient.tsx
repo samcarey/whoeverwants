@@ -195,7 +195,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData, isPollClosed]);
+  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
