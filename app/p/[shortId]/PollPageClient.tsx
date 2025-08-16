@@ -157,6 +157,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
+  // Effect to load vote data when poll loads or when hasVoted changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Use the current page URL (always full UUID now)
@@ -166,8 +167,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // Check if this browser created the poll
     setIsCreator(isCreatedByThisBrowser(poll.id));
     
-    // Check if user has already voted on this poll
-    if (hasVotedOnPoll(poll.id)) {
+    // Load vote data if user has voted (either from localStorage check or hasVoted state)
+    const shouldLoadVoteData = hasVoted || hasVotedOnPoll(poll.id);
+    
+    if (shouldLoadVoteData) {
       setHasVoted(true);
       
       // Get the vote ID if available
@@ -175,7 +178,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID
-      if (voteId) {
+      if (voteId && !userVoteData) { // Only fetch if we don't already have vote data
         setIsLoadingVoteData(true);
         fetchVoteData(voteId).then(voteData => {
           if (voteData) {
@@ -195,7 +198,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
+  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, userVoteData]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
