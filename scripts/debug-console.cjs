@@ -68,6 +68,9 @@ async function debugConsole(target = '') {
     let url;
     if (!target) {
       url = 'http://localhost:3001';
+    } else if (target.startsWith('http')) {
+      // Full URL provided
+      url = target;
     } else if (target.startsWith('/')) {
       url = `http://localhost:3001${target}`;
     } else if (target.includes('-')) {

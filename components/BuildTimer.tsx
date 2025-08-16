@@ -5,16 +5,47 @@ import { useState, useEffect } from 'react';
 export default function BuildTimer() {
   const [buildAge, setBuildAge] = useState<string>('');
   const [isClient, setIsClient] = useState(false);
+  const [buildTimestamp, setBuildTimestamp] = useState<number>(0);
 
   // Only show in development mode
   const isDev = process.env.NODE_ENV === 'development';
   
-  // Get build timestamp from webpack DefinePlugin
-  const buildTimestamp = parseInt(process.env.BUILD_TIMESTAMP || '0');
-  
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Get latest compilation timestamp (updates on every build/hot reload)
+  useEffect(() => {
+    if (!isDev || !isClient) return;
+    
+    const fetchLatestCompileTime = async () => {
+      try {
+        // Fetch the latest compilation timestamp from API route
+        const response = await fetch('/api/last-compile?' + Date.now(), {
+          cache: 'no-store'
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setBuildTimestamp(data.timestamp);
+          return;
+        }
+      } catch (e) {
+        // Fallback to static timestamp
+      }
+      
+      // Fallback to webpack DefinePlugin timestamp
+      const staticTimestamp = parseInt(process.env.BUILD_TIMESTAMP || '0');
+      setBuildTimestamp(staticTimestamp);
+    };
+
+    // Initial fetch
+    fetchLatestCompileTime();
+
+    // Poll every 1 second to catch new compilations
+    const interval = setInterval(fetchLatestCompileTime, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isDev, isClient]);
 
   useEffect(() => {
     if (!isDev || !isClient || !buildTimestamp) return;
@@ -65,8 +96,10 @@ export default function BuildTimer() {
         fontSize: '11px',
         fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
       }}
+      title="Time since last compilation (shows if current view reflects latest code changes)"
     >
       {buildAge}
     </div>
   );
 }
+// Final test - timer should reset to near zero
