@@ -14,9 +14,10 @@ interface RankableOptionsProps {
   onRankingChange: (rankedOptions: string[]) => void;
   disabled?: boolean;
   storageKey?: string; // Optional key for localStorage persistence
+  initialRanking?: string[]; // Optional initial ranking to override saved state
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking }: RankableOptionsProps) {
 
   // Load saved state from localStorage
   const loadSavedState = useCallback(() => {
@@ -443,45 +444,75 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     onRankingChange(newRanking);
   }, [mainList, onRankingChange]);
 
-  // Initialize positions on mount and when options change
+  // Track previous initialRanking to detect changes
+  const previousInitialRankingRef = useRef<string[] | undefined>(undefined);
+  
+  // Initialize positions on mount and when options or initialRanking change
   useEffect(() => {
     // Check if options have actually changed
     const optionsChanged = 
       previousOptionsRef.current.length !== options.length ||
       !previousOptionsRef.current.every((opt, index) => opt === options[index]);
-    
-    if (optionsChanged) {
-      // Try to load saved state first
-      const savedState = loadSavedState();
       
-      if (savedState) {
-        // Apply positions to saved state
-        const positionedMainList = savedState.mainList.map((item: RankableOption, index: number) => ({
-          ...item,
-          top: index * totalItemHeight
-        }));
-        const positionedNoPreferenceList = savedState.noPreferenceList.map((item: RankableOption, index: number) => ({
-          ...item,
-          top: index * totalItemHeight
-        }));
-        
-        setMainList(positionedMainList);
-        setNoPreferenceList(positionedNoPreferenceList);
-      } else {
-        // Initialize with randomized order to prevent position bias
-        const shuffledOptions = shuffleArray(options);
-        const newRankedOptions = shuffledOptions.map((text, index) => ({
-          id: `option-${index}`,
+    // Check if initialRanking has changed
+    const initialRankingChanged = 
+      previousInitialRankingRef.current !== initialRanking &&
+      JSON.stringify(previousInitialRankingRef.current) !== JSON.stringify(initialRanking);
+    
+    if (optionsChanged || initialRankingChanged) {
+      // Check if we have an initial ranking provided (e.g., for edit mode)
+      if (initialRanking && initialRanking.length > 0) {
+        // Use the provided initial ranking
+        const rankedOptions = initialRanking.map((text, index) => ({
+          id: `option-${initialRanking.indexOf(text)}`, // Use consistent ID based on original option order
           text: text,
           top: index * totalItemHeight
         }));
-        setMainList(newRankedOptions);
-        setNoPreferenceList([]);
+        
+        // Put any remaining options (not in initialRanking) into no preference
+        const remainingOptions = options.filter(opt => !initialRanking.includes(opt));
+        const noPreferenceOptions = remainingOptions.map((text, index) => ({
+          id: `option-${options.indexOf(text)}`, // Use consistent ID based on original option order
+          text: text,
+          top: index * totalItemHeight
+        }));
+        
+        setMainList(rankedOptions);
+        setNoPreferenceList(noPreferenceOptions);
+      } else {
+        // Try to load saved state first
+        const savedState = loadSavedState();
+        
+        if (savedState) {
+          // Apply positions to saved state
+          const positionedMainList = savedState.mainList.map((item: RankableOption, index: number) => ({
+            ...item,
+            top: index * totalItemHeight
+          }));
+          const positionedNoPreferenceList = savedState.noPreferenceList.map((item: RankableOption, index: number) => ({
+            ...item,
+            top: index * totalItemHeight
+          }));
+          
+          setMainList(positionedMainList);
+          setNoPreferenceList(positionedNoPreferenceList);
+        } else {
+          // Initialize with randomized order to prevent position bias
+          const shuffledOptions = shuffleArray(options);
+          const newRankedOptions = shuffledOptions.map((text, index) => ({
+            id: `option-${index}`,
+            text: text,
+            top: index * totalItemHeight
+          }));
+          setMainList(newRankedOptions);
+          setNoPreferenceList([]);
+        }
       }
       
       previousOptionsRef.current = options;
+      previousInitialRankingRef.current = initialRanking;
     }
-  }, [options, totalItemHeight, loadSavedState, shuffleArray]);
+  }, [options, initialRanking, totalItemHeight, loadSavedState, shuffleArray]);
 
   // Save state whenever lists change
   useEffect(() => {

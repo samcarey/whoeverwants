@@ -584,10 +584,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <>
                   {pollOptions.length > 0 && (
                     <RankableOptions 
+                      key={isEditingVote ? 'editing' : 'new'}
                       options={pollOptions} 
                       onRankingChange={handleRankingChange}
                       disabled={isSubmitting}
                       storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
+                      initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                     />
                   )}
                   
