@@ -42,6 +42,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
+  const [isEditingVote, setIsEditingVote] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -269,7 +270,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   };
 
   const handleVoteClick = () => {
-    if (isSubmitting || hasVoted || isPollClosed) return;
+    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) return;
     
     // Validate vote choice first
     if (poll.poll_type === 'yes_no' && !yesNoChoice) {
@@ -292,7 +293,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const submitVote = async () => {
     setShowVoteConfirmModal(false);
     
-    if (isSubmitting || hasVoted || isPollClosed) return;
+    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) return;
 
     setIsSubmitting(true);
     setVoteError(null);
@@ -336,11 +337,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         };
       }
 
-      const { data: insertedVote, error } = await supabase
-        .from('votes')
-        .insert([voteData])
-        .select('id')
-        .single();
+      let voteId;
+      let error;
+
+      if (isEditingVote && userVoteId) {
+        // Update existing vote
+        const { error: updateError } = await supabase
+          .from('votes')
+          .update(voteData)
+          .eq('id', userVoteId);
+
+        error = updateError;
+        voteId = userVoteId;
+      } else {
+        // Insert new vote
+        const { data: insertedVote, error: insertError } = await supabase
+          .from('votes')
+          .insert([voteData])
+          .select('id')
+          .single();
+
+        error = insertError;
+        voteId = insertedVote?.id;
+
+        if (!voteId) {
+          console.error('No vote ID returned from database');
+          setVoteError("Failed to submit vote. Please try again.");
+          return;
+        }
+      }
 
       if (error) {
         console.error('Error submitting vote:', error);
@@ -348,17 +373,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         return;
       }
 
-      if (!insertedVote?.id) {
-        console.error('No vote ID returned from database');
-        setVoteError("Failed to submit vote. Please try again.");
-        return;
-      }
-
       setHasVoted(true);
-      setUserVoteId(insertedVote.id);
+      setUserVoteId(voteId);
       
-      // Save vote to localStorage so user can't vote again
-      markPollAsVoted(poll.id, insertedVote.id);
+      // Save vote to localStorage so user can't vote again (only for new votes)
+      if (!isEditingVote) {
+        markPollAsVoted(poll.id, voteId);
+      }
+      
+      setIsEditingVote(false);
       
       // If the poll is closed, fetch results immediately after voting
       if (isPollClosed) {
@@ -400,13 +423,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted ? (
+              ) : hasVoted && !isEditingVote ? (
                 <div className="text-center py-6">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
                   </div>
                   <div className="text-left">
-                    <h4 className="font-medium mb-2">Your vote:</h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium">Your vote:</h4>
+                      {!isLoadingVoteData && !isPollClosed && (
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                         <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
@@ -501,13 +534,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted ? (
+              ) : hasVoted && !isEditingVote ? (
                 <div className="text-center py-6">
                   <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
                   </div>
                   <div className="text-left">
-                    <h4 className="font-medium mb-2">Your ranking:</h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium">Your ranking:</h4>
+                      {!isLoadingVoteData && !isPollClosed && (
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
                         {[1, 2, 3].map((num) => (
@@ -515,7 +558,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
                               <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                               </svg>
                             </div>
                             <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
