@@ -42,7 +42,7 @@ function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollRe
       : "This poll hasn't received any votes.";
     
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
+      <div className="text-center">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
         <p className="text-gray-600 dark:text-gray-400">{message}</p>
       </div>
@@ -50,7 +50,7 @@ function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollRe
   }
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+    <div>
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -93,6 +93,13 @@ function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollRe
             }`}>
               {yesCount} vote{yesCount !== 1 ? 's' : ''}
             </div>
+            {userVotedYes && (
+              <div className="mt-2">
+                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                  Your Vote
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -130,28 +137,14 @@ function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollRe
             }`}>
               {noCount} vote{noCount !== 1 ? 's' : ''}
             </div>
+            {userVotedNo && (
+              <div className="mt-2">
+                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                  Your Vote
+                </span>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-
-      {/* Vote indicators below cards */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Yes vote indicator */}
-        <div className="text-center">
-          {userVotedYes && (
-            <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
-              👆 You voted
-            </div>
-          )}
-        </div>
-        
-        {/* No vote indicator */}
-        <div className="text-center">
-          {userVotedNo && (
-            <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
-              👆 You voted
-            </div>
-          )}
         </div>
       </div>
 

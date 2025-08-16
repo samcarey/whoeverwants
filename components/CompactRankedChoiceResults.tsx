@@ -189,7 +189,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
     }
 
     fetchAndProcessData();
-  }, [results.poll_id, results.total_votes, results.winner]);
+  }, [results.poll_id, results.total_votes, results.winner, userVoteData]);
 
   // Update URL hash when round index changes
   useEffect(() => {
@@ -242,7 +242,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 
   if (loading) {
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
+      <div className="text-center">
         <div className="flex justify-center items-center py-4">
           <svg className="animate-spin h-6 w-6 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -260,7 +260,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
       : "This poll hasn't received any votes.";
     
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
+      <div className="text-center">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
         <p className="text-gray-600 dark:text-gray-400">{message}</p>
       </div>
@@ -269,7 +269,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 
   if (roundVisualizations.length === 0) {
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
+      <div className="text-center">
         <p className="text-gray-600 dark:text-gray-400">Unable to load round data.</p>
       </div>
     );
@@ -278,7 +278,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
   const currentRound = roundVisualizations[currentRoundIndex];
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 relative">
+    <div className="relative">
       {/* Navigation buttons for desktop - only show if multiple rounds */}
       {roundVisualizations.length > 1 ? (
         <div className="flex justify-between items-center mb-4">
@@ -341,6 +341,19 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
             // Check if this candidate is the user's preference for this round
             const isUserPreference = currentRound.userPreference === candidate.name;
             
+            // Get the ordinal position of this candidate in user's ranking
+            const getUserChoicePosition = () => {
+              if (!isUserPreference || !userVoteData?.ranked_choices) return null;
+              const position = userVoteData.ranked_choices.indexOf(candidate.name) + 1;
+              if (position === 0) return null;
+              
+              // Convert to ordinal (1st, 2nd, 3rd, etc.)
+              const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
+              return `Your ${position}${suffix} choice`;
+            };
+            
+            const userChoiceText = getUserChoicePosition();
+            
             return (
               <React.Fragment key={candidate.name}>
                 <div className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
@@ -364,16 +377,24 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       </div>
                       
                       {/* Candidate name */}
-                      <div className={`${
-                        isTiedCandidate
-                          ? 'text-green-900 dark:text-green-100 font-bold'
-                          : candidate.isEliminated && !isTiedCandidate
-                          ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
-                          : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                          ? 'text-green-900 dark:text-green-100 font-bold'
-                          : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
-                      }`}>
-                        {candidate.name}
+                      <div>
+                        <div className={`${
+                          isTiedCandidate
+                            ? 'text-green-900 dark:text-green-100 font-bold'
+                            : candidate.isEliminated && !isTiedCandidate
+                            ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
+                            : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                            ? 'text-green-900 dark:text-green-100 font-bold'
+                            : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
+                        }`}>
+                          {candidate.name}
+                        </div>
+                        {/* Show user preference indicator under name */}
+                        {userChoiceText && (
+                          <div className="text-blue-600 dark:text-blue-400 text-xs font-medium">
+                            {userChoiceText}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -401,15 +422,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                     </div>
                   </div>
                 </div>
-
-                {/* Show user preference indicator */}
-                {isUserPreference && (
-                  <div className="text-center">
-                    <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
-                      Your preference
-                    </div>
-                  </div>
-                )}
 
                 {/* Show Borda count explanation when tie-breaking occurs */}
                 {hasBordaTieBreaking && (
