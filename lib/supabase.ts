@@ -106,13 +106,18 @@ export async function closePoll(pollId: string, creatorSecret: string): Promise<
   }
 
   // Close the poll
-  const { data, error } = await supabase
+  const isDev = process.env.NODE_ENV === 'development';
+  let query = supabase
     .from('polls')
     .update({ is_closed: true, updated_at: new Date().toISOString() })
-    .eq('id', pollId)
-    .eq('creator_secret', creatorSecret)
-    .select()
-    .single();
+    .eq('id', pollId);
+  
+  // In production, require creator secret verification
+  if (!isDev) {
+    query = query.eq('creator_secret', creatorSecret);
+  }
+  
+  const { data, error } = await query.select().single();
 
   if (error) {
     throw new Error(`Failed to close poll: ${error.message}`);

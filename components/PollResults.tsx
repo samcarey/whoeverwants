@@ -16,7 +16,7 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   }
 
   if (results.poll_type === 'ranked_choice') {
-    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} />;
+    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
   }
 
   return null;

@@ -7,6 +7,7 @@ import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
   isPollClosed?: boolean;
+  userVoteData?: any;
 }
 
 interface RoundVisualization {
@@ -22,9 +23,10 @@ interface RoundVisualization {
     position: number;
   }>;
   eliminatedCandidates: string[];
+  userPreference?: string;
 }
 
-export default function CompactRankedChoiceResults({ results, isPollClosed }: CompactRankedChoiceResultsProps) {
+export default function CompactRankedChoiceResults({ results, isPollClosed, userVoteData }: CompactRankedChoiceResultsProps) {
   const router = useRouter();
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -32,6 +34,22 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
   const containerRef = useRef<HTMLDivElement>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+
+  // Function to determine user's preference for a given round
+  const getUserPreferenceForRound = (roundNumber: number, eliminatedSoFar: string[]): string | null => {
+    if (!userVoteData?.ranked_choices) return null;
+    
+    const userRanking: string[] = userVoteData.ranked_choices;
+    
+    // Find the first choice in user's ranking that hasn't been eliminated yet
+    for (const choice of userRanking) {
+      if (!eliminatedSoFar.includes(choice)) {
+        return choice;
+      }
+    }
+    
+    return null;
+  };
 
   useEffect(() => {
     async function fetchAndProcessData() {
@@ -47,6 +65,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
 
         const totalRounds = Math.max(...roundData.map(r => r.round_number));
         const visualizations: RoundVisualization[] = [];
+        
+        // Track eliminated candidates cumulatively across rounds
+        let eliminatedSoFar: string[] = [];
         
         // Build visualizations for each round
         for (let roundNum = 1; roundNum <= totalRounds; roundNum++) {
@@ -70,6 +91,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
           const eliminatedInThisRound = currentRoundData
             .filter(round => round.is_eliminated)
             .map(round => round.option_name);
+          
+          // Get user's preference for this round (before any eliminations in this round)
+          const userPreference = getUserPreferenceForRound(roundNum, eliminatedSoFar);
           
           // Check for ties in the final round
           const isFinalRound = roundNum === totalRounds;
@@ -134,8 +158,12 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
             roundNumber: roundNum,
             title: roundNum === totalRounds ? 'Final Result' : `Round ${roundNum} of ${totalRounds}`,
             candidates,
-            eliminatedCandidates
+            eliminatedCandidates,
+            userPreference
           });
+          
+          // Update eliminated list for next round
+          eliminatedSoFar = [...eliminatedSoFar, ...eliminatedInThisRound];
         }
         
         setRoundVisualizations(visualizations);
@@ -310,6 +338,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
             const hasBordaTieBreaking = isLastEliminatedCandidate && 
                                       currentRound.eliminatedCandidates.length > 0;
             
+            // Check if this candidate is the user's preference for this round
+            const isUserPreference = currentRound.userPreference === candidate.name;
+            
             return (
               <React.Fragment key={candidate.name}>
                 <div className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
@@ -324,7 +355,11 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       {/* Position number */}
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        isUserPreference 
+                          ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white' 
+                          : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
+                      }`}>
                         {isTiedCandidate ? 'T' : candidate.position}
                       </div>
                       
@@ -366,6 +401,15 @@ export default function CompactRankedChoiceResults({ results, isPollClosed }: Co
                     </div>
                   </div>
                 </div>
+
+                {/* Show user preference indicator */}
+                {isUserPreference && (
+                  <div className="text-center">
+                    <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
+                      Your preference
+                    </div>
+                  </div>
+                )}
 
                 {/* Show Borda count explanation when tie-breaking occurs */}
                 {hasBordaTieBreaking && (

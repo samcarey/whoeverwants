@@ -221,10 +221,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   };
 
   const handleCloseClick = () => {
-    if (isClosingPoll || !isCreator) return;
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (isClosingPoll || (!isCreator && !isDev)) return;
     
     const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret) {
+    if (!creatorSecret && !isDev) {
       alert('You do not have permission to close this poll.');
       return;
     }
@@ -235,17 +237,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const handleClosePoll = async () => {
     setShowCloseConfirmModal(false);
     
-    if (isClosingPoll || !isCreator) return;
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (isClosingPoll || (!isCreator && !isDev)) return;
     
     const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret) {
+    if (!creatorSecret && !isDev) {
       alert('You do not have permission to close this poll.');
       return;
     }
     
     setIsClosingPoll(true);
     try {
-      const success = await closePoll(poll.id, creatorSecret);
+      // In development mode, use empty string if no creator secret
+      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret;
+      const success = await closePoll(poll.id, secretToUse);
       if (success) {
         // Refetch the poll data to get the updated is_closed value
         const { data: updatedPoll, error } = await supabase
@@ -611,8 +617,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             </div>
           )}
           
-          {/* Close Poll Button for Poll Creators */}
-          {!isPollClosed && isCreator && (
+          {/* Close Poll Button for Poll Creators (or anyone in dev mode) */}
+          {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
             <div className="mt-4 text-center">
               <button
                 onClick={handleCloseClick}
