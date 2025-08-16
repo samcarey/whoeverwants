@@ -7,11 +7,12 @@ import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 interface PollResultsProps {
   results: PollResults;
   isPollClosed?: boolean;
+  userVoteData?: any;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
   }
 
   if (results.poll_type === 'ranked_choice') {
@@ -21,13 +22,18 @@ export default function PollResultsDisplay({ results, isPollClosed }: PollResult
   return null;
 }
 
-function YesNoResults({ results, isPollClosed }: { results: PollResults, isPollClosed?: boolean }) {
+function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
   const noPercentage = results.no_percentage || 0;
   const winner = results.winner;
   const totalVotes = results.total_votes;
+  
+  // Check if user voted and what they voted for (only show on closed polls in development)
+  const isDev = process.env.NODE_ENV === 'development';
+  const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
+  const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
 
   if (totalVotes === 0) {
     const title = isPollClosed ? "No Votes Received" : "No Votes Yet";
@@ -128,6 +134,26 @@ function YesNoResults({ results, isPollClosed }: { results: PollResults, isPollC
         </div>
       </div>
 
+      {/* Vote indicators below cards */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* Yes vote indicator */}
+        <div className="text-center">
+          {userVotedYes && (
+            <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
+              👆 You voted
+            </div>
+          )}
+        </div>
+        
+        {/* No vote indicator */}
+        <div className="text-center">
+          {userVotedNo && (
+            <div className="text-blue-600 dark:text-blue-400 text-sm font-medium">
+              👆 You voted
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   );

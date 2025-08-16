@@ -195,7 +195,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
+  }, [poll.id, poll.poll_type, hasVotedOnPoll, getStoredVoteId, fetchVoteData, isPollClosed]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -416,7 +416,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
+                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -527,7 +527,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} />
+                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
