@@ -1,18 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
+import FollowUpHeader from "@/components/FollowUpHeader";
+import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 
 export const dynamic = 'force-dynamic';
 
 export default function CreatePoll() {
   const { prefetch } = useAppPrefetch();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const followUpTo = searchParams.get('followUpTo');
+  
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("5min");
@@ -22,7 +28,6 @@ export default function CreatePoll() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -425,6 +430,11 @@ export default function CreatePoll() {
         creator_secret: creatorSecret
       };
 
+      // Add follow-up reference if this is a follow-up poll
+      if (followUpTo) {
+        pollData.follow_up_to = followUpTo;
+      }
+
       // Add options for ranked choice polls
       if (pollType === 'ranked_choice') {
         pollData.options = filledOptions;
@@ -446,6 +456,16 @@ export default function CreatePoll() {
 
       // Record poll creation in browser storage
       recordPollCreation(data[0].id, creatorSecret);
+
+      // Trigger poll discovery if this is a follow-up poll
+      if (followUpTo) {
+        try {
+          await triggerDiscoveryIfNeeded();
+        } catch (error) {
+          console.warn('Failed to trigger poll discovery:', error);
+          // Don't fail the poll creation if discovery fails
+        }
+      }
 
       // Clear saved form state since poll was created successfully
       clearFormState();
@@ -470,6 +490,10 @@ export default function CreatePoll() {
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
         <h1 className="text-2xl font-bold mb-6 text-center">Create New Poll</h1>
         
+        {followUpTo && (
+          <FollowUpHeader followUpToPollId={followUpTo} />
+        )}
+
         {error && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
             {error}

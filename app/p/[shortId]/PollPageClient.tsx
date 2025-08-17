@@ -11,6 +11,7 @@ import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
+import FollowUpButton from "@/components/FollowUpButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -47,10 +48,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isEditingVote, setIsEditingVote] = useState(false);
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const isPollExpired = useMemo(() => 
-    poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
-    [poll.response_deadline]
+    poll.response_deadline && new Date(poll.response_deadline) <= currentTime, 
+    [poll.response_deadline, currentTime]
   );
   
   const isPollClosed = useMemo(() => 
@@ -215,6 +217,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       fetchPollResults();
     }
   }, [pollClosed, poll.response_deadline, fetchPollResults]);
+
+  // Real-time timer to check for poll expiration
+  useEffect(() => {
+    if (!poll.response_deadline || pollClosed) {
+      return; // No deadline or already manually closed
+    }
+
+    const deadline = new Date(poll.response_deadline);
+    const updateTimer = () => {
+      const now = new Date();
+      setCurrentTime(now);
+      
+      // If poll just expired, automatically fetch results
+      if (now >= deadline && !isPollClosed) {
+        console.log('Poll expired, fetching results...');
+        fetchPollResults();
+      }
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Set up interval to check every second
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults]);
 
   const handleRankingChange = useCallback((newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
@@ -434,7 +463,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                    <>
+                      <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      <div className="mt-6 text-center">
+                        <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
+                      </div>
+                    </>
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -545,7 +579,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </svg>
                     </div>
                   ) : pollResults ? (
-                    <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                    <>
+                      <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      <div className="mt-6 text-center">
+                        <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
+                      </div>
+                    </>
                   ) : (
                     <div className="text-center py-4">
                       <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>

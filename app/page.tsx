@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase, Poll } from "@/lib/supabase";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
+import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import ClientOnly from "@/components/ClientOnly";
 
 // Simple countdown component
@@ -73,7 +74,18 @@ export default function Home() {
         setLoading(true);
         setError(null);
 
-        // Get polls this browser has access to
+        // First, discover any new follow-up polls
+        try {
+          const discoveryResult = await discoverRelatedPolls();
+          if (discoveryResult.newPollIds.length > 0) {
+            console.log(`🔗 Discovered ${discoveryResult.newPollIds.length} follow-up polls`);
+          }
+        } catch (discoveryError) {
+          console.warn('Poll discovery failed, continuing with existing polls:', discoveryError);
+          // Don't fail the entire poll loading if discovery fails
+        }
+
+        // Get polls this browser has access to (including newly discovered ones)
         const data = await getAccessiblePolls();
 
         if (!data) {

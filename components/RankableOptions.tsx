@@ -464,7 +464,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       if (initialRanking && initialRanking.length > 0) {
         // Use the provided initial ranking
         const rankedOptions = initialRanking.map((text, index) => ({
-          id: `option-${initialRanking.indexOf(text)}`, // Use consistent ID based on original option order
+          id: `option-${options.indexOf(text)}`, // Use consistent ID based on original option order
           text: text,
           top: index * totalItemHeight
         }));
@@ -879,7 +879,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         <div
           ref={containerRef}
           className={`p-3 relative transition-all duration-200 ease-out ${
-            listItems.length === 0 && listType === 'noPreference' 
+            listItems.length === 0 
               ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg' 
               : ''
           }`}
