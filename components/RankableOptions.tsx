@@ -933,24 +933,36 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 aria-label={`${option.text}, ${listType === 'main' ? `ranked ${index + 1}` : 'no preference'}`}
                 aria-describedby={`${option.id}-instructions`}
               >
-                <div className="flex items-center justify-between h-full">
-                  <div className="flex items-center">
-                    <div 
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium mr-3 cursor-grab active:cursor-grabbing ${
-                        disabled 
-                          ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
-                          : listType === 'main'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-orange-500 text-white'
-                      }`}
-                      style={{
-                        touchAction: 'none'
-                      }}
-                      onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
-                      title="Drag to reorder"
-                    >
-                      {rankNumber}
+                <div className="flex items-center justify-between h-full relative">
+                  {/* Left drag handle with 30% grabbable region */}
+                  <div 
+                    className="absolute left-0 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                    style={{
+                      width: '30%',
+                      touchAction: 'none',
+                      zIndex: 2
+                    }}
+                    onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
+                    title="Drag to reorder"
+                  >
+                    {/* Visual number circle - positioned within the grabbable area */}
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center">
+                      <div 
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
+                          disabled 
+                            ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
+                            : listType === 'main'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-orange-500 text-white'
+                        }`}
+                      >
+                        {rankNumber}
+                      </div>
                     </div>
+                  </div>
+                  
+                  {/* Center content - not grabbable */}
+                  <div className="flex-1 flex items-center px-12">
                     <span className={`font-medium ${
                       disabled 
                         ? 'text-gray-500 dark:text-gray-400' 
@@ -959,18 +971,25 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       {option.text}
                     </span>
                   </div>
+                  
+                  {/* Right drag handle with 30% grabbable region */}
                   {!disabled && (
                     <div 
-                      className="w-6 h-6 flex flex-col items-center justify-center ml-2 cursor-grab active:cursor-grabbing"
+                      className="absolute right-0 top-0 bottom-0 cursor-grab active:cursor-grabbing"
                       style={{
-                        touchAction: 'none'
+                        width: '30%',
+                        touchAction: 'none',
+                        zIndex: 2
                       }}
                       onPointerDown={(e) => handlePointerStart(e, option.id)}
                       title="Drag to reorder"
                     >
-                      <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                      <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                      <div className="w-4 h-0.5 bg-gray-400"></div>
+                      {/* Visual hamburger menu - positioned within the grabbable area */}
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
+                        <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
+                        <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
+                        <div className="w-4 h-0.5 bg-gray-400"></div>
+                      </div>
                     </div>
                   )}
                 </div>
