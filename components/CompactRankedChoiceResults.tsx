@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
 
@@ -36,8 +36,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
 
   // Function to determine user's preference for a given round
-  const getUserPreferenceForRound = (roundNumber: number, eliminatedSoFar: string[]): string | null => {
-    if (!userVoteData?.ranked_choices) return null;
+  const getUserPreferenceForRound = useCallback((roundNumber: number, eliminatedSoFar: string[]): string | undefined => {
+    if (!userVoteData?.ranked_choices) return undefined;
     
     const userRanking: string[] = userVoteData.ranked_choices;
     
@@ -48,8 +48,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
       }
     }
     
-    return null;
-  };
+    return undefined;
+  }, [userVoteData?.ranked_choices]);
 
   useEffect(() => {
     async function fetchAndProcessData() {
