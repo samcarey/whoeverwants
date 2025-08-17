@@ -13,6 +13,7 @@ import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
+import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -44,6 +45,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
   const [isEditingVote, setIsEditingVote] = useState(false);
+  const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
+  const [hasPollDataState, setHasPollDataState] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= new Date(), 
@@ -167,6 +170,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     
     // Check if this browser created the poll
     setIsCreator(isCreatedByThisBrowser(poll.id));
+    
+    // Check if browser has any data for this poll
+    setHasPollDataState(hasPollData(poll.id));
     
     // Load vote data if user has voted (either from localStorage check or hasVoted state)
     const shouldLoadVoteData = hasVoted || hasVotedOnPoll(poll.id);
@@ -389,6 +395,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Save vote to localStorage so user can't vote again (only for new votes)
       if (!isEditingVote) {
         markPollAsVoted(poll.id, voteId);
+        // Update hasPollData state
+        setHasPollDataState(true);
       }
       
       setIsEditingVote(false);
@@ -681,6 +689,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </p>
             )}
           </div>
+          
+          {/* Forget Poll Button */}
+          {hasPollDataState && (
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setShowForgetConfirmModal(true)}
+                className="w-full py-2 px-4 text-sm text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors"
+              >
+                Forget this poll
+              </button>
+            </div>
+          )}
 
       </div>
 
@@ -709,6 +729,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         title="Close Poll"
         message="Are you sure you want to close this poll? This action cannot be undone and voting will end immediately."
         confirmText="Close Poll"
+        cancelText="Cancel"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+      />
+      
+      <ConfirmationModal
+        isOpen={showForgetConfirmModal}
+        onConfirm={() => {
+          forgetPoll(poll.id);
+          setShowForgetConfirmModal(false);
+          router.push('/');
+        }}
+        onCancel={() => setShowForgetConfirmModal(false)}
+        title="Forget Poll"
+        message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
+        confirmText="Forget Poll"
         cancelText="Cancel"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
