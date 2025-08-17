@@ -10,6 +10,7 @@ import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import FloatingHomeButton from "@/components/FloatingHomeButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 
@@ -406,7 +407,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   return (
     <>
-      <div className="max-w-md mx-auto">
+      <div className="max-w-md mx-auto pb-20">
           <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
           
           
@@ -682,29 +683,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
 
           {/* Bottom navigation */}
-          <div className="flex justify-between items-center mt-6 mb-6">
-            <Link
-              href="/"
-              prefetch={true}
-              className="inline-flex items-center rounded-full border border-solid border-gray-300 dark:border-gray-600 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 px-6 py-2 text-sm font-medium"
-            >
-              <svg
-                className="w-4 h-4 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12v0"
-                />
-              </svg>
-              Home
-            </Link>
-            
+          <div className="flex justify-center items-center mt-6 mb-6">
             {pollUrl && <UrlCopy url={pollUrl} />}
           </div>
       </div>
@@ -737,6 +716,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         cancelText="Cancel"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
+      
+      <FloatingHomeButton />
     </>
   );
 }
