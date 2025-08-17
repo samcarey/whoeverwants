@@ -848,7 +848,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         return updateItemPositions(newList);
       });
     }
-  }, [mainList, noPreferenceList, updateItemPositions, onRankingChange]);
+  }, [mainList, noPreferenceList, updateItemPositions]);
 
   // Render a single list container (main or no preference)
   const renderListContainer = (

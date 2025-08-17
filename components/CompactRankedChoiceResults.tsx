@@ -189,7 +189,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
     }
 
     fetchAndProcessData();
-  }, [results.poll_id, results.total_votes, results.winner, userVoteData]);
+  }, [results.poll_id, results.total_votes, results.winner, userVoteData, getUserPreferenceForRound]);
 
   // Update URL hash when round index changes
   useEffect(() => {

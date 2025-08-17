@@ -253,7 +253,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setIsClosingPoll(true);
     try {
       // In development mode, use empty string if no creator secret
-      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret;
+      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
       const success = await closePoll(poll.id, secretToUse);
       if (success) {
         // Refetch the poll data to get the updated is_closed value
