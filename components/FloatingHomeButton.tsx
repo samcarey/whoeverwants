@@ -12,7 +12,7 @@ export default function FloatingHomeButton() {
       <Link
         href="/"
         prefetch={true}
-        className="flex items-center justify-center w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
+        className="flex items-center justify-center w-12 h-12 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105"
         title="Go to homepage"
         aria-label="Go to homepage"
       >
