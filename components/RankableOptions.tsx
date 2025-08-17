@@ -878,7 +878,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         
         <div
           ref={containerRef}
-          className="p-3 relative transition-all duration-200 ease-out"
+          className={`p-3 relative transition-all duration-200 ease-out ${
+            listItems.length === 0 && listType === 'noPreference' 
+              ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg' 
+              : ''
+          }`}
           style={{
             height: `${dynamicHeight}px`,
             minHeight: `${totalItemHeight}px`
@@ -890,9 +894,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           {/* Show empty state message if list is empty */}
           {listItems.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-sm text-gray-400 dark:text-gray-500">
-                {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
-              </p>
+              <div className="text-center">
+                <p className={`text-sm ${
+                  listType === 'noPreference' 
+                    ? 'text-gray-500 dark:text-gray-400 font-medium' 
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}>
+                  {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
+                </p>
+                {listType === 'noPreference' && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    Items placed here won't be ranked
+                  </p>
+                )}
+              </div>
             </div>
           )}
           
@@ -1019,7 +1034,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       )}
       
       {/* Divider with "No Preference" text */}
-      <div className="my-4">
+      <div className="my-4 select-none">
         <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
         <div className="flex justify-center mt-2">
           <span className="text-sm text-gray-500 dark:text-gray-400">
