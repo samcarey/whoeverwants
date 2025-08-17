@@ -5,12 +5,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
-import UrlCopy from "@/components/UrlCopy";
 import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
+import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 
@@ -682,10 +682,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             )}
           </div>
 
-          {/* Bottom navigation */}
-          <div className="flex justify-center items-center mt-6 mb-6">
-            {pollUrl && <UrlCopy url={pollUrl} />}
-          </div>
       </div>
 
       <SuccessPopup 
@@ -718,6 +714,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       />
       
       <FloatingHomeButton />
+      <FloatingCopyLinkButton url={pollUrl} />
     </>
   );
 }

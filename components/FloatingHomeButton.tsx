@@ -3,8 +3,12 @@
 import Link from "next/link";
 
 export default function FloatingHomeButton() {
+  // In development, move button more to the right to avoid dev tools
+  const isDev = process.env.NODE_ENV === 'development';
+  const leftPosition = isDev ? 'left-12' : 'left-4';
+  
   return (
-    <div className="fixed bottom-4 left-4 z-50">
+    <div className={`fixed bottom-4 ${leftPosition} z-50`}>
       <Link
         href="/"
         prefetch={true}
