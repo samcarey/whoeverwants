@@ -568,7 +568,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     <>
       {/* Fixed header bar */}
       <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-center py-3">
+        <div className="flex items-center justify-center pt-3 pb-2">
           <h1 className="text-xl font-bold text-center px-4 line-clamp-1">{poll.title}</h1>
         </div>
       </div>
