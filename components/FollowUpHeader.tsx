@@ -46,26 +46,28 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
 
   if (loading) {
     return (
-      <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-800 rounded-full">
-            <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
-          <div>
-            <h3 className="font-semibold text-blue-900 dark:text-blue-100">Follow-up Poll</h3>
-            <p className="text-sm text-blue-700 dark:text-blue-300">Loading original poll...</p>
-          </div>
+      <div className="-mt-3.5 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
+        <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
+          <span>Follow up to</span>
+          <span className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 rounded text-sm font-medium text-blue-800 dark:text-blue-200 relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]">
+            <span className="flex space-x-1">
+              <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+              <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
+              <span className="w-1 h-1 bg-current rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+            </span>
+            <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-blue-100 dark:from-blue-900/50 to-transparent pointer-events-none"></div>
+          </span>
         </div>
+        <p className="text-xs text-blue-600 dark:text-blue-400">
+          Accessible to the same recipients
+        </p>
       </div>
     );
   }
 
   if (error || !originalPollTitle) {
     return (
-      <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+      <div className="-mt-3.5 mb-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-8 h-8 bg-yellow-100 dark:bg-yellow-800 rounded-full">
             <svg className="w-4 h-4 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,34 +84,21 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
   }
 
   return (
-    <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-800 rounded-full flex-shrink-0">
-          <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" 
-            />
-          </svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm text-blue-900 dark:text-blue-100">
-            Follow up to{" "}
-            <Link 
-              href={`/p/${followUpToPollId}`}
-              className="font-semibold hover:underline inline-block truncate align-bottom max-w-full"
-              title={originalPollTitle}
-            >
-              &ldquo;{originalPollTitle}&rdquo;
-            </Link>
-          </div>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-            This poll will be accessible to anyone with access to the original
-          </p>
-        </div>
+    <div className="-mt-3.5 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
+      <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
+        <span>Follow up to</span>
+        <Link 
+          href={`/p/${followUpToPollId}`}
+          className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
+          title={originalPollTitle}
+        >
+          <span className="truncate">{originalPollTitle}</span>
+          <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-blue-100 dark:from-blue-900/50 to-transparent pointer-events-none"></div>
+        </Link>
       </div>
+      <p className="text-xs text-blue-600 dark:text-blue-400">
+        Accessible to the same recipients
+      </p>
     </div>
   );
 }

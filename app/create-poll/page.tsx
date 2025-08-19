@@ -56,6 +56,7 @@ function CreatePollContent() {
         customTime
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
+      console.log('💾 Form state saved:', formState);
     }
   }, [title, options, deadlineOption, customDate, customTime]);
 
@@ -84,6 +85,7 @@ function CreatePollContent() {
       if (saved) {
         try {
           const formState = JSON.parse(saved);
+          console.log('📥 Form state loaded:', formState);
           setTitle(formState.title || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '5min');
@@ -92,6 +94,8 @@ function CreatePollContent() {
         } catch (error) {
           console.error('Failed to load form state:', error);
         }
+      } else {
+        console.log('📥 No saved form state found');
       }
     }
   };
@@ -201,8 +205,10 @@ function CreatePollContent() {
 
   // Save form state whenever form data changes
   useEffect(() => {
-    saveFormState();
-  }, [saveFormState]);
+    if (isClient) {
+      saveFormState();
+    }
+  }, [title, options, deadlineOption, customDate, customTime, isClient, saveFormState]);
 
   // Auto-focus new option fields
   useEffect(() => {
