@@ -21,6 +21,8 @@
     "test:edge-cases": "node tests/run-specific-tests.js edge-cases",
     "test:basic": "node tests/run-specific-tests.js basic",
     "test:validate": "node tests/run-specific-tests.js all --coverage",
+    "db:migrate": "./scripts/apply-migrations.sh",
+    "db:migrate:production": "./scripts/apply-migrations.sh production",
     "db:rebuild-test": "./scripts/complete-migration.sh",
     "db:rebuild-production": "./scripts/complete-migration-production.sh",
     "db:clear-test": "./scripts/direct-api-migration.sh clear",

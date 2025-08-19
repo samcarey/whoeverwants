@@ -387,30 +387,34 @@ This helps identify hydration errors and JavaScript loading issues.
 
 # Database Migration System
 
-This project has a complete automated database migration system for Supabase test databases.
+This project uses an **additive migration system** that preserves existing data while applying schema changes.
 
 ## Quick Commands
 
-### Test Database Operations
+### 🟢 Recommended: Additive Migrations (Preserves Data)
 ```bash
-# Tear down entire TEST database and rebuild with all migrations
-./scripts/complete-migration.sh
-# OR use npm script:
-npm run db:rebuild-test
+# Apply only NEW migrations to TEST database (preserves existing data)
+npm run db:migrate
 
-# Clear TEST database only
-./scripts/direct-api-migration.sh clear
-# OR use npm script:
-npm run db:clear-test
+# Apply only NEW migrations to PRODUCTION database (preserves existing data)
+npm run db:migrate:production
 ```
 
-### Production Database Operations
+### ⚠️ Destructive Operations (Use With Caution)
+
+**WARNING**: The commands below will DELETE ALL DATA. Only use when absolutely necessary.
+
 ```bash
-# ⚠️ DANGER: Tear down entire PRODUCTION database and rebuild with all migrations
+# DANGER: Tear down entire TEST database and rebuild with all migrations
+# This DELETES all test data!
+npm run db:rebuild-test
+
+# DANGER: Tear down entire PRODUCTION database and rebuild with all migrations
 # This PERMANENTLY DELETES all production data!
-./scripts/complete-migration-production.sh
-# OR use npm script:
 npm run db:rebuild-production
+
+# Clear TEST database only (deletes all data)
+npm run db:clear-test
 ```
 
 ## How It Works
@@ -419,25 +423,32 @@ The migration system uses **Supabase Management API** to execute SQL directly, b
 
 ### Key Components
 
-1. **`scripts/complete-migration.sh`** - Full TEST database tear-down/rebuild
+#### 1. **`scripts/apply-migrations.sh`** - Additive migration system (RECOMMENDED)
+   - Tracks which migrations have been applied using a `_migrations` table
+   - Only applies NEW migrations, preserving all existing data
+   - Supports both test and production databases
+   - Safe to run multiple times - skips already-applied migrations
+   - Wraps each migration in a transaction for safety
+
+#### 2. **`scripts/complete-migration.sh`** - Full TEST database tear-down/rebuild (DESTRUCTIVE)
+   - ⚠️ **DELETES ALL DATA** in test database
    - Clears all tables, views, functions, policies from test database
    - Applies ALL migrations in `database/migrations/` in order
-   - Verifies each step with comprehensive checks
-   - Tests final functionality
+   - Use only when you need a completely fresh database
 
-2. **`scripts/complete-migration-production.sh`** - Full PRODUCTION database tear-down/rebuild
+#### 3. **`scripts/complete-migration-production.sh`** - Full PRODUCTION database tear-down/rebuild (DESTRUCTIVE)
    - ⚠️ **DANGER**: Permanently deletes ALL production data
    - Requires manual confirmation: type `CONFIRM_PRODUCTION_REBUILD`
-   - Same process as test script but targets production database
-   - Includes multiple safety warnings
+   - Should almost NEVER be used in production
 
-3. **`scripts/direct-api-migration.sh`** - Database clearing utility (TEST only)
-   - Can clear database schema without running migrations
-   - Uses same API approach as complete script
+#### 4. **`scripts/direct-api-migration.sh`** - Database clearing utility (DESTRUCTIVE)
+   - Clears database schema without running migrations
+   - TEST only - cannot be used on production
 
-4. **Migration Files Location**: `database/migrations/`
+#### 5. **Migration Files Location**: `database/migrations/`
    - Format: `XXX_description_up.sql` (e.g., `001_create_polls_table_up.sql`)
-   - Script automatically finds and sorts all `*_up.sql` files
+   - Migrations are applied in alphabetical order
+   - New fields should have sensible defaults or allow NULL for existing rows
 
 ### Authentication & Configuration
 
@@ -468,29 +479,60 @@ Instead of direct PostgreSQL connections (which are blocked in many cloud enviro
 
 ### Migration Process
 
-1. **PHASE 1: Clear Database**
+#### Additive Migration Process (RECOMMENDED)
+
+1. **Check Migration Tracking Table**
+   - Creates `_migrations` table if it doesn't exist
+   - Queries for previously applied migrations
+
+2. **Identify New Migrations**
+   - Scans `database/migrations/` for all `*_up.sql` files
+   - Compares with applied migrations list
+   - Identifies which migrations are new
+
+3. **Apply New Migrations Only**
+   - Each migration is wrapped in a transaction
+   - Records successful migrations in tracking table
+   - Stops on first failure to maintain consistency
+   - Existing data is preserved
+
+4. **Verification**
+   - Reports number of migrations applied
+   - Shows current migration status
+
+#### Destructive Migration Process (USE WITH CAUTION)
+
+1. **PHASE 1: Clear Database** (⚠️ DELETES ALL DATA)
    - Drops all tables, views, functions, policies in public schema
-   - Uses PL/pgSQL DO blocks for batch operations
-   - Preserves system/extension objects
+   - Completely wipes the database
 
-2. **PHASE 2: Verify Empty**
-   - Confirms all user objects removed
-   - Counts remaining objects (should be 0)
+2. **PHASE 2: Apply All Migrations**
+   - Applies every migration from scratch
+   - Creates a fresh database schema
+   - No data is preserved from before
 
-3. **PHASE 3: Apply Migrations**
-   - Finds all `*_up.sql` files in `database/migrations/`
-   - Sorts them alphabetically (001, 002, etc.)
-   - Applies each migration sequentially
-   - Stops on first failure
+## Writing New Migrations
 
-4. **PHASE 4: Final Verification**
-   - Lists all created tables and column counts
-   - Tests basic functionality (insert/select/delete)
-   - Confirms database is ready for use
+When creating new migrations:
+
+1. **Use additive changes**: Add columns with DEFAULT values or NULL
+2. **Avoid destructive changes**: Don't DROP columns or tables with data
+3. **Handle existing data**: Provide migration logic for existing rows
+4. **Test thoroughly**: Run migrations on test database first
+
+Example of a good migration:
+```sql
+-- Add new column with default value for existing rows
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS 
+  view_count INTEGER DEFAULT 0;
+
+-- Update existing rows if needed
+UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
+```
 
 ## Current Migrations
 
-The project has 15 migrations total:
+The project has multiple migrations that build the schema incrementally:
 1. `001_create_polls_table_up.sql` - Basic polls table
 2. `002_add_response_deadline_up.sql` - Response deadlines
 3. `003_add_poll_type_and_options_up.sql` - Poll types/options

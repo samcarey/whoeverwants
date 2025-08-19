@@ -18,7 +18,8 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create trigger to automatically update updated_at
+-- Create trigger to automatically update updated_at (if it doesn't exist)
+DROP TRIGGER IF EXISTS update_polls_updated_at ON polls;
 CREATE TRIGGER update_polls_updated_at 
   BEFORE UPDATE ON polls 
   FOR EACH ROW 
