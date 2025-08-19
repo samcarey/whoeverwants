@@ -526,17 +526,16 @@ export default function CreatePoll() {
 
   return (
     <div className="max-w-md mx-auto pb-20">
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-6">
-        <h1 className="text-2xl font-bold mb-6 text-center">Create New Poll</h1>
-        
-        {followUpTo && (
-          <FollowUpHeader followUpToPollId={followUpTo} />
-        )}
+      <h1 className="text-2xl font-bold mb-4 text-center">Create New Poll</h1>
+      
+      {followUpTo && (
+        <FollowUpHeader followUpToPollId={followUpTo} />
+      )}
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
-            {error}
-          </div>
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
+          {error}
+        </div>
         )}
         
         
@@ -713,7 +712,6 @@ export default function CreatePoll() {
             )}
           </button>
         </form>
-      </div>
       
       <ConfirmationModal
         isOpen={showConfirmModal}
