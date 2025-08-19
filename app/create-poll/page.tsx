@@ -311,6 +311,11 @@ function CreatePollContent() {
     const selected = deadlineOptions.find(opt => opt.value === option);
     if (!selected || option === "custom") return selected?.label || "";
     
+    // Only calculate time on client to avoid hydration mismatch
+    if (typeof window === 'undefined') {
+      return selected.label; // Server-side: just return the label
+    }
+    
     const now = new Date();
     const deadline = new Date(now.getTime() + selected.minutes * 60 * 1000);
     
@@ -325,6 +330,9 @@ function CreatePollContent() {
   // Calculate and format time until custom deadline
   const getCustomDeadlineDisplay = () => {
     if (!customDate || !customTime) return "";
+    
+    // Only calculate on client to avoid hydration mismatch
+    if (typeof window === 'undefined') return "";
     
     const now = new Date();
     const customDateTime = new Date(`${customDate}T${customTime}`);
@@ -639,7 +647,7 @@ function CreatePollContent() {
             >
               {deadlineOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {getTimeLabel(option.value)}
+                  {isClient ? getTimeLabel(option.value) : option.label}
                 </option>
               ))}
             </select>

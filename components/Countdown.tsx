@@ -9,9 +9,14 @@ interface CountdownProps {
 export default function Countdown({ deadline }: CountdownProps) {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isExpired, setIsExpired] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    if (!deadline) return;
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!deadline || !isClient) return;
 
     const updateCountdown = () => {
       const now = new Date().getTime();
@@ -48,7 +53,7 @@ export default function Countdown({ deadline }: CountdownProps) {
     const interval = setInterval(updateCountdown, 1000);
 
     return () => clearInterval(interval);
-  }, [deadline]);
+  }, [deadline, isClient]);
 
   if (!deadline) {
     return (
@@ -58,13 +63,13 @@ export default function Countdown({ deadline }: CountdownProps) {
     );
   }
 
-  const deadlineDate = new Date(deadline).toLocaleDateString("en-US", {
+  const deadlineDate = isClient ? new Date(deadline).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }) : "";
 
   return (
     <div className="mb-4">

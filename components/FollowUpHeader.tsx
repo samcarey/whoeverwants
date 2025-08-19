@@ -84,7 +84,7 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
   return (
     <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
       <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-800 rounded-full">
+        <div className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-800 rounded-full flex-shrink-0">
           <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path 
               strokeLinecap="round" 
@@ -94,16 +94,19 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
             />
           </svg>
         </div>
-        <div className="flex-1">
-          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Follow-up Poll</h3>
-          <p className="text-sm text-blue-700 dark:text-blue-300">
-            Follow up to:{" "}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-blue-900 dark:text-blue-100">
+            Follow up to{" "}
             <Link 
               href={`/p/${followUpToPollId}`}
-              className="font-medium hover:underline"
+              className="font-semibold hover:underline inline-block truncate align-bottom max-w-full"
+              title={originalPollTitle}
             >
               &ldquo;{originalPollTitle}&rdquo;
             </Link>
+          </div>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            This poll will be accessible to anyone with access to the original
           </p>
         </div>
       </div>
