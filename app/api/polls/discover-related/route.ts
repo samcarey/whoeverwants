@@ -31,21 +31,79 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call the recursive function to get all related poll IDs
-    const { data, error } = await supabase.rpc('get_all_related_poll_ids', {
-      input_poll_ids: pollIds
-    });
+    // Log the input for debugging
+    console.log('Poll discovery API called with poll IDs:', pollIds);
 
-    if (error) {
-      console.error('Error discovering related polls:', error);
-      return NextResponse.json(
-        { error: "Failed to discover related polls" },
-        { status: 500 }
-      );
+    // Try the RPC function first, fall back to manual discovery if it fails
+    let allRelatedIds: string[] = [];
+    
+    try {
+      const { data, error } = await supabase.rpc('get_all_related_poll_ids', {
+        input_poll_ids: pollIds
+      });
+
+      if (error) {
+        console.warn('RPC function failed, falling back to manual discovery:', error);
+        throw new Error('RPC failed');
+      }
+
+      // Extract poll IDs from the RPC response
+      allRelatedIds = data ? data.map((row: { poll_id: string }) => row.poll_id) : [];
+      console.log('RPC discovery successful:', { input: pollIds.length, found: allRelatedIds.length });
+    } catch (rpcError) {
+      console.log('Using manual poll discovery fallback');
+      
+      // Manual discovery - find all related polls by traversing both directions
+      const discoveredIds = new Set<string>(pollIds);
+      let changed = true;
+      let iterations = 0;
+      const maxIterations = 10; // Prevent infinite loops
+      
+      while (changed && iterations < maxIterations) {
+        changed = false;
+        iterations++;
+        
+        const currentIds = Array.from(discoveredIds);
+        
+        // Find polls that follow up to any of our current polls (descendants)
+        const { data: descendants } = await supabase
+          .from('polls')
+          .select('id')
+          .in('follow_up_to', currentIds);
+        
+        if (descendants) {
+          for (const poll of descendants) {
+            if (!discoveredIds.has(poll.id)) {
+              discoveredIds.add(poll.id);
+              changed = true;
+            }
+          }
+        }
+        
+        // Find polls that our current polls follow up to (ancestors)
+        const { data: currentPolls } = await supabase
+          .from('polls')
+          .select('id, follow_up_to')
+          .in('id', currentIds)
+          .not('follow_up_to', 'is', null);
+        
+        if (currentPolls) {
+          for (const poll of currentPolls) {
+            if (poll.follow_up_to && !discoveredIds.has(poll.follow_up_to)) {
+              discoveredIds.add(poll.follow_up_to);
+              changed = true;
+            }
+          }
+        }
+      }
+      
+      allRelatedIds = Array.from(discoveredIds);
+      console.log('Manual discovery complete:', { 
+        input: pollIds.length, 
+        found: allRelatedIds.length, 
+        iterations 
+      });
     }
-
-    // Extract poll IDs from the response
-    const allRelatedIds = data ? data.map((row: { poll_id: string }) => row.poll_id) : [];
 
     return NextResponse.json({
       allRelatedIds,

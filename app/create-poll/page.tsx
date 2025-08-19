@@ -265,7 +265,7 @@ export default function CreatePoll() {
     setOptions(newOptions);
   };
 
-  const deadlineOptions = [
+  const baseDeadlineOptions = [
     { value: "5min", label: "5 minutes", minutes: 5 },
     { value: "10min", label: "10 minutes", minutes: 10 },
     { value: "15min", label: "15 minutes", minutes: 15 },
@@ -275,6 +275,14 @@ export default function CreatePoll() {
     { value: "4hr", label: "4 hours", minutes: 240 },
     { value: "custom", label: "Custom", minutes: 0 },
   ];
+
+  // Add 10-second option for development only
+  const deadlineOptions = process.env.NODE_ENV === 'development' 
+    ? [
+        { value: "10sec", label: "10 seconds (Dev Only)", minutes: 1/6 }, // 10 seconds = 1/6 minute
+        ...baseDeadlineOptions
+      ]
+    : baseDeadlineOptions;
 
   const calculateDeadline = () => {
     const now = new Date();
@@ -305,7 +313,11 @@ export default function CreatePoll() {
     
     const now = new Date();
     const deadline = new Date(now.getTime() + selected.minutes * 60 * 1000);
-    const timeString = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    // For 10-second option, show seconds
+    const timeString = option === "10sec" 
+      ? deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     return `${selected.label} (${timeString})`;
   };
@@ -439,6 +451,8 @@ export default function CreatePoll() {
       if (pollType === 'ranked_choice') {
         pollData.options = filledOptions;
       }
+
+      console.log("Creating poll with data:", pollData);
       
       const { data, error } = await supabase
         .from("polls")
@@ -447,7 +461,32 @@ export default function CreatePoll() {
 
       if (error) {
         console.error("Error creating poll:", error);
-        setError("Failed to create poll. Please try again.");
+        console.error("Error details:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+        console.error("Poll data that failed:", pollData);
+        
+        // Provide more specific error message based on error type
+        let errorMessage = "Failed to create poll. Please try again.";
+        if (error.message) {
+          if (error.message.includes('duplicate key')) {
+            errorMessage = "A poll with this data already exists.";
+          } else if (error.message.includes('not-null violation')) {
+            errorMessage = "Missing required information. Please check all fields.";
+          } else if (error.message.includes('foreign key')) {
+            errorMessage = "Invalid reference in poll data.";
+          } else if (error.message.includes('permission')) {
+            errorMessage = "Permission denied. Please try again.";
+          } else {
+            errorMessage = `Database error: ${error.message}`;
+          }
+        }
+        
+        setError(errorMessage);
         setIsLoading(false);
         isSubmittingRef.current = false;
         reEnableForm(form);
@@ -473,8 +512,8 @@ export default function CreatePoll() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Use short_id if available, otherwise fall back to UUID
-      const redirectId = data[0].short_id || data[0].id;
+      // Use UUID for now (short_id not available due to incomplete migration)
+      const redirectId = data[0].id;
       router.push(`/p/${redirectId}?new=true`);
     } catch (error) {
       console.error("Unexpected error:", error);

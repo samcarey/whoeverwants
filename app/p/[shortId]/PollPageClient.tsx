@@ -245,6 +245,119 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return () => clearInterval(interval);
   }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults]);
 
+  // Real-time subscription to listen for poll status changes (with polling fallback)
+  useEffect(() => {
+    console.log(`🎬 Setting up real-time subscription for poll ${poll.id}`);
+    
+    let realtimeWorking = false;
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    // Polling fallback function
+    const pollForChanges = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('polls')
+          .select('is_closed')
+          .eq('id', poll.id)
+          .single();
+        
+        if (data && data.is_closed && !pollClosed) {
+          console.log('🔒 Poll closed detected - updating to show results!');
+          setPollClosed(true);
+          fetchPollResults();
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    };
+    
+    const subscription = supabase
+      .channel(`poll-changes-${poll.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'polls',
+          filter: `id=eq.${poll.id}`,
+        },
+        (payload) => {
+          console.log('🔄 Poll updated in real-time:', payload);
+          console.log('📝 Current pollClosed state:', pollClosed);
+          
+          // Check if the poll was manually closed
+          if (payload.new && payload.new.is_closed && !pollClosed) {
+            console.log('🔒 Poll was manually closed by creator, updating UI...');
+            setPollClosed(true);
+            fetchPollResults();
+          } else if (payload.new && payload.new.is_closed && pollClosed) {
+            console.log('ℹ️ Poll already marked as closed locally');
+          } else if (payload.new && !payload.new.is_closed) {
+            console.log('🔓 Poll is still open according to database');
+          }
+          
+          // Also handle other potential updates like title changes
+          if (payload.new && payload.old) {
+            const changedFields = Object.keys(payload.new).filter(key => 
+              payload.new[key] !== payload.old[key]
+            );
+            console.log('📊 Poll data updated:', { changed: changedFields });
+            
+            // Log specific field changes
+            changedFields.forEach(field => {
+              console.log(`   ${field}: ${payload.old[field]} → ${payload.new[field]}`);
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log(`🔗 Real-time subscription status for poll ${poll.id}:`, status);
+        
+        // Status is either a string or an object with status property
+        const statusValue = typeof status === 'string' ? status : status?.status;
+        
+        if (statusValue === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to real-time updates!');
+          console.log('📡 Listening for changes to poll:', poll.id);
+          realtimeWorking = true;
+          
+          // Clear polling if real-time is working
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+            console.log('🛑 Stopping polling - real-time is working');
+          }
+        } else if (statusValue === 'CHANNEL_ERROR') {
+          console.warn('⚠️ Real-time subscription not available. Using polling fallback...');
+          console.log('💡 Note: Real-time may need to be enabled in Supabase dashboard');
+          console.log('✅ No worries - polling will automatically detect changes every 2 seconds');
+          
+          // Start polling as fallback (every 2 seconds)
+          if (!pollInterval && !pollClosed) {
+            console.log('🔄 Starting automatic polling (checking every 2 seconds)');
+            pollInterval = setInterval(pollForChanges, 2000);
+            // Check immediately as well
+            pollForChanges();
+          }
+        } else if (statusValue === 'TIMED_OUT') {
+          console.warn('⏰ Real-time subscription timed out');
+        } else if (statusValue === 'CLOSED') {
+          console.log('🚪 Real-time subscription closed');
+        }
+      });
+
+    return () => {
+      console.log(`🔌 Unsubscribing from poll ${poll.id} real-time updates`);
+      subscription.unsubscribe();
+      
+      // Clean up polling interval
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        console.log('🛑 Stopped polling on cleanup');
+      }
+    };
+  }, [poll.id, pollClosed, fetchPollResults]);
+
   const handleRankingChange = useCallback((newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
   }, []);

@@ -24,6 +24,8 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
       };
     }
 
+    console.log(`🔍 Starting poll discovery for ${currentPollIds.length} accessible polls`);
+
     // Call the discovery API
     const response = await fetch('/api/polls/discover-related', {
       method: 'POST',
@@ -34,13 +36,38 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Failed to discover related polls:', errorData);
-      throw new Error(`Discovery API error: ${response.status}`);
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (parseError) {
+        errorData = { error: 'Failed to parse error response' };
+      }
+      
+      console.warn('Poll discovery API failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorData
+      });
+      
+      // Don't throw - just return empty results to gracefully degrade
+      return {
+        newPollIds: [],
+        totalDiscovered: currentPollIds.length, // At least count the polls we already have
+        originalCount: currentPollIds.length
+      };
     }
 
     const result = await response.json();
     const { allRelatedIds, originalCount, discoveredCount } = result;
+
+    if (!Array.isArray(allRelatedIds)) {
+      console.warn('Poll discovery returned invalid data:', result);
+      return {
+        newPollIds: [],
+        totalDiscovered: currentPollIds.length,
+        originalCount: currentPollIds.length
+      };
+    }
 
     // Find new poll IDs that weren't previously accessible
     const newPollIds = allRelatedIds.filter((id: string) => !currentPollIds.includes(id));
@@ -51,21 +78,26 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
     });
 
     if (newPollIds.length > 0) {
-      console.log(`🔗 Discovered ${newPollIds.length} new follow-up polls`);
+      console.log(`🔗 Discovered ${newPollIds.length} new related polls`);
+    } else {
+      console.log('📋 No new related polls found');
     }
 
     return {
       newPollIds,
-      totalDiscovered: discoveredCount,
-      originalCount
+      totalDiscovered: discoveredCount || allRelatedIds.length,
+      originalCount: originalCount || currentPollIds.length
     };
 
   } catch (error) {
-    console.error('Error in poll discovery:', error);
+    console.warn('Poll discovery encountered an error but continuing gracefully:', error);
+    
+    // Always return a valid result even if discovery fails
+    const currentPollIds = getAccessiblePollIds();
     return {
       newPollIds: [],
-      totalDiscovered: 0,
-      originalCount: 0
+      totalDiscovered: currentPollIds.length,
+      originalCount: currentPollIds.length
     };
   }
 }
