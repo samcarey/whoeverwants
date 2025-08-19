@@ -534,7 +534,7 @@ export default function CreatePoll() {
       </div>
       
       {/* Main content with padding for fixed header */}
-      <div className="max-w-md mx-auto pb-20 pt-16">
+      <div className="max-w-md mx-auto pb-20 pt-12">
         {followUpTo && (
           <FollowUpHeader followUpToPollId={followUpTo} />
         )}
@@ -550,7 +550,7 @@ export default function CreatePoll() {
           e.preventDefault();
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
-        }} className="space-y-6">
+        }} className="space-y-4">
           <div>
             <label htmlFor="title" className="block text-sm font-medium mb-2">
               Poll Title
