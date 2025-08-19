@@ -929,7 +929,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 }}
                 className={`
                   absolute left-0 right-0 rounded-md shadow-sm
-                  ${disabled ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-700' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'}
+                  ${disabled ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-700' : 'cursor-grab active:cursor-grabbing bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'}
                   ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
                   border border-gray-200 dark:border-gray-600 p-3 select-none
                   transition-colors duration-150

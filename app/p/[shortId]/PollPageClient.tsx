@@ -15,7 +15,6 @@ import FollowUpButton from "@/components/FollowUpButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
-import { debugLog } from "@/lib/debugLogger";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -92,7 +91,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
         voteIds[pollId] = voteId;
         localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
-        debugLog.info(`Stored vote ID for poll ${pollId}: ${voteId}`, 'VoteStorage');
       }
     } catch (error) {
       console.error('Error marking poll as voted:', error);
@@ -106,7 +104,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
       const storedVoteId = voteIds[pollId] || null;
-      debugLog.info(`Retrieved stored vote ID for poll ${pollId}: ${storedVoteId}`, 'VoteStorage');
       return storedVoteId;
     } catch (error) {
       console.error('Error getting stored vote ID:', error);
@@ -116,7 +113,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   // Fetch vote data from database by vote ID
   const fetchVoteData = useCallback(async (voteId: string) => {
-    debugLog.info(`Fetching vote data for ID: ${voteId}`, 'VoteFetch');
     
     try {
       const { data, error } = await supabase
@@ -126,14 +122,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         .single();
 
       if (error) {
-        debugLog.error(`Error fetching vote data for ${voteId}: ${error.message}`, 'VoteFetch');
         return null;
       }
 
-      debugLog.logObject(`Vote data fetched for ${voteId}`, data, 'VoteFetch');
       return data || null;
     } catch (error) {
-      debugLog.error(`Exception fetching vote data for ${voteId}: ${error}`, 'VoteFetch');
       return null;
     }
   }, []);
@@ -211,7 +204,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Fetch vote data from database if we have a vote ID
       if (voteId) {
         setIsLoadingVoteData(true);
-        debugLog.info(`Starting vote data load for vote ID: ${voteId}`, 'VoteLoad');
         fetchVoteData(voteId).then(voteData => {
           if (voteData) {
             setUserVoteData(voteData);
@@ -219,16 +211,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             // Set UI state based on vote data from database columns
             if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice);
-              debugLog.info(`Loaded yes/no vote: ${voteData.yes_no_choice}`, 'VoteLoad');
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
-              debugLog.info(`Loaded ranked choices: ${JSON.stringify(voteData.ranked_choices)}`, 'VoteLoad');
             }
           } else {
-            debugLog.warn(`No vote data found for ID: ${voteId}`, 'VoteLoad');
           }
         }).catch(err => {
-          debugLog.error(`Error loading vote data: ${err.message}`, 'VoteLoad');
         }).finally(() => {
           setIsLoadingVoteData(false);
         });
@@ -583,18 +571,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       let voteId;
       let error;
 
-      debugLog.info(`Vote Submit: ${isEditingVote ? 'EDIT' : 'NEW'} mode, voteId: ${userVoteId}`, 'VoteSubmit');
-      debugLog.logObject('Vote data being submitted', voteData, 'VoteSubmit');
 
       if (isEditingVote && userVoteId) {
-        debugLog.info(`Taking UPDATE path for existing vote ${userVoteId}`, 'VoteSubmit');
         
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         const updateData = poll.poll_type === 'yes_no' 
           ? { yes_no_choice: yesNoChoice }
           : { ranked_choices: rankedChoices };
         
-        debugLog.logObject('Update data being sent (without poll_id)', updateData, 'VoteSubmit');
         
         // Update existing vote
         const { error: updateError, data: returnedData } = await supabase
@@ -609,16 +593,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Update local userVoteData to reflect the changes
         if (!updateError && returnedData && returnedData.length > 0) {
           setUserVoteData(voteData);
-          debugLog.info(`✅ Vote UPDATE SUCCESS! Updated vote ${userVoteId}`, 'VoteSubmit');
-          debugLog.logObject('Updated vote data returned from DB', returnedData, 'VoteSubmit');
         } else if (!updateError && (!returnedData || returnedData.length === 0)) {
-          debugLog.error(`❌ Vote UPDATE returned no data - vote may not exist with ID: ${userVoteId}`, 'VoteSubmit');
           setVoteError("Failed to update vote. Vote may not exist.");
         } else {
-          debugLog.error(`❌ Vote UPDATE FAILED: ${updateError?.message || 'Unknown error'}`, 'VoteSubmit');
         }
       } else {
-        debugLog.info(`Taking INSERT path for new vote`, 'VoteSubmit');
         
         // Insert new vote
         const { data: insertedVote, error: insertError } = await supabase
@@ -631,11 +610,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         voteId = insertedVote?.id;
 
         if (!voteId) {
-          debugLog.error(`❌ Vote INSERT FAILED: No vote ID returned`, 'VoteSubmit');
           setVoteError("Failed to submit vote. Please try again.");
           return;
         } else {
-          debugLog.info(`✅ Vote INSERT SUCCESS! New vote ID: ${voteId}`, 'VoteSubmit');
         }
       }
 
