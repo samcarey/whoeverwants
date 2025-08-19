@@ -12,9 +12,10 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpButton from "@/components/FollowUpButton";
-import { Poll, supabase, PollResults, getPollResults, closePoll } from "@/lib/supabase";
+import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
+import { debugLog } from "@/lib/debugLogger";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -38,10 +39,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [pollResults, setPollResults] = useState<PollResults | null>(null);
   const [loadingResults, setLoadingResults] = useState(false);
   const [isClosingPoll, setIsClosingPoll] = useState(false);
+  const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
+  const [manuallyReopened, setManuallyReopened] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
+  const [showReopenConfirmModal, setShowReopenConfirmModal] = useState(false);
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
@@ -55,10 +59,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     [poll.response_deadline, currentTime]
   );
   
-  const isPollClosed = useMemo(() => 
-    pollClosed || isPollExpired, 
-    [pollClosed, isPollExpired]
-  );
+  const isPollClosed = useMemo(() => {
+    // If manually reopened, stay open regardless of deadline
+    if (manuallyReopened && !pollClosed) return false;
+    
+    // Otherwise, use normal logic: manual close OR deadline expiration
+    return pollClosed || isPollExpired;
+  }, [pollClosed, isPollExpired, manuallyReopened]);
 
   // Check if user has voted on this poll (stored in localStorage)
   const hasVotedOnPoll = useCallback((pollId: string): boolean => {
@@ -85,6 +92,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
         voteIds[pollId] = voteId;
         localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
+        debugLog.info(`Stored vote ID for poll ${pollId}: ${voteId}`, 'VoteStorage');
       }
     } catch (error) {
       console.error('Error marking poll as voted:', error);
@@ -97,7 +105,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (typeof window === 'undefined') return null;
     try {
       const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-      return voteIds[pollId] || null;
+      const storedVoteId = voteIds[pollId] || null;
+      debugLog.info(`Retrieved stored vote ID for poll ${pollId}: ${storedVoteId}`, 'VoteStorage');
+      return storedVoteId;
     } catch (error) {
       console.error('Error getting stored vote ID:', error);
       return null;
@@ -106,6 +116,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   // Fetch vote data from database by vote ID
   const fetchVoteData = useCallback(async (voteId: string) => {
+    debugLog.info(`Fetching vote data for ID: ${voteId}`, 'VoteFetch');
+    
     try {
       const { data, error } = await supabase
         .from('votes')
@@ -114,13 +126,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         .single();
 
       if (error) {
-        console.error('Error fetching vote data:', error);
+        debugLog.error(`Error fetching vote data for ${voteId}: ${error.message}`, 'VoteFetch');
         return null;
       }
 
+      debugLog.logObject(`Vote data fetched for ${voteId}`, data, 'VoteFetch');
       return data || null;
     } catch (error) {
-      console.error('Error fetching vote data:', error);
+      debugLog.error(`Exception fetching vote data for ${voteId}: ${error}`, 'VoteFetch');
       return null;
     }
   }, []);
@@ -196,8 +209,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID
-      if (voteId && !userVoteData) { // Only fetch if we don't already have vote data
+      if (voteId) {
         setIsLoadingVoteData(true);
+        debugLog.info(`Starting vote data load for vote ID: ${voteId}`, 'VoteLoad');
         fetchVoteData(voteId).then(voteData => {
           if (voteData) {
             setUserVoteData(voteData);
@@ -205,18 +219,22 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             // Set UI state based on vote data from database columns
             if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice);
+              debugLog.info(`Loaded yes/no vote: ${voteData.yes_no_choice}`, 'VoteLoad');
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
+              debugLog.info(`Loaded ranked choices: ${JSON.stringify(voteData.ranked_choices)}`, 'VoteLoad');
             }
+          } else {
+            debugLog.warn(`No vote data found for ID: ${voteId}`, 'VoteLoad');
           }
         }).catch(err => {
-          console.error('Error in fetchVoteData promise:', err);
+          debugLog.error(`Error loading vote data: ${err.message}`, 'VoteLoad');
         }).finally(() => {
           setIsLoadingVoteData(false);
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, userVoteData]);
+  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -273,6 +291,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (data && data.is_closed && !pollClosed) {
           console.log('🔒 Poll closed detected - updating to show results!');
           setPollClosed(true);
+          setManuallyReopened(false); // Reset flag when closed
           fetchPollResults();
         }
       } catch (error) {
@@ -298,6 +317,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           if (payload.new && payload.new.is_closed && !pollClosed) {
             console.log('🔒 Poll was manually closed by creator, updating UI...');
             setPollClosed(true);
+            setManuallyReopened(false); // Reset flag when closed by someone else
             fetchPollResults();
           } else if (payload.new && payload.new.is_closed && pollClosed) {
             console.log('ℹ️ Poll already marked as closed locally');
@@ -395,6 +415,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setShowCloseConfirmModal(true);
   };
 
+  const handleReopenClick = () => {
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (isReopeningPoll || !isDev) return;
+    
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret && !isDev) {
+      alert('You do not have permission to reopen this poll.');
+      return;
+    }
+    
+    setShowReopenConfirmModal(true);
+  };
+
   const handleClosePoll = async () => {
     setShowCloseConfirmModal(false);
     
@@ -424,6 +458,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Poll updated successfully
         
         setPollClosed(true);
+        setManuallyReopened(false); // Reset manually reopened flag when closing
         await fetchPollResults();
       } else {
         alert('Failed to close poll. Please try again.');
@@ -433,6 +468,47 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       alert('Failed to close poll. Please try again.');
     } finally {
       setIsClosingPoll(false);
+    }
+  };
+
+  const handleReopenPoll = async () => {
+    setShowReopenConfirmModal(false);
+    
+    const isDev = process.env.NODE_ENV === 'development';
+    
+    if (isReopeningPoll || !isDev) return;
+    
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret && !isDev) {
+      alert('You do not have permission to reopen this poll.');
+      return;
+    }
+    
+    setIsReopeningPoll(true);
+    try {
+      // In development mode, use empty string if no creator secret
+      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
+      const success = await reopenPoll(poll.id, secretToUse);
+      if (success) {
+        // Refetch the poll data to get the updated is_closed value
+        const { data: updatedPoll, error } = await supabase
+          .from("polls")
+          .select("*")
+          .eq("id", poll.id)
+          .single();
+        
+        // Poll updated successfully
+        setPollClosed(false);
+        setManuallyReopened(true); // Set flag to override deadline expiration
+        setPollResults(null); // Clear results since poll is now open
+      } else {
+        alert('Failed to reopen poll. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error reopening poll:', error);
+      alert('Failed to reopen poll. Please try again.');
+    } finally {
+      setIsReopeningPoll(false);
     }
   };
 
@@ -507,16 +583,43 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       let voteId;
       let error;
 
+      debugLog.info(`Vote Submit: ${isEditingVote ? 'EDIT' : 'NEW'} mode, voteId: ${userVoteId}`, 'VoteSubmit');
+      debugLog.logObject('Vote data being submitted', voteData, 'VoteSubmit');
+
       if (isEditingVote && userVoteId) {
+        debugLog.info(`Taking UPDATE path for existing vote ${userVoteId}`, 'VoteSubmit');
+        
+        // Create update data with only the vote choice (don't update vote_type or poll_id)
+        const updateData = poll.poll_type === 'yes_no' 
+          ? { yes_no_choice: yesNoChoice }
+          : { ranked_choices: rankedChoices };
+        
+        debugLog.logObject('Update data being sent (without poll_id)', updateData, 'VoteSubmit');
+        
         // Update existing vote
-        const { error: updateError } = await supabase
+        const { error: updateError, data: returnedData } = await supabase
           .from('votes')
-          .update(voteData)
-          .eq('id', userVoteId);
+          .update(updateData)
+          .eq('id', userVoteId)
+          .select(); // Add select to see what was updated
 
         error = updateError;
         voteId = userVoteId;
+        
+        // Update local userVoteData to reflect the changes
+        if (!updateError && returnedData && returnedData.length > 0) {
+          setUserVoteData(voteData);
+          debugLog.info(`✅ Vote UPDATE SUCCESS! Updated vote ${userVoteId}`, 'VoteSubmit');
+          debugLog.logObject('Updated vote data returned from DB', returnedData, 'VoteSubmit');
+        } else if (!updateError && (!returnedData || returnedData.length === 0)) {
+          debugLog.error(`❌ Vote UPDATE returned no data - vote may not exist with ID: ${userVoteId}`, 'VoteSubmit');
+          setVoteError("Failed to update vote. Vote may not exist.");
+        } else {
+          debugLog.error(`❌ Vote UPDATE FAILED: ${updateError?.message || 'Unknown error'}`, 'VoteSubmit');
+        }
       } else {
+        debugLog.info(`Taking INSERT path for new vote`, 'VoteSubmit');
+        
         // Insert new vote
         const { data: insertedVote, error: insertError } = await supabase
           .from('votes')
@@ -528,9 +631,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         voteId = insertedVote?.id;
 
         if (!voteId) {
-          console.error('No vote ID returned from database');
+          debugLog.error(`❌ Vote INSERT FAILED: No vote ID returned`, 'VoteSubmit');
           setVoteError("Failed to submit vote. Please try again.");
           return;
+        } else {
+          debugLog.info(`✅ Vote INSERT SUCCESS! New vote ID: ${voteId}`, 'VoteSubmit');
         }
       }
 
@@ -569,7 +674,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       {/* Fixed header bar */}
       <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-center pt-3 pb-2">
-          <h1 className="text-xl font-bold text-center px-4 line-clamp-1">{poll.title}</h1>
+          <h1 className="text-xl font-bold text-center px-4 break-words">{poll.title}</h1>
         </div>
       </div>
       
@@ -614,7 +719,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {!isLoadingVoteData && !isPollClosed && (
                         <button
                           onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                          className="px-3 py-1 bg-purple-600 text-white font-medium text-sm rounded-md hover:bg-purple-700"
                         >
                           Edit
                         </button>
@@ -742,7 +847,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {!isLoadingVoteData && !isPollClosed && (
                         <button
                           onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                          className="px-3 py-1 bg-purple-600 text-white font-medium text-sm rounded-md hover:bg-purple-700"
                         >
                           Edit
                         </button>
@@ -842,6 +947,29 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </button>
             </div>
           )}
+
+          {/* Reopen Poll Button for Dev Mode Only */}
+          {isPollClosed && process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={handleReopenClick}
+                disabled={isReopeningPoll}
+                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                {isReopeningPoll ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Reopening Poll...
+                  </>
+                ) : (
+                  'Reopen Poll (Dev)'
+                )}
+              </button>
+            </div>
+          )}
           
           {/* Created date line */}
           <div className="flex justify-between items-center text-gray-600 dark:text-gray-300 mt-4 mb-4">
@@ -930,6 +1058,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       />
       
       <ConfirmationModal
+        isOpen={showReopenConfirmModal}
+        onConfirm={handleReopenPoll}
+        onCancel={() => setShowReopenConfirmModal(false)}
+        title="Reopen Poll"
+        message="Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again."
+        confirmText="Reopen Poll"
+        cancelText="Cancel"
+        confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
+      />
+      
+      <ConfirmationModal
         isOpen={showForgetConfirmModal}
         onConfirm={() => {
           forgetPoll(poll.id);
@@ -946,6 +1085,51 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       <FloatingHomeButton />
       <FloatingCopyLinkButton url={pollUrl} />
+      
+      {/* Debug button for testing UPDATE directly */}
+      {process.env.NODE_ENV === 'development' && userVoteId && (
+        <div className="fixed bottom-32 left-4 z-50">
+          <button
+            onClick={async () => {
+              debugLog.info(`🧪 MANUAL UPDATE TEST for vote ID: ${userVoteId}`, 'DebugTest');
+              
+              try {
+                // Test 1: Check if vote exists
+                const { data: checkData, error: checkError } = await supabase
+                  .from('votes')
+                  .select('*')
+                  .eq('id', userVoteId);
+                
+                debugLog.logObject('🧪 Vote exists check', { checkData, checkError }, 'DebugTest');
+                
+                // Test 2: Try simple UPDATE
+                const { data: updateData, error: updateError } = await supabase
+                  .from('votes')
+                  .update({ yes_no_choice: 'no' })
+                  .eq('id', userVoteId)
+                  .select();
+                
+                debugLog.logObject('🧪 Simple UPDATE test', { updateData, updateError }, 'DebugTest');
+                
+                // Test 3: Try UPDATE with return
+                const { data: updateData2, error: updateError2, count } = await supabase
+                  .from('votes')
+                  .update({ yes_no_choice: 'yes' })
+                  .eq('id', userVoteId)
+                  .select('*', { count: 'exact' });
+                
+                debugLog.logObject('🧪 UPDATE with count test', { updateData2, updateError2, count }, 'DebugTest');
+                
+              } catch (error) {
+                debugLog.error(`🧪 Manual test failed: ${error}`, 'DebugTest');
+              }
+            }}
+            className="px-3 py-2 bg-purple-600 text-white text-xs rounded shadow-lg"
+          >
+            🧪 Test UPDATE
+          </button>
+        </div>
+      )}
     </>
   );
 }
