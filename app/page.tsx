@@ -92,7 +92,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
+  const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
+  const [titleReady, setTitleReady] = useState<boolean>(false);
 
   // Initialize and rotate phrases
   useEffect(() => {
@@ -118,22 +120,53 @@ export default function Home() {
     const nextIndex = (currentIndex + 1) % phraseList.length;
     localStorage.setItem(INDEX_KEY, nextIndex.toString());
     
-    // Set the current phrase
-    setCurrentPhrase(phraseList[currentIndex]);
-    
     // Calculate font size based on total text length to keep it on one line
     // More generous breakpoints to better utilize available width
     const fullText = `Whoever Wants ${phraseList[currentIndex]}`;
+    let calculatedFontSize = "text-xl";
     if (fullText.length > 35) {
-      setFontSize("text-sm");
+      calculatedFontSize = "text-sm";
     } else if (fullText.length > 28) {
-      setFontSize("text-base");  
+      calculatedFontSize = "text-base";  
     } else if (fullText.length > 22) {
-      setFontSize("text-lg");
-    } else {
-      setFontSize("text-xl");
+      calculatedFontSize = "text-lg";
     }
+    
+    // Set everything at once to prevent flash
+    setCurrentPhrase(phraseList[currentIndex]);
+    setFontSize(calculatedFontSize);
+    setTitleReady(true);
   }, []);
+
+  // Animate the phrase typing effect
+  useEffect(() => {
+    if (!currentPhrase) return;
+    
+    setDisplayedPhrase(""); // Reset displayed phrase
+    
+    // Wait before starting the typing animation
+    const initialDelay = setTimeout(() => {
+      let currentIndex = 0;
+      
+      // Calculate delay per character to make total animation time constant (630ms)
+      const totalAnimationTime = 630; // Total time for typing animation in ms (25% faster than 840ms)
+      const charDelay = totalAnimationTime / currentPhrase.length;
+      
+      const typeInterval = setInterval(() => {
+        if (currentIndex <= currentPhrase.length) {
+          setDisplayedPhrase(currentPhrase.slice(0, currentIndex));
+          currentIndex++;
+        } else {
+          clearInterval(typeInterval);
+        }
+      }, charDelay);
+      
+      // Store interval reference for cleanup
+      return () => clearInterval(typeInterval);
+    }, 392); // 392ms initial delay
+    
+    return () => clearTimeout(initialDelay);
+  }, [currentPhrase]);
 
   useEffect(() => {
     async function fetchPolls() {
@@ -222,8 +255,14 @@ export default function Home() {
           </a>
           
           <h1 className={`${fontSize} font-bold text-center flex-1 mx-2 whitespace-nowrap`}>
-            Whoever Wants{currentPhrase && (
-              <span className="text-blue-600 dark:text-blue-400" style={{fontFamily: '"M PLUS 1 Code", monospace'}}> {currentPhrase}</span>
+            {titleReady ? (
+              <>
+                Whoever Wants{displayedPhrase && (
+                  <span className="text-blue-600 dark:text-blue-400" style={{fontFamily: '"M PLUS 1 Code", monospace'}}> {displayedPhrase}</span>
+                )}
+              </>
+            ) : (
+              <span className="opacity-0">Whoever Wants</span>
             )}
           </h1>
           
