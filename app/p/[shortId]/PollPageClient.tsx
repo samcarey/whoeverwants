@@ -719,7 +719,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {!isLoadingVoteData && !isPollClosed && (
                         <button
                           onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-purple-600 text-white font-medium text-sm rounded-md hover:bg-purple-700"
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
                         >
                           Edit
                         </button>
@@ -847,7 +847,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {!isLoadingVoteData && !isPollClosed && (
                         <button
                           onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-purple-600 text-white font-medium text-sm rounded-md hover:bg-purple-700"
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
                         >
                           Edit
                         </button>
@@ -1085,51 +1085,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       <FloatingHomeButton />
       <FloatingCopyLinkButton url={pollUrl} />
-      
-      {/* Debug button for testing UPDATE directly */}
-      {process.env.NODE_ENV === 'development' && userVoteId && (
-        <div className="fixed bottom-32 left-4 z-50">
-          <button
-            onClick={async () => {
-              debugLog.info(`🧪 MANUAL UPDATE TEST for vote ID: ${userVoteId}`, 'DebugTest');
-              
-              try {
-                // Test 1: Check if vote exists
-                const { data: checkData, error: checkError } = await supabase
-                  .from('votes')
-                  .select('*')
-                  .eq('id', userVoteId);
-                
-                debugLog.logObject('🧪 Vote exists check', { checkData, checkError }, 'DebugTest');
-                
-                // Test 2: Try simple UPDATE
-                const { data: updateData, error: updateError } = await supabase
-                  .from('votes')
-                  .update({ yes_no_choice: 'no' })
-                  .eq('id', userVoteId)
-                  .select();
-                
-                debugLog.logObject('🧪 Simple UPDATE test', { updateData, updateError }, 'DebugTest');
-                
-                // Test 3: Try UPDATE with return
-                const { data: updateData2, error: updateError2, count } = await supabase
-                  .from('votes')
-                  .update({ yes_no_choice: 'yes' })
-                  .eq('id', userVoteId)
-                  .select('*', { count: 'exact' });
-                
-                debugLog.logObject('🧪 UPDATE with count test', { updateData2, updateError2, count }, 'DebugTest');
-                
-              } catch (error) {
-                debugLog.error(`🧪 Manual test failed: ${error}`, 'DebugTest');
-              }
-            }}
-            className="px-3 py-2 bg-purple-600 text-white text-xs rounded shadow-lg"
-          >
-            🧪 Test UPDATE
-          </button>
-        </div>
-      )}
     </>
   );
 }
