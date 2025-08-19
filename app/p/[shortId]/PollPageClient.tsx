@@ -163,6 +163,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
+  // Clean up URL parameter when success popup is shown
+  useEffect(() => {
+    if (isNewPoll && showSuccessPopup) {
+      // Remove the ?new=true parameter from the URL without refreshing the page
+      const newUrl = window.location.pathname + window.location.hash;
+      router.replace(newUrl, { scroll: false });
+    }
+  }, [isNewPoll, showSuccessPopup, router]);
+
   // Effect to load vote data when poll loads or when hasVoted changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -638,6 +647,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
+                  
+                  {/* Follow-up button for open polls when voted */}
+                  {!isPollClosed && (
+                    <div className="mt-4 text-center">
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -677,6 +693,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
+                  
+                  {/* Follow-up button for open polls */}
+                  <div className="mt-4 text-center">
+                    <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                  </div>
                 </>
               )}
             </div>
@@ -749,6 +770,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
+                  
+                  {/* Follow-up button for open polls when voted */}
+                  {!isPollClosed && (
+                    <div className="mt-4 text-center">
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -776,6 +804,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
+                  
+                  {/* Follow-up button for open polls */}
+                  <div className="mt-4 text-center">
+                    <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                  </div>
                 </>
               )}
             </div>

@@ -9,11 +9,6 @@ interface FollowUpButtonProps {
 }
 
 export default function FollowUpButton({ pollId, isPollClosed, className = "" }: FollowUpButtonProps) {
-  // Only show for closed polls
-  if (!isPollClosed) {
-    return null;
-  }
-
   return (
     <Link
       href={`/create-poll?followUpTo=${pollId}`}
@@ -24,7 +19,7 @@ export default function FollowUpButton({ pollId, isPollClosed, className = "" }:
           strokeLinecap="round" 
           strokeLinejoin="round" 
           strokeWidth={2} 
-          d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" 
+          d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" 
         />
       </svg>
       <span>Follow Up</span>
