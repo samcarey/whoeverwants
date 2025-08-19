@@ -18,31 +18,17 @@ export default function BuildTimer() {
   useEffect(() => {
     if (!isDev || !isClient) return;
     
-    const fetchLatestCompileTime = async () => {
-      try {
-        // Fetch the latest compilation timestamp from API route
-        const response = await fetch('/api/last-compile?' + Date.now(), {
-          cache: 'no-store'
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setBuildTimestamp(data.timestamp);
-          return;
-        }
-      } catch (e) {
-        // Fallback to static timestamp
-      }
-      
-      // Fallback to webpack DefinePlugin timestamp
+    const getCompileTime = () => {
+      // Use webpack DefinePlugin timestamp (gets updated on every compilation)
       const staticTimestamp = parseInt(process.env.BUILD_TIMESTAMP || '0');
       setBuildTimestamp(staticTimestamp);
     };
 
     // Initial fetch
-    fetchLatestCompileTime();
+    getCompileTime();
 
     // Poll every 1 second to catch new compilations
-    const interval = setInterval(fetchLatestCompileTime, 1000);
+    const interval = setInterval(getCompileTime, 1000);
     
     return () => clearInterval(interval);
   }, [isDev, isClient]);
@@ -102,4 +88,4 @@ export default function BuildTimer() {
     </div>
   );
 }
-// Final test - timer should reset to near zero
+// Timer should reset on rebuild
