@@ -566,8 +566,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   return (
     <>
-      <div className="max-w-md mx-auto pb-20">
-          <h1 className="text-2xl font-bold mb-4 text-center">{poll.title}</h1>
+      {/* Fixed header bar */}
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-center py-3">
+          <h1 className="text-xl font-bold text-center px-4 line-clamp-1">{poll.title}</h1>
+        </div>
+      </div>
+      
+      <div className="max-w-md mx-auto pb-20 pt-16">
           
           
           {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}

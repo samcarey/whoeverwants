@@ -7,6 +7,30 @@ import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import ClientOnly from "@/components/ClientOnly";
 
+// Fun activity phrases (max 25 chars)
+const activityPhrases = [
+  "Pizza",
+  "to see a movie",
+  "to hang out",
+  "Coffee",
+  "to play games",
+  "Ice Cream",
+  "to grab lunch",
+  "Tacos",
+  "to go bowling",
+  "to hike",
+  "Sushi",
+  "to watch the game",
+  "Happy Hour drinks",
+  "to play basketball",
+  "Brunch",
+  "to hit the beach",
+  "to try that new place",
+  "to go dancing",
+  "BBQ",
+  "to play mini golf"
+];
+
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -67,6 +91,49 @@ export default function Home() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPhrase, setCurrentPhrase] = useState<string>("");
+  const [fontSize, setFontSize] = useState<string>("text-xl");
+
+  // Initialize and rotate phrases
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    const STORAGE_KEY = 'whoeverwants_phrases';
+    const INDEX_KEY = 'whoeverwants_phrase_index';
+    
+    // Get or initialize the randomized phrase list
+    let storedPhrases = localStorage.getItem(STORAGE_KEY);
+    let phraseList: string[];
+    
+    if (!storedPhrases) {
+      // First time: randomize the array
+      phraseList = [...activityPhrases].sort(() => Math.random() - 0.5);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(phraseList));
+    } else {
+      phraseList = JSON.parse(storedPhrases);
+    }
+    
+    // Get current index and increment
+    let currentIndex = parseInt(localStorage.getItem(INDEX_KEY) || '0');
+    const nextIndex = (currentIndex + 1) % phraseList.length;
+    localStorage.setItem(INDEX_KEY, nextIndex.toString());
+    
+    // Set the current phrase
+    setCurrentPhrase(phraseList[currentIndex]);
+    
+    // Calculate font size based on total text length to keep it on one line
+    // More generous breakpoints to better utilize available width
+    const fullText = `Whoever Wants ${phraseList[currentIndex]}`;
+    if (fullText.length > 35) {
+      setFontSize("text-sm");
+    } else if (fullText.length > 28) {
+      setFontSize("text-base");  
+    } else if (fullText.length > 22) {
+      setFontSize("text-lg");
+    } else {
+      setFontSize("text-xl");
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchPolls() {
@@ -131,17 +198,17 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 -mx-8 -my-8">
       {/* Fixed Header */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-center py-4 relative">
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between py-3 px-2">
           <a
             href="https://github.com/samcarey/whoeverwants"
             target="_blank"
             rel="noopener noreferrer"
-            className="absolute left-4 rounded-full transition-colors flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 h-9 w-9"
+            className="flex-shrink-0 rounded-full transition-colors flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 h-7 w-7"
             title="View on GitHub"
           >
             <svg
-              className="w-9 h-9"
+              className="w-7 h-7"
               fill="currentColor"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
@@ -154,17 +221,20 @@ export default function Home() {
             </svg>
           </a>
           
-          <Link
-            href="/create-poll"
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
-          >
-            Create Poll
-          </Link>
+          <h1 className={`${fontSize} font-bold text-center flex-1 mx-2 whitespace-nowrap`}>
+            Whoever Wants{currentPhrase && (
+              <span className="text-blue-600 dark:text-blue-400" style={{fontFamily: '"M PLUS 1 Code", monospace'}}> {currentPhrase}</span>
+            )}
+          </h1>
+          
+          
+          {/* Invisible spacer to balance the layout */}
+          <div className="w-7 h-7 flex-shrink-0"></div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="pt-24 pb-8">
+      <div className="pt-16 pb-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-8">
           {loading && (
             <div className="flex justify-center items-center py-8">
@@ -298,6 +368,20 @@ export default function Home() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Floating Create Poll Button */}
+      <div className="fixed bottom-4 right-4 z-50">
+        <Link
+          href="/create-poll"
+          className="flex items-center justify-center px-4 py-2 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-gray-700 dark:text-gray-300 font-medium text-sm"
+          title="Create new poll"
+        >
+          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create Poll
+        </Link>
       </div>
     </div>
   );

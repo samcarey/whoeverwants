@@ -16,17 +16,17 @@ export default function SuccessPopup({ show, onClose }: SuccessPopupProps) {
       // Show the bubble immediately
       setIsVisible(true);
       
-      // Start exit animation after 5 seconds
+      // Start exit animation after 8 seconds
       const exitTimer = setTimeout(() => {
         setIsAnimatingOut(true);
-      }, 5000);
+      }, 8000);
 
       // Remove from DOM after animation completes
       const removeTimer = setTimeout(() => {
         setIsVisible(false);
         setIsAnimatingOut(false);
         onClose();
-      }, 5500); // 5s display + 0.5s animation
+      }, 8500); // 8s display + 0.5s animation
 
       return () => {
         clearTimeout(exitTimer);
@@ -39,7 +39,7 @@ export default function SuccessPopup({ show, onClose }: SuccessPopupProps) {
 
   return (
     <div 
-      className={`fixed top-2 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
+      className={`fixed top-14 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
         isAnimatingOut 
           ? '-translate-y-full opacity-0' 
           : 'translate-y-0 opacity-100'

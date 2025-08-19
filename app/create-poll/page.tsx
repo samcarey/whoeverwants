@@ -525,17 +525,24 @@ export default function CreatePoll() {
   };
 
   return (
-    <div className="max-w-md mx-auto pb-20">
-      <h1 className="text-2xl font-bold mb-4 text-center">Create New Poll</h1>
-      
-      {followUpTo && (
-        <FollowUpHeader followUpToPollId={followUpTo} />
-      )}
-
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
-          {error}
+    <>
+      {/* Fixed header bar */}
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-center py-3">
+          <h1 className="text-xl font-bold text-center">Create New Poll</h1>
         </div>
+      </div>
+      
+      {/* Main content with padding for fixed header */}
+      <div className="max-w-md mx-auto pb-20 pt-16">
+        {followUpTo && (
+          <FollowUpHeader followUpToPollId={followUpTo} />
+        )}
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
+            {error}
+          </div>
         )}
         
         
@@ -723,7 +730,8 @@ export default function CreatePoll() {
         cancelText="Cancel"
       />
       
-      <FloatingHomeButton />
-    </div>
+        <FloatingHomeButton />
+      </div>
+    </>
   );
 }
