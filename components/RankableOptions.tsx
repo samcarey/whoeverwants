@@ -904,7 +904,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 </p>
                 {listType === 'noPreference' && (
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                    Items placed here won't be ranked
+                    Items placed here won&apos;t be ranked
                   </p>
                 )}
               </div>

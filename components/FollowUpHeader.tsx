@@ -102,7 +102,7 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
               href={`/p/${followUpToPollId}`}
               className="font-medium hover:underline"
             >
-              "{originalPollTitle}"
+              &ldquo;{originalPollTitle}&rdquo;
             </Link>
           </p>
         </div>
