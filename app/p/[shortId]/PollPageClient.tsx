@@ -319,7 +319,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log(`🔗 Real-time subscription status for poll ${poll.id}:`, status);
         
         // Status is either a string or an object with status property

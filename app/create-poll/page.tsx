@@ -465,8 +465,7 @@ export default function CreatePoll() {
           message: error.message,
           details: error.details,
           hint: error.hint,
-          code: error.code,
-          statusCode: error.statusCode
+          code: error.code
         });
         console.error("Poll data that failed:", pollData);
         
