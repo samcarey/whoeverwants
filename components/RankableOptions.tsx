@@ -601,7 +601,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
               {rankNumber}
             </div>
-            <span className="font-medium text-gray-900 dark:text-white">{draggedOption.text}</span>
+            <span className="font-medium leading-tight line-clamp-2 text-gray-900 dark:text-white">{draggedOption.text}</span>
           </div>
           <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
             <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
@@ -978,7 +978,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   
                   {/* Center content - not grabbable */}
                   <div className="flex-1 flex items-center px-12">
-                    <span className={`font-medium ${
+                    <span className={`font-medium leading-tight line-clamp-2 ${
                       disabled 
                         ? 'text-gray-500 dark:text-gray-400' 
                         : 'text-gray-900 dark:text-white'

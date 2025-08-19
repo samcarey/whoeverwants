@@ -8,13 +8,26 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
-  // Inject build timestamp for development timer
+  // Disable all caching in development mode
   webpack: (config, { dev, webpack }) => {
     if (dev) {
-      // Inject current timestamp when dev server builds
+      // Disable webpack caching completely in development
+      config.cache = false;
+      
+      // Force webpack to rebuild everything
+      config.optimization = {
+        ...config.optimization,
+        removeAvailableModules: false,
+        removeEmptyChunks: false,
+        splitChunks: false,
+      };
+      
+      
+      // Inject timestamp via DefinePlugin
+      const timestamp = Date.now().toString();
       config.plugins.push(
         new webpack.DefinePlugin({
-          'process.env.BUILD_TIMESTAMP': JSON.stringify(Date.now().toString())
+          'process.env.BUILD_TIMESTAMP': JSON.stringify(timestamp)
         })
       );
     }

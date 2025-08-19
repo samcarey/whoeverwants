@@ -136,6 +136,28 @@ export async function closePoll(pollId: string, creatorSecret: string): Promise<
   return data;
 }
 
+export async function reopenPoll(pollId: string, creatorSecret: string): Promise<Poll> {
+  // Reopen the poll
+  const isDev = process.env.NODE_ENV === 'development';
+  let query = supabase
+    .from('polls')
+    .update({ is_closed: false, updated_at: new Date().toISOString() })
+    .eq('id', pollId);
+  
+  // In production, require creator secret verification
+  if (!isDev) {
+    query = query.eq('creator_secret', creatorSecret);
+  }
+  
+  const { data, error } = await query.select().single();
+
+  if (error) {
+    throw new Error(`Failed to reopen poll: ${error.message}`);
+  }
+
+  return data;
+}
+
 export async function submitVote(pollId: string, voteData: any): Promise<void> {
   const { error } = await supabase
     .from('votes')

@@ -6,6 +6,7 @@ export default function BuildTimer() {
   const [buildAge, setBuildAge] = useState<string>('');
   const [isClient, setIsClient] = useState(false);
   const [buildTimestamp, setBuildTimestamp] = useState<number>(0);
+  
 
   // Only show in development mode
   const isDev = process.env.NODE_ENV === 'development';
@@ -19,19 +20,21 @@ export default function BuildTimer() {
     if (!isDev || !isClient) return;
     
     const getCompileTime = () => {
-      // Use webpack DefinePlugin timestamp (gets updated on every compilation)
-      const staticTimestamp = parseInt(process.env.BUILD_TIMESTAMP || '0');
-      setBuildTimestamp(staticTimestamp);
+      // Force re-read BUILD_TIMESTAMP each time - it changes with each webpack build
+      const currentTimestamp = parseInt(process.env.BUILD_TIMESTAMP || '0');
+      if (currentTimestamp !== buildTimestamp) {
+        setBuildTimestamp(currentTimestamp);
+      }
     };
 
     // Initial fetch
     getCompileTime();
 
-    // Poll every 1 second to catch new compilations
-    const interval = setInterval(getCompileTime, 1000);
+    // Poll every 500ms to catch new compilations quickly
+    const interval = setInterval(getCompileTime, 500);
     
     return () => clearInterval(interval);
-  }, [isDev, isClient]);
+  }, [isDev, isClient, buildTimestamp]);
 
   useEffect(() => {
     if (!isDev || !isClient || !buildTimestamp) return;
@@ -71,9 +74,14 @@ export default function BuildTimer() {
   }, [isDev, isClient, buildTimestamp]);
 
   // Don't render in production or during SSR
-  if (!isDev || !isClient || !buildTimestamp) {
+  if (!isDev || !isClient) {
     return null;
   }
+
+  
+  const rawTimestamp = process.env.BUILD_TIMESTAMP;
+  const currentTime = Date.now();
+  const parsedTimestamp = parseInt(rawTimestamp || '0');
 
   return (
     <div 
@@ -84,8 +92,8 @@ export default function BuildTimer() {
       }}
       title="Time since last compilation (shows if current view reflects latest code changes)"
     >
-      {buildAge}
+      {buildTimestamp ? buildAge : 'No timestamp'}
     </div>
   );
 }
-// Timer should reset on rebuild
+// Build timer shows time since last dev server compilation

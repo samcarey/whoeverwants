@@ -119,6 +119,10 @@ function CreatePollContent() {
     if (!title.trim()) {
       return "Please enter a poll title.";
     }
+    
+    if (title.length > 50) {
+      return "Poll title must be 50 characters or less.";
+    }
 
     // Check custom deadline if selected
     if (deadlineOption === "custom") {
@@ -135,6 +139,12 @@ function CreatePollContent() {
     const filledOptions = options.filter(opt => opt.trim() !== '');
     const emptyOptions = options.filter(opt => opt.trim() === '');
     const pollType = getPollType();
+    
+    // Check for options that exceed character limit
+    const longOptions = filledOptions.filter(opt => opt.length > 35);
+    if (longOptions.length > 0) {
+      return "Poll options must be 35 characters or less.";
+    }
     
     // If we have any filled options, check that there are no empty fields in between
     if (filledOptions.length > 0) {
@@ -574,6 +584,7 @@ function CreatePollContent() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={isLoading}
+              maxLength={50}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder="Enter your poll title..."
               required
@@ -595,6 +606,7 @@ function CreatePollContent() {
                       value={option}
                       onChange={(e) => updateOption(index, e.target.value)}
                       disabled={isLoading}
+                      maxLength={35}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder={
                         (() => {
