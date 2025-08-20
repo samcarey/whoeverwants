@@ -378,7 +378,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       
                       {/* Candidate name */}
                       <div>
-                        <div className={`${
+                        <div className={`leading-tight line-clamp-2 ${
                           isTiedCandidate
                             ? 'text-green-900 dark:text-green-100 font-bold'
                             : candidate.isEliminated && !isTiedCandidate
@@ -502,7 +502,7 @@ function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationPro
             .map((candidate) => (
               <span 
                 key={candidate.name}
-                className={`px-2 py-1 rounded font-mono ${
+                className={`px-2 py-1 rounded font-mono leading-tight line-clamp-1 ${
                   candidate.is_eliminated 
                     ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
                     : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'

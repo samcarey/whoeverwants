@@ -261,7 +261,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
                           }`}
                         >
                           <div className="flex items-center space-x-3">
-                            <span className={`${
+                            <span className={`leading-tight line-clamp-2 ${
                               option.is_eliminated 
                                 ? 'text-gray-500/70 dark:text-gray-400/70 font-medium'
                                 : option.option_name === winner && roundNumber === totalRounds
@@ -314,7 +314,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
                       return (
                         <div key={`bar-${roundNumber}-${option.option_name}`}>
                           <div className="flex justify-between items-center mb-1">
-                            <span className={`text-xs font-medium ${
+                            <span className={`text-xs font-medium leading-tight line-clamp-2 ${
                               option.is_eliminated ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'
                             }`}>
                               {option.option_name}

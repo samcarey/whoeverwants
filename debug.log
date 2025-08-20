@@ -1,0 +1,571 @@
+[2025-08-19T21:58:12.157Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T21:58:12.157Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T21:58:12.158Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T21:58:12.158Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:12.169Z] [INFO] [VoteStorage] Stored vote ID for poll f2f2d0e9-2493-4015-b3dd-73dcb6b04dee: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:12.169Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll f2f2d0e9-2493-4015-b3dd-73dcb6b04dee: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:12.233Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:12.239Z] [INFO] [VoteFetch] Fetching vote data for ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:12.282Z] [INFO] [VoteFetch] Vote data fetched for 902a7609-22fa-467d-b7eb-2db7e5f9e885: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:58:12.311Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:58:21.551Z] [INFO] [VoteEdit] Edit button clicked for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:25.978Z] [INFO] [VoteSubmit] Vote Submit: EDIT mode, voteId: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:26.008Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no"
+}
+[2025-08-19T21:58:26.027Z] [INFO] [VoteSubmit] Update data being sent (without poll_id): {
+  "yes_no_choice": "no",
+  "vote_type": "yes_no"
+}
+[2025-08-19T21:58:26.029Z] [INFO] [VoteSubmit] Taking UPDATE path for existing vote 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:26.105Z] [ERROR] [VoteSubmit] ❌ Vote UPDATE returned no data - vote may not exist with ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.123Z] [INFO] [VoteFetch] Fetching vote data for ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.129Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.135Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll f2f2d0e9-2493-4015-b3dd-73dcb6b04dee: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.179Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.181Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll f2f2d0e9-2493-4015-b3dd-73dcb6b04dee: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.183Z] [INFO] [VoteFetch] Fetching vote data for ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.227Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.239Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll f2f2d0e9-2493-4015-b3dd-73dcb6b04dee: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.291Z] [INFO] [VoteFetch] Fetching vote data for ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:29.320Z] [INFO] [VoteFetch] Vote data fetched for 902a7609-22fa-467d-b7eb-2db7e5f9e885: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:58:29.322Z] [INFO] [VoteFetch] Vote data fetched for 902a7609-22fa-467d-b7eb-2db7e5f9e885: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:58:29.331Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:58:29.362Z] [INFO] [VoteFetch] Vote data fetched for 902a7609-22fa-467d-b7eb-2db7e5f9e885: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:58:29.365Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:58:29.399Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:58:30.333Z] [INFO] [VoteEdit] Edit button clicked for vote ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:32.419Z] [INFO] [VoteSubmit] Vote Submit: EDIT mode, voteId: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:32.419Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "f2f2d0e9-2493-4015-b3dd-73dcb6b04dee",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no"
+}
+[2025-08-19T21:58:32.419Z] [INFO] [VoteSubmit] Taking UPDATE path for existing vote 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:58:32.426Z] [INFO] [VoteSubmit] Update data being sent (without poll_id): {
+  "yes_no_choice": "no"
+}
+[2025-08-19T21:58:32.489Z] [ERROR] [VoteSubmit] ❌ Vote UPDATE returned no data - vote may not exist with ID: 902a7609-22fa-467d-b7eb-2db7e5f9e885
+[2025-08-19T21:59:02.434Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T21:59:02.434Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T21:59:02.457Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T21:59:02.557Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:02.558Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll e024d336-2ab0-4034-be5a-b16ad0a4ae21: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:02.573Z] [INFO] [VoteStorage] Stored vote ID for poll e024d336-2ab0-4034-be5a-b16ad0a4ae21: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:02.577Z] [INFO] [VoteLoad] Starting vote data load for vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:02.606Z] [INFO] [VoteFetch] Fetching vote data for ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:02.687Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:59:02.706Z] [INFO] [VoteFetch] Vote data fetched for a2918523-2261-44f1-922b-9ec7c67b48fa: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:59:07.182Z] [INFO] [VoteEdit] Edit button clicked for vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:09.015Z] [INFO] [VoteSubmit] Vote Submit: EDIT mode, voteId: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:09.065Z] [INFO] [VoteSubmit] Taking UPDATE path for existing vote a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:09.069Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no"
+}
+[2025-08-19T21:59:09.075Z] [INFO] [VoteSubmit] Update data being sent (without poll_id): {
+  "yes_no_choice": "no"
+}
+[2025-08-19T21:59:09.151Z] [ERROR] [VoteSubmit] ❌ Vote UPDATE returned no data - vote may not exist with ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.394Z] [INFO] [VoteFetch] Fetching vote data for ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.409Z] [INFO] [VoteLoad] Starting vote data load for vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.413Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll e024d336-2ab0-4034-be5a-b16ad0a4ae21: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.490Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll e024d336-2ab0-4034-be5a-b16ad0a4ae21: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.493Z] [INFO] [VoteFetch] Fetching vote data for ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.495Z] [INFO] [VoteLoad] Starting vote data load for vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.553Z] [INFO] [VoteLoad] Starting vote data load for vote ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.567Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll e024d336-2ab0-4034-be5a-b16ad0a4ae21: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.567Z] [INFO] [VoteFetch] Fetching vote data for ID: a2918523-2261-44f1-922b-9ec7c67b48fa
+[2025-08-19T21:59:12.628Z] [INFO] [VoteFetch] Vote data fetched for a2918523-2261-44f1-922b-9ec7c67b48fa: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:59:12.639Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:59:12.669Z] [INFO] [VoteFetch] Vote data fetched for a2918523-2261-44f1-922b-9ec7c67b48fa: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T21:59:12.672Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:59:12.681Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T21:59:12.683Z] [INFO] [VoteFetch] Vote data fetched for a2918523-2261-44f1-922b-9ec7c67b48fa: {
+  "poll_id": "e024d336-2ab0-4034-be5a-b16ad0a4ae21",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:33.853Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T22:10:33.853Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T22:10:33.854Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T22:10:33.906Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:33.930Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:33.931Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:33.934Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:33.936Z] [INFO] [VoteStorage] Stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:34.010Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:34.042Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T22:10:41.654Z] [INFO] [VoteSubmit] Vote Submit: EDIT mode, voteId: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:41.658Z] [INFO] [VoteSubmit] Update data being sent (without poll_id): {
+  "yes_no_choice": "no"
+}
+[2025-08-19T22:10:41.660Z] [INFO] [VoteSubmit] Taking UPDATE path for existing vote cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:41.662Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no"
+}
+[2025-08-19T22:10:41.716Z] [INFO] [VoteSubmit] ✅ Vote UPDATE SUCCESS! Updated vote cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:41.779Z] [INFO] [VoteSubmit] Updated vote data returned from DB: [
+  {
+    "id": "cccb6c97-24b1-47a9-bb71-0c83a189e0dd",
+    "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+    "vote_type": "yes_no",
+    "yes_no_choice": "no",
+    "ranked_choices": null,
+    "created_at": "2025-08-19T22:10:34.688544+00:00"
+  }
+]
+[2025-08-19T22:10:44.589Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.590Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.603Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.654Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.657Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.659Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.698Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.705Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.711Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:44.769Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:10:44.770Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:44.794Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:44.806Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:44.810Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:10:44.826Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:10:47.491Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.492Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.506Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.538Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.551Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.553Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.610Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.634Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.654Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:10:47.670Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:10:47.674Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:47.687Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:47.710Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:10:47.738Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:10:47.762Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:11:20.513Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T22:11:20.543Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T22:11:20.567Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T22:11:20.651Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T22:11:20.703Z] [INFO] [VoteStorage] Stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T22:11:20.712Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T22:11:20.718Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T22:11:20.764Z] [INFO] [VoteFetch] Fetching vote data for ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T22:11:20.843Z] [INFO] [VoteFetch] Vote data fetched for 6f2e14e5-72ab-4427-a2d6-dd4b0132584c: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T22:11:20.871Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T22:11:38.816Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.817Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.818Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.866Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.868Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.871Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.935Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.966Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:38.974Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:11:39.132Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:11:39.141Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:11:39.155Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:11:39.158Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:11:39.159Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:11:39.166Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:46.163Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.164Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.164Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.165Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.165Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.165Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.256Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.264Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.265Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:46.359Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:13:46.360Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:46.368Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:46.371Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:13:46.380Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:13:46.384Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:56.734Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.735Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.735Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.784Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.791Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.794Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.844Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.861Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.862Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:13:56.946Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:56.958Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:13:56.960Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:13:56.979Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:56.982Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:13:56.984Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:14:06.130Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.135Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.149Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.152Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.160Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.254Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.257Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.259Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.263Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:14:06.275Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:14:06.287Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:14:06.363Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:14:06.366Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:14:06.368Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:14:06.370Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:03.342Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.343Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.343Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.343Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.344Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.344Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.419Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.427Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.428Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:03.525Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:03.527Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:03.536Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:03.538Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:03.540Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:03.542Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:06.907Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:06.908Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:06.908Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:06.956Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:06.973Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:06.975Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:07.009Z] [INFO] [VoteLoad] Starting vote data load for vote ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:07.021Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:07.026Z] [INFO] [VoteFetch] Fetching vote data for ID: cccb6c97-24b1-47a9-bb71-0c83a189e0dd
+[2025-08-19T22:19:07.100Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:07.101Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:07.112Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T22:19:07.121Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:07.124Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T22:19:07.126Z] [INFO] [VoteFetch] Vote data fetched for cccb6c97-24b1-47a9-bb71-0c83a189e0dd: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T17:46:22-05:00] [INFO] [Test] Direct log test
+[2025-08-19T23:38:44.217Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.219Z] [INFO] [VoteFetch] Fetching vote data for ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.219Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.220Z] [INFO] [VoteFetch] Fetching vote data for ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.220Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.221Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.325Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.338Z] [INFO] [VoteFetch] Fetching vote data for ID: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.338Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 76e807c9-579e-4393-8311-82308f55bcd4: 6f2e14e5-72ab-4427-a2d6-dd4b0132584c
+[2025-08-19T23:38:44.409Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:38:44.422Z] [INFO] [VoteFetch] Vote data fetched for 6f2e14e5-72ab-4427-a2d6-dd4b0132584c: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:38:44.443Z] [INFO] [VoteFetch] Vote data fetched for 6f2e14e5-72ab-4427-a2d6-dd4b0132584c: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:38:44.450Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:38:44.459Z] [INFO] [VoteFetch] Vote data fetched for 6f2e14e5-72ab-4427-a2d6-dd4b0132584c: {
+  "poll_id": "76e807c9-579e-4393-8311-82308f55bcd4",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:38:44.462Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:38:54.135Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T23:38:54.142Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T23:38:54.146Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T23:38:54.264Z] [INFO] [VoteStorage] Stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:38:54.266Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:38:54.286Z] [INFO] [VoteFetch] Fetching vote data for ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:38:54.286Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:38:54.302Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:38:54.385Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:38:54.398Z] [INFO] [VoteFetch] Vote data fetched for 7e0a8834-1fab-4009-a65f-99d40fa05b45: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:10.427Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T23:39:10.433Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T23:39:10.435Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no"
+}
+[2025-08-19T23:39:10.552Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: a10bbdc7-485c-4146-9217-52720bec74af
+[2025-08-19T23:39:10.554Z] [INFO] [VoteStorage] Stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: a10bbdc7-485c-4146-9217-52720bec74af
+[2025-08-19T23:39:10.568Z] [INFO] [VoteFetch] Fetching vote data for ID: a10bbdc7-485c-4146-9217-52720bec74af
+[2025-08-19T23:39:10.569Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: a10bbdc7-485c-4146-9217-52720bec74af
+[2025-08-19T23:39:10.572Z] [INFO] [VoteLoad] Starting vote data load for vote ID: a10bbdc7-485c-4146-9217-52720bec74af
+[2025-08-19T23:39:10.631Z] [INFO] [VoteFetch] Vote data fetched for a10bbdc7-485c-4146-9217-52720bec74af: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "no",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:10.703Z] [INFO] [VoteLoad] Loaded yes/no vote: no
+[2025-08-19T23:39:17.637Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.638Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.638Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.691Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.693Z] [INFO] [VoteFetch] Fetching vote data for ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.696Z] [INFO] [VoteFetch] Fetching vote data for ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.759Z] [INFO] [VoteFetch] Fetching vote data for ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.761Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9576ab72-2b59-43bc-b602-68cf7b98fb51: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.763Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 7e0a8834-1fab-4009-a65f-99d40fa05b45
+[2025-08-19T23:39:17.867Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:39:17.869Z] [INFO] [VoteFetch] Vote data fetched for 7e0a8834-1fab-4009-a65f-99d40fa05b45: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:17.871Z] [INFO] [VoteFetch] Vote data fetched for 7e0a8834-1fab-4009-a65f-99d40fa05b45: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:17.879Z] [INFO] [VoteFetch] Vote data fetched for 7e0a8834-1fab-4009-a65f-99d40fa05b45: {
+  "poll_id": "9576ab72-2b59-43bc-b602-68cf7b98fb51",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:17.882Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:39:17.911Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:39:45.131Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T23:39:45.158Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "9b3eb8ff-ec8a-4035-8414-620176ec7f00",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T23:39:45.158Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T23:39:45.175Z] [INFO] [VoteLoad] Starting vote data load for vote ID: 6426371b-aa25-4a60-a390-44c4ab47bb8f
+[2025-08-19T23:39:45.177Z] [INFO] [VoteFetch] Fetching vote data for ID: 6426371b-aa25-4a60-a390-44c4ab47bb8f
+[2025-08-19T23:39:45.186Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: 6426371b-aa25-4a60-a390-44c4ab47bb8f
+[2025-08-19T23:39:45.251Z] [INFO] [VoteStorage] Stored vote ID for poll 9b3eb8ff-ec8a-4035-8414-620176ec7f00: 6426371b-aa25-4a60-a390-44c4ab47bb8f
+[2025-08-19T23:39:45.315Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9b3eb8ff-ec8a-4035-8414-620176ec7f00: 6426371b-aa25-4a60-a390-44c4ab47bb8f
+[2025-08-19T23:39:45.336Z] [INFO] [VoteFetch] Vote data fetched for 6426371b-aa25-4a60-a390-44c4ab47bb8f: {
+  "poll_id": "9b3eb8ff-ec8a-4035-8414-620176ec7f00",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:45.367Z] [INFO] [VoteLoad] Loaded yes/no vote: yes
+[2025-08-19T23:39:56.067Z] [INFO] [VoteSubmit] Vote Submit: NEW mode, voteId: null
+[2025-08-19T23:39:56.121Z] [INFO] [VoteSubmit] Vote data being submitted: {
+  "poll_id": "9b3eb8ff-ec8a-4035-8414-620176ec7f00",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes"
+}
+[2025-08-19T23:39:56.144Z] [INFO] [VoteSubmit] Taking INSERT path for new vote
+[2025-08-19T23:39:56.239Z] [INFO] [VoteStorage] Retrieved stored vote ID for poll 9b3eb8ff-ec8a-4035-8414-620176ec7f00: ca8a2849-e632-47c5-9965-a4a8cbb22a0d
+[2025-08-19T23:39:56.259Z] [INFO] [VoteLoad] Starting vote data load for vote ID: ca8a2849-e632-47c5-9965-a4a8cbb22a0d
+[2025-08-19T23:39:56.261Z] [INFO] [VoteSubmit] ✅ Vote INSERT SUCCESS! New vote ID: ca8a2849-e632-47c5-9965-a4a8cbb22a0d
+[2025-08-19T23:39:56.266Z] [INFO] [VoteStorage] Stored vote ID for poll 9b3eb8ff-ec8a-4035-8414-620176ec7f00: ca8a2849-e632-47c5-9965-a4a8cbb22a0d
+[2025-08-19T23:39:56.269Z] [INFO] [VoteFetch] Fetching vote data for ID: ca8a2849-e632-47c5-9965-a4a8cbb22a0d
+[2025-08-19T23:39:56.355Z] [INFO] [VoteFetch] Vote data fetched for ca8a2849-e632-47c5-9965-a4a8cbb22a0d: {
+  "poll_id": "9b3eb8ff-ec8a-4035-8414-620176ec7f00",
+  "vote_type": "yes_no",
+  "yes_no_choice": "yes",
+  "ranked_choices": null
+}
+[2025-08-19T23:39:56.395Z] [INFO] [VoteLoad] Loaded yes/no vote: yes

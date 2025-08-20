@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { supabase, Poll } from "@/lib/supabase";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
@@ -206,8 +206,21 @@ export default function Home() {
   // Separate polls into open and closed (client-side only to avoid hydration mismatch)
   const [openPolls, setOpenPolls] = useState<Poll[]>([]);
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
+  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   
+  // Load voted polls from localStorage
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      setVotedPollIds(new Set(Object.keys(votedPolls).filter(id => votedPolls[id])));
+    } catch (error) {
+      console.error('Error loading voted polls:', error);
+    }
+  }, []);
+  
+  // Function to categorize and sort polls
+  const categorizePollsByTime = useCallback(() => {
     if (typeof window === 'undefined') return;
     
     const now = new Date();
@@ -221,9 +234,32 @@ export default function Home() {
       return new Date(poll.response_deadline) <= now || poll.is_closed;
     });
     
-    setOpenPolls(open);
-    setClosedPolls(closed);
-  }, [polls]);
+    // Sort each category by voted status (unvoted first, then voted)
+    const sortByVoted = (pollList: Poll[]) => {
+      const unvoted = pollList.filter(p => !votedPollIds.has(p.id));
+      const voted = pollList.filter(p => votedPollIds.has(p.id));
+      return [...unvoted, ...voted];
+    };
+    
+    setOpenPolls(sortByVoted(open));
+    setClosedPolls(sortByVoted(closed));
+  }, [polls, votedPollIds]);
+  
+  // Initial categorization when polls change
+  useEffect(() => {
+    categorizePollsByTime();
+  }, [categorizePollsByTime]);
+  
+  // Set up timer to check for expired polls every 10 seconds
+  useEffect(() => {
+    if (typeof window === 'undefined' || polls.length === 0) return;
+    
+    const interval = setInterval(() => {
+      categorizePollsByTime();
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [categorizePollsByTime, polls.length]);
 
   return (
     <div className="min-h-screen -mx-8 -my-8">
@@ -300,14 +336,32 @@ export default function Home() {
                 <div className="mb-8">
                   <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Open Polls</h3>
                   <div className="space-y-3">
-                    {openPolls.map((poll) => (
-                      <Link
-                        key={poll.id}
-                        href={`/p/${poll.id}`}
-                        className="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
-                      >
-                        <div className="mb-2">
-                          <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
+                    {openPolls.map((poll, index) => {
+                      const isVoted = votedPollIds.has(poll.id);
+                      const prevPoll = index > 0 ? openPolls[index - 1] : null;
+                      const isPrevVoted = prevPoll ? votedPollIds.has(prevPoll.id) : false;
+                      const isFirstVoted = isVoted && !isPrevVoted;
+                      
+                      return (
+                        <React.Fragment key={poll.id}>
+                          {isFirstVoted && (
+                            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2">
+                              Already Voted
+                            </div>
+                          )}
+                          <Link
+                            href={`/p/${poll.id}`}
+                            className={`block ${isVoted ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
+                          >
+                          {isVoted && (
+                            <div className="absolute top-1 right-1 z-10">
+                              <span className="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded">
+                                VOTED
+                              </span>
+                            </div>
+                          )}
+                          <div className="mb-2">
+                            <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
                           <div className="flex items-center justify-between">
                             <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
                               poll.poll_type === 'yes_no' 
@@ -328,7 +382,9 @@ export default function Home() {
                           </div>
                         </div>
                       </Link>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -342,16 +398,25 @@ export default function Home() {
                 <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Closed Polls</h3>
                 {closedPolls.length > 0 ? (
                   <div className="space-y-3">
-                    {closedPolls.map((poll) => (
-                      <Link
-                        key={poll.id}
-                        href={`/p/${poll.id}`}
-                        className="block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
-                      >
+                    {closedPolls.map((poll, index) => {
+                      const isVoted = votedPollIds.has(poll.id);
+                      
+                      return (
+                        <Link
+                          key={poll.id}
+                          href={`/p/${poll.id}`}
+                          className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
+                        >
+                          {isVoted && (
+                            <div className="absolute top-1 right-1 z-10">
+                              <span className="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded">
+                                VOTED
+                              </span>
+                            </div>
+                          )}
                         <div className="mb-2">
                           <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">{poll.title}</h3>
-                        </div>
-                        <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
                               poll.poll_type === 'yes_no' 
@@ -386,9 +451,11 @@ export default function Home() {
                               })()}
                             </span>
                           )}
+                          </div>
                         </div>
                       </Link>
-                    ))}
+                    );
+                  })}
                   </div>
                 ) : (
                   <p className="text-gray-500 dark:text-gray-400 italic text-center">No Closed Polls</p>

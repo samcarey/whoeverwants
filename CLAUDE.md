@@ -15,6 +15,39 @@ curl -s -I https://decisionbot.a.pinggy.link | head -3
 
 **Only mention URLs after confirming 200 OK responses.** Services showing "active" in systemctl does NOT guarantee URL accessibility. The tunnel frequently drops connection while showing active status.
 
+## ⚠️ CRITICAL: DEV SERVER PORT MANAGEMENT
+
+**The development server MUST ALWAYS run on port 3000.** Never allow Next.js to auto-select alternative ports like 3001, 3002, etc.
+
+### Why Port 3000 is Required:
+- Tunnel service is configured to forward port 3000
+- External URLs depend on port 3000 being active
+- Multiple dev servers cause cache conflicts and debugging issues
+
+### If Port 3000 is Busy:
+```bash
+# 1. Find what's using port 3000
+lsof -i :3000
+
+# 2. Check for multiple npm/node processes
+ps aux | grep -E "(npm|node|next)" | grep -v grep
+
+# 3. Kill ALL existing dev servers (use actual PIDs from step 2)
+kill -9 [PID1] [PID2] [PID3]
+
+# 4. Clear Next.js cache and restart on port 3000
+rm -rf .next
+npm run dev
+```
+
+### Port Verification:
+Always verify the dev server started on port 3000:
+```bash
+curl -s -I http://localhost:3000 | head -3
+```
+
+**NEVER proceed with development if the server is running on any port other than 3000.**
+
 ## ⚠️ CRITICAL: HYDRATION ERROR PREVENTION
 
 **React hydration errors occur when server-rendered HTML doesn't match client-rendered HTML.** This breaks the external tunnel site rendering.

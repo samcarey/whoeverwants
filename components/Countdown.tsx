@@ -72,7 +72,7 @@ export default function Countdown({ deadline }: CountdownProps) {
   }) : "";
 
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       <div className={`px-3 py-1.5 rounded-lg flex items-center justify-between ${isExpired 
         ? 'bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700' 
         : 'bg-blue-100 dark:bg-blue-900 border border-blue-200 dark:border-blue-700'

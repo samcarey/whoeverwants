@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
-import SuccessPopup from "@/components/SuccessPopup";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -27,7 +26,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const { prefetch } = useAppPrefetch();
   const searchParams = useSearchParams();
   const isNewPoll = searchParams.get("new") === "true";
-  const [showSuccessPopup, setShowSuccessPopup] = useState(isNewPoll);
   const [pollUrl, setPollUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
   const [optionsInitialized, setOptionsInitialized] = useState(false);
@@ -169,14 +167,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
-  // Clean up URL parameter when success popup is shown
+  // Clean up URL parameter when new poll is shown
   useEffect(() => {
-    if (isNewPoll && showSuccessPopup) {
+    if (isNewPoll) {
       // Remove the ?new=true parameter from the URL without refreshing the page
       const newUrl = window.location.pathname + window.location.hash;
       router.replace(newUrl, { scroll: false });
     }
-  }, [isNewPoll, showSuccessPopup, router]);
+  }, [isNewPoll, router]);
 
   // Effect to load vote data when poll loads or when hasVoted changes
   useEffect(() => {
@@ -655,7 +653,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         </div>
       </div>
       
-      <div className="max-w-md mx-auto pb-20 pt-16">
+      <div className="max-w-md mx-auto pb-20 pt-7">
           
           
           {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
@@ -777,7 +775,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || !yesNoChoice}
-                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                    className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
@@ -888,7 +886,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || rankedChoices.length === 0}
-                    className="w-full mt-4 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                    className="w-full mt-4 rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
@@ -1005,11 +1003,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       </div>
 
-      <SuccessPopup 
-        show={showSuccessPopup} 
-        onClose={() => setShowSuccessPopup(false)} 
-      />
-      
       <ConfirmationModal
         isOpen={showVoteConfirmModal}
         onConfirm={submitVote}
