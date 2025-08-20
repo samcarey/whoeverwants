@@ -78,11 +78,8 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   }, [deadline, isClient]);
 
   return (
-    <div className="text-right text-sm">
-      <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
-      <div className="font-mono font-semibold text-green-600 dark:text-green-400">
-        {timeLeft}
-      </div>
+    <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+      <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span> left
     </div>
   );
 };
@@ -229,7 +226,7 @@ export default function Home() {
   }, [polls]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 -mx-8 -my-8">
+    <div className="min-h-screen -mx-8 -my-8">
       {/* Fixed Header */}
       <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between pt-3 pb-2 px-2">
@@ -307,35 +304,28 @@ export default function Home() {
                       <Link
                         key={poll.id}
                         href={`/p/${poll.id}`}
-                        className="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
+                        className="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                       >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1 mr-4">
-                            <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
-                            <div className="flex items-center gap-3">
-                              <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
-                                poll.poll_type === 'yes_no' 
-                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                  : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                              }`}>
-                                {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
-                              </span>
-                            </div>
-                          </div>
-                          {poll.response_deadline && (
-                            <div className="flex-shrink-0">
+                        <div className="mb-2">
+                          <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
+                          <div className="flex items-center justify-between">
+                            <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
+                              poll.poll_type === 'yes_no' 
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                            }`}>
+                              {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
+                            </span>
+                            {poll.response_deadline && (
                               <ClientOnly fallback={
-                                <div className="text-right text-sm">
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">Time left</div>
-                                  <div className="font-mono font-semibold text-green-600 dark:text-green-400">
-                                    Loading...
-                                  </div>
+                                <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+                                  Loading...
                                 </div>
                               }>
                                 <SimpleCountdown deadline={poll.response_deadline} />
                               </ClientOnly>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </Link>
                     ))}
@@ -356,7 +346,7 @@ export default function Home() {
                       <Link
                         key={poll.id}
                         href={`/p/${poll.id}`}
-                        className="block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
+                        className="block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
                       >
                         <div className="mb-2">
                           <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">{poll.title}</h3>
@@ -413,13 +403,13 @@ export default function Home() {
       <div className="fixed bottom-4 right-4 z-50">
         <Link
           href="/create-poll"
-          className="flex items-center justify-center px-4 py-2 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-gray-700 dark:text-gray-300 font-medium text-sm"
+          className="flex items-center justify-center px-4 py-2 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-gray-700 dark:text-gray-300 font-semibold text-sm"
           title="Create new poll"
         >
           <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Create Poll
+          New Poll
         </Link>
       </div>
     </div>
