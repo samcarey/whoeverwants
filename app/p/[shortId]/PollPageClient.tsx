@@ -692,13 +692,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   return (
     <>
       {/* Fixed header bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 safe-area-header">
         <div className="flex items-center justify-center pt-3 pb-2">
           <h1 className="text-xl font-bold text-center px-4 break-words select-none">{poll.title}</h1>
         </div>
       </div>
       
-      <div className="max-w-md mx-auto pb-20 pt-7">
+      <div className="max-w-md mx-auto pb-20 safe-area-content">
           
           
           {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}

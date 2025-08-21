@@ -93,7 +93,7 @@ export default function HomeDebug() {
   return (
     <div className="min-h-screen bg-white dark:bg-black">
       {/* Fixed Header */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white dark:bg-black">
+      <div className="fixed top-0 left-0 right-0 z-20 bg-white dark:bg-black safe-area-header">
         <div className="flex items-center justify-center py-4 relative">
           <Link
             href="/create-poll"
@@ -105,7 +105,7 @@ export default function HomeDebug() {
       </div>
 
       {/* Content */}
-      <div className="pt-24 pb-8">
+      <div className="safe-area-content pb-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-8">
           
           {/* Debug Info Panel */}

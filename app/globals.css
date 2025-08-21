@@ -20,8 +20,7 @@
 }
 
 html {
-  /* Extend content into safe areas on iOS */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Allow content to extend into safe areas on iOS */
   background: var(--background);
 }
 
@@ -41,4 +40,14 @@ body {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;  /* Safari and Chrome */
+}
+
+/* Safe area fixed header for iOS PWA */
+.safe-area-header {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Content that needs to account for safe area header */
+.safe-area-content {
+  padding-top: calc(4rem + env(safe-area-inset-top)); /* Header height + safe area */
 }

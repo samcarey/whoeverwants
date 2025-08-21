@@ -302,7 +302,7 @@ export default function Home() {
   return (
     <div className="min-h-screen -mx-8 -my-8">
       {/* Fixed Header */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 safe-area-header">
         <div className="flex items-center justify-between pt-3 pb-2 px-2">
           <a
             href="https://github.com/samcarey/whoeverwants"
@@ -344,7 +344,7 @@ export default function Home() {
       </div>
 
       {/* Content */}
-      <div className="pt-16 pb-8">
+      <div className="safe-area-content pb-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-8">
           {loading && (
             <div className="flex justify-center items-center py-8">

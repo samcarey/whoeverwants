@@ -550,14 +550,14 @@ function CreatePollContent() {
   return (
     <>
       {/* Fixed header bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 safe-area-header">
         <div className="flex items-center justify-center pt-3 pb-2">
           <h1 className="text-xl font-bold text-center">Create New Poll</h1>
         </div>
       </div>
       
       {/* Main content with padding for fixed header */}
-      <div className="max-w-md mx-auto pb-20 pt-12">
+      <div className="max-w-md mx-auto pb-20 safe-area-content">
         {followUpTo && (
           <FollowUpHeader followUpToPollId={followUpTo} />
         )}

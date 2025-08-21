@@ -68,8 +68,8 @@ export default function RootLayout({
           <div className="h-full" style={{ 
             paddingLeft: 'max(2rem, env(safe-area-inset-left))', 
             paddingRight: 'max(2rem, env(safe-area-inset-right))', 
-            paddingTop: '2rem', 
-            paddingBottom: '2rem' 
+            paddingTop: 'max(2rem, env(safe-area-inset-top))', 
+            paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' 
           }}>
             {children}
           </div>
