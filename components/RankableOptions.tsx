@@ -588,7 +588,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     if (mainIndex !== -1) {
       rankNumber = (mainIndex + 1).toString();
     } else {
-      rankNumber = '—'; // No ranking for no preference items
+      rankNumber = ''; // No ranking for no preference items
     }
 
     return (
@@ -919,7 +919,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             }
 
             // Determine rank number display
-            const rankNumber = listType === 'main' ? (index + 1).toString() : '—';
+            const rankNumber = listType === 'main' ? (index + 1).toString() : '';
 
             return (
               <div

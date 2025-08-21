@@ -40,7 +40,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
-  const [manuallyReopened, setManuallyReopened] = useState(false);
+  // Check if poll was reopened after deadline (is_closed is false but deadline has passed)
+  const wasReopenedAfterDeadline = !poll.is_closed && poll.response_deadline && new Date(poll.response_deadline) <= new Date();
+  const [manuallyReopened, setManuallyReopened] = useState(wasReopenedAfterDeadline);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
@@ -404,12 +406,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (!wasAbstaining) {
       // Starting to abstain
       setJustCancelledAbstain(false);
-      // For ranked choice polls, clear ranked choices when abstaining
+      // Clear previous choices when abstaining
       if (poll.poll_type === 'ranked_choice') {
         setRankedChoices([]);
+      } else if (poll.poll_type === 'yes_no') {
+        setYesNoChoice(null); // Clear yes/no choice to prevent both appearing selected
       }
-      // For yes/no polls, don't clear the yes/no choice when abstaining
-      // This allows users to switch between abstain and yes/no choices
     } else {
       // Cancelling abstain
       if (poll.poll_type === 'ranked_choice') {
@@ -721,11 +723,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {userVoteData?.is_abstain && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                            <span className="w-5 h-5 bg-yellow-600 text-white rounded-full flex items-center justify-center text-xs font-bold mr-2">
-                              −
-                            </span>
                             <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                              Abstained
+                              You Abstained
                             </span>
                           </div>
                         </div>
@@ -880,11 +879,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {userVoteData?.is_abstain && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                            <span className="w-5 h-5 bg-yellow-600 text-white rounded-full flex items-center justify-center text-xs font-bold mr-2">
-                              −
-                            </span>
                             <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                              Abstained
+                              You Abstained
                             </span>
                           </div>
                         </div>

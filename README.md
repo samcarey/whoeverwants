@@ -29,4 +29,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-Open source - do whatever you want with it.
+This project is dual-licensed under your choice of either:
+
+- **MIT License** - See [LICENSE-MIT](LICENSE-MIT)
+- **Apache License 2.0** - See [LICENSE-APACHE](LICENSE-APACHE)
+
+You may use this software under the terms of either license, whichever you prefer.

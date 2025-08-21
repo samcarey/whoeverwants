@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase, Poll } from "@/lib/supabase";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -85,6 +86,7 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -387,8 +389,8 @@ export default function Home() {
                               Already Voted
                             </div>
                           )}
-                          <Link
-                            href={`/p/${poll.id}`}
+                          <div
+                            onClick={() => router.push(`/p/${poll.id}`)}
                             className={`block ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
                           >
                           {hasVotedOrAbstained && (
@@ -421,7 +423,7 @@ export default function Home() {
                             )}
                           </div>
                         </div>
-                      </Link>
+                      </div>
                         </React.Fragment>
                       );
                     })}
@@ -444,9 +446,9 @@ export default function Home() {
                       const hasVotedOrAbstained = isVoted || isAbstained;
                       
                       return (
-                        <Link
+                        <div
                           key={poll.id}
-                          href={`/p/${poll.id}`}
+                          onClick={() => router.push(`/p/${poll.id}`)}
                           className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
                         >
                           {hasVotedOrAbstained && (
@@ -497,7 +499,7 @@ export default function Home() {
                           )}
                           </div>
                         </div>
-                      </Link>
+                      </div>
                     );
                   })}
                   </div>
@@ -512,8 +514,8 @@ export default function Home() {
 
       {/* Floating Create Poll Button */}
       <div className="fixed bottom-4 right-4 z-50">
-        <Link
-          href="/create-poll"
+        <button
+          onClick={() => router.push("/create-poll")}
           className="flex items-center justify-center px-4 py-2 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-gray-700 dark:text-gray-300 font-semibold text-sm"
           title="Create new poll"
         >
@@ -521,7 +523,7 @@ export default function Home() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           New Poll
-        </Link>
+        </button>
       </div>
     </div>
   );
