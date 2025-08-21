@@ -741,8 +741,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                 </div>
               ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-6">
-                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
+                <div className="text-center py-3">
+                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-2 px-4 mb-2">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
                   </div>
                   <div className="text-left">
@@ -897,8 +897,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                 </div>
               ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-6">
-                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-4 px-4 mb-4">
+                <div className="text-center py-3">
+                  <div className="bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg py-2 px-4 mb-2">
                     <h3 className="font-semibold text-green-800 dark:text-green-200 text-center">Vote Submitted!</h3>
                   </div>
                   <div className="text-left">
