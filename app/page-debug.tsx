@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase, Poll } from "@/lib/supabase";
 
 export default function HomeDebug() {
+  const router = useRouter();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,12 +96,12 @@ export default function HomeDebug() {
       {/* Fixed Header */}
       <div className="fixed top-0 left-0 right-0 z-20 bg-white dark:bg-black safe-area-header">
         <div className="flex items-center justify-center py-4 relative">
-          <Link
-            href="/create-poll"
+          <button
+            onClick={() => router.push("/create-poll")}
             className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 px-8 min-w-[200px]"
           >
             Create Poll
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -147,15 +148,15 @@ export default function HomeDebug() {
                   <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">Open Polls ({openPolls.length})</h3>
                   <div className="space-y-3">
                     {openPolls.map((poll) => (
-                      <Link
+                      <div
                         key={poll.id}
-                        href={`/p/${poll.id}`}
+                        onClick={() => router.push(`/p/${poll.id}`)}
                         className="block bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative"
                       >
                         <h3 className="font-medium text-lg text-gray-900 dark:text-white">{poll.title}</h3>
                         <div className="text-sm text-gray-500">ID: {poll.id}</div>
                         <div className="text-sm text-gray-500">Deadline: {poll.response_deadline}</div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -171,15 +172,15 @@ export default function HomeDebug() {
                 {closedPolls.length > 0 ? (
                   <div className="space-y-3">
                     {closedPolls.map((poll) => (
-                      <Link
+                      <div
                         key={poll.id}
-                        href={`/p/${poll.id}`}
+                        onClick={() => router.push(`/p/${poll.id}`)}
                         className="block bg-red-50 dark:bg-red-950/20 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative"
                       >
                         <h3 className="font-medium text-lg text-gray-900 dark:text-white">{poll.title}</h3>
                         <div className="text-sm text-gray-500">ID: {poll.id}</div>
                         <div className="text-sm text-gray-500">Deadline: {poll.response_deadline}</div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 ) : (

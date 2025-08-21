@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface FollowUpButtonProps {
   pollId: string;
@@ -9,9 +9,11 @@ interface FollowUpButtonProps {
 }
 
 export default function FollowUpButton({ pollId, isPollClosed, className = "" }: FollowUpButtonProps) {
+  const router = useRouter();
+
   return (
-    <Link
-      href={`/create-poll?followUpTo=${pollId}`}
+    <button
+      onClick={() => router.push(`/create-poll?followUpTo=${pollId}`)}
       className={`inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors duration-200 ${className}`}
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -23,6 +25,6 @@ export default function FollowUpButton({ pollId, isPollClosed, className = "" }:
         />
       </svg>
       <span>Follow Up</span>
-    </Link>
+    </button>
   );
 }
