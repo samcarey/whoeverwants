@@ -207,13 +207,26 @@ export default function Home() {
   const [openPolls, setOpenPolls] = useState<Poll[]>([]);
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
+  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
   
-  // Load voted polls from localStorage
+  // Load voted and abstained polls from localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      setVotedPollIds(new Set(Object.keys(votedPolls).filter(id => votedPolls[id])));
+      const voted = new Set<string>();
+      const abstained = new Set<string>();
+      
+      Object.keys(votedPolls).forEach(id => {
+        if (votedPolls[id] === 'abstained') {
+          abstained.add(id);
+        } else if (votedPolls[id] === true) {
+          voted.add(id);
+        }
+      });
+      
+      setVotedPollIds(voted);
+      setAbstainedPollIds(abstained);
     } catch (error) {
       console.error('Error loading voted polls:', error);
     }
@@ -234,16 +247,39 @@ export default function Home() {
       return new Date(poll.response_deadline) <= now || poll.is_closed;
     });
     
-    // Sort each category by voted status (unvoted first, then voted)
+    // Sort open polls by voted status (unvoted first, then voted/abstained)
     const sortByVoted = (pollList: Poll[]) => {
-      const unvoted = pollList.filter(p => !votedPollIds.has(p.id));
-      const voted = pollList.filter(p => votedPollIds.has(p.id));
+      const unvoted = pollList.filter(p => !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id));
+      const voted = pollList.filter(p => votedPollIds.has(p.id) || abstainedPollIds.has(p.id));
       return [...unvoted, ...voted];
     };
     
+    // Sort closed polls by most recently closed (newest closed first)
+    const sortClosedByTime = (pollList: Poll[]) => {
+      return pollList.sort((a, b) => {
+        // First determine when each poll was closed
+        const getClosingTime = (poll: Poll) => {
+          if (poll.is_closed) {
+            // If manually closed, we'll use response_deadline as proxy for closing time
+            // In the future, we could add a closed_at timestamp field
+            return new Date(poll.response_deadline || poll.created_at).getTime();
+          } else {
+            // If closed by deadline expiry, use response_deadline
+            return new Date(poll.response_deadline || poll.created_at).getTime();
+          }
+        };
+        
+        const timeA = getClosingTime(a);
+        const timeB = getClosingTime(b);
+        
+        // Sort by most recently closed first (descending order)
+        return timeB - timeA;
+      });
+    };
+    
     setOpenPolls(sortByVoted(open));
-    setClosedPolls(sortByVoted(closed));
-  }, [polls, votedPollIds]);
+    setClosedPolls(sortClosedByTime(closed));
+  }, [polls, votedPollIds, abstainedPollIds]);
   
   // Initial categorization when polls change
   useEffect(() => {
@@ -338,9 +374,11 @@ export default function Home() {
                   <div className="space-y-3">
                     {openPolls.map((poll, index) => {
                       const isVoted = votedPollIds.has(poll.id);
+                      const isAbstained = abstainedPollIds.has(poll.id);
+                      const hasVotedOrAbstained = isVoted || isAbstained;
                       const prevPoll = index > 0 ? openPolls[index - 1] : null;
-                      const isPrevVoted = prevPoll ? votedPollIds.has(prevPoll.id) : false;
-                      const isFirstVoted = isVoted && !isPrevVoted;
+                      const isPrevVoted = prevPoll ? (votedPollIds.has(prevPoll.id) || abstainedPollIds.has(prevPoll.id)) : false;
+                      const isFirstVoted = hasVotedOrAbstained && !isPrevVoted;
                       
                       return (
                         <React.Fragment key={poll.id}>
@@ -351,12 +389,14 @@ export default function Home() {
                           )}
                           <Link
                             href={`/p/${poll.id}`}
-                            className={`block ${isVoted ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
+                            className={`block ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
                           >
-                          {isVoted && (
+                          {hasVotedOrAbstained && (
                             <div className="absolute top-1 right-1 z-10">
-                              <span className="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded">
-                                VOTED
+                              <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
+                                isAbstained ? 'bg-yellow-700' : 'bg-green-700'
+                              }`}>
+                                {isAbstained ? 'ABSTAINED' : 'VOTED'}
                               </span>
                             </div>
                           )}
@@ -400,6 +440,8 @@ export default function Home() {
                   <div className="space-y-3">
                     {closedPolls.map((poll, index) => {
                       const isVoted = votedPollIds.has(poll.id);
+                      const isAbstained = abstainedPollIds.has(poll.id);
+                      const hasVotedOrAbstained = isVoted || isAbstained;
                       
                       return (
                         <Link
@@ -407,10 +449,12 @@ export default function Home() {
                           href={`/p/${poll.id}`}
                           className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
                         >
-                          {isVoted && (
+                          {hasVotedOrAbstained && (
                             <div className="absolute top-1 right-1 z-10">
-                              <span className="bg-green-700 text-white text-xs font-bold px-2 py-0.5 rounded">
-                                VOTED
+                              <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
+                                isAbstained ? 'bg-yellow-700' : 'bg-green-700'
+                              }`}>
+                                {isAbstained ? 'ABSTAINED' : 'VOTED'}
                               </span>
                             </div>
                           )}

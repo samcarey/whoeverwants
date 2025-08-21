@@ -30,6 +30,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
   const [optionsInitialized, setOptionsInitialized] = useState(false);
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
+  const [isAbstaining, setIsAbstaining] = useState(false);
+  const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
@@ -69,7 +71,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (typeof window === 'undefined') return false;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      return votedPolls[pollId] === true;
+      return votedPolls[pollId] === true || votedPolls[pollId] === 'abstained';
     } catch (error) {
       console.error('Error checking vote status:', error);
       return false;
@@ -77,11 +79,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, []);
 
   // Mark poll as voted (save to localStorage)
-  const markPollAsVoted = useCallback((pollId: string, voteId?: string) => {
+  const markPollAsVoted = useCallback((pollId: string, voteId?: string, abstained?: boolean) => {
     if (typeof window === 'undefined') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      votedPolls[pollId] = true;
+      votedPolls[pollId] = abstained ? 'abstained' : true;
       localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
       
       // Store the vote ID if provided
@@ -115,7 +117,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('poll_id, vote_type, yes_no_choice, ranked_choices')
+        .select('poll_id, vote_type, yes_no_choice, ranked_choices, is_abstain')
         .eq('id', voteId)
         .single();
 
@@ -207,7 +209,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             setUserVoteData(voteData);
             
             // Set UI state based on vote data from database columns
-            if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
+            setIsAbstaining(voteData.is_abstain || false);
+            if (voteData.is_abstain) {
+              // Don't set choices for abstain votes
+            } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice);
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
@@ -375,7 +380,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   const handleRankingChange = useCallback((newRankedChoices: string[]) => {
     setRankedChoices(newRankedChoices);
-  }, []);
+    // Clear the flag when user interacts with rankings after cancelling abstain
+    if (justCancelledAbstain) {
+      setJustCancelledAbstain(false);
+    }
+  }, [justCancelledAbstain]);
 
   // Memoize parsed options to prevent re-parsing on every render
   const pollOptions = useMemo(() => {
@@ -385,6 +394,28 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   const handleYesNoVote = (choice: 'yes' | 'no') => {
     setYesNoChoice(choice);
+    setIsAbstaining(false); // Deselect abstain when making a yes/no choice
+  };
+
+  const handleAbstain = () => {
+    const wasAbstaining = isAbstaining;
+    setIsAbstaining(!isAbstaining);
+    
+    if (!wasAbstaining) {
+      // Starting to abstain
+      setJustCancelledAbstain(false);
+      // For ranked choice polls, clear ranked choices when abstaining
+      if (poll.poll_type === 'ranked_choice') {
+        setRankedChoices([]);
+      }
+      // For yes/no polls, don't clear the yes/no choice when abstaining
+      // This allows users to switch between abstain and yes/no choices
+    } else {
+      // Cancelling abstain
+      if (poll.poll_type === 'ranked_choice') {
+        setJustCancelledAbstain(true);
+      }
+    }
   };
 
   const handleCloseClick = () => {
@@ -502,15 +533,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) return;
     
     // Validate vote choice first
-    if (poll.poll_type === 'yes_no' && !yesNoChoice) {
-      setVoteError("Please select Yes or No");
+    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
+      setVoteError("Please select Yes, No, or Abstain");
       return;
     }
     
-    if (poll.poll_type === 'ranked_choice') {
+    if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0) {
-        setVoteError("Please rank at least one option");
+        setVoteError("Please rank at least one option or select Abstain");
         return;
       }
     }
@@ -520,10 +551,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   };
 
   const submitVote = async () => {
+    console.log('🚀 submitVote called');
     setShowVoteConfirmModal(false);
     
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) return;
+    console.log('🚀 submitVote conditions:', { isSubmitting, hasVoted, isEditingVote, isPollClosed });
+    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+      console.log('🚀 submitVote returning early due to conditions');
+      return;
+    }
 
+    console.log('🚀 submitVote proceeding with submission');
     setIsSubmitting(true);
     setVoteError(null);
 
@@ -531,21 +568,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       let voteData;
       
       if (poll.poll_type === 'yes_no') {
-        if (!yesNoChoice) {
-          setVoteError("Please select Yes or No");
+        if (!yesNoChoice && !isAbstaining) {
+          setVoteError("Please select Yes, No, or Abstain");
           return;
         }
         voteData = {
           poll_id: poll.id,
           vote_type: 'yes_no' as const,
-          yes_no_choice: yesNoChoice
+          yes_no_choice: isAbstaining ? null : yesNoChoice,
+          is_abstain: isAbstaining
         };
+        console.log('Submitting abstain vote data:', voteData);
       } else {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
         
-        if (filteredRankedChoices.length === 0) {
-          setVoteError("Please rank at least one option");
+        if (filteredRankedChoices.length === 0 && !isAbstaining) {
+          setVoteError("Please rank at least one option or select Abstain");
           return;
         }
         
@@ -562,7 +601,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         voteData = {
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
-          ranked_choices: filteredRankedChoices
+          ranked_choices: isAbstaining ? null : filteredRankedChoices,
+          is_abstain: isAbstaining
         };
       }
 
@@ -574,8 +614,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         const updateData = poll.poll_type === 'yes_no' 
-          ? { yes_no_choice: yesNoChoice }
-          : { ranked_choices: rankedChoices };
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining }
+          : { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining };
         
         
         // Update existing vote
@@ -598,12 +638,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       } else {
         
         // Insert new vote
+        console.log('Inserting vote with data:', voteData);
         const { data: insertedVote, error: insertError } = await supabase
           .from('votes')
           .insert([voteData])
           .select('id')
           .single();
 
+        console.log('Insert result:', { insertedVote, insertError });
         error = insertError;
         voteId = insertedVote?.id;
 
@@ -616,6 +658,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       if (error) {
         console.error('Error submitting vote:', error);
+        console.error('Vote data that failed:', voteData);
         setVoteError("Failed to submit vote. Please try again.");
         return;
       }
@@ -625,7 +668,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       // Save vote to localStorage so user can't vote again (only for new votes)
       if (!isEditingVote) {
-        markPollAsVoted(poll.id, voteId);
+        markPollAsVoted(poll.id, voteId, isAbstaining);
         // Update hasPollData state
         setHasPollDataState(true);
       }
@@ -673,6 +716,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   ) : pollResults ? (
                     <>
                       <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      
+                      {/* Show abstained bubble if user abstained */}
+                      {userVoteData?.is_abstain && (
+                        <div className="mt-4 flex justify-center">
+                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
+                            <span className="w-5 h-5 bg-yellow-600 text-white rounded-full flex items-center justify-center text-xs font-bold mr-2">
+                              −
+                            </span>
+                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                              Abstained
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="mt-6 text-center">
                         <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
                       </div>
@@ -712,23 +770,29 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     ) : (
                       <div className={`flex items-center p-3 rounded-lg ${
-                        yesNoChoice === 'yes' 
-                          ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
-                          : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
+                        userVoteData?.is_abstain || isAbstaining
+                          ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
+                          : yesNoChoice === 'yes' 
+                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
+                            : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                       }`}>
                         <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
-                          yesNoChoice === 'yes'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-red-600 text-white'
+                          userVoteData?.is_abstain || isAbstaining
+                            ? 'bg-yellow-600 text-white'
+                            : yesNoChoice === 'yes'
+                              ? 'bg-green-600 text-white'
+                              : 'bg-red-600 text-white'
                         }`}>
-                          {yesNoChoice === 'yes' ? '✓' : '✗'}
+                          {userVoteData?.is_abstain || isAbstaining ? '−' : yesNoChoice === 'yes' ? '✓' : '✗'}
                         </span>
                         <span className={`font-medium ${
-                          yesNoChoice === 'yes'
-                            ? 'text-green-800 dark:text-green-200'
-                            : 'text-red-800 dark:text-red-200'
+                          userVoteData?.is_abstain || isAbstaining
+                            ? 'text-yellow-800 dark:text-yellow-200'
+                            : yesNoChoice === 'yes'
+                              ? 'text-green-800 dark:text-green-200'
+                              : 'text-red-800 dark:text-red-200'
                         }`}>
-                          {yesNoChoice === 'yes' ? 'Yes' : 'No'}
+                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : yesNoChoice === 'yes' ? 'Yes' : 'No'}
                         </span>
                       </div>
                     )}
@@ -743,7 +807,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
-                  <div className="flex gap-3 mb-4">
+                  <div className="flex gap-2 mb-4">
                     <button 
                       onClick={() => handleYesNoVote('yes')}
                       className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
@@ -764,6 +828,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     >
                       No
                     </button>
+                    <button 
+                      onClick={() => handleAbstain()}
+                      className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                        isAbstaining
+                          ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
+                          : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
+                      }`}
+                    >
+                      Abstain
+                    </button>
                   </div>
                   
                   {voteError && (
@@ -774,7 +848,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   
                   <button
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || !yesNoChoice}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
                     className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
@@ -801,6 +875,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   ) : pollResults ? (
                     <>
                       <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      
+                      {/* Show abstained bubble if user abstained */}
+                      {userVoteData?.is_abstain && (
+                        <div className="mt-4 flex justify-center">
+                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
+                            <span className="w-5 h-5 bg-yellow-600 text-white rounded-full flex items-center justify-center text-xs font-bold mr-2">
+                              −
+                            </span>
+                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                              Abstained
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="mt-6 text-center">
                         <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
                       </div>
@@ -845,14 +934,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {rankedChoices.map((choice, index) => (
-                          <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                            <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
-                              {index + 1}
+                        {userVoteData?.is_abstain || isAbstaining ? (
+                          <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                            <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                              −
                             </span>
-                            <span>{choice}</span>
+                            <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
-                        ))}
+                        ) : (
+                          rankedChoices.map((choice, index) => (
+                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                              <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                                {index + 1}
+                              </span>
+                              <span>{choice}</span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     )}
                   </div>
@@ -871,11 +969,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       key={isEditingVote ? 'editing' : 'new'}
                       options={pollOptions} 
                       onRankingChange={handleRankingChange}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isAbstaining}
                       storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                       initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                     />
                   )}
+                  
+                  {/* Abstain button for ranked choice */}
+                  <div className="mt-4">
+                    <button 
+                      onClick={() => handleAbstain()}
+                      className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                        isAbstaining
+                          ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
+                          : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
+                      }`}
+                    >
+                      {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain from this vote'}
+                    </button>
+                  </div>
                   
                   {voteError && (
                     <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
@@ -885,7 +997,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   
                   <button
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || rankedChoices.length === 0}
+                    disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0)}
                     className="w-full mt-4 rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
@@ -1009,8 +1121,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         onCancel={() => setShowVoteConfirmModal(false)}
         title="Submit Vote"
         message={poll.poll_type === 'yes_no' 
-          ? `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?` 
-          : `Are you sure you want to submit your ranking?`}
+          ? (isAbstaining 
+              ? `Are you sure you want to abstain from this vote?`
+              : `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?`)
+          : (isAbstaining
+              ? `Are you sure you want to abstain from this vote?`
+              : `Are you sure you want to submit your ranking?`)}
         confirmText="Submit Vote"
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"

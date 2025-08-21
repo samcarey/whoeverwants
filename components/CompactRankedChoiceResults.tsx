@@ -56,6 +56,24 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
       try {
         const roundData = await getRankedChoiceRounds(results.poll_id);
         
+        // Check if there are any non-abstain votes
+        const { data: voteData, error: voteError } = await supabase
+          .from('votes')
+          .select('is_abstain')
+          .eq('poll_id', results.poll_id)
+          .eq('vote_type', 'ranked_choice');
+        
+        if (!voteError && voteData) {
+          const hasNonAbstainVotes = voteData.some(vote => !vote.is_abstain);
+          
+          // If there are only abstain votes, show a special message
+          if (!hasNonAbstainVotes && voteData.length > 0) {
+            setRoundVisualizations([]);
+            setLoading(false);
+            return;
+          }
+        }
+        
         // Group rounds by round number
         const roundsByNumber = roundData.reduce((acc, round) => {
           if (!acc[round.round_number]) acc[round.round_number] = [];
@@ -270,7 +288,15 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
   if (roundVisualizations.length === 0) {
     return (
       <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400">Unable to load round data.</p>
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">No Ranking Results</h3>
+        <p className="text-gray-600 dark:text-gray-400">
+          This poll received only abstain votes, so no ranking could be determined.
+        </p>
+        {results.total_votes > 0 && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+            Total votes: {results.total_votes} (all abstained)
+          </p>
+        )}
       </div>
     );
   }
@@ -391,8 +417,10 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                         </div>
                         {/* Show user preference indicator under name */}
                         {userChoiceText && (
-                          <div className="text-blue-600 dark:text-blue-400 text-xs font-medium">
-                            {userChoiceText}
+                          <div className="mt-1">
+                            <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                              {userChoiceText}
+                            </span>
                           </div>
                         )}
                       </div>
