@@ -85,7 +85,7 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
   }
 
   return (
-    <div className="-mt-3.5 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
+    <div className="-mt-2 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
       <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
         <span>Follow up to</span>
         <button 

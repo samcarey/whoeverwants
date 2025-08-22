@@ -12,6 +12,7 @@ import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpButton from "@/components/FollowUpButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
+import PollList from "@/components/PollList";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -55,6 +56,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
+  const [loadingFollowUps, setLoadingFollowUps] = useState(false);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= currentTime, 
@@ -238,6 +241,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       fetchPollResults();
     }
   }, [pollClosed, poll.response_deadline, fetchPollResults]);
+
+  // Fetch follow-up polls
+  useEffect(() => {
+    async function fetchFollowUpPolls() {
+      try {
+        setLoadingFollowUps(true);
+        const { data, error } = await supabase
+          .from('polls')
+          .select('*')
+          .eq('follow_up_to', poll.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching follow-up polls:', error);
+          return;
+        }
+
+        setFollowUpPolls(data || []);
+      } catch (error) {
+        console.error('Unexpected error fetching follow-up polls:', error);
+      } finally {
+        setLoadingFollowUps(false);
+      }
+    }
+
+    fetchFollowUpPolls();
+  }, [poll.id]);
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -782,7 +812,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               ? 'bg-green-600 text-white'
                               : 'bg-red-600 text-white'
                         }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? '−' : yesNoChoice === 'yes' ? '✓' : '✗'}
+                          {userVoteData?.is_abstain || isAbstaining ? '' : yesNoChoice === 'yes' ? '✓' : '✗'}
                         </span>
                         <span className={`font-medium ${
                           userVoteData?.is_abstain || isAbstaining
@@ -930,7 +960,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         {userVoteData?.is_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                             <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                              −
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
@@ -1089,6 +1118,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             )}
           </div>
           
+          {/* Follow ups to this poll section */}
+          {followUpPolls.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold mb-4 text-center text-gray-900 dark:text-white">Follow ups to this poll</h2>
+              <PollList polls={followUpPolls} showSections={false} />
+            </div>
+          )}
+
           {/* Forget Poll Button */}
           {hasPollDataState && (
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
