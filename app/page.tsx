@@ -527,10 +527,10 @@ export default function Home() {
       <div className="fixed bottom-4 right-4 z-50">
         <button
           onClick={() => router.push("/create-poll")}
-          className="flex items-center justify-center px-5 py-3 bg-white dark:bg-gray-900 border border-solid border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-gray-700 dark:text-gray-300 font-semibold text-xl"
+          className="flex items-center justify-center px-5 py-3 bg-white dark:bg-gray-900 border border-solid border-blue-400 dark:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 text-blue-600 dark:text-blue-400 font-semibold text-base"
           title="Create new poll"
         >
-          <svg className="w-7 h-7 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           New Poll
