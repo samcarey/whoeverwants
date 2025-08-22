@@ -250,10 +250,21 @@ export default function Home() {
     });
     
     // Sort open polls by voted status (unvoted first, then voted/abstained)
+    // Within each group, sort by expiring soonest first
     const sortByVoted = (pollList: Poll[]) => {
       const unvoted = pollList.filter(p => !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id));
       const voted = pollList.filter(p => votedPollIds.has(p.id) || abstainedPollIds.has(p.id));
-      return [...unvoted, ...voted];
+      
+      // Sort each group by expiring soonest (ascending deadline)
+      const sortByDeadline = (polls: Poll[]) => {
+        return polls.sort((a, b) => {
+          const deadlineA = new Date(a.response_deadline || a.created_at).getTime();
+          const deadlineB = new Date(b.response_deadline || b.created_at).getTime();
+          return deadlineA - deadlineB; // Ascending order - soonest first
+        });
+      };
+      
+      return [...sortByDeadline(unvoted), ...sortByDeadline(voted)];
     };
     
     // Sort closed polls by most recently closed (newest closed first)
