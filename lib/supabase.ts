@@ -27,6 +27,7 @@ export interface Poll {
   updated_at: string;
   creator_secret?: string;
   is_closed?: boolean;
+  follow_up_to?: string;
 }
 
 export interface Vote {

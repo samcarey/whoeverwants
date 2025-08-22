@@ -11,6 +11,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpButton from "@/components/FollowUpButton";
+import FollowUpHeader from "@/components/FollowUpHeader";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -700,6 +701,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       <div className="max-w-md mx-auto pb-20 safe-area-content">
           
+          {/* Show follow-up header if this poll is a follow-up to another poll */}
+          {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
           
           {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
           
