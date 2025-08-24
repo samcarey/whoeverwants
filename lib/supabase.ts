@@ -26,6 +26,7 @@ export interface Poll {
   created_at: string;
   updated_at: string;
   creator_secret?: string;
+  creator_name?: string;
   is_closed?: boolean;
   follow_up_to?: string;
 }

@@ -13,9 +13,13 @@ import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpButton from "@/components/FollowUpButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import PollList from "@/components/PollList";
+import ProfileButton from "@/components/ProfileButton";
+import VoterList from "@/components/VoterList";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
+import { getUserName, saveUserName } from "@/lib/userProfile";
+import { usePageTitle } from "@/lib/usePageTitle";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -24,6 +28,9 @@ interface PollPageClientProps {
 }
 
 export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
+  // Set the page title in the template header
+  usePageTitle(poll.title);
+  
   const router = useRouter();
   const { prefetch } = useAppPrefetch();
   const searchParams = useSearchParams();
@@ -58,6 +65,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [currentTime, setCurrentTime] = useState(new Date());
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
+  const [voterName, setVoterName] = useState<string>("");
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= currentTime, 
@@ -241,6 +249,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       fetchPollResults();
     }
   }, [pollClosed, poll.response_deadline, fetchPollResults]);
+
+  // Load saved user name
+  useEffect(() => {
+    const savedName = getUserName();
+    if (savedName) {
+      setVoterName(savedName);
+    }
+  }, []);
 
   // Fetch follow-up polls
   useEffect(() => {
@@ -609,7 +625,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           poll_id: poll.id,
           vote_type: 'yes_no' as const,
           yes_no_choice: isAbstaining ? null : yesNoChoice,
-          is_abstain: isAbstaining
+          is_abstain: isAbstaining,
+          voter_name: voterName.trim() || null
         };
         console.log('Submitting abstain vote data:', voteData);
       } else {
@@ -635,7 +652,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
           ranked_choices: isAbstaining ? null : filteredRankedChoices,
-          is_abstain: isAbstaining
+          is_abstain: isAbstaining,
+          voter_name: voterName.trim() || null
         };
       }
 
@@ -647,8 +665,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         const updateData = poll.poll_type === 'yes_no' 
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining }
-          : { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining };
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
+          : { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
         
         
         // Update existing vote
@@ -706,6 +724,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setHasPollDataState(true);
       }
       
+      // Save the user's name if they provided one
+      if (voterName.trim()) {
+        saveUserName(voterName.trim());
+      }
+      
       setIsEditingVote(false);
       
       // If the poll is closed, fetch results immediately after voting
@@ -722,23 +745,22 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   return (
     <>
-      {/* Fixed header bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 safe-area-header">
-        <div className="flex items-center justify-center pt-3 pb-2">
-          <h1 className="text-xl font-bold text-center px-4 break-words select-none">{poll.title}</h1>
-        </div>
-      </div>
-      
-      <div className="max-w-md mx-auto pb-20 safe-area-content">
-          
-          {/* Show follow-up header if this poll is a follow-up to another poll */}
-          {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-          
-          {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
-          
-          {/* Poll Content Based on Type */}
-          {poll.poll_type === 'yes_no' ? (
-            <div>
+      <div className="poll-content">
+        {/* Show creator name if available */}
+        {poll.creator_name && (
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4 mt-1">
+            Created by {poll.creator_name}
+          </div>
+        )}
+        
+        {/* Show follow-up header if this poll is a follow-up to another poll */}
+        {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+        
+        {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
+        
+        {/* Poll Content Based on Type */}
+        {poll.poll_type === 'yes_no' ? (
+          <div>
               {isPollClosed ? (
                 <div className="py-6">
                   {loadingResults ? (
@@ -766,6 +788,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="mt-6 text-center">
                         <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
                       </div>
+                      
                     </>
                   ) : (
                     <div className="text-center py-4">
@@ -836,6 +859,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
+                    Select your preference
+                  </h4>
+                  
                   <div className="flex gap-2 mb-4">
                     <button 
                       onClick={() => handleYesNoVote('yes')}
@@ -874,6 +901,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {voteError}
                     </div>
                   )}
+
+                  <div className="mb-4">
+                    <label htmlFor="voterName" className="block text-sm font-medium mb-2">
+                      Your Name (optional)
+                    </label>
+                    <input
+                      type="text"
+                      id="voterName"
+                      value={voterName}
+                      onChange={(e) => setVoterName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="Enter your name..."
+                      maxLength={50}
+                    />
+                  </div>
                   
                   <button
                     onClick={handleVoteClick}
@@ -919,6 +961,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="mt-6 text-center">
                         <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
                       </div>
+                      
                     </>
                   ) : (
                     <div className="text-center py-4">
@@ -1016,6 +1059,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {voteError}
                     </div>
                   )}
+
+                  <div className="mt-4">
+                    <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-2">
+                      Your Name (optional)
+                    </label>
+                    <input
+                      type="text"
+                      id="voterNameRanked"
+                      value={voterName}
+                      onChange={(e) => setVoterName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                      placeholder="Enter your name..."
+                      maxLength={50}
+                    />
+                  </div>
                   
                   <button
                     onClick={handleVoteClick}
@@ -1126,6 +1184,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             </div>
           )}
 
+          {/* Voter List - always visible */}
+          <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <VoterList pollId={poll.id} />
+          </div>
+
           {/* Forget Poll Button */}
           {hasPollDataState && (
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
@@ -1142,7 +1205,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </button>
             </div>
           )}
-
       </div>
 
       <ConfirmationModal

@@ -10,6 +10,7 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
+import { getUserName, saveUserName } from "@/lib/userProfile";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ function CreatePollContent() {
   
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState<string[]>(['']);
-  const [deadlineOption, setDeadlineOption] = useState("5min");
+  const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
   const [isClient, setIsClient] = useState(false);
@@ -32,6 +33,7 @@ function CreatePollContent() {
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [creatorName, setCreatorName] = useState<string>("");
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -53,12 +55,13 @@ function CreatePollContent() {
         options,
         deadlineOption,
         customDate,
-        customTime
+        customTime,
+        creatorName
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
       console.log('💾 Form state saved:', formState);
     }
-  }, [title, options, deadlineOption, customDate, customTime]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -88,9 +91,10 @@ function CreatePollContent() {
           console.log('📥 Form state loaded:', formState);
           setTitle(formState.title || '');
           setOptions(formState.options || ['']);
-          setDeadlineOption(formState.deadlineOption || '5min');
+          setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
+          setCreatorName(formState.creatorName || '');
         } catch (error) {
           console.error('Failed to load form state:', error);
         }
@@ -202,6 +206,12 @@ function CreatePollContent() {
   useEffect(() => {
     setIsClient(true);
     loadFormState();
+    
+    // Load saved user name if no name in form state
+    const savedName = getUserName();
+    if (savedName && !creatorName) {
+      setCreatorName(savedName);
+    }
   }, []);
 
   // Set default date/time values after client initialization
@@ -218,7 +228,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, isClient, saveFormState]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, isClient, saveFormState]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -466,6 +476,11 @@ function CreatePollContent() {
         creator_secret: creatorSecret
       };
 
+      // Add creator_name if provided (may fail if column doesn't exist yet)
+      if (creatorName.trim()) {
+        pollData.creator_name = creatorName.trim();
+      }
+
       // Add follow-up reference if this is a follow-up poll
       if (followUpTo) {
         pollData.follow_up_to = followUpTo;
@@ -529,6 +544,11 @@ function CreatePollContent() {
         }
       }
 
+      // Save the creator's name if they provided one
+      if (creatorName.trim()) {
+        saveUserName(creatorName.trim());
+      }
+
       // Clear saved form state since poll was created successfully
       clearFormState();
       
@@ -548,16 +568,7 @@ function CreatePollContent() {
   };
 
   return (
-    <>
-      {/* Fixed header bar */}
-      <div className="fixed top-0 left-0 right-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 safe-area-header">
-        <div className="flex items-center justify-center pt-3 pb-2">
-          <h1 className="text-xl font-bold text-center">Create New Poll</h1>
-        </div>
-      </div>
-      
-      {/* Main content with padding for fixed header */}
-      <div className="max-w-md mx-auto pb-20 safe-area-content">
+    <div className="poll-content">
         {followUpTo && (
           <FollowUpHeader followUpToPollId={followUpTo} />
         )}
@@ -709,7 +720,22 @@ function CreatePollContent() {
               </div>
             </div>
           )}
-          
+
+          <div>
+            <label htmlFor="creatorName" className="block text-sm font-medium mb-2">
+              Your Name (optional)
+            </label>
+            <input
+              type="text"
+              id="creatorName"
+              value={creatorName}
+              onChange={(e) => setCreatorName(e.target.value)}
+              disabled={isLoading}
+              maxLength={50}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder="Enter your name..."
+            />
+          </div>
           
           {!isFormValid() && !isLoading && (
             <div className="text-center text-red-600 dark:text-red-400 text-sm mb-3">
@@ -755,9 +781,8 @@ function CreatePollContent() {
         cancelText="Cancel"
       />
       
-        <FloatingHomeButton />
-      </div>
-    </>
+      <FloatingHomeButton />
+    </div>
   );
 }
 

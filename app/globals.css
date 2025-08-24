@@ -42,12 +42,8 @@ body {
   display: none;  /* Safari and Chrome */
 }
 
-/* Safe area fixed header for iOS PWA */
-.safe-area-header {
-  padding-top: env(safe-area-inset-top);
-}
-
-/* Content that needs to account for safe area header */
-.safe-area-content {
-  padding-top: calc(4rem + env(safe-area-inset-top)); /* Header height + safe area */
+/* Poll content specific styling for narrow content */
+.poll-content {
+  max-width: 28rem; /* 448px - narrower for poll pages */
+  margin: 0 auto;
 }

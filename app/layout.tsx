@@ -61,18 +61,12 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1+Code:wght@700&display=swap" rel="stylesheet" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full overflow-hidden`}
       >
         <BuildTimer />
-        <div className="h-screen font-[family-name:var(--font-geist-sans)] overflow-auto">
-          <div className="h-full" style={{ 
-            paddingLeft: 'max(2rem, env(safe-area-inset-left))', 
-            paddingRight: 'max(2rem, env(safe-area-inset-right))', 
-            paddingTop: 'max(2rem, env(safe-area-inset-top))', 
-            paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' 
-          }}>
-            {children}
-          </div>
+        <div className="h-screen flex flex-col font-[family-name:var(--font-geist-sans)]">
+          {/* This is where content from each page will be rendered */}
+          {children}
         </div>
         <script
           dangerouslySetInnerHTML={{

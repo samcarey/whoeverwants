@@ -174,11 +174,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   }, [categorizePollsByTime, polls.length]);
 
   if (polls.length === 0) {
-    return (
-      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-        No polls found.
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -219,15 +215,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                     </div>
                   )}
                   <div className="mb-2">
-                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">{poll.title}</h3>
+                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">
+                      <span className="mr-2 text-base">
+                        {poll.poll_type === 'yes_no' ? '✓' : '↕'}
+                      </span>
+                      {poll.title}
+                    </h3>
                   <div className="flex items-center justify-between">
-                    <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
-                      poll.poll_type === 'yes_no' 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                        : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                    }`}>
-                      {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
-                    </span>
+                    <div></div>
                     {poll.response_deadline && (
                       <ClientOnly fallback={
                         <div className="text-right text-xs text-gray-500 dark:text-gray-400">
@@ -281,17 +276,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                     </div>
                   )}
                 <div className="mb-2">
-                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">{poll.title}</h3>
-                  <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${
-                      poll.poll_type === 'yes_no' 
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                        : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                    }`}>
-                      {poll.poll_type === 'yes_no' ? 'Yes/No' : 'Ranked Choice'}
+                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
+                    <span className="mr-2 text-base">
+                      {poll.poll_type === 'yes_no' ? '✓' : '↕'}
                     </span>
-                  </div>
+                    {poll.title}
+                  </h3>
+                  <div className="flex items-center justify-between">
+                  <div></div>
                   {poll.response_deadline && (
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       Closed {(() => {
