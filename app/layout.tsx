@@ -32,6 +32,8 @@ export function generateViewport() {
     maximumScale: 1,
     userScalable: false,
     viewportFit: "cover",
+    // Help Safari with viewport stability
+    interactiveWidget: "resizes-content",
     themeColor: [
       { media: "(prefers-color-scheme: light)", color: "#ffffff" },
       { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }
@@ -61,10 +63,10 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1+Code:wght@700&display=swap" rel="stylesheet" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full overflow-hidden`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
       >
         <BuildTimer />
-        <div className="h-screen flex flex-col font-[family-name:var(--font-geist-sans)]">
+        <div className="h-screen-safe flex flex-col font-[family-name:var(--font-geist-sans)]">
           {/* This is where content from each page will be rendered */}
           {children}
         </div>

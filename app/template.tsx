@@ -102,7 +102,7 @@ export default function Template({ children }: AppTemplateProps) {
       </div>
 
       {/* Scrollable Content Area - consistent across all pages */}
-      <div className="flex-1 overflow-auto" 
+      <div className="flex-1 overflow-auto safari-scroll-container" 
            style={{ 
              paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
              paddingRight: 'max(1rem, env(safe-area-inset-right))',

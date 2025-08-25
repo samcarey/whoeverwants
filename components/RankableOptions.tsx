@@ -949,11 +949,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 aria-describedby={`${option.id}-instructions`}
               >
                 <div className="flex items-center justify-between h-full relative">
-                  {/* Left drag handle with 30% grabbable region */}
+                  {/* Left drag handle with grabbable region */}
                   <div 
-                    className="absolute left-0 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                    className="absolute -left-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
                     style={{
-                      width: '30%',
+                      width: 'calc(20% + 0.75rem)',
                       touchAction: 'none',
                       zIndex: 2
                     }}
@@ -961,7 +961,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     title="Drag to reorder"
                   >
                     {/* Visual number circle - positioned within the grabbable area */}
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
                       <div 
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
                           disabled 
@@ -987,12 +987,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     </span>
                   </div>
                   
-                  {/* Right drag handle with 30% grabbable region */}
+                  {/* Right drag handle with grabbable region */}
                   {!disabled && (
                     <div 
-                      className="absolute right-0 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                      className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
                       style={{
-                        width: '30%',
+                        width: 'calc(20% + 0.75rem)',
                         touchAction: 'none',
                         zIndex: 2
                       }}
@@ -1000,7 +1000,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       title="Drag to reorder"
                     >
                       {/* Visual hamburger menu - positioned within the grabbable area */}
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
+                      <div className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
                         <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
                         <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
                         <div className="w-4 h-0.5 bg-gray-400"></div>

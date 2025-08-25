@@ -33,6 +33,37 @@ body {
   min-height: -webkit-fill-available;
 }
 
+/* Safari iOS viewport fix - dynamic viewport units to handle address bar behavior */
+@supports (height: 100dvh) {
+  .h-screen-safe {
+    height: 100dvh !important;
+  }
+}
+
+/* Fallback for browsers that don't support dynamic viewport units */
+@supports not (height: 100dvh) {
+  .h-screen-safe {
+    height: 100vh !important;
+    height: -webkit-fill-available !important;
+  }
+}
+
+/* Safari iOS specific fixes to prevent scrolling issues */
+@supports (-webkit-touch-callout: none) {
+  /* This targets Safari on iOS specifically */
+  .h-screen-safe {
+    /* Prevent bounce scrolling at the document level */
+    position: relative;
+    overflow: hidden;
+  }
+  
+  /* Ensure proper touch scrolling within the scrollable areas */
+  .safari-scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+}
+
 /* Hide scrollbar */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* Internet Explorer 10+ */
