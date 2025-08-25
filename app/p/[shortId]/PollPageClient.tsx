@@ -8,7 +8,6 @@ import Countdown from "@/components/Countdown";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpButton from "@/components/FollowUpButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -1265,7 +1264,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
       
-      <FloatingHomeButton />
       <FloatingCopyLinkButton url={pollUrl} />
     </>
   );

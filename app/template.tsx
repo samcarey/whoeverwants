@@ -67,48 +67,90 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
+  const isPollPage = pathname.startsWith('/p/');
+  const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
+
   return (
     <>
-      {/* Fixed Header - always present */}
-      <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
-           style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
-          {/* Left element - stays at top */}
-          <div className="flex items-center justify-center">
-            {leftElement}
-          </div>
-          
-          {/* Title - vertically centered with slight downward and leftward offset */}
-          {pageTitle && (
-            <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
-              <h1 className="text-xl font-bold text-center break-words select-none whitespace-nowrap">
-                {pageTitle}
-              </h1>
+      {/* Fixed Header - skip for poll and create poll pages */}
+      {!isPollPage && !isCreatePollPage && (
+        <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
+             style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
+            {/* Left element - stays at top */}
+            <div className="flex items-center justify-center">
+              {leftElement}
             </div>
-          )}
-          
-          {/* Homepage gets special title treatment - vertically centered with font-size-based offset and left nudge */}
-          {pathname === '/' && (
-            <div className="absolute left-1/2 top-1/2" id="home-title" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
-              {/* Home page will inject its dynamic title here - offset will be proportional to font size */}
+            
+            {/* Title - vertically centered with slight downward and leftward offset */}
+            {pageTitle && (
+              <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
+                <h1 className="text-xl font-bold text-center break-words select-none whitespace-nowrap">
+                  {pageTitle}
+                </h1>
+              </div>
+            )}
+            
+            {/* Homepage gets special title treatment - vertically centered with font-size-based offset and left nudge */}
+            {pathname === '/' && (
+              <div className="absolute left-1/2 top-1/2" id="home-title" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
+                {/* Home page will inject its dynamic title here - offset will be proportional to font size */}
+              </div>
+            )}
+            
+            {/* Right element - stays at top */}
+            <div className="flex items-center justify-center">
+              {rightElement}
             </div>
-          )}
-          
-          {/* Right element - stays at top */}
-          <div className="flex items-center justify-center">
-            {rightElement}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Scrollable Content Area - consistent across all pages */}
       <div className="flex-1 overflow-auto safari-scroll-container" 
            style={{ 
+             paddingTop: (isPollPage || isCreatePollPage) ? 'env(safe-area-inset-top)' : '0',
              paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
              paddingRight: 'max(1rem, env(safe-area-inset-right))',
              paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
            }}>
         <div className="min-h-full">
+          {/* Back arrow and title for pages without top bar */}
+          {(isPollPage || isCreatePollPage) && (
+            <div className="relative">
+              {/* Back arrow in upper left */}
+              <div className="absolute left-0 top-6 z-10">
+                <button 
+                  onClick={() => window.history.back()}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                  aria-label="Go back"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Poll page title */}
+              {isPollPage && pollPageTitle && (
+                <div className="max-w-4xl mx-auto px-16 pt-6 pb-4">
+                  <h1 className="text-2xl font-bold text-center break-words">
+                    {pollPageTitle}
+                  </h1>
+                </div>
+              )}
+              
+              {/* Create poll page title */}
+              {isCreatePollPage && (
+                <div className="max-w-4xl mx-auto px-16 pt-6 pb-4">
+                  <h1 className="text-2xl font-bold text-center break-words">
+                    Create New Poll
+                  </h1>
+                </div>
+              )}
+            </div>
+          )}
+          
           <div className="max-w-4xl mx-auto px-4 py-6">
             {children}
           </div>

@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import FloatingHomeButton from "@/components/FloatingHomeButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -801,7 +800,6 @@ function CreatePollContent() {
         cancelText="Cancel"
       />
       
-      <FloatingHomeButton />
     </div>
   );
 }
