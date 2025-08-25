@@ -11,9 +11,10 @@ interface Voter {
 interface VoterListProps {
   pollId: string;
   className?: string;
+  refreshTrigger?: number; // Optional prop to trigger refresh
 }
 
-export default function VoterList({ pollId, className = "" }: VoterListProps) {
+export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +51,39 @@ export default function VoterList({ pollId, className = "" }: VoterListProps) {
   useEffect(() => {
     if (pollId) {
       fetchVoters();
+      
+      // Set up real-time subscription for new votes
+      const channel = supabase
+        .channel(`votes:${pollId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'votes',
+            filter: `poll_id=eq.${pollId}`
+          },
+          (payload) => {
+            console.log('Vote change received:', payload);
+            // Refetch voters when any vote changes
+            fetchVoters();
+          }
+        )
+        .subscribe();
+      
+      // Cleanup subscription on unmount
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [pollId]);
+
+  // Trigger refresh when refreshTrigger changes
+  useEffect(() => {
+    if (refreshTrigger && pollId) {
+      fetchVoters();
+    }
+  }, [refreshTrigger]);
 
   if (loading) {
     return (

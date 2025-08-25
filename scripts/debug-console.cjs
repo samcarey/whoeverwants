@@ -67,17 +67,17 @@ async function debugConsole(target = '') {
     // Determine URL to visit
     let url;
     if (!target) {
-      url = 'http://localhost:3001';
+      url = 'http://localhost:3000';
     } else if (target.startsWith('http')) {
       // Full URL provided
       url = target;
     } else if (target.startsWith('/')) {
-      url = `http://localhost:3001${target}`;
+      url = `http://localhost:3000${target}`;
     } else if (target.includes('-')) {
       // Looks like a UUID poll ID
-      url = `http://localhost:3001/p/${target}`;
+      url = `http://localhost:3000/p/${target}`;
     } else {
-      url = `http://localhost:3001${target}`;
+      url = `http://localhost:3000${target}`;
     }
     
     console.log(`📍 Visiting: ${url}\n`);

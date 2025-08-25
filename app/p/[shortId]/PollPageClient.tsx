@@ -66,6 +66,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
+  const [voterListRefresh, setVoterListRefresh] = useState(0);
 
   const isPollExpired = useMemo(() => 
     poll.response_deadline && new Date(poll.response_deadline) <= currentTime, 
@@ -717,6 +718,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setHasVoted(true);
       setUserVoteId(voteId);
       
+      // Trigger voter list refresh immediately
+      setVoterListRefresh(prev => prev + 1);
+      
       // Save vote to localStorage so user can't vote again (only for new votes)
       if (!isEditingVote) {
         markPollAsVoted(poll.id, voteId, isAbstaining);
@@ -748,7 +752,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       <div className="poll-content">
         {/* Show creator name if available */}
         {poll.creator_name && (
-          <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4 mt-1">
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-2">
             Created by {poll.creator_name}
           </div>
         )}
@@ -1186,7 +1190,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
           {/* Voter List - always visible */}
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <VoterList pollId={poll.id} />
+            <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
           </div>
 
           {/* Forget Poll Button */}

@@ -117,6 +117,20 @@ function CreatePollContent() {
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
   };
 
+  // Check if an option is a duplicate
+  const isDuplicateOption = (index: number): boolean => {
+    const currentOption = options[index]?.trim().toLowerCase();
+    if (!currentOption) return false;
+    
+    // Check if this option appears elsewhere in the array
+    for (let i = 0; i < options.length; i++) {
+      if (i !== index && options[i]?.trim().toLowerCase() === currentOption) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   // Validation for poll options with specific error messages
   const getValidationError = (): string | null => {
     // Check title first
@@ -569,18 +583,17 @@ function CreatePollContent() {
 
   return (
     <div className="poll-content">
-        {followUpTo && (
-          <FollowUpHeader followUpToPollId={followUpTo} />
-        )}
+      {followUpTo && (
+        <FollowUpHeader followUpToPollId={followUpTo} />
+      )}
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
-            {error}
-          </div>
-        )}
-        
-        
-        <form onSubmit={(e) => {
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
+          {error}
+        </div>
+      )}
+      
+      <form onSubmit={(e) => {
           e.preventDefault();
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
@@ -607,18 +620,24 @@ function CreatePollContent() {
               Poll Options <span className="text-gray-500 font-normal">(blank for yes/no)</span>
             </label>
               <div className="space-y-2">
-                {options.map((option, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input
-                      ref={(el) => {
-                        optionRefs.current[index] = el;
-                      }}
-                      type="text"
-                      value={option}
-                      onChange={(e) => updateOption(index, e.target.value)}
-                      disabled={isLoading}
-                      maxLength={35}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                {options.map((option, index) => {
+                  const isDuplicate = isDuplicateOption(index);
+                  return (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        ref={(el) => {
+                          optionRefs.current[index] = el;
+                        }}
+                        type="text"
+                        value={option}
+                        onChange={(e) => updateOption(index, e.target.value)}
+                        disabled={isLoading}
+                        maxLength={35}
+                        className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          isDuplicate 
+                            ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100' 
+                            : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
+                        }`}
                       placeholder={
                         (() => {
                           const filledOptions = options.filter(opt => opt.trim() !== '');
@@ -659,7 +678,8 @@ function CreatePollContent() {
                       );
                     })()}
                   </div>
-                ))}
+                  );
+                })}
               </div>
           </div>
 
