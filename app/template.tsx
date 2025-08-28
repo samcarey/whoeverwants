@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import ProfileButton from '@/components/ProfileButton';
+import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -131,9 +132,16 @@ export default function Template({ children }: AppTemplateProps) {
                 </button>
               </div>
               
+              {/* Copy link button in upper right for poll pages */}
+              {isPollPage && (
+                <div className="absolute right-0 top-6 z-10">
+                  <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
+                </div>
+              )}
+              
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
-                <div className="max-w-4xl mx-auto px-16 pt-6 pb-4">
+                <div className="max-w-4xl mx-auto px-16 pt-6 pb-1">
                   <h1 className="text-2xl font-bold text-center break-words">
                     {pollPageTitle}
                   </h1>
@@ -142,7 +150,7 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Create poll page title */}
               {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-6 pb-4">
+                <div className="max-w-4xl mx-auto px-16 pt-6 pb-1">
                   <h1 className="text-2xl font-bold text-center break-words">
                     Create New Poll
                   </h1>
@@ -151,7 +159,7 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage) ? 'pt-2 pb-6' : 'py-6'}`}>
             {children}
           </div>
         </div>

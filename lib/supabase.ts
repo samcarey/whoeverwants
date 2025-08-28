@@ -29,6 +29,7 @@ export interface Poll {
   creator_name?: string;
   is_closed?: boolean;
   follow_up_to?: string;
+  fork_of?: string;
 }
 
 export interface Vote {

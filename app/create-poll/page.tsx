@@ -8,8 +8,10 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FollowUpHeader from "@/components/FollowUpHeader";
+import ForkHeader from "@/components/ForkHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 import { getUserName, saveUserName } from "@/lib/userProfile";
+import { debugLog } from "@/lib/debugLogger";
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,10 @@ function CreatePollContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const followUpTo = searchParams.get('followUpTo');
+  const forkOf = searchParams.get('fork');
+  const duplicateOf = searchParams.get('duplicate');
+  
+  debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf, duplicateOf }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
   const [options, setOptions] = useState<string[]>(['']);
@@ -33,6 +39,8 @@ function CreatePollContent() {
   const isSubmittingRef = useRef(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [creatorName, setCreatorName] = useState<string>("");
+  const [originalPollData, setOriginalPollData] = useState<any>(null);
+  const [hasFormChanged, setHasFormChanged] = useState(false);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -199,7 +207,7 @@ function CreatePollContent() {
     return null;
   };
 
-  const isFormValid = () => {
+  const isFormValid = (): boolean => {
     return getValidationError() === null;
   };
 
@@ -227,6 +235,99 @@ function CreatePollContent() {
     }
   }, []);
 
+  // Load fork data if this is a fork
+  useEffect(() => {
+    debugLog.logObject('Fork useEffect running', { forkOf, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+    
+    if (forkOf && typeof window !== 'undefined') {
+      const forkDataKey = `fork-data-${forkOf}`;
+      const savedForkData = localStorage.getItem(forkDataKey);
+      
+      debugLog.logObject('Fork data lookup', { forkDataKey, found: !!savedForkData, data: savedForkData }, 'CreatePoll');
+      
+      if (savedForkData) {
+        try {
+          const forkData = JSON.parse(savedForkData);
+          debugLog.logObject('Parsed fork data', forkData, 'CreatePoll');
+          
+          // Store original data for change comparison
+          setOriginalPollData(forkData);
+          
+          // Auto-fill form with fork data
+          setTitle(forkData.title || "");
+          if (forkData.poll_type === 'ranked_choice' && forkData.options) {
+            setOptions(forkData.options);
+          }
+          if (forkData.response_deadline) {
+            // Parse the deadline and set appropriate form values
+            const deadline = new Date(forkData.response_deadline);
+            const now = new Date();
+            const diffMs = deadline.getTime() - now.getTime();
+            
+            if (diffMs > 0) {
+              const diffMinutes = Math.round(diffMs / (1000 * 60));
+              if (diffMinutes <= 10) setDeadlineOption("10min");
+              else if (diffMinutes <= 60) setDeadlineOption("1hr");
+              else if (diffMinutes <= 240) setDeadlineOption("4hr");
+              else if (diffMinutes <= 1440) setDeadlineOption("1day");
+              else setDeadlineOption("custom");
+            }
+          }
+          if (forkData.creator_name) {
+            setCreatorName(forkData.creator_name);
+          }
+        } catch (error) {
+          console.error('Error loading fork data:', error);
+        }
+      }
+    }
+  }, [forkOf]);
+
+  // Load duplicate data if this is a duplicate (for follow-up polls)
+  useEffect(() => {
+    debugLog.logObject('Duplicate useEffect running', { duplicateOf, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+    
+    if (duplicateOf && typeof window !== 'undefined') {
+      const duplicateDataKey = `duplicate-data-${duplicateOf}`;
+      const savedDuplicateData = localStorage.getItem(duplicateDataKey);
+      
+      debugLog.logObject('Duplicate data lookup', { duplicateDataKey, found: !!savedDuplicateData, data: savedDuplicateData }, 'CreatePoll');
+      
+      if (savedDuplicateData) {
+        try {
+          const duplicateData = JSON.parse(savedDuplicateData);
+          debugLog.logObject('Parsed duplicate data', duplicateData, 'CreatePoll');
+          
+          // Auto-fill form with duplicate data
+          setTitle(duplicateData.title || "");
+          if (duplicateData.poll_type === 'ranked_choice' && duplicateData.options) {
+            setOptions(duplicateData.options);
+          }
+          if (duplicateData.response_deadline) {
+            // Parse the deadline and set appropriate form values
+            const deadline = new Date(duplicateData.response_deadline);
+            const now = new Date();
+            const diffMs = deadline.getTime() - now.getTime();
+            
+            if (diffMs > 0) {
+              const diffMinutes = Math.round(diffMs / (1000 * 60));
+              if (diffMinutes <= 10) setDeadlineOption("10min");
+              else if (diffMinutes <= 60) setDeadlineOption("1hr");
+              else if (diffMinutes <= 240) setDeadlineOption("4hr");
+              else if (diffMinutes <= 1440) setDeadlineOption("1day");
+              else setDeadlineOption("custom");
+            }
+          }
+          if (duplicateData.creator_name) {
+            setCreatorName(duplicateData.creator_name);
+          }
+        } catch (error) {
+          console.error('Error loading duplicate data:', error);
+        }
+      }
+    }
+  }, [duplicateOf]);
+
   // Set default date/time values after client initialization
   useEffect(() => {
     if (isClient && !customDate && !customTime) {
@@ -242,6 +343,18 @@ function CreatePollContent() {
       saveFormState();
     }
   }, [title, options, deadlineOption, customDate, customTime, creatorName, isClient, saveFormState]);
+
+  // Track form changes for fork validation
+  useEffect(() => {
+    if (originalPollData && forkOf) {
+      const hasChanged = 
+        title !== originalPollData.title ||
+        JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
+        creatorName !== (originalPollData.creator_name || "");
+      
+      setHasFormChanged(hasChanged);
+    }
+  }, [title, options, creatorName, originalPollData, forkOf]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -498,6 +611,15 @@ function CreatePollContent() {
       if (followUpTo) {
         pollData.follow_up_to = followUpTo;
       }
+      // Add duplicate as follow-up reference if this is a duplicate
+      if (duplicateOf) {
+        pollData.follow_up_to = duplicateOf;
+      }
+
+      // Add fork reference if this is a fork
+      if (forkOf) {
+        pollData.fork_of = forkOf;
+      }
 
       // Add options for ranked choice polls
       if (pollType === 'ranked_choice') {
@@ -584,6 +706,23 @@ function CreatePollContent() {
     <div className="poll-content">
       {followUpTo && (
         <FollowUpHeader followUpToPollId={followUpTo} />
+      )}
+
+      {duplicateOf && (
+        <FollowUpHeader followUpToPollId={duplicateOf} />
+      )}
+
+      {forkOf && (
+        <>
+          <ForkHeader forkOfPollId={forkOf} />
+          {!hasFormChanged && (
+            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                Make changes to create your fork. The submit button will be enabled once you modify the poll.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {error && (
@@ -765,7 +904,7 @@ function CreatePollContent() {
           <button
             type="button"
             onClick={handleSubmitClick}
-            disabled={isLoading || isSubmitted || !isFormValid()}
+            disabled={isLoading || isSubmitted || !isFormValid() || (!!forkOf && !hasFormChanged)}
             className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitted ? (

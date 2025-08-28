@@ -195,7 +195,7 @@ export default function Home() {
         href="/create-poll"
         className="fixed left-1/2 transform -translate-x-1/2 z-50 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-all duration-200 hover:shadow-xl"
         style={{ 
-          bottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom)))' 
+          bottom: 'max(1rem, calc(1rem + env(safe-area-inset-bottom)))' 
         }}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

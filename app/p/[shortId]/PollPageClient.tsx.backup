@@ -9,9 +9,8 @@ import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
+import FollowUpButton from "@/components/FollowUpButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
-import ForkHeader from "@/components/ForkHeader";
-import PollActionsCard from "@/components/PollActionsCard";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
 import VoterList from "@/components/VoterList";
@@ -685,7 +684,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setUserVoteData(voteData);
         } else if (!updateError && (!returnedData || returnedData.length === 0)) {
           setVoteError("Failed to update vote. Vote may not exist.");
-        } else {
         }
       } else {
         
@@ -704,7 +702,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (!voteId) {
           setVoteError("Failed to submit vote. Please try again.");
           return;
-        } else {
         }
       }
 
@@ -750,106 +747,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   return (
     <>
       <div className="poll-content">
-        
-        {/* Show creation info */}
-        <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4">
-          {poll.creator_name ? (
-            <>Created by <span className="text-blue-600 dark:text-blue-400">{poll.creator_name}</span> {createdDate}</>
-          ) : (
-            <>Created {createdDate}</>
-          )}
-        </div>
+        {/* Show creator name if available */}
+        {poll.creator_name && (
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-2">
+            Created by {poll.creator_name}
+          </div>
+        )}
         
         {/* Show follow-up header if this poll is a follow-up to another poll */}
         {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
         
-        {/* Show fork header if this poll is a fork of another poll */}
-        {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+        {!isPollClosed && <Countdown deadline={poll.response_deadline || null} />}
         
-        {/* Poll status card - show expired, expiring, or manually closed */}
-        {(() => {
-          const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
-          const now = new Date();
-          const isExpired = deadline && deadline <= now;
-          
-          // Case 1: Poll was manually closed (is_closed is true, but might not have reached deadline)
-          if (pollClosed && deadline && deadline > now) {
-            // Manually closed before deadline
-            const closedDate = new Date(); // We'd need to track when it was closed, for now use current
-            return (
-              <div className="mb-3">
-                <div className="px-3 py-1.5 rounded-lg flex items-center justify-center bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700">
-                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                    Closed manually on {closedDate.toLocaleString("en-US", {
-                      month: "numeric",
-                      day: "numeric", 
-                      year: "2-digit",
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true
-                    })}
-                  </span>
-                </div>
-              </div>
-            );
-          }
-          
-          // Case 2: Poll expired and is closed
-          if (isPollClosed && isExpired) {
-            return (
-              <div className="mb-3">
-                <div className="px-3 py-1.5 rounded-lg flex items-center justify-center bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700">
-                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                    Expired on {deadline.toLocaleString("en-US", {
-                      month: "numeric",
-                      day: "numeric",
-                      year: "2-digit",
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true
-                    })}
-                  </span>
-                </div>
-              </div>
-            );
-          }
-          
-          // Case 3: Poll is still open and not expired - show countdown
-          if (!isPollClosed && !isExpired && deadline) {
-            return <Countdown deadline={poll.response_deadline || null} />;
-          }
-          
-          // Case 4: Timer expired but poll is still open - don't show a card
-          if (!isPollClosed && isExpired) {
-            return null;
-          }
-          
-          // No deadline set
-          return null;
-        })()}
-        
-        {/* For closed polls, show results first */}
-        {isPollClosed && (
-          <div className="py-2.5">
-            {loadingResults ? (
-              <div className="flex justify-center items-center py-3">
-                <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-            ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
-            ) : (
-              <div className="text-center py-1.5">
-                <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
-              </div>
-            )}
-          </div>
-        )}
-        
-        {/* Show voters list after results for closed polls, or after countdown for open polls when voted */}
-        {(isPollClosed || hasVoted) && (
+        {/* Show voters list right after countdown if user has voted */}
+        {hasVoted && (
           <div className="mt-6">
             <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
           </div>
@@ -858,7 +769,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
-              {isPollClosed ? (
+            {isPollClosed ? (
                 <div className="py-6">
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
@@ -869,7 +780,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   ) : pollResults ? (
                     <>
-                      {/* Results are now shown at the top, only show abstained bubble and button here */}
+                      <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      
+                      {/* Show abstained bubble if user abstained */}
                       {userVoteData?.is_abstain && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
@@ -880,9 +793,76 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         </div>
                       )}
                       
+                      <div className="mt-6 flex justify-center items-center gap-3">
+                        {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
+                          <button
+                            onClick={handleCloseClick}
+                            disabled={isClosingPoll}
+                            className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                          >
+                            {isClosingPoll ? (
+                              <>
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Closing Poll...
+                              </>
+                            ) : (
+                              'Close Poll'
+                            )}
+                          </button>
+                        )}
+                        <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
+                      </div>
                       
-                      {/* Poll actions card */}
-                      <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
+                      {/* Show user's vote after buttons */}
+                      {hasVoted && (
+                        <div className="mt-6 text-center">
+                          <div className="text-left max-w-sm mx-auto">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-medium">Your vote:</h4>
+                              {!isLoadingVoteData && !isPollClosed && (
+                                <button
+                                  onClick={() => setIsEditingVote(true)}
+                                  className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
+                            {isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       
                     </>
                   ) : (
@@ -945,78 +925,138 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Follow-up button for open polls when voted */}
+                  {!isPollClosed && (
+                    <div className="mt-4 text-center">
+                      <div className="flex justify-center items-center gap-3">
+                        <div className="flex justify-center items-center gap-3">
+                      {(isCreator || process.env.NODE_ENV === 'development') && (
+                        <button
+                          onClick={handleCloseClick}
+                          disabled={isClosingPoll}
+                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                        >
+                          {isClosingPoll ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Closing Poll...
+                            </>
+                          ) : (
+                            'Close Poll'
+                          )}
+                        </button>
+                      )}
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                    </div>
+                    
+                    {/* Show user's vote after buttons */}
+                    {hasVoted && (
+                      <div className="mt-6 text-center">
+                        <div className="text-left max-w-sm mx-auto">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium">Your vote:</h4>
+                            {!isLoadingVoteData && !isPollClosed && (
+                              <button
+                                onClick={() => setIsEditingVote(true)}
+                                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          {poll.poll_type === 'yes_no' ? (
+                            isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                #
+                              </div>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">
+                                Ranked Choice Vote
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     </div>
                   )}
                 </div>
               ) : (
                 <>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
-                      Select your preference
-                    </h4>
-                    
-                    <div className="flex gap-2 mb-4">
-                      <button 
-                        onClick={() => handleYesNoVote('yes')}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'yes' 
-                            ? 'bg-green-200 dark:bg-green-800 text-green-900 dark:text-green-100 border-2 border-green-400 dark:border-green-600' 
-                            : 'bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 border-2 border-transparent'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button 
-                        onClick={() => handleYesNoVote('no')}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'no' 
-                            ? 'bg-red-200 dark:bg-red-800 text-red-900 dark:text-red-100 border-2 border-red-400 dark:border-red-600' 
-                            : 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 border-2 border-transparent'
-                        }`}
-                      >
-                        No
-                      </button>
-                      <button 
-                        onClick={() => handleAbstain()}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          isAbstaining
-                            ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                            : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
-                        }`}
-                      >
-                        Abstain
-                      </button>
-                    </div>
-                    
-                    {voteError && (
-                      <div className="p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                        {voteError}
-                      </div>
-                    )}
+                  <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
+                    Select your preference
+                  </h4>
+                  
+                  <div className="flex gap-2 mb-4">
+                    <button 
+                      onClick={() => handleYesNoVote('yes')}
+                      className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                        yesNoChoice === 'yes' 
+                          ? 'bg-green-200 dark:bg-green-800 text-green-900 dark:text-green-100 border-2 border-green-400 dark:border-green-600' 
+                          : 'bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 border-2 border-transparent'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button 
+                      onClick={() => handleYesNoVote('no')}
+                      className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                        yesNoChoice === 'no' 
+                          ? 'bg-red-200 dark:bg-red-800 text-red-900 dark:text-red-100 border-2 border-red-400 dark:border-red-600' 
+                          : 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 border-2 border-transparent'
+                      }`}
+                    >
+                      No
+                    </button>
+                    <button 
+                      onClick={() => handleAbstain()}
+                      className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                        isAbstaining
+                          ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
+                          : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
+                      }`}
+                    >
+                      Abstain
+                    </button>
                   </div>
+                  
+                  {voteError && (
+                    <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                      {voteError}
+                    </div>
+                  )}
 
                   <div className="mb-4">
                     <label htmlFor="voterName" className="block text-sm font-medium mb-2">
@@ -1041,31 +1081,90 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Follow-up button for open polls */}
+                  <div className="mt-4 text-center">
+                    <div className="flex justify-center items-center gap-3">
+                      {(isCreator || process.env.NODE_ENV === 'development') && (
+                        <button
+                          onClick={handleCloseClick}
+                          disabled={isClosingPoll}
+                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                        >
+                          {isClosingPoll ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Closing Poll...
+                            </>
+                          ) : (
+                            'Close Poll'
+                          )}
+                        </button>
+                      )}
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
                     </div>
-                  )}
+                    
+                    {/* Show user's vote after buttons */}
+                    {hasVoted && (
+                      <div className="mt-6 text-center">
+                        <div className="text-left max-w-sm mx-auto">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium">Your vote:</h4>
+                            {!isLoadingVoteData && !isPollClosed && (
+                              <button
+                                onClick={() => setIsEditingVote(true)}
+                                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          {poll.poll_type === 'yes_no' ? (
+                            isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                #
+                              </div>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">
+                                Ranked Choice Vote
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -1082,7 +1181,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   ) : pollResults ? (
                     <>
-                      {/* Results are now shown at the top, only show abstained bubble and button here */}
+                      <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                      
+                      {/* Show abstained bubble if user abstained */}
                       {userVoteData?.is_abstain && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
@@ -1093,9 +1194,76 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         </div>
                       )}
                       
+                      <div className="mt-6 flex justify-center items-center gap-3">
+                        {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
+                          <button
+                            onClick={handleCloseClick}
+                            disabled={isClosingPoll}
+                            className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                          >
+                            {isClosingPoll ? (
+                              <>
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Closing Poll...
+                              </>
+                            ) : (
+                              'Close Poll'
+                            )}
+                          </button>
+                        )}
+                        <FollowUpButton pollId={poll.id} isPollClosed={isPollClosed} />
+                      </div>
                       
-                      {/* Poll actions card */}
-                      <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
+                      {/* Show user's vote after buttons */}
+                      {hasVoted && (
+                        <div className="mt-6 text-center">
+                          <div className="text-left max-w-sm mx-auto">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-medium">Your vote:</h4>
+                              {!isLoadingVoteData && !isPollClosed && (
+                                <button
+                                  onClick={() => setIsEditingVote(true)}
+                                  className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
+                            {isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       
                     </>
                   ) : (
@@ -1155,70 +1323,126 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Follow-up button for open polls when voted */}
+                  {!isPollClosed && (
+                    <div className="mt-4 text-center">
+                      <div className="flex justify-center items-center gap-3">
+                        <div className="flex justify-center items-center gap-3">
+                      {(isCreator || process.env.NODE_ENV === 'development') && (
+                        <button
+                          onClick={handleCloseClick}
+                          disabled={isClosingPoll}
+                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                        >
+                          {isClosingPoll ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Closing Poll...
+                            </>
+                          ) : (
+                            'Close Poll'
+                          )}
+                        </button>
+                      )}
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
+                    </div>
+                    
+                    {/* Show user's vote after buttons */}
+                    {hasVoted && (
+                      <div className="mt-6 text-center">
+                        <div className="text-left max-w-sm mx-auto">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium">Your vote:</h4>
+                            {!isLoadingVoteData && !isPollClosed && (
+                              <button
+                                onClick={() => setIsEditingVote(true)}
+                                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          {poll.poll_type === 'yes_no' ? (
+                            isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                #
+                              </div>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">
+                                Ranked Choice Vote
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     </div>
                   )}
                 </div>
               ) : (
                 <>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
-                      Reorder from most to least preferred
-                    </h4>
-                    
-                    {pollOptions.length > 0 && (
-                      <RankableOptions 
-                        key={isEditingVote ? 'editing' : 'new'}
-                        options={pollOptions} 
-                        onRankingChange={handleRankingChange}
-                        disabled={isSubmitting || isAbstaining}
-                        storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
-                        initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                      />
-                    )}
-                    
-                    {/* Abstain button for ranked choice */}
-                    <div className="mt-4">
-                      <button 
-                        onClick={() => handleAbstain()}
-                        className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                          isAbstaining
-                            ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                            : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
-                        }`}
-                      >
-                        {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain from this vote'}
-                      </button>
-                    </div>
-                    
-                    {voteError && (
-                      <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                        {voteError}
-                      </div>
-                    )}
+                  {pollOptions.length > 0 && (
+                    <RankableOptions 
+                      key={isEditingVote ? 'editing' : 'new'}
+                      options={pollOptions} 
+                      onRankingChange={handleRankingChange}
+                      disabled={isSubmitting || isAbstaining}
+                      storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
+                      initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
+                    />
+                  )}
+                  
+                  {/* Abstain button for ranked choice */}
+                  <div className="mt-4">
+                    <button 
+                      onClick={() => handleAbstain()}
+                      className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                        isAbstaining
+                          ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
+                          : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
+                      }`}
+                    >
+                      {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain from this vote'}
+                    </button>
                   </div>
+                  
+                  {voteError && (
+                    <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                      {voteError}
+                    </div>
+                  )}
 
                   <div className="mt-4">
                     <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-2">
@@ -1243,37 +1467,156 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Follow-up button for open polls */}
+                  <div className="mt-4 text-center">
+                    <div className="flex justify-center items-center gap-3">
+                      {(isCreator || process.env.NODE_ENV === 'development') && (
+                        <button
+                          onClick={handleCloseClick}
+                          disabled={isClosingPoll}
+                          className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+                        >
+                          {isClosingPoll ? (
+                            <>
+                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Closing Poll...
+                            </>
+                          ) : (
+                            'Close Poll'
+                          )}
+                        </button>
+                      )}
+                      <FollowUpButton pollId={poll.id} isPollClosed={false} />
                     </div>
-                  )}
+                    
+                    {/* Show user's vote after buttons */}
+                    {hasVoted && (
+                      <div className="mt-6 text-center">
+                        <div className="text-left max-w-sm mx-auto">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium">Your vote:</h4>
+                            {!isLoadingVoteData && !isPollClosed && (
+                              <button
+                                onClick={() => setIsEditingVote(true)}
+                                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                          {poll.poll_type === 'yes_no' ? (
+                            isLoadingVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                                  <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                </div>
+                                <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
+                              </div>
+                            ) : userVoteData ? (
+                              <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                                <div className={`w-8 h-8 rounded-full ${userVoteData.is_abstain ? 'bg-yellow-500' : userVoteData.selected_option === 'yes' ? 'bg-green-500' : 'bg-red-500'} flex items-center justify-center mr-3 text-white font-bold text-sm`}>
+                                  {userVoteData.is_abstain ? '−' : userVoteData.selected_option === 'yes' ? '✓' : '✗'}
+                                </div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">
+                                  {userVoteData.is_abstain ? 'Abstained' : userVoteData.selected_option === 'yes' ? 'Yes' : 'No'}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                                <div className="w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                  −
+                                </div>
+                                <span className="font-medium text-yellow-800 dark:text-yellow-200">
+                                  You Abstained
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center mr-3 text-white font-bold text-sm">
+                                #
+                              </div>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">
+                                Ranked Choice Vote
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
           )}
           
 
+          {/* Reopen Poll Button for Dev Mode Only */}
+          {isPollClosed && process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={handleReopenClick}
+                disabled={isReopeningPoll}
+                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                {isReopeningPoll ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Reopening Poll...
+                  </>
+                ) : (
+                  'Reopen Poll (Dev)'
+                )}
+              </button>
+            </div>
+          )}
+          
+          {/* Created date line */}
+          <div className="flex justify-between items-center text-gray-600 dark:text-gray-300 mt-4 mb-4">
+            <p className="text-xs">
+              Created {createdDate}
+              {isPollClosed && pollResults && (
+                <span> • {pollResults.total_votes} vote{pollResults.total_votes !== 1 ? 's' : ''}</span>
+              )}
+            </p>
+{poll.response_deadline && (
+              <p className="text-xs">
+                {isPollClosed ? 'Closed' : 'Expires'} {(() => {
+                  const deadline = new Date(poll.response_deadline);
+                  const now = new Date();
+                  const hoursUntilDeadline = (deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+                  
+                  if (hoursUntilDeadline <= 24 && hoursUntilDeadline > 0) {
+                    // Within 24 hours, show date and time
+                    return deadline.toLocaleString("en-US", {
+                      month: "numeric",
+                      day: "numeric",
+                      year: "2-digit",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true
+                    });
+                  } else {
+                    // More than 24 hours away or expired, just show date
+                    return deadline.toLocaleDateString("en-US", {
+                      month: "numeric",
+                      day: "numeric",
+                      year: "2-digit"
+                    });
+                  }
+                })()}
+              </p>
+            )}
+          </div>
           
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
@@ -1300,31 +1643,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </button>
             </div>
           )}
-
-      {/* Reopen Poll button at the very bottom */}
-      {isPollClosed && process.env.NODE_ENV === 'development' && (
-        <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex justify-center">
-            <button
-              onClick={handleReopenClick}
-              disabled={isReopeningPoll}
-              className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-            >
-              {isReopeningPoll ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Reopening Poll...
-                </>
-              ) : (
-                'Reopen Poll (Dev)'
-              )}
-            </button>
-          </div>
-        </div>
-      )}
       </div>
 
       <ConfirmationModal
@@ -1381,6 +1699,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
       
+      <FloatingCopyLinkButton url={pollUrl} />
     </>
   );
 }

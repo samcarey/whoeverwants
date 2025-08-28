@@ -217,7 +217,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div className="mb-2">
                     <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">
                       <span className="mr-2 text-base">
-                        {poll.poll_type === 'yes_no' ? '✓' : '↕'}
+                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
                       </span>
                       {poll.title}
                     </h3>
@@ -278,7 +278,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 <div className="mb-2">
                   <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
                     <span className="mr-2 text-base">
-                      {poll.poll_type === 'yes_no' ? '✓' : '↕'}
+                      {poll.poll_type === 'yes_no' ? '☐' : '☰'}
                     </span>
                     {poll.title}
                   </h3>

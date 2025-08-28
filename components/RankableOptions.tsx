@@ -902,11 +902,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 }`}>
                   {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
                 </p>
-                {listType === 'noPreference' && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                    Items placed here won&apos;t be ranked
-                  </p>
-                )}
               </div>
             </div>
           )}
@@ -929,9 +924,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 }}
                 className={`
                   absolute left-0 right-0 rounded-md shadow-sm
-                  ${disabled ? 'cursor-not-allowed bg-gray-100 dark:bg-gray-700' : 'cursor-grab active:cursor-grabbing bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'}
+                  ${disabled ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
                   ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
-                  border border-gray-200 dark:border-gray-600 p-3 select-none
+                  border border-gray-300 dark:border-gray-500 p-3 select-none
                   transition-colors duration-150
                 `}
                 style={{
@@ -958,7 +953,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       zIndex: 2
                     }}
                     onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
-                    title="Drag to reorder"
+                    title=""
                   >
                     {/* Visual number circle - positioned within the grabbable area */}
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
@@ -997,7 +992,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         zIndex: 2
                       }}
                       onPointerDown={(e) => handlePointerStart(e, option.id)}
-                      title="Drag to reorder"
+                      title=""
                     >
                       {/* Visual hamburger menu - positioned within the grabbable area */}
                       <div className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
@@ -1029,7 +1024,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         mainList,
         mainContainerRef,
         'main',
-        'Drag to reorder from most to least preferred',
+        '',
         ''
       )}
       

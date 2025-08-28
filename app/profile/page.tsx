@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName } from "@/lib/userProfile";
-import FloatingHomeButton from "@/components/FloatingHomeButton";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -132,8 +131,6 @@ export default function ProfilePage() {
           View on GitHub
         </a>
       </div>
-
-      <FloatingHomeButton />
     </div>
   );
 }
