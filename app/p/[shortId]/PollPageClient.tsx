@@ -49,9 +49,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
-  // Check if poll was reopened after deadline (is_closed is false but deadline has passed)
-  const wasReopenedAfterDeadline = !poll.is_closed && poll.response_deadline && new Date(poll.response_deadline) <= new Date();
-  const [manuallyReopened, setManuallyReopened] = useState(wasReopenedAfterDeadline);
+  // Don't automatically assume poll was reopened just because deadline passed
+  // Only set manuallyReopened when explicitly reopened by creator action
+  const [manuallyReopened, setManuallyReopened] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
   const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
@@ -62,16 +62,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isEditingVote, setIsEditingVote] = useState(false);
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
 
-  const isPollExpired = useMemo(() => 
-    poll.response_deadline && new Date(poll.response_deadline) <= currentTime, 
-    [poll.response_deadline, currentTime]
-  );
+  const isPollExpired = useMemo(() => {
+    // Use server-safe check
+    const now = currentTime || new Date();
+    return poll.response_deadline && new Date(poll.response_deadline) <= now;
+  }, [poll.response_deadline, currentTime]);
   
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
@@ -157,6 +158,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setLoadingResults(false);
     }
   }, [poll.id]);
+
+  // Initialize currentTime on client side to avoid hydration issues
+  useEffect(() => {
+    setCurrentTime(new Date());
+  }, []);
 
   // Initialize ranked choices with randomized options - runs only once
   useEffect(() => {
@@ -769,7 +775,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll status card - show expired, expiring, or manually closed */}
         {(() => {
           const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
-          const now = new Date();
+          const now = currentTime || new Date();
           const isExpired = deadline && deadline <= now;
           
           // Case 1: Poll was manually closed (is_closed is true, but might not have reached deadline)
@@ -777,19 +783,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             // Manually closed before deadline
             const closedDate = new Date(); // We'd need to track when it was closed, for now use current
             return (
-              <div className="mb-3">
-                <div className="px-3 py-1.5 rounded-lg flex items-center justify-center bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700">
-                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                    Closed manually on {closedDate.toLocaleString("en-US", {
-                      month: "numeric",
-                      day: "numeric", 
-                      year: "2-digit",
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true
-                    })}
-                  </span>
-                </div>
+              <div className="mb-3 text-center">
+                <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                  Closed manually on {closedDate.toLocaleString("en-US", {
+                    month: "numeric",
+                    day: "numeric", 
+                    year: "2-digit",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                  })}
+                </span>
               </div>
             );
           }
@@ -797,19 +801,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           // Case 2: Poll expired and is closed
           if (isPollClosed && isExpired) {
             return (
-              <div className="mb-3">
-                <div className="px-3 py-1.5 rounded-lg flex items-center justify-center bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700">
-                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                    Expired on {deadline.toLocaleString("en-US", {
-                      month: "numeric",
-                      day: "numeric",
-                      year: "2-digit",
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true
-                    })}
-                  </span>
-                </div>
+              <div className="mb-3 text-center">
+                <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                  Expired on {deadline.toLocaleString("en-US", {
+                    month: "numeric",
+                    day: "numeric",
+                    year: "2-digit",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                  })}
+                </span>
               </div>
             );
           }
@@ -835,7 +837,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               <div className="flex justify-center items-center py-3">
                 <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
             ) : pollResults ? (
@@ -960,7 +962,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <>
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             Closing Poll...
                           </>
@@ -1056,7 +1058,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <>
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             Closing Poll...
                           </>
@@ -1125,7 +1127,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
                               <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                               </svg>
                             </div>
                             <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
@@ -1170,7 +1172,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <>
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             Closing Poll...
                           </>
@@ -1258,7 +1260,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <>
                             <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                             Closing Poll...
                           </>
@@ -1314,7 +1316,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <>
                   <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 818-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                   Reopening Poll...
                 </>

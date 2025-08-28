@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface FloatingCopyLinkButtonProps {
   url: string;
@@ -8,14 +8,22 @@ interface FloatingCopyLinkButtonProps {
 
 export default function FloatingCopyLinkButton({ url }: FloatingCopyLinkButtonProps) {
   const [copied, setCopied] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+  const [clientUrl, setClientUrl] = useState("");
+
+  useEffect(() => {
+    setIsClient(true);
+    setClientUrl(url);
+  }, [url]);
 
   const copyToClipboard = async () => {
-    if (!url) return;
+    const urlToUse = clientUrl || url;
+    if (!urlToUse) return;
 
     try {
       // Try modern clipboard API first (requires HTTPS and browser support)
       if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(url);
+        await navigator.clipboard.writeText(urlToUse);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
         return;
@@ -23,7 +31,7 @@ export default function FloatingCopyLinkButton({ url }: FloatingCopyLinkButtonPr
 
       // Fallback for older browsers or non-secure contexts
       const textArea = document.createElement('textarea');
-      textArea.value = url;
+      textArea.value = urlToUse;
       textArea.style.position = 'fixed';
       textArea.style.left = '-999999px';
       textArea.style.top = '-999999px';
@@ -43,11 +51,18 @@ export default function FloatingCopyLinkButton({ url }: FloatingCopyLinkButtonPr
     } catch (error) {
       console.error("Failed to copy:", error);
       // Show a simple alert as final fallback
-      alert(`Copy this link: ${url}`);
+      alert(`Copy this link: ${urlToUse}`);
     }
   };
 
-  if (!url) return null;
+  // Only render after client hydration to avoid server-client mismatch
+  if (!isClient || !clientUrl) {
+    return (
+      <div className="w-8 h-8 flex items-center justify-center">
+        {/* Empty placeholder that matches the button dimensions */}
+      </div>
+    );
+  }
 
   return (
     <button

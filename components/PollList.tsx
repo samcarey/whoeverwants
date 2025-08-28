@@ -53,7 +53,8 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
   return (
     <div className="text-right text-xs text-gray-500 dark:text-gray-400">
-      <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span> left
+      <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span>
+      {timeLeft !== "Expired" && " left"}
     </div>
   );
 };

@@ -63,27 +63,34 @@ export default function Countdown({ deadline }: CountdownProps) {
     );
   }
 
+  // Don't render date formatting until client-side to avoid hydration mismatch
   const deadlineDate = isClient ? new Date(deadline).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }) : "";
+  }) : null;
 
-  return (
-    <div className="mb-3">
-      <div className={`px-3 py-1.5 rounded-lg flex items-center justify-center ${isExpired 
-        ? 'bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700' 
-        : 'bg-blue-100 dark:bg-blue-900 border border-blue-200 dark:border-blue-700'
-      }`}>
-        <span className={`text-sm font-bold ${isExpired 
-          ? 'text-red-700 dark:text-red-300' 
-          : 'text-blue-700 dark:text-blue-300'
-        }`}>
-          {isExpired ? `Poll Ended` : `Closing in ${timeLeft}`}
+  // Don't render time-dependent content until client-side
+  if (!isClient) {
+    return (
+      <div className="mb-3 text-center">
+        <span className="text-sm font-bold text-blue-700 dark:text-blue-300">
+          Loading...
         </span>
       </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 text-center">
+      <span className={`text-sm font-bold ${isExpired 
+        ? 'text-red-700 dark:text-red-300' 
+        : 'text-blue-700 dark:text-blue-300'
+      }`}>
+        {isExpired ? `Poll Ended` : `Closing in ${timeLeft}`}
+      </span>
     </div>
   );
 }
