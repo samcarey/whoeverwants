@@ -373,8 +373,8 @@ export default function Template({ children }: AppTemplateProps) {
 
       {/* Scroll-aware bottom bar */}
       <div 
-        className={`fixed bottom-0 left-0 right-0 bg-white/85 dark:bg-gray-900/85 backdrop-blur-[2.25px] shadow-lg z-50 transition-transform duration-200 ease-out ${
-          showBottomBar ? 'translate-y-0' : 'translate-y-full'
+        className={`fixed bottom-0 left-0 right-0 backdrop-blur-md shadow-lg z-50 transition-opacity duration-200 ease-out ${
+          showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       >
         <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center"
