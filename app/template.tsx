@@ -274,7 +274,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingTop: (isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'env(safe-area-inset-top)' : '0',
           paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
-          paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
+          paddingBottom: '1rem'
         }}>
         <div className="min-h-full">
           {/* Back arrow and title for pages without top bar */}
@@ -373,15 +373,15 @@ export default function Template({ children }: AppTemplateProps) {
 
       {/* Scroll-aware bottom bar */}
       <div 
-        className={`fixed left-0 right-0 backdrop-blur-lg shadow-lg z-50 transition-opacity duration-200 ease-out ${
+        className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg shadow-lg z-50 transition-opacity duration-200 ease-out ${
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
-        style={{ 
-          bottom: 0,
-          paddingBottom: 'env(safe-area-inset-bottom)'
-        }}
       >
-        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center">
+        <div className="max-w-4xl mx-auto px-4 flex items-center justify-center"
+             style={{ 
+               paddingTop: '0.625rem',
+               paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom, 0px))'
+             }}>
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 

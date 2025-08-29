@@ -94,12 +94,18 @@ body {
   }
 }
 
-/* iOS PWA bottom bar specific fix */
-@supports (-webkit-touch-callout: none) {
+/* iOS-specific safe area handling */
+@supports (padding: env(safe-area-inset-bottom)) {
+  /* In PWA mode, ensure safe area is handled correctly */
   @media (display-mode: standalone) {
-    /* Prevent blank space under bottom bar in PWA */
-    .fixed[style*="bottom"] {
+    /* Override any bottom positioning that might add space */
+    .fixed.bottom-0 {
       bottom: 0 !important;
+    }
+    
+    /* Ensure content area doesn't add extra bottom padding */
+    .safari-scroll-container {
+      padding-bottom: 0 !important;
     }
   }
 }
