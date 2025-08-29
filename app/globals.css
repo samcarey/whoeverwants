@@ -99,24 +99,27 @@ body {
     height: -webkit-fill-available !important;
   }
   
-  /* Force bottom bar to bottom edge */
-  .fixed[style*="bottom"] {
+  /* Bottom bar specific adjustments for PWA */
+  .fixed.bottom-0 {
+    /* Extend into safe area consistently */
     bottom: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    /* Prevent the jump by ensuring consistent positioning */
+    transform: none !important;
   }
 }
 
-/* iOS-specific PWA safe area override */
-@supports (-webkit-touch-callout: none) {
+/* Prevent safe area jumping by ensuring consistent baseline */
+@supports (env(safe-area-inset-bottom)) {
   @media (display-mode: standalone) {
-    /* Aggressive override for PWA mode */
-    .fixed {
-      bottom: 0 !important;
+    /* Use CSS custom property for consistent safe area handling */
+    :root {
+      --safe-area-bottom: env(safe-area-inset-bottom, 0px);
     }
     
-    /* Remove any viewport padding */
-    * {
-      -webkit-box-sizing: border-box;
-      box-sizing: border-box;
+    /* Apply consistent safe area to bottom bar */
+    .fixed.bottom-0 {
+      padding-bottom: var(--safe-area-bottom) !important;
     }
   }
 }
