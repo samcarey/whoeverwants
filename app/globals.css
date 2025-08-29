@@ -81,41 +81,61 @@ body {
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
-  /* Fix bottom bar positioning in PWA mode */
-  body {
-    /* Prevent any bottom padding in PWA */
-    padding-bottom: 0 !important;
-    margin-bottom: 0 !important;
+  /* Aggressive removal of all spacing */
+  html, body {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 100vh !important;
+    height: -webkit-fill-available !important;
+    overflow-x: hidden !important;
   }
   
-  html {
-    /* Remove any bottom spacing */
-    padding-bottom: 0 !important;
-  }
-  
-  /* Ensure proper viewport height in PWA */
+  /* Force viewport to use full screen */
   .h-screen-safe {
     height: 100vh !important;
     height: -webkit-fill-available !important;
+    min-height: 100vh !important;
+    min-height: -webkit-fill-available !important;
   }
   
-  /* Bottom bar specific adjustments for PWA - NO safe area padding */
+  /* Bottom bar - absolute bottom with no spacing */
   .fixed.bottom-0 {
-    /* Position at absolute bottom edge in PWA */
     bottom: 0 !important;
-    padding-bottom: 0 !important;
-    /* Prevent any transforms that might move it */
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
     transform: none !important;
+    position: fixed !important;
   }
   
-  /* Reduce bottom bar padding in PWA for tighter fit */
+  /* Minimal bottom bar content padding */
   .fixed.bottom-0 > div {
-    padding-top: 0.25rem !important;
-    padding-bottom: 0.25rem !important;
+    padding: 0.25rem 1rem !important;
+    margin: 0 !important;
   }
   
-  /* Override safe area for specific elements that might interfere */
+  /* Ensure content area doesn't interfere */
   .safari-scroll-container {
     padding-bottom: 1rem !important;
+    margin-bottom: 0 !important;
+  }
+  
+  /* Remove any possible viewport offset */
+  #__next {
+    min-height: 100vh !important;
+    height: 100vh !important;
+  }
+  
+  /* Override the main flex container */
+  .h-screen-safe.flex.flex-col {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+  }
+  
+  /* Ensure no extra margins or padding on any container */
+  .h-screen-safe.flex.flex-col > * {
+    margin: 0 !important;
   }
 }
