@@ -373,12 +373,15 @@ export default function Template({ children }: AppTemplateProps) {
 
       {/* Scroll-aware bottom bar */}
       <div 
-        className={`fixed bottom-0 left-0 right-0 backdrop-blur-md shadow-lg z-50 transition-opacity duration-200 ease-out ${
+        className={`fixed left-0 right-0 backdrop-blur-lg shadow-lg z-50 transition-opacity duration-200 ease-out ${
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
+        style={{ 
+          bottom: 0,
+          paddingBottom: 'env(safe-area-inset-bottom)'
+        }}
       >
-        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center"
-             style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
+        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center">
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 

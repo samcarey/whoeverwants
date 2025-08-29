@@ -78,3 +78,28 @@ body {
   max-width: 28rem; /* 448px - narrower for poll pages */
   margin: 0 auto;
 }
+
+/* PWA-specific fixes for iOS */
+@media (display-mode: standalone) {
+  /* Fix bottom bar positioning in PWA mode */
+  body {
+    /* Prevent double safe area padding */
+    padding-bottom: 0 !important;
+  }
+  
+  /* Ensure proper viewport height in PWA */
+  .h-screen-safe {
+    height: 100vh !important;
+    height: -webkit-fill-available !important;
+  }
+}
+
+/* iOS PWA bottom bar specific fix */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    /* Prevent blank space under bottom bar in PWA */
+    .fixed[style*="bottom"] {
+      bottom: 0 !important;
+    }
+  }
+}
