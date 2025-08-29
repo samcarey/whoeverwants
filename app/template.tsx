@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProfileButton from '@/components/ProfileButton';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
@@ -12,6 +12,7 @@ interface AppTemplateProps {
 
 export default function Template({ children }: AppTemplateProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isExternalReferrer, setIsExternalReferrer] = useState(false);
   const [shouldShowHomeButton, setShouldShowHomeButton] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
@@ -103,7 +104,6 @@ export default function Template({ children }: AppTemplateProps) {
   // Determine initial state based on pathname to avoid layout shift
   const getInitialPageTitle = () => {
     if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Create New Poll';
-    if (pathname === '/profile' || pathname === '/profile/') return 'Profile';
     return '';
   };
   
@@ -124,10 +124,6 @@ export default function Template({ children }: AppTemplateProps) {
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname === '/create-poll' || pathname === '/create-poll/') {
       setPageTitle('Create New Poll');
-      setLeftElement(<div className="w-6 h-6" />); // spacer
-      setRightElement(<div className="w-6 h-6" />); // spacer
-    } else if (pathname === '/profile' || pathname === '/profile/') {
-      setPageTitle('Profile');
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname.startsWith('/p/')) {
@@ -238,11 +234,12 @@ export default function Template({ children }: AppTemplateProps) {
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
+  const isProfilePage = pathname === '/profile' || pathname === '/profile/';
 
   return (
     <>
-      {/* Fixed Header - skip for poll, create poll, and home pages */}
-      {!isPollPage && !isCreatePollPage && pathname !== '/' && (
+      {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
+      {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -274,17 +271,17 @@ export default function Template({ children }: AppTemplateProps) {
         ref={scrollContainerRef}
         className="flex-1 overflow-auto safari-scroll-container" 
         style={{ 
-          paddingTop: (isPollPage || isCreatePollPage || pathname === '/') ? 'env(safe-area-inset-top)' : '0',
+          paddingTop: (isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'env(safe-area-inset-top)' : '0',
           paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
           paddingBottom: 'max(1rem, env(safe-area-inset-bottom))'
         }}>
         <div className="min-h-full">
           {/* Back arrow and title for pages without top bar */}
-          {(isPollPage || isCreatePollPage || pathname === '/') && (
+          {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
-              {/* Back arrow or home button in upper left - only for poll/create pages */}
-              {(isPollPage || isCreatePollPage) && (
+              {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
+              {(isPollPage || isCreatePollPage || isProfilePage) && (
                 <div className="absolute left-0 top-4 z-10">
                 {shouldShowHomeButton ? (
                   <button 
@@ -350,6 +347,15 @@ export default function Template({ children }: AppTemplateProps) {
                 </div>
               )}
               
+              {/* Profile page title */}
+              {isProfilePage && (
+                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                  <h1 className="text-2xl font-bold text-center break-words">
+                    Profile
+                  </h1>
+                </div>
+              )}
+              
               {/* Home page title */}
               {pathname === '/' && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1" id="home-title-content">
@@ -359,7 +365,7 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'}`}>
             {children}
           </div>
         </div>
@@ -367,30 +373,52 @@ export default function Template({ children }: AppTemplateProps) {
 
       {/* Scroll-aware bottom bar */}
       <div 
-        className={`fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 shadow-lg z-50 transition-transform duration-300 ease-in-out ${
+        className={`fixed bottom-0 left-0 right-0 bg-white/85 dark:bg-gray-900/85 backdrop-blur-[2.25px] shadow-lg z-50 transition-transform duration-200 ease-out ${
           showBottomBar ? 'translate-y-0' : 'translate-y-full'
         }`}
-        style={{ 
-          paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' 
-        }}
       >
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-center">
-          <div className="flex items-center gap-8">
+        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center justify-center"
+             style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
+          <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 
-              onClick={() => window.location.href = '/'}
-              className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+              onClick={pathname === '/' ? undefined : () => window.location.href = '/'}
+              className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
+                pathname === '/' 
+                  ? 'bg-blue-100 dark:bg-blue-900/30 cursor-default' 
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
+              }`}
               aria-label="Go to home"
+              disabled={pathname === '/'}
             >
-              <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-7 h-7 ${
+                pathname === '/' 
+                  ? 'text-blue-600 dark:text-blue-400' 
+                  : 'text-gray-400 dark:text-gray-500'
+              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
             </button>
             
-            {/* Profile button - smaller scale */}
-            <div className="transform scale-[1.5]">
-              <ProfileButton />
-            </div>
+            {/* Profile button - larger direct size */}
+            <button
+              onClick={isProfilePage ? undefined : () => router.push('/profile')}
+              className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
+                isProfilePage 
+                  ? 'bg-blue-100 dark:bg-blue-900/30 cursor-default' 
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
+              }`}
+              aria-label="Profile"
+              disabled={isProfilePage}
+            >
+              <svg className={`w-7 h-7 ${
+                isProfilePage 
+                  ? 'text-blue-600 dark:text-blue-400' 
+                  : 'text-gray-400 dark:text-gray-500'
+              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>

@@ -87,8 +87,8 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (loading) {
     return (
-      <div className={`p-4 ${className}`}>
-        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Voters</h3>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
         <div className="flex items-center justify-center py-4">
           <svg className="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -101,8 +101,8 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`p-4 ${className}`}>
-        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Voters</h3>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
         <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
       </div>
     );
@@ -110,8 +110,8 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (voters.length === 0) {
     return (
-      <div className={`p-4 ${className}`}>
-        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Voters</h3>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
         <div className="text-sm text-gray-500 dark:text-gray-400 italic">No votes yet</div>
       </div>
     );
@@ -142,8 +142,8 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`p-4 ${className}`}>
-      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
+      <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
         Voters ({voters.length})
       </h3>
       

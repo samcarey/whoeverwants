@@ -70,11 +70,11 @@ export default function Home() {
     const bluePhrase = phraseList[currentIndex];
     let calculatedBlueFontSize = "text-xl";
     if (bluePhrase.length > 20) {
-      calculatedBlueFontSize = "text-sm";
+      calculatedBlueFontSize = "text-base";
     } else if (bluePhrase.length > 15) {
-      calculatedBlueFontSize = "text-base";  
+      calculatedBlueFontSize = "text-lg";  
     } else if (bluePhrase.length > 12) {
-      calculatedBlueFontSize = "text-lg";
+      calculatedBlueFontSize = "text-xl";
     }
 
     setFontSize(calculatedBlueFontSize);
