@@ -81,22 +81,16 @@ body {
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
-  /* iOS Safe Area Support - this is the key fix for bottom blank space */
-  html {
-    min-height: calc(100% + env(safe-area-inset-top)) !important;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) !important;
-    margin: 0 !important;
-    overflow-x: hidden !important;
-  }
-  
-  body {
+  /* Aggressive removal of all spacing */
+  html, body {
+    padding: 0 !important;
     margin: 0 !important;
     height: 100vh !important;
     height: -webkit-fill-available !important;
     overflow-x: hidden !important;
   }
   
-  /* Force viewport to use full screen with safe area support */
+  /* Force viewport to use full screen */
   .h-screen-safe {
     height: 100vh !important;
     height: -webkit-fill-available !important;
@@ -104,35 +98,36 @@ body {
     min-height: -webkit-fill-available !important;
   }
   
-  /* Bottom bar - positioned at actual bottom with safe area support */
+  /* Bottom bar - absolute bottom with no spacing */
   .fixed.bottom-0 {
-    bottom: env(safe-area-inset-bottom) !important;
-    left: env(safe-area-inset-left) !important;
-    right: env(safe-area-inset-right) !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
     margin: 0 !important;
+    padding: 0 !important;
     transform: none !important;
     position: fixed !important;
   }
   
-  /* Bottom bar content padding */
+  /* Minimal bottom bar content padding */
   .fixed.bottom-0 > div {
     padding: 0.25rem 1rem !important;
     margin: 0 !important;
   }
   
-  /* Content area with safe area bottom padding */
+  /* Ensure content area doesn't interfere */
   .safari-scroll-container {
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+    padding-bottom: 1rem !important;
     margin-bottom: 0 !important;
   }
   
-  /* Next.js root with safe area support */
+  /* Remove any possible viewport offset */
   #__next {
     min-height: 100vh !important;
     height: 100vh !important;
   }
   
-  /* Main container with safe area support */
+  /* Override the main flex container */
   .h-screen-safe.flex.flex-col {
     height: 100vh !important;
     min-height: 100vh !important;
