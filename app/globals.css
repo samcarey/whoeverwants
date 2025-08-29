@@ -99,27 +99,23 @@ body {
     height: -webkit-fill-available !important;
   }
   
-  /* Bottom bar specific adjustments for PWA */
+  /* Bottom bar specific adjustments for PWA - NO safe area padding */
   .fixed.bottom-0 {
-    /* Extend into safe area consistently */
+    /* Position at absolute bottom edge in PWA */
     bottom: 0 !important;
-    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-    /* Prevent the jump by ensuring consistent positioning */
+    padding-bottom: 0 !important;
+    /* Prevent any transforms that might move it */
     transform: none !important;
   }
-}
-
-/* Prevent safe area jumping by ensuring consistent baseline */
-@supports (env(safe-area-inset-bottom)) {
-  @media (display-mode: standalone) {
-    /* Use CSS custom property for consistent safe area handling */
-    :root {
-      --safe-area-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    
-    /* Apply consistent safe area to bottom bar */
-    .fixed.bottom-0 {
-      padding-bottom: var(--safe-area-bottom) !important;
-    }
+  
+  /* Reduce bottom bar padding in PWA for tighter fit */
+  .fixed.bottom-0 > div {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+  
+  /* Override safe area for specific elements that might interfere */
+  .safari-scroll-container {
+    padding-bottom: 1rem !important;
   }
 }
