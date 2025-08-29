@@ -226,14 +226,19 @@ function CreatePollContent() {
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
-    loadFormState();
+    
+    // Only load form state if this is NOT a follow-up, fork, or duplicate
+    // (blank follow-ups should start with a clean form)
+    if (!followUpTo && !forkOf && !duplicateOf) {
+      loadFormState();
+    }
     
     // Load saved user name if no name in form state
     const savedName = getUserName();
     if (savedName && !creatorName) {
       setCreatorName(savedName);
     }
-  }, []);
+  }, [followUpTo, forkOf, duplicateOf]);
 
   // Load fork data if this is a fork
   useEffect(() => {
