@@ -321,6 +321,10 @@ function CreatePollContent() {
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
           }
+          
+          // Clean up the duplicate data from localStorage after loading
+          localStorage.removeItem(duplicateDataKey);
+          debugLog.info('Cleaned up duplicate data from localStorage', 'CreatePoll');
         } catch (error) {
           console.error('Error loading duplicate data:', error);
         }

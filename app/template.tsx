@@ -281,7 +281,7 @@ export default function Template({ children }: AppTemplateProps) {
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
               {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
-              {(isPollPage || isCreatePollPage || isProfilePage) && (
+              {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
                 <div className="absolute left-0 top-4 z-10">
                 {shouldShowHomeButton ? (
                   <button 
