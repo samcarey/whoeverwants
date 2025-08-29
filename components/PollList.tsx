@@ -181,11 +181,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   return (
     <div>
       {/* Open Polls Section */}
-      {openPolls.length > 0 ? (
+      {openPolls.length > 0 && (
         <div className="mb-8">
-          {showSections && (
-            <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">{sectionTitles.open}</h3>
-          )}
           <div className="space-y-3">
             {openPolls.map((poll, index) => {
               const isVoted = votedPollIds.has(poll.id);
@@ -241,87 +238,81 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
             })}
           </div>
         </div>
-      ) : (
-        showSections && (
-          <div className="mb-8 text-center">
-            <p className="text-xl text-gray-500 dark:text-gray-400">No Open Polls</p>
-          </div>
-        )
+      )}
+
+      {/* Horizontal divider between sections - only show if both sections have content */}
+      {openPolls.length > 0 && closedPolls.length > 0 && (
+        <div className="mb-8">
+          <hr className="border-gray-200 dark:border-gray-700" />
+        </div>
       )}
 
       {/* Closed Polls Section */}
-      <div className="mb-8">
-        {showSections && (
-          <h3 className="text-2xl font-bold mb-4 text-center text-gray-900 dark:text-white">{sectionTitles.closed}</h3>
-        )}
-        {closedPolls.length > 0 ? (
-          <div className="space-y-3">
-            {closedPolls.map((poll, index) => {
-              const isVoted = votedPollIds.has(poll.id);
-              const isAbstained = abstainedPollIds.has(poll.id);
-              const hasVotedOrAbstained = isVoted || isAbstained;
-              
-              return (
-                <div
-                  key={poll.id}
-                  onClick={() => router.push(`/p/${poll.id}`)}
-                  className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
-                >
-                  {hasVotedOrAbstained && (
-                    <div className="absolute top-1 right-1 z-10">
-                      <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
-                        isAbstained ? 'bg-yellow-700' : 'bg-green-700'
-                      }`}>
-                        {isAbstained ? 'ABSTAINED' : 'VOTED'}
+      {closedPolls.length > 0 && (
+        <div className="mb-8">
+            <div className="space-y-3">
+              {closedPolls.map((poll, index) => {
+                const isVoted = votedPollIds.has(poll.id);
+                const isAbstained = abstainedPollIds.has(poll.id);
+                const hasVotedOrAbstained = isVoted || isAbstained;
+                
+                return (
+                  <div
+                    key={poll.id}
+                    onClick={() => router.push(`/p/${poll.id}`)}
+                    className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
+                  >
+                    {hasVotedOrAbstained && (
+                      <div className="absolute top-1 right-1 z-10">
+                        <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
+                          isAbstained ? 'bg-yellow-700' : 'bg-green-700'
+                        }`}>
+                          {isAbstained ? 'ABSTAINED' : 'VOTED'}
+                        </span>
+                      </div>
+                    )}
+                  <div className="mb-2">
+                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
+                      <span className="mr-2 text-base">
+                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
                       </span>
+                      {poll.title}
+                    </h3>
+                    <div className="flex items-center justify-between">
+                    <div></div>
+                    {poll.response_deadline && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Closed {(() => {
+                          const deadline = new Date(poll.response_deadline);
+                          const now = new Date();
+                          const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                          
+                          if (hoursAgo <= 24) {
+                            // Within 24 hours, show only time
+                            return deadline.toLocaleTimeString("en-US", {
+                              hour: "numeric",
+                              minute: "2-digit",
+                              hour12: true
+                            });
+                          } else {
+                            // More than 24 hours ago, show only date
+                            return deadline.toLocaleDateString("en-US", {
+                              month: "numeric",
+                              day: "numeric",
+                              year: "2-digit"
+                            });
+                          }
+                        })()}
+                      </span>
+                    )}
                     </div>
-                  )}
-                <div className="mb-2">
-                  <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
-                    <span className="mr-2 text-base">
-                      {poll.poll_type === 'yes_no' ? '☐' : '☰'}
-                    </span>
-                    {poll.title}
-                  </h3>
-                  <div className="flex items-center justify-between">
-                  <div></div>
-                  {poll.response_deadline && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      Closed {(() => {
-                        const deadline = new Date(poll.response_deadline);
-                        const now = new Date();
-                        const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
-                        
-                        if (hoursAgo <= 24) {
-                          // Within 24 hours, show only time
-                          return deadline.toLocaleTimeString("en-US", {
-                            hour: "numeric",
-                            minute: "2-digit",
-                            hour12: true
-                          });
-                        } else {
-                          // More than 24 hours ago, show only date
-                          return deadline.toLocaleDateString("en-US", {
-                            month: "numeric",
-                            day: "numeric",
-                            year: "2-digit"
-                          });
-                        }
-                      })()}
-                    </span>
-                  )}
                   </div>
                 </div>
-              </div>
-            );
-          })}
-          </div>
-        ) : (
-          showSections && (
-            <p className="text-gray-500 dark:text-gray-400 italic text-center">No Closed Polls</p>
-          )
-        )}
-      </div>
+              );
+            })}
+            </div>
+        </div>
+      )}
     </div>
   );
 }

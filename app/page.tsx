@@ -66,18 +66,18 @@ export default function Home() {
     const nextIndex = (currentIndex + 1) % phraseList.length;
     localStorage.setItem(INDEX_KEY, nextIndex.toString());
     
-    // Calculate font size based on total text length to keep it on one line
-    const fullText = `Whoever Wants ${phraseList[currentIndex]}`;
-    let calculatedFontSize = "text-xl";
-    if (fullText.length > 32) {
-      calculatedFontSize = "text-sm";
-    } else if (fullText.length > 26) {
-      calculatedFontSize = "text-base";  
-    } else if (fullText.length > 20) {
-      calculatedFontSize = "text-lg";
+    // Calculate font size for blue phrase only to prevent wrapping on second line
+    const bluePhrase = phraseList[currentIndex];
+    let calculatedBlueFontSize = "text-xl";
+    if (bluePhrase.length > 20) {
+      calculatedBlueFontSize = "text-sm";
+    } else if (bluePhrase.length > 15) {
+      calculatedBlueFontSize = "text-base";  
+    } else if (bluePhrase.length > 12) {
+      calculatedBlueFontSize = "text-lg";
     }
 
-    setFontSize(calculatedFontSize);
+    setFontSize(calculatedBlueFontSize);
     setCurrentPhrase(phraseList[currentIndex]);
     setTitleReady(true);
   }, []);
@@ -111,15 +111,26 @@ export default function Home() {
     return () => clearTimeout(initialDelay);
   }, [currentPhrase]);
 
-  // Inject dynamic title into template header
+  // Inject dynamic title into page content - two line layout
   useEffect(() => {
-    const titleContainer = document.getElementById('home-title');
+    const titleContainer = document.getElementById('home-title-content');
     if (titleContainer) {
-      const titleElement = document.createElement('h1');
-      titleElement.className = `${fontSize} font-bold text-center flex-1 mx-2 whitespace-nowrap`;
-      titleElement.innerHTML = titleReady 
-        ? `Whoever Wants${displayedPhrase ? `<span class="text-blue-600 dark:text-blue-400" style="font-family: 'M PLUS 1 Code', monospace"> ${displayedPhrase}</span>` : ''}`
-        : '<span class="opacity-0">Whoever Wants</span>';
+      const titleElement = document.createElement('div');
+      titleElement.className = 'text-center';
+      
+      if (titleReady) {
+        titleElement.innerHTML = `
+          <h1 class="text-2xl font-bold mb-1">Whoever Wants</h1>
+          <div class="h-7 flex items-center justify-center mb-4">
+            ${displayedPhrase ? `<div class="text-blue-600 dark:text-blue-400 ${fontSize} font-bold" style="font-family: 'M PLUS 1 Code', monospace">${displayedPhrase}</div>` : ''}
+          </div>
+        `;
+      } else {
+        titleElement.innerHTML = `
+          <h1 class="text-2xl font-bold mb-1 opacity-0">Whoever Wants</h1>
+          <div class="h-7 mb-4"></div>
+        `;
+      }
       
       titleContainer.innerHTML = '';
       titleContainer.appendChild(titleElement);
@@ -165,6 +176,7 @@ export default function Home() {
 
   return (
     <>
+
       {loading && (
         <div className="flex justify-center items-center py-8">
           <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -189,20 +201,6 @@ export default function Home() {
       {!loading && !error && (
         <PollList polls={polls} showSections={true} />
       )}
-
-      {/* Floating Create New Poll Button */}
-      <Link
-        href="/create-poll"
-        className="fixed left-1/2 transform -translate-x-1/2 z-50 inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-full shadow-lg transition-all duration-200 hover:shadow-xl"
-        style={{ 
-          bottom: 'max(1rem, calc(1rem + env(safe-area-inset-bottom)))' 
-        }}
-      >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-        <span>New Poll</span>
-      </Link>
 
     </>
   );

@@ -42,10 +42,12 @@ export default function ProfileButton() {
   return (
     <button
       onClick={() => router.push('/profile')}
-      className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-800 dark:bg-gray-100 hover:bg-gray-900 dark:hover:bg-white transition-colors flex items-center justify-center text-xs font-semibold text-white dark:text-gray-900"
+      className="flex-shrink-0 w-6 h-6 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center"
       title={userName ? `Profile: ${userName}` : 'Set your name'}
     >
-      {initials || ""}
+      <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
     </button>
   );
 }
