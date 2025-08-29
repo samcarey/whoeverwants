@@ -83,7 +83,13 @@ body {
 @media (display-mode: standalone) {
   /* Fix bottom bar positioning in PWA mode */
   body {
-    /* Prevent double safe area padding */
+    /* Prevent any bottom padding in PWA */
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  
+  html {
+    /* Remove any bottom spacing */
     padding-bottom: 0 !important;
   }
   
@@ -92,20 +98,25 @@ body {
     height: 100vh !important;
     height: -webkit-fill-available !important;
   }
+  
+  /* Force bottom bar to bottom edge */
+  .fixed[style*="bottom"] {
+    bottom: 0 !important;
+  }
 }
 
-/* iOS-specific safe area handling */
-@supports (padding: env(safe-area-inset-bottom)) {
-  /* In PWA mode, ensure safe area is handled correctly */
+/* iOS-specific PWA safe area override */
+@supports (-webkit-touch-callout: none) {
   @media (display-mode: standalone) {
-    /* Override any bottom positioning that might add space */
-    .fixed.bottom-0 {
+    /* Aggressive override for PWA mode */
+    .fixed {
       bottom: 0 !important;
     }
     
-    /* Ensure content area doesn't add extra bottom padding */
-    .safari-scroll-container {
-      padding-bottom: 0 !important;
+    /* Remove any viewport padding */
+    * {
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
     }
   }
 }
