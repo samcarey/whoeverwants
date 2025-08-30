@@ -382,8 +382,12 @@ export default function Template({ children }: AppTemplateProps) {
         className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg shadow-lg z-50 transition-opacity duration-200 ease-out ${
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
+        style={{
+          // Extend background into safe area - always apply for proper iOS support
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
       >
-        <div className={`max-w-4xl mx-auto px-4 ${isIOSPWA ? 'pt-2' : 'py-2'} flex items-center justify-center`}>
+        <div className={`max-w-4xl mx-auto px-4 ${isIOSPWA ? 'pt-2 pb-0' : 'py-2'} flex items-center justify-center`}>
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 
