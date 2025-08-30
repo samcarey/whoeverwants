@@ -22,6 +22,9 @@
 html {
   /* Allow content to extend into safe areas on iOS */
   background: var(--background);
+  /* Essential for safe area insets to work */
+  min-height: calc(100% + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 body {
@@ -81,16 +84,13 @@ body {
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
-  /* Aggressive removal of all spacing */
-  html, body {
-    padding: 0 !important;
+  /* Only apply non-conflicting PWA styles */
+  body {
     margin: 0 !important;
-    height: 100vh !important;
-    height: -webkit-fill-available !important;
     overflow-x: hidden !important;
   }
   
-  /* Force viewport to use full screen */
+  /* Force viewport to use full screen without overriding safe areas */
   .h-screen-safe {
     height: 100vh !important;
     height: -webkit-fill-available !important;
@@ -98,44 +98,19 @@ body {
     min-height: -webkit-fill-available !important;
   }
   
-  /* Bottom bar - absolute bottom with no spacing */
+  /* Bottom bar positioning without overriding safe area padding */
   .fixed.bottom-0 {
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
     margin: 0 !important;
-    padding: 0 !important;
     transform: none !important;
     position: fixed !important;
-  }
-  
-  /* Minimal bottom bar content padding */
-  .fixed.bottom-0 > div {
-    padding: 0.25rem 1rem !important;
-    margin: 0 !important;
   }
   
   /* Ensure content area doesn't interfere */
   .safari-scroll-container {
     padding-bottom: 1rem !important;
     margin-bottom: 0 !important;
-  }
-  
-  /* Remove any possible viewport offset */
-  #__next {
-    min-height: 100vh !important;
-    height: 100vh !important;
-  }
-  
-  /* Override the main flex container */
-  .h-screen-safe.flex.flex-col {
-    height: 100vh !important;
-    min-height: 100vh !important;
-    max-height: 100vh !important;
-  }
-  
-  /* Ensure no extra margins or padding on any container */
-  .h-screen-safe.flex.flex-col > * {
-    margin: 0 !important;
   }
 }
