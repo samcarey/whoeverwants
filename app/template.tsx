@@ -31,39 +31,24 @@ export default function Template({ children }: AppTemplateProps) {
       const isPWA = window.matchMedia('(display-mode: standalone)').matches;
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       
-      if (isPWA && isIOS) {
-        // Aggressive multi-attempt viewport recalculation
-        const forceViewportFix = () => {
-          // Method 1: Force scroll
-          window.scrollTo(0, 1);
-          requestAnimationFrame(() => window.scrollTo(0, 0));
-          
-          // Method 2: Force layout reflow
-          document.body.style.height = '100.01%';
-          document.documentElement.style.height = '100.01%';
-          requestAnimationFrame(() => {
-            document.body.style.height = '';
-            document.documentElement.style.height = '';
-          });
-          
-          // Method 3: Force resize event
-          window.dispatchEvent(new Event('resize'));
-          
-          // Method 4: Set explicit heights
-          const vh = window.innerHeight;
-          document.body.style.minHeight = `${vh}px`;
-          document.documentElement.style.minHeight = `${vh}px`;
-        };
-        
-        // Run immediately
-        forceViewportFix();
-        
-        // Run multiple times with different delays
-        setTimeout(forceViewportFix, 50);
-        setTimeout(forceViewportFix, 100);
-        setTimeout(forceViewportFix, 200);
-        setTimeout(forceViewportFix, 500);
-      }
+      // Set actual viewport height as CSS custom property for ALL devices
+      const setRealViewportHeight = () => {
+        const vh = window.innerHeight;
+        document.documentElement.style.setProperty('--real-vh', `${vh}px`);
+        console.log('Setting --real-vh to:', vh + 'px');
+      };
+      
+      // Set immediately
+      setRealViewportHeight();
+      
+      // Set on resize
+      const handleResize = () => setRealViewportHeight();
+      window.addEventListener('resize', handleResize);
+      
+      // Cleanup on unmount
+      return () => {
+        window.removeEventListener('resize', handleResize);
+      };
       
       const referrer = document.referrer;
       const historyLength = window.history.length;

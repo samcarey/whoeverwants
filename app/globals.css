@@ -33,18 +33,23 @@ body {
   min-height: -webkit-fill-available;
 }
 
-/* Safari iOS viewport fix - dynamic viewport units to handle address bar behavior */
+/* Safari iOS viewport fix - use real measured height first, then fallbacks */
+.h-screen-safe {
+  height: var(--real-vh, 100vh) !important;
+}
+
+/* Dynamic viewport fallback for browsers that support it */
 @supports (height: 100dvh) {
   .h-screen-safe {
-    height: 100dvh !important;
+    height: var(--real-vh, 100dvh) !important;
   }
 }
 
 /* Fallback for browsers that don't support dynamic viewport units */
 @supports not (height: 100dvh) {
   .h-screen-safe {
-    height: 100vh !important;
-    height: -webkit-fill-available !important;
+    height: var(--real-vh, 100vh) !important;
+    height: var(--real-vh, -webkit-fill-available) !important;
   }
 }
 
@@ -85,18 +90,15 @@ body {
   html, body {
     padding: 0 !important;
     margin: 0 !important;
-    min-height: 100vh !important;
-    min-height: 100dvh !important; /* Dynamic viewport height - adapts to changes */
+    min-height: var(--real-vh, 100vh) !important; /* Use real measured height */
     height: 100% !important;
     overflow-x: hidden !important;
   }
   
   /* Force viewport to use full screen */
   .h-screen-safe {
-    height: 100vh !important;
-    height: 100dvh !important; /* Dynamic viewport height for navigation fixes */
-    min-height: 100vh !important;
-    min-height: 100dvh !important;
+    height: var(--real-vh, 100vh) !important; /* Use real measured height */
+    min-height: var(--real-vh, 100vh) !important;
   }
   
   /* Bottom bar - absolute bottom positioning */
@@ -117,20 +119,15 @@ body {
   
   /* Remove any possible viewport offset */
   #__next {
-    min-height: 100vh !important;
-    min-height: 100dvh !important;
-    height: 100vh !important;
-    height: 100dvh !important;
+    min-height: var(--real-vh, 100vh) !important;
+    height: var(--real-vh, 100vh) !important;
   }
   
   /* Override the main flex container */
   .h-screen-safe.flex.flex-col {
-    height: 100vh !important;
-    height: 100dvh !important;
-    min-height: 100vh !important;
-    min-height: 100dvh !important;
-    max-height: 100vh !important;
-    max-height: 100dvh !important;
+    height: var(--real-vh, 100vh) !important;
+    min-height: var(--real-vh, 100vh) !important;
+    max-height: var(--real-vh, 100vh) !important;
   }
   
   /* Ensure no extra margins or padding on any container */
