@@ -383,7 +383,8 @@ export default function Template({ children }: AppTemplateProps) {
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         style={{
-          // Extend background into safe area - always apply for proper iOS support
+          // Proper safe area height calculation for iOS PWA
+          height: 'calc(60px + env(safe-area-inset-bottom, 0px))',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}
       >
