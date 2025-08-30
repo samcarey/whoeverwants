@@ -109,23 +109,11 @@ export default function Home() {
     return () => clearTimeout(initialDelay);
   }, [currentPhrase]);
 
-  // Inject dynamic title into page content - two line layout
+  // Inject only the dynamic blue phrase
   useEffect(() => {
-    const titleContainer = document.getElementById('home-title-content');
-    if (titleContainer) {
-      const titleElement = document.createElement('div');
-      titleElement.className = 'text-center';
-      
-      // Always show "Whoever Wants" immediately, animate the blue phrase
-      titleElement.innerHTML = `
-        <h1 class="text-2xl font-bold mb-1">Whoever Wants</h1>
-        <div class="h-7 flex items-center justify-center mb-4">
-          ${displayedPhrase ? `<div class="text-blue-600 dark:text-blue-400 ${fontSize} font-bold" style="font-family: 'M PLUS 1 Code', monospace">${displayedPhrase}</div>` : ''}
-        </div>
-      `;
-      
-      titleContainer.innerHTML = '';
-      titleContainer.appendChild(titleElement);
+    const phraseContainer = document.getElementById('home-phrase-content');
+    if (phraseContainer && displayedPhrase) {
+      phraseContainer.innerHTML = `<div class="text-blue-600 dark:text-blue-400 ${fontSize} font-bold" style="font-family: 'M PLUS 1 Code', monospace">${displayedPhrase}</div>`;
     }
   }, [fontSize, displayedPhrase]);
 
