@@ -32,18 +32,37 @@ export default function Template({ children }: AppTemplateProps) {
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       
       if (isPWA && isIOS) {
-        // Multiple approaches to force layout recalculation
-        setTimeout(() => {
-          // Force a tiny scroll to trigger viewport recalculation
+        // Aggressive multi-attempt viewport recalculation
+        const forceViewportFix = () => {
+          // Method 1: Force scroll
           window.scrollTo(0, 1);
-          window.scrollTo(0, 0);
+          requestAnimationFrame(() => window.scrollTo(0, 0));
           
-          // Force layout reflow
-          document.body.style.height = '100.1%';
+          // Method 2: Force layout reflow
+          document.body.style.height = '100.01%';
+          document.documentElement.style.height = '100.01%';
           requestAnimationFrame(() => {
             document.body.style.height = '';
+            document.documentElement.style.height = '';
           });
-        }, 100);
+          
+          // Method 3: Force resize event
+          window.dispatchEvent(new Event('resize'));
+          
+          // Method 4: Set explicit heights
+          const vh = window.innerHeight;
+          document.body.style.minHeight = `${vh}px`;
+          document.documentElement.style.minHeight = `${vh}px`;
+        };
+        
+        // Run immediately
+        forceViewportFix();
+        
+        // Run multiple times with different delays
+        setTimeout(forceViewportFix, 50);
+        setTimeout(forceViewportFix, 100);
+        setTimeout(forceViewportFix, 200);
+        setTimeout(forceViewportFix, 500);
       }
       
       const referrer = document.referrer;
