@@ -277,7 +277,7 @@ export default function Template({ children }: AppTemplateProps) {
         ref={scrollContainerRef}
         className="flex-1 overflow-auto safari-scroll-container" 
         style={{ 
-          paddingTop: (isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'env(safe-area-inset-top)' : '0',
+          paddingTop: '0',
           paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
           paddingBottom: '1rem'
