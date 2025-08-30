@@ -40,7 +40,6 @@ export default function Home() {
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
-  const [titleReady, setTitleReady] = useState<boolean>(false);
 
   // Initialize and rotate phrases
   useEffect(() => {
@@ -79,7 +78,6 @@ export default function Home() {
 
     setFontSize(calculatedBlueFontSize);
     setCurrentPhrase(phraseList[currentIndex]);
-    setTitleReady(true);
   }, []);
 
   // Animate the phrase typing effect
@@ -118,24 +116,18 @@ export default function Home() {
       const titleElement = document.createElement('div');
       titleElement.className = 'text-center';
       
-      if (titleReady) {
-        titleElement.innerHTML = `
-          <h1 class="text-2xl font-bold mb-1">Whoever Wants</h1>
-          <div class="h-7 flex items-center justify-center mb-4">
-            ${displayedPhrase ? `<div class="text-blue-600 dark:text-blue-400 ${fontSize} font-bold" style="font-family: 'M PLUS 1 Code', monospace">${displayedPhrase}</div>` : ''}
-          </div>
-        `;
-      } else {
-        titleElement.innerHTML = `
-          <h1 class="text-2xl font-bold mb-1 opacity-0">Whoever Wants</h1>
-          <div class="h-7 mb-4"></div>
-        `;
-      }
+      // Always show "Whoever Wants" immediately, animate the blue phrase
+      titleElement.innerHTML = `
+        <h1 class="text-2xl font-bold mb-1">Whoever Wants</h1>
+        <div class="h-7 flex items-center justify-center mb-4">
+          ${displayedPhrase ? `<div class="text-blue-600 dark:text-blue-400 ${fontSize} font-bold" style="font-family: 'M PLUS 1 Code', monospace">${displayedPhrase}</div>` : ''}
+        </div>
+      `;
       
       titleContainer.innerHTML = '';
       titleContainer.appendChild(titleElement);
     }
-  }, [fontSize, titleReady, displayedPhrase]);
+  }, [fontSize, displayedPhrase]);
 
   // Fetch polls
   useEffect(() => {
