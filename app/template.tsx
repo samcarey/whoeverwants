@@ -119,9 +119,8 @@ export default function Template({ children }: AppTemplateProps) {
       setIsExternalReferrer(isExternal);
       setShouldShowHomeButton(showHome);
       
-      // Detect iOS PWA mode
+      // Detect iOS PWA mode (reuse isIOS from above)
       const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       setIsIOSPWA(isStandalone && isIOS);
     }
   }, [pathname]);
