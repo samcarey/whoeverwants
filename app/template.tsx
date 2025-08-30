@@ -383,11 +383,11 @@ export default function Template({ children }: AppTemplateProps) {
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         style={{
-          // Expand height to include safe area but align content to top
-          minHeight: 'calc(60px + env(safe-area-inset-bottom, 0px))'
+          // Simple approach: just extend background into safe area
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}
       >
-        <div className="max-w-4xl mx-auto px-4 py-2 flex items-start justify-center" style={{ height: '60px' }}>
+        <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 
