@@ -193,20 +193,20 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    // Only enable on iOS PWA
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    
-    if (!isStandalone || !isIOS) return;
+    // Always enable for testing - check iOS PWA later
+    console.log('Pull-to-refresh: Setting up event listeners');
     
     let startY = 0;
     let currentY = 0;
     let isAtTop = true;
+    let isDragging = false;
     
     const handleTouchStart = (e: TouchEvent) => {
+      console.log('Touch start detected');
       startY = e.touches[0].clientY;
       const scrollContainer = document.querySelector('.safari-scroll-container');
-      isAtTop = scrollContainer ? scrollContainer.scrollTop === 0 : true;
+      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
+      console.log('At top:', isAtTop, 'ScrollTop:', scrollContainer?.scrollTop);
     };
     
     const handleTouchMove = (e: TouchEvent) => {
@@ -215,10 +215,14 @@ export default function Home() {
       currentY = e.touches[0].clientY;
       const deltaY = currentY - startY;
       
-      if (deltaY > 0 && deltaY < 120) {
+      console.log('Touch move - deltaY:', deltaY);
+      
+      if (deltaY > 10) {
         // Pulling down from top
+        isDragging = true;
         setPullDistance(deltaY);
         setIsPulling(deltaY > 60);
+        console.log('Pull distance:', deltaY, 'Is pulling:', deltaY > 60);
         
         // Prevent default scrolling when pulling
         e.preventDefault();
@@ -226,26 +230,31 @@ export default function Home() {
     };
     
     const handleTouchEnd = () => {
-      if (isPulling && pullDistance > 60) {
+      console.log('Touch end - isPulling:', isPulling, 'pullDistance:', pullDistance, 'isDragging:', isDragging);
+      
+      if (isDragging && pullDistance > 60) {
+        console.log('Triggering refresh!');
         // Trigger refresh
         refreshPolls();
       }
       
       // Reset state
+      isDragging = false;
       setIsPulling(false);
       setPullDistance(0);
     };
     
-    document.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    // Add to document body to capture all touch events
+    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
     
     return () => {
-      document.removeEventListener('touchstart', handleTouchStart);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
+      document.body.removeEventListener('touchstart', handleTouchStart);
+      document.body.removeEventListener('touchmove', handleTouchMove);
+      document.body.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isPulling, pullDistance, refreshPolls]);
+  }, [pullDistance, refreshPolls]);
 
   return (
     <>
