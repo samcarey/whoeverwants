@@ -27,6 +27,25 @@ export default function Template({ children }: AppTemplateProps) {
   // Also determine if back button should show home icon instead
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Force viewport recalculation on iOS PWA navigation to prevent white bar
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      
+      if (isPWA && isIOS) {
+        // Multiple approaches to force layout recalculation
+        setTimeout(() => {
+          // Force a tiny scroll to trigger viewport recalculation
+          window.scrollTo(0, 1);
+          window.scrollTo(0, 0);
+          
+          // Force layout reflow
+          document.body.style.height = '100.1%';
+          requestAnimationFrame(() => {
+            document.body.style.height = '';
+          });
+        }, 100);
+      }
+      
       const referrer = document.referrer;
       const historyLength = window.history.length;
       let showHome = false;
@@ -383,7 +402,7 @@ export default function Template({ children }: AppTemplateProps) {
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         style={{
-          // Simple approach: just extend background into safe area
+          // Extend into safe area with proper padding
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}
       >

@@ -86,7 +86,7 @@ body {
     padding: 0 !important;
     margin: 0 !important;
     min-height: 100vh !important;
-    min-height: 100svh !important; /* Small viewport height - fixes initial load */
+    min-height: 100dvh !important; /* Dynamic viewport height - adapts to changes */
     height: 100% !important;
     overflow-x: hidden !important;
   }
@@ -94,9 +94,9 @@ body {
   /* Force viewport to use full screen */
   .h-screen-safe {
     height: 100vh !important;
-    height: 100svh !important; /* Small viewport height for initial load fix */
+    height: 100dvh !important; /* Dynamic viewport height for navigation fixes */
     min-height: 100vh !important;
-    min-height: 100svh !important;
+    min-height: 100dvh !important;
   }
   
   /* Bottom bar - absolute bottom positioning */
@@ -118,19 +118,19 @@ body {
   /* Remove any possible viewport offset */
   #__next {
     min-height: 100vh !important;
-    min-height: 100svh !important;
+    min-height: 100dvh !important;
     height: 100vh !important;
-    height: 100svh !important;
+    height: 100dvh !important;
   }
   
   /* Override the main flex container */
   .h-screen-safe.flex.flex-col {
     height: 100vh !important;
-    height: 100svh !important;
+    height: 100dvh !important;
     min-height: 100vh !important;
-    min-height: 100svh !important;
+    min-height: 100dvh !important;
     max-height: 100vh !important;
-    max-height: 100svh !important;
+    max-height: 100dvh !important;
   }
   
   /* Ensure no extra margins or padding on any container */
