@@ -84,6 +84,42 @@ body {
   margin: 0 auto;
 }
 
+/* DEBUG: Global colors to test (no media query) */
+html {
+  background-color: red !important;
+}
+
+body {
+  background-color: blue !important;
+}
+
+.h-screen-safe {
+  background-color: yellow !important;
+}
+
+.flex-1 {
+  background-color: green !important;
+}
+
+.safari-scroll-container {
+  background-color: purple !important;
+}
+
+div[class*="max-w"] {
+  background-color: orange !important;
+}
+
+/* Target the bottom bar specifically - FORCE aggressive padding always */
+.fixed.bottom-0 {
+  background-color: orange !important;
+  padding-bottom: 250px !important; /* MASSIVE padding to eliminate blue */
+  bottom: -150px !important; /* Move it WAY down */
+}
+
+.fixed.bottom-0 > div {
+  background-color: orange !important;
+}
+
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
   /* Aggressive removal of all spacing for top */
