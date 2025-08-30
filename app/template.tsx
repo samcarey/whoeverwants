@@ -387,7 +387,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}
       >
-        <div className={`max-w-4xl mx-auto px-4 ${isIOSPWA ? 'pt-2 pb-0' : 'py-2'} flex items-center justify-center`}>
+        <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 
