@@ -84,13 +84,8 @@ body {
   margin: 0 auto;
 }
 
-/* Fix: Ensure bottom bar background extends to safe area */
-.fixed.bottom-0 {
-  /* This will be styled by the component's className */
-}
-
 /* PWA-specific fixes for iOS */
-@media (display-mode: standalone) {  
+@media (display-mode: standalone) {
   /* Aggressive removal of all spacing for top */
   html, body {
     padding: 0 !important;
