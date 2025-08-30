@@ -16,6 +16,7 @@ export default function Template({ children }: AppTemplateProps) {
   const [isExternalReferrer, setIsExternalReferrer] = useState(false);
   const [shouldShowHomeButton, setShouldShowHomeButton] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
+  const [isIOSPWA, setIsIOSPWA] = useState(false);
   const lastScrollY = useRef(0);
   const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -98,6 +99,11 @@ export default function Template({ children }: AppTemplateProps) {
       
       setIsExternalReferrer(isExternal);
       setShouldShowHomeButton(showHome);
+      
+      // Detect iOS PWA mode
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      setIsIOSPWA(isStandalone && isIOS);
     }
   }, [pathname]);
   
@@ -377,7 +383,7 @@ export default function Template({ children }: AppTemplateProps) {
           showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
+        <div className={`max-w-4xl mx-auto px-4 ${isIOSPWA ? 'pt-2' : 'py-2'} flex items-center justify-center`}>
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
             <button 

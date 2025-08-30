@@ -734,6 +734,14 @@ function CreatePollContent() {
         </>
       )}
 
+      {!followUpTo && !forkOf && !duplicateOf && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <p className="text-sm text-blue-700 dark:text-blue-300 text-center">
+            Private until you share the link
+          </p>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
