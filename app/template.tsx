@@ -31,11 +31,19 @@ export default function Template({ children }: AppTemplateProps) {
       const isPWA = window.matchMedia('(display-mode: standalone)').matches;
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       
+      
       // Set actual viewport height as CSS custom property for ALL devices
       const setRealViewportHeight = () => {
         const vh = window.innerHeight;
         document.documentElement.style.setProperty('--real-vh', `${vh}px`);
         console.log('Setting --real-vh to:', vh + 'px');
+        console.log('Window dimensions:', { width: window.innerWidth, height: window.innerHeight });
+        console.log('Document dimensions:', { 
+          scrollWidth: document.documentElement.scrollWidth,
+          scrollHeight: document.documentElement.scrollHeight,
+          clientWidth: document.documentElement.clientWidth,
+          clientHeight: document.documentElement.clientHeight
+        });
       };
       
       // Set immediately
