@@ -377,7 +377,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-[60] animate-fade-in"
+            className="fixed inset-0 backdrop-blur-sm bg-white/30 dark:bg-black/30 z-[60] animate-fade-in"
             onClick={() => setShowModal(false)}
           />
           
