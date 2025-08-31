@@ -386,15 +386,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
           <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
             <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
               <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                  Follow up to: {modalPoll.title}
-                </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
                   Follow up with the same recipients
-                </p>
+                </h3>
               </div>
               
               <div className="flex gap-3">
