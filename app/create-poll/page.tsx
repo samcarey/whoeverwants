@@ -808,22 +808,24 @@ function CreatePollContent() {
             <label className="block text-sm font-medium mb-3">
               Type
             </label>
-            <div className="relative inline-flex bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-1">
+            <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-lg p-1 mb-1">
               <div 
-                className={`absolute top-1 bottom-1 bg-white dark:bg-gray-700 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
-                  pollType === 'nomination' ? 'transform translate-x-full' : 'transform translate-x-0'
+                className={`absolute top-1 bottom-1 w-1/2 rounded-md shadow-sm transition-all duration-200 ease-in-out ${
+                  pollType === 'nomination' 
+                    ? 'transform translate-x-full bg-blue-100 dark:bg-blue-900/30' 
+                    : 'transform translate-x-0 bg-green-100 dark:bg-green-900/30'
                 }`}
                 style={{
-                  width: pollType === 'nomination' ? '90px' : '43px',
-                  left: pollType === 'nomination' ? 'calc(100% - 94px)' : '4px'
+                  width: 'calc(50% - 4px)',
+                  left: pollType === 'nomination' ? 'calc(50% + 2px)' : '4px'
                 }}
               />
-              <div className="relative flex">
+              <div className="relative flex w-full">
                 <button
                   type="button"
                   onClick={() => setPollType('poll')}
                   disabled={isLoading}
-                  className={`px-3 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
                     pollType === 'poll'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
@@ -835,7 +837,7 @@ function CreatePollContent() {
                   type="button"
                   onClick={() => setPollType('nomination')}
                   disabled={isLoading}
-                  className={`px-3 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
                     pollType === 'nomination'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
