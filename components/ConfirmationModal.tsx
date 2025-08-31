@@ -49,7 +49,7 @@ export default function ConfirmationModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 backdrop-blur-sm bg-white/30 dark:bg-black/30"
+        className="absolute inset-0 backdrop-blur-md bg-gray-900/20 dark:bg-gray-900/40"
         onClick={onCancel}
       />
       
