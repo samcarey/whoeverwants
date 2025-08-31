@@ -853,7 +853,7 @@ function CreatePollContent() {
             <label className="block text-sm font-medium mb-2">
               {pollType === 'nomination' 
                 ? 'Starting Options' 
-                : 'Poll Options'} 
+                : 'Poll Options'}{' '}
               <span className="text-gray-500 font-normal">
                 {pollType === 'nomination' 
                   ? '(voters can add more)' 

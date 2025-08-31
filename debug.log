@@ -4855,3 +4855,214 @@
   "forkOf": null,
   "duplicateOf": null
 }
+[2025-08-31T22:02:05.145Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:05.373Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:05.374Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:05.374Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:05.389Z] [INFO] [CreatePoll] Duplicate useEffect running: {
+  "duplicateOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:05.448Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:05.449Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:08.125Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:08.139Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:08.959Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:09.055Z] [INFO] [CreatePoll] Fork useEffect running: {
+  "forkOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:09.055Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:09.056Z] [INFO] [CreatePoll] Duplicate useEffect running: {
+  "duplicateOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:09.126Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:09.133Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:11.808Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:11.819Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:11.844Z] [INFO] [CreatePoll] Duplicate useEffect running: {
+  "duplicateOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:11.912Z] [INFO] [CreatePoll] Fork useEffect running: {
+  "forkOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:11.927Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:11.928Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:14.410Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:14.419Z] [INFO] [CreatePoll] Duplicate useEffect running: {
+  "duplicateOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:14.419Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:14.431Z] [INFO] [CreatePoll] Fork useEffect running: {
+  "forkOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:14.479Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:14.481Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:16.570Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:16.641Z] [INFO] [CreatePoll] Fork useEffect running: {
+  "forkOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:16.642Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:16.642Z] [INFO] [CreatePoll] Duplicate useEffect running: {
+  "duplicateOf": null,
+  "windowExists": true
+}
+[2025-08-31T22:02:16.661Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:16.661Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:17.870Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:17.880Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:19.887Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:19.900Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:20.903Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:20.915Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:21.808Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:21.831Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:25.717Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:25.731Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
+[2025-08-31T22:02:27.809Z] [INFO] [CreatePoll] Create poll page loaded with params: {
+  "followUpTo": null,
+  "forkOf": null,
+  "duplicateOf": null
+}
