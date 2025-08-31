@@ -200,9 +200,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 isLongPress.current = false;
                 longPressTimer.current = setTimeout(() => {
                   isLongPress.current = true;
-                  // Vibrate on mobile
+                  // Vibrate on Android (iOS doesn't support Vibration API)
                   if ('vibrate' in navigator) {
-                    navigator.vibrate(50);
+                    try {
+                      navigator.vibrate(50);
+                    } catch (err) {
+                      // Silently fail on iOS
+                    }
                   }
                   setModalPoll(poll);
                   setShowModal(true);
@@ -287,9 +291,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   isLongPress.current = false;
                   longPressTimer.current = setTimeout(() => {
                     isLongPress.current = true;
-                    // Vibrate on mobile
+                    // Vibrate on Android (iOS doesn't support Vibration API)
                     if ('vibrate' in navigator) {
-                      navigator.vibrate(50);
+                      try {
+                        navigator.vibrate(50);
+                      } catch (err) {
+                        // Silently fail on iOS
+                      }
                     }
                     setModalPoll(poll);
                     setShowModal(true);
