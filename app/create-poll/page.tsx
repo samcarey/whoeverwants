@@ -810,10 +810,10 @@ function CreatePollContent() {
             </label>
             <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-lg p-1 mb-1">
               <div 
-                className={`absolute top-1 bottom-1 w-1/2 rounded-md shadow-sm transition-all duration-200 ease-in-out ${
+                className={`absolute top-1 bottom-1 rounded-md shadow-sm transition-all duration-200 ease-in-out ${
                   pollType === 'nomination' 
-                    ? 'transform translate-x-full bg-blue-100 dark:bg-blue-900/30' 
-                    : 'transform translate-x-0 bg-green-100 dark:bg-green-900/30'
+                    ? 'bg-blue-100 dark:bg-blue-900/30' 
+                    : 'bg-green-100 dark:bg-green-900/30'
                 }`}
                 style={{
                   width: 'calc(50% - 4px)',
