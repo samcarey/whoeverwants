@@ -389,8 +389,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
                   Follow up to: {modalPoll.title}
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Create a follow-up poll accessible to the same recipients
+                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  Follow up with the same recipients
                 </p>
               </div>
               
