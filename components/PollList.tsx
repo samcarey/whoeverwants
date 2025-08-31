@@ -201,27 +201,10 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   )}
                   <div
                     onClick={() => router.push(`/p/${poll.id}`)}
-                    className={`block ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
+                    className={`block ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative`}
                   >
-                  {hasVotedOrAbstained && (
-                    <div className="absolute top-1 right-1 z-10">
-                      <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
-                        isAbstained ? 'bg-yellow-700' : 'bg-green-700'
-                      }`}>
-                        {isAbstained ? 'ABSTAINED' : 'VOTED'}
-                      </span>
-                    </div>
-                  )}
-                  <div className="mb-2">
-                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors mb-2">
-                      <span className="mr-2 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
-                      </span>
-                      {poll.title}
-                    </h3>
-                  <div className="flex items-center justify-between">
-                    <div></div>
-                    {poll.response_deadline && (
+                  {poll.response_deadline && (
+                    <div className="absolute top-1 right-2 z-10">
                       <ClientOnly fallback={
                         <div className="text-right text-xs text-gray-500 dark:text-gray-400">
                           Loading...
@@ -229,8 +212,15 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       }>
                         <SimpleCountdown deadline={poll.response_deadline} />
                       </ClientOnly>
-                    )}
-                  </div>
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors pr-20">
+                      <span className="mr-2 text-base">
+                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
+                      </span>
+                      {poll.title}
+                    </h3>
                 </div>
               </div>
                 </React.Fragment>
@@ -260,52 +250,42 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div
                     key={poll.id}
                     onClick={() => router.push(`/p/${poll.id}`)}
-                    className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
+                    className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative`}
                   >
-                    {hasVotedOrAbstained && (
-                      <div className="absolute top-1 right-1 z-10">
-                        <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
-                          isAbstained ? 'bg-yellow-700' : 'bg-green-700'
-                        }`}>
-                          {isAbstained ? 'ABSTAINED' : 'VOTED'}
+                    {poll.response_deadline && (
+                      <div className="absolute top-1 right-2 z-10">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Closed {(() => {
+                            const deadline = new Date(poll.response_deadline);
+                            const now = new Date();
+                            const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                            
+                            if (hoursAgo <= 24) {
+                              // Within 24 hours, show only time
+                              return deadline.toLocaleTimeString("en-US", {
+                                hour: "numeric",
+                                minute: "2-digit",
+                                hour12: true
+                              });
+                            } else {
+                              // More than 24 hours ago, show only date
+                              return deadline.toLocaleDateString("en-US", {
+                                month: "numeric",
+                                day: "numeric",
+                                year: "2-digit"
+                              });
+                            }
+                          })()}
                         </span>
                       </div>
                     )}
-                  <div className="mb-2">
-                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
+                  <div>
+                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors pr-20">
                       <span className="mr-2 text-base">
                         {poll.poll_type === 'yes_no' ? '☐' : '☰'}
                       </span>
                       {poll.title}
                     </h3>
-                    <div className="flex items-center justify-between">
-                    <div></div>
-                    {poll.response_deadline && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        Closed {(() => {
-                          const deadline = new Date(poll.response_deadline);
-                          const now = new Date();
-                          const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
-                          
-                          if (hoursAgo <= 24) {
-                            // Within 24 hours, show only time
-                            return deadline.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                              hour12: true
-                            });
-                          } else {
-                            // More than 24 hours ago, show only date
-                            return deadline.toLocaleDateString("en-US", {
-                              month: "numeric",
-                              day: "numeric",
-                              year: "2-digit"
-                            });
-                          }
-                        })()}
-                      </span>
-                    )}
-                    </div>
                   </div>
                 </div>
               );
