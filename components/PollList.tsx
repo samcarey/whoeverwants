@@ -435,13 +435,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   Fork
                 </button>
               </div>
-              
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-full mt-4 py-2 text-gray-600 dark:text-gray-400 text-sm"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </>,
