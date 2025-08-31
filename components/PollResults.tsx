@@ -19,6 +19,10 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
   }
 
+  if (results.poll_type === 'nomination') {
+    return <NominationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
+  }
+
   return null;
 }
 
@@ -345,6 +349,113 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
             );
           })}
       </div>
+    </div>
+  );
+}
+
+function NominationResults({ results, isPollClosed, userVoteData }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any }) {
+  const [nominations, setNominations] = useState<{option: string, count: number}[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const loadNominations = async () => {
+      try {
+        // For now, we'll get nominations from poll options since there's no specific nomination results view
+        // In the future, this could be enhanced to count actual nomination votes
+        const pollOptions = typeof results.options === 'string' ? JSON.parse(results.options) : results.options || [];
+        const nominationCounts = pollOptions.map((option: string) => ({ option, count: 1 }));
+        setNominations(nominationCounts);
+      } catch (error) {
+        console.error('Error loading nominations:', error);
+        setNominations([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadNominations();
+  }, [results]);
+
+  const totalVotes = results.total_votes;
+
+  if (totalVotes === 0) {
+    const title = isPollClosed ? "No Nominations Received" : "No Nominations Yet";
+    const message = isPollClosed 
+      ? "This poll did not receive any nominations." 
+      : "This poll hasn't received any nominations.";
+    
+    return (
+      <div className="text-center">
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
+        <p className="text-gray-600 dark:text-gray-400">{message}</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-8">
+        <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-center">
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">
+          Nomination Results
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {totalVotes} nomination{totalVotes !== 1 ? 's' : ''} submitted
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="font-medium text-gray-900 dark:text-white">All Nominations:</h4>
+        {nominations.length === 0 ? (
+          <p className="text-gray-600 dark:text-gray-400 text-center py-4">
+            No nominations available.
+          </p>
+        ) : (
+          <div className="grid gap-2">
+            {nominations.map((nomination, index) => (
+              <div 
+                key={index}
+                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+              >
+                <span className="text-gray-900 dark:text-white font-medium">
+                  {nomination.option}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {nomination.count} nomination{nomination.count !== 1 ? 's' : ''}
+                  </span>
+                  <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                    {index + 1}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {userVoteData?.nominations && (
+        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+          <h5 className="font-medium text-blue-900 dark:text-blue-100 mb-2">Your Nominations:</h5>
+          <div className="space-y-1">
+            {userVoteData.nominations.map((nomination: string, index: number) => (
+              <div key={index} className="text-sm text-blue-800 dark:text-blue-200">
+                • {nomination}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

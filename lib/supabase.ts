@@ -20,7 +20,7 @@ export const supabase = createClient(
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice';
+  poll_type: 'yes_no' | 'ranked_choice' | 'nomination';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -42,7 +42,7 @@ export interface Vote {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice';
+  poll_type: 'yes_no' | 'ranked_choice' | 'nomination';
   created_at: string;
   response_deadline?: string;
   options?: string[];

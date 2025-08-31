@@ -26,6 +26,7 @@ function CreatePollContent() {
   debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf, duplicateOf }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
+  const [pollType, setPollType] = useState<'poll' | 'nomination'>('poll');
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
@@ -59,6 +60,7 @@ function CreatePollContent() {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
+        pollType,
         options,
         deadlineOption,
         customDate,
@@ -68,7 +70,7 @@ function CreatePollContent() {
       localStorage.setItem('pollFormState', JSON.stringify(formState));
       console.log('💾 Form state saved:', formState);
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName]);
+  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -97,6 +99,7 @@ function CreatePollContent() {
           const formState = JSON.parse(saved);
           console.log('📥 Form state loaded:', formState);
           setTitle(formState.title || '');
+          setPollType(formState.pollType || 'poll');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -118,8 +121,11 @@ function CreatePollContent() {
     }
   };
 
-  // Determine poll type based on options
-  const getPollType = (): 'yes_no' | 'ranked_choice' => {
+  // Determine poll type based on form selection and options
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' => {
+    if (pollType === 'nomination') {
+      return 'nomination';
+    }
     const filledOptions = options.filter(opt => opt.trim() !== '');
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
   };
@@ -190,11 +196,16 @@ function CreatePollContent() {
       }
     }
     
-    // If no options (yes/no poll), that's valid
-    if (filledOptions.length === 0) return null;
+    // If no options (yes/no poll), that's valid unless it's nomination type
+    if (filledOptions.length === 0) {
+      if (pollType === 'nomination') {
+        return "Nomination polls require at least one starting option.";
+      }
+      return null;
+    }
     
-    // If there are options (ranked choice), must have at least 2
-    if (filledOptions.length === 1) {
+    // If there are options, must have at least 2 for ranked choice, at least 1 for nomination
+    if (filledOptions.length === 1 && pollType !== 'nomination') {
       return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
     }
     
@@ -351,7 +362,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, isClient, saveFormState]);
+  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName, isClient, saveFormState]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -359,11 +370,12 @@ function CreatePollContent() {
       const hasChanged = 
         title !== originalPollData.title ||
         JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
-        creatorName !== (originalPollData.creator_name || "");
+        creatorName !== (originalPollData.creator_name || "") ||
+        pollType !== 'poll'; // Nomination polls are always considered changed
       
       setHasFormChanged(hasChanged);
     }
-  }, [title, options, creatorName, originalPollData, forkOf]);
+  }, [title, pollType, options, creatorName, originalPollData, forkOf]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -630,8 +642,8 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add options for ranked choice polls
-      if (pollType === 'ranked_choice') {
+      // Add options for ranked choice and nomination polls
+      if (pollType === 'ranked_choice' || getPollType() === 'nomination') {
         pollData.options = filledOptions;
       }
 
@@ -677,6 +689,28 @@ function CreatePollContent() {
 
       // Record poll creation in browser storage
       recordPollCreation(data[0].id, creatorSecret);
+
+      // For nomination polls, submit the creator's initial options as the first "vote"
+      if (getPollType() === 'nomination' && filledOptions.length > 0) {
+        try {
+          const nominationVoteData = {
+            type: 'nomination',
+            nominations: filledOptions
+          };
+
+          await supabase
+            .from('votes')
+            .insert({
+              poll_id: data[0].id,
+              vote_data: nominationVoteData
+            });
+
+          console.log('Creator initial nominations submitted:', nominationVoteData);
+        } catch (nominationError) {
+          console.error('Failed to submit creator nominations:', nominationError);
+          // Don't fail the poll creation if nomination submission fails
+        }
+      }
 
       // Trigger poll discovery if this is a follow-up poll
       if (followUpTo) {
@@ -771,8 +805,58 @@ function CreatePollContent() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium mb-3">
+              Type
+            </label>
+            <div className="relative inline-flex bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-1">
+              <div 
+                className={`absolute top-1 bottom-1 bg-white dark:bg-gray-700 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
+                  pollType === 'nomination' ? 'transform translate-x-full' : 'transform translate-x-0'
+                }`}
+                style={{
+                  width: pollType === 'nomination' ? '90px' : '43px',
+                  left: pollType === 'nomination' ? 'calc(100% - 94px)' : '4px'
+                }}
+              />
+              <div className="relative flex">
+                <button
+                  type="button"
+                  onClick={() => setPollType('poll')}
+                  disabled={isLoading}
+                  className={`px-3 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                    pollType === 'poll'
+                      ? 'text-gray-900 dark:text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Poll
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPollType('nomination')}
+                  disabled={isLoading}
+                  className={`px-3 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                    pollType === 'nomination'
+                      ? 'text-gray-900 dark:text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Nomination
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-2">
-              Poll Options <span className="text-gray-500 font-normal">(blank for yes/no)</span>
+              {pollType === 'nomination' 
+                ? 'Starting Options' 
+                : 'Poll Options'} 
+              <span className="text-gray-500 font-normal">
+                {pollType === 'nomination' 
+                  ? '(voters can add more)' 
+                  : '(blank for yes/no)'}
+              </span>
             </label>
               <div className="space-y-2">
                 {options.map((option, index) => {
@@ -951,7 +1035,11 @@ function CreatePollContent() {
         onConfirm={handleConfirmSubmit}
         onCancel={() => setShowConfirmModal(false)}
         title="Create Poll"
-        message={`Are you sure you want to create this ${getPollType() === 'yes_no' ? 'Yes/No' : 'Ranked Choice'} poll? It will be private and require the full link to access.`}
+        message={`Are you sure you want to create this ${
+          getPollType() === 'yes_no' ? 'Yes/No' 
+          : getPollType() === 'nomination' ? 'Nomination' 
+          : 'Ranked Choice'
+        } poll? It will be private and require the full link to access.`}
         confirmText="Create Poll"
         cancelText="Cancel"
       />

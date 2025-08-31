@@ -7,6 +7,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
+import NominationVotingInterface from "@/components/NominationVotingInterface";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -40,6 +41,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [optionsInitialized, setOptionsInitialized] = useState(false);
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
+  const [nominationChoices, setNominationChoices] = useState<string[]>([]);
+  const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
@@ -133,7 +136,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('poll_id, vote_type, yes_no_choice, ranked_choices, is_abstain')
+        .select('poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain')
         .eq('id', voteId)
         .single();
 
@@ -162,7 +165,38 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Initialize currentTime on client side to avoid hydration issues
   useEffect(() => {
     setCurrentTime(new Date());
-  }, []);
+    
+    // Load existing nominations for nomination polls
+    if (poll.poll_type === 'nomination') {
+      loadExistingNominations();
+    }
+  }, [poll.poll_type]);
+
+  // Load existing nominations from other votes
+  const loadExistingNominations = async () => {
+    try {
+      const { data: votes, error } = await supabase
+        .from('votes')
+        .select('vote_data')
+        .eq('poll_id', poll.id);
+
+      if (error) {
+        console.error('Error loading existing nominations:', error);
+        return;
+      }
+
+      const allNominations = new Set<string>();
+      votes?.forEach(vote => {
+        if (vote.vote_data?.type === 'nomination' && vote.vote_data?.nominations) {
+          vote.vote_data.nominations.forEach((nom: string) => allNominations.add(nom));
+        }
+      });
+
+      setExistingNominations(Array.from(allNominations));
+    } catch (error) {
+      console.error('Error loading nominations:', error);
+    }
+  };
 
   // Initialize ranked choices with randomized options - runs only once
   useEffect(() => {
@@ -237,6 +271,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               setYesNoChoice(voteData.yes_no_choice);
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
+            } else if (poll.poll_type === 'nomination' && voteData.nominations) {
+              setNominationChoices(voteData.nominations);
             }
           } else {
           }
@@ -465,6 +501,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setRankedChoices([]);
       } else if (poll.poll_type === 'yes_no') {
         setYesNoChoice(null); // Clear yes/no choice to prevent both appearing selected
+      } else if (poll.poll_type === 'nomination') {
+        setNominationChoices([]);
       }
     } else {
       // Cancelling abstain
@@ -601,6 +639,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         return;
       }
     }
+
+    if (poll.poll_type === 'nomination' && !isAbstaining) {
+      const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
+    }
     
     setVoteError(null);
     setShowVoteConfirmModal(true);
@@ -636,7 +678,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           voter_name: voterName.trim() || null
         };
         console.log('Submitting abstain vote data:', voteData);
-      } else {
+      } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
         
@@ -662,6 +704,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
         };
+      } else if (poll.poll_type === 'nomination') {
+        const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
+        
+        voteData = {
+          poll_id: poll.id,
+          vote_type: 'nomination' as const,
+          nominations: isAbstaining ? null : filteredNominations,
+          is_abstain: isAbstaining,
+          voter_name: voterName.trim() || null
+        };
       }
 
       let voteId;
@@ -673,7 +725,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         const updateData = poll.poll_type === 'yes_no' 
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
+          : poll.poll_type === 'ranked_choice'
+          ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
+          : { nominations: isAbstaining ? null : nominationChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
         
         
         // Update existing vote
@@ -1071,6 +1125,32 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </>
               )}
             </div>
+          ) : poll.poll_type === 'nomination' ? (
+            <NominationVotingInterface 
+              poll={poll}
+              existingNominations={existingNominations}
+              nominationChoices={nominationChoices}
+              setNominationChoices={setNominationChoices}
+              isAbstaining={isAbstaining}
+              handleAbstain={handleAbstain}
+              voteError={voteError}
+              voterName={voterName}
+              setVoterName={setVoterName}
+              handleVoteClick={handleVoteClick}
+              isSubmitting={isSubmitting}
+              isPollClosed={!!isPollClosed}
+              isCreator={isCreator}
+              handleCloseClick={handleCloseClick}
+              isClosingPoll={isClosingPoll}
+              hasVoted={hasVoted}
+              isEditingVote={isEditingVote}
+              setIsEditingVote={setIsEditingVote}
+              userVoteData={userVoteData}
+              isLoadingVoteData={isLoadingVoteData}
+              pollResults={pollResults}
+              loadingResults={loadingResults}
+              loadExistingNominations={loadExistingNominations}
+            />
           ) : (
             <div>
               {isPollClosed ? (
