@@ -187,6 +187,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       const allNominations = new Set<string>();
+      
+      // Add starting options from poll creation
+      if (poll.options && Array.isArray(poll.options)) {
+        poll.options.forEach((option: string) => allNominations.add(option));
+      }
+      
+      // Add nominations from votes
       votes?.forEach(vote => {
         if (vote.nominations && Array.isArray(vote.nominations)) {
           vote.nominations.forEach((nom: string) => allNominations.add(nom));
