@@ -12,6 +12,7 @@ import ForkHeader from "@/components/ForkHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
+import OptionsInput from "@/components/OptionsInput";
 
 export const dynamic = 'force-dynamic';
 

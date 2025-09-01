@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import PollActionsCard from "@/components/PollActionsCard";
 import PollResultsDisplay from "@/components/PollResults";
+import OptionsInput from "@/components/OptionsInput";
 
 interface NominationVotingInterfaceProps {
   poll: any;
@@ -55,23 +56,7 @@ export default function NominationVotingInterface({
   loadingResults,
   loadExistingNominations
 }: NominationVotingInterfaceProps) {
-  const [newNomination, setNewNomination] = useState("");
-  const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Add nomination to choices
-  const addNomination = () => {
-    if (newNomination.trim() && !nominationChoices.includes(newNomination.trim())) {
-      setNominationChoices([...nominationChoices, newNomination.trim()]);
-      setNewNomination("");
-      // Refresh existing nominations after adding
-      loadExistingNominations();
-    }
-  };
-
-  // Remove nomination from choices
-  const removeNomination = (index: number) => {
-    setNominationChoices(nominationChoices.filter((_, i) => i !== index));
-  };
+  const [newNominations, setNewNominations] = useState<string[]>([""]);
 
   // Add existing nomination to choices
   const addExistingNomination = (nomination: string) => {
@@ -80,21 +65,38 @@ export default function NominationVotingInterface({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addNomination();
-    }
+  // Remove nomination from choices
+  const removeNomination = (nomination: string) => {
+    setNominationChoices(nominationChoices.filter(n => n !== nomination));
   };
 
+  // Update nomination choices when new nominations change
+  useEffect(() => {
+    const filledNominations = newNominations.filter(n => n.trim() !== '');
+    // Filter out duplicates and existing nominations
+    const uniqueNewNoms = filledNominations.filter((nom, index, self) => 
+      self.indexOf(nom) === index && !existingNominations.includes(nom)
+    );
+    
+    // Combine selected existing nominations with new nominations
+    const selectedExisting = nominationChoices.filter(n => existingNominations.includes(n));
+    const combined = [...selectedExisting, ...uniqueNewNoms];
+    
+    if (JSON.stringify(combined) !== JSON.stringify(nominationChoices)) {
+      setNominationChoices(combined);
+    }
+  }, [newNominations, existingNominations]);
+
+  // Poll is closed
   if (isPollClosed) {
     return (
-      <div>
+      <div className="text-center py-3">
+        <h3 className="text-lg font-semibold mb-4">Poll Closed</h3>
         {loadingResults ? (
-          <div className="flex justify-center items-center py-8">
-            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <div className="flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
         ) : pollResults ? (
@@ -148,53 +150,32 @@ export default function NominationVotingInterface({
                   <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
                 </div>
               ))}
-              <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading your nominations...</div>
+            </div>
+          ) : userVoteData?.is_abstain ? (
+            <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3">
+              <span className="text-yellow-800 dark:text-yellow-200">You abstained from this vote</span>
+            </div>
+          ) : userVoteData?.nominations && userVoteData.nominations.length > 0 ? (
+            <div className="space-y-2">
+              {userVoteData.nominations.map((nomination: string, index: number) => (
+                <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                  <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                    {index + 1}
+                  </div>
+                  <span>{nomination}</span>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="space-y-2">
-              {userVoteData?.is_abstain || isAbstaining ? (
-                <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                  <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                  </span>
-                  <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
-                </div>
-              ) : (
-                nominationChoices.map((choice, index) => (
-                  <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                    <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
-                      {index + 1}
-                    </span>
-                    <span>{choice}</span>
-                  </div>
-                ))
-              )}
-            </div>
+            <p className="text-gray-600 dark:text-gray-400">No nominations recorded</p>
           )}
         </div>
         
-        <PollActionsCard poll={poll} isPollClosed={false} />
+        <p className="mt-4 text-gray-600 dark:text-gray-400 italic">
+          Thank you for voting! Results will be shown when the poll closes.
+        </p>
         
-        {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-          <div className="mt-3 flex justify-center">
-            <button
-              onClick={handleCloseClick}
-              disabled={isClosingPoll}
-              className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-            >
-              {isClosingPoll ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Closing Poll...
-                </>
-              ) : (
-                'Close Poll'
-              )}
-            </button>
-          </div>
-        )}
+        <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
       </div>
     );
   }
@@ -210,61 +191,45 @@ export default function NominationVotingInterface({
         {existingNominations.length > 0 && (
           <div className="mb-4">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Available nominations:
+              Existing nominations (select to second):
             </h5>
-            <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
               {existingNominations.map((nomination, index) => {
                 const isSelected = nominationChoices.includes(nomination);
                 return (
-                  <div key={index} className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        if (isSelected) {
-                          removeNomination(nominationChoices.indexOf(nomination));
-                        } else {
-                          addExistingNomination(nomination);
-                        }
-                      }}
-                      disabled={isSubmitting || isAbstaining}
-                      className={`px-2 py-1 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                        isSelected
-                          ? 'bg-green-500 hover:bg-green-600 text-white'
-                          : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      {isSelected ? '✓' : '+1'}
-                    </button>
-                    <span className={`${isSelected ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
-                      {nomination}
-                    </span>
-                  </div>
+                  <button
+                    key={index}
+                    onClick={() => {
+                      if (isSelected) {
+                        removeNomination(nomination);
+                      } else {
+                        addExistingNomination(nomination);
+                      }
+                    }}
+                    disabled={isSubmitting || isAbstaining}
+                    className={`px-3 py-1.5 rounded-full text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isSelected
+                        ? 'bg-green-500 hover:bg-green-600 text-white font-medium'
+                        : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {nomination}
+                  </button>
                 );
               })}
             </div>
           </div>
         )}
 
-        {/* Add new nomination */}
+        {/* Add new nominations using shared component */}
         <div className="mb-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newNomination}
-              onChange={(e) => setNewNomination(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isSubmitting || isAbstaining}
-              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Add a new nomination..."
-              maxLength={35}
-            />
-            <button
-              onClick={addNomination}
-              disabled={!newNomination.trim() || isSubmitting || isAbstaining || nominationChoices.includes(newNomination.trim())}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md transition-colors disabled:cursor-not-allowed"
-            >
-              Add
-            </button>
-          </div>
+          <OptionsInput
+            options={newNominations}
+            setOptions={setNewNominations}
+            isLoading={isSubmitting || isAbstaining}
+            pollType="nomination"
+            label="Add new nominations:"
+          />
         </div>
 
         {/* Abstain button */}
@@ -289,50 +254,40 @@ export default function NominationVotingInterface({
         )}
       </div>
 
-      <div className="mb-4">
-        <label htmlFor="voterName" className="block text-sm font-medium mb-2">
-          Your Name (optional)
+      {/* Voter Name Input */}
+      <div className="mb-3">
+        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
+          Your name (optional)
         </label>
         <input
           type="text"
-          id="voterName"
           value={voterName}
           onChange={(e) => setVoterName(e.target.value)}
           disabled={isSubmitting}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          placeholder="Enter your name..."
+          placeholder="Enter your name (optional)"
           maxLength={50}
         />
       </div>
-      
-      <button
+
+      {/* Submit Button */}
+      <button 
         onClick={handleVoteClick}
         disabled={isSubmitting || (nominationChoices.length === 0 && !isAbstaining)}
-        className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
       >
         {isSubmitting ? 'Submitting...' : 'Submit Vote'}
       </button>
-      
-      <PollActionsCard poll={poll} isPollClosed={false} />
-      
-      {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-        <div className="mt-3 flex justify-center">
+
+      {/* Close Poll Button for Creator */}
+      {isCreator && !isPollClosed && (
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={handleCloseClick}
             disabled={isClosingPoll}
-            className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
+            className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
           >
-            {isClosingPoll ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Closing Poll...
-              </>
-            ) : (
-              'Close Poll'
-            )}
+            {isClosingPoll ? 'Closing Poll...' : 'Close Poll'}
           </button>
         </div>
       )}
