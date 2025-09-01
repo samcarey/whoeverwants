@@ -73,20 +73,20 @@ export default function NominationVotingInterface({
   // Update nomination choices when new nominations change
   useEffect(() => {
     const filledNominations = newNominations.filter(n => n.trim() !== '');
-    // Filter out duplicates and existing nominations
+    // Filter out duplicates
     const uniqueNewNoms = filledNominations.filter((nom, index, self) => 
-      self.indexOf(nom) === index && !existingNominations.includes(nom)
+      self.indexOf(nom) === index
     );
     
-    // Keep all existing selected nominations and add new ones
-    const currentSelectedExisting = nominationChoices.filter(n => existingNominations.includes(n));
-    const combined = [...currentSelectedExisting, ...uniqueNewNoms];
+    // Don't include nominations that are already in existingNominations
+    const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingNominations.includes(nom));
     
-    // Only update if there are actual new nominations to add
-    if (uniqueNewNoms.length > 0 || nominationChoices.length !== combined.length) {
-      setNominationChoices(combined);
-    }
-  }, [newNominations]);
+    // Update choices with new nominations (keep existing selections)
+    setNominationChoices(prevChoices => {
+      const selectedExisting = prevChoices.filter(n => existingNominations.includes(n));
+      return [...selectedExisting, ...newNomsNotInExisting];
+    });
+  }, [newNominations, existingNominations, setNominationChoices]);
 
   // Poll is closed
   if (isPollClosed) {
