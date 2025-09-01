@@ -183,10 +183,6 @@ export default function NominationVotingInterface({
   return (
     <>
       <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-        <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
-          Add nominations
-        </h4>
-        
         {/* Existing nominations from other voters */}
         {existingNominations.length > 0 && (
           <div className="mb-4">
@@ -210,7 +206,7 @@ export default function NominationVotingInterface({
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'bg-green-500 hover:bg-green-600 text-white font-medium'
-                        : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                        : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
                     }`}
                   >
                     {nomination}
