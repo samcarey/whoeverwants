@@ -193,7 +193,7 @@ export default function NominationVotingInterface({
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Existing nominations (select to second):
             </h5>
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-2">
               {existingNominations.map((nomination, index) => {
                 const isSelected = nominationChoices.includes(nomination);
                 return (
@@ -207,10 +207,10 @@ export default function NominationVotingInterface({
                       }
                     }}
                     disabled={isSubmitting || isAbstaining}
-                    className={`px-3 py-1.5 rounded-full text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'bg-green-500 hover:bg-green-600 text-white font-medium'
-                        : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                        : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
                     }`}
                   >
                     {nomination}
