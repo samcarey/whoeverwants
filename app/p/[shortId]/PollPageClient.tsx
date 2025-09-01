@@ -721,10 +721,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           nominationChoices
         });
         
+        // For now, always provide an empty array instead of null when abstaining
+        // to work around database constraint
         voteData = {
           poll_id: poll.id,
           vote_type: 'nomination' as const,
-          nominations: isAbstaining ? null : filteredNominations,
+          nominations: isAbstaining ? [] : (filteredNominations.length > 0 ? filteredNominations : []),
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
         };
@@ -741,7 +743,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { nominations: isAbstaining ? null : nominationChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
+          : { nominations: isAbstaining ? [] : (nominationChoices.length > 0 ? nominationChoices : []), is_abstain: isAbstaining, voter_name: voterName.trim() || null };
         
         
         // Update existing vote

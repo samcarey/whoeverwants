@@ -640,3 +640,4 @@ The database will be completely reset and rebuilt with the latest schema.
 - ⚠️ Only use for fresh deployments or complete resets
 - ⚠️ Consider data backup strategies before running
 - never ask me to look at the console for logs to debug. instead send logs to the server's log endpoint and then tell me to run my test manually and then analyze the resulting logs
+- never ask me to check the browser console
