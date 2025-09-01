@@ -177,8 +177,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data: votes, error } = await supabase
         .from('votes')
-        .select('vote_data')
-        .eq('poll_id', poll.id);
+        .select('nominations')
+        .eq('poll_id', poll.id)
+        .not('nominations', 'is', null);
 
       if (error) {
         console.error('Error loading existing nominations:', error);
@@ -187,8 +188,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       const allNominations = new Set<string>();
       votes?.forEach(vote => {
-        if (vote.vote_data?.type === 'nomination' && vote.vote_data?.nominations) {
-          vote.vote_data.nominations.forEach((nom: string) => allNominations.add(nom));
+        if (vote.nominations && Array.isArray(vote.nominations)) {
+          vote.nominations.forEach((nom: string) => allNominations.add(nom));
         }
       });
 
