@@ -78,14 +78,15 @@ export default function NominationVotingInterface({
       self.indexOf(nom) === index && !existingNominations.includes(nom)
     );
     
-    // Combine selected existing nominations with new nominations
-    const selectedExisting = nominationChoices.filter(n => existingNominations.includes(n));
-    const combined = [...selectedExisting, ...uniqueNewNoms];
+    // Keep all existing selected nominations and add new ones
+    const currentSelectedExisting = nominationChoices.filter(n => existingNominations.includes(n));
+    const combined = [...currentSelectedExisting, ...uniqueNewNoms];
     
-    if (JSON.stringify(combined) !== JSON.stringify(nominationChoices)) {
+    // Only update if there are actual new nominations to add
+    if (uniqueNewNoms.length > 0 || nominationChoices.length !== combined.length) {
       setNominationChoices(combined);
     }
-  }, [newNominations, existingNominations]);
+  }, [newNominations]);
 
   // Poll is closed
   if (isPollClosed) {

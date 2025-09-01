@@ -715,6 +715,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       } else if (poll.poll_type === 'nomination') {
         const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
         
+        console.log('Preparing nomination vote:', {
+          nominations: filteredNominations,
+          isAbstaining,
+          nominationChoices
+        });
+        
         voteData = {
           poll_id: poll.id,
           vote_type: 'nomination' as const,
@@ -769,7 +775,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         error = insertError;
         voteId = insertedVote?.id;
 
-        if (!voteId) {
+        if (insertError) {
+          console.error('Detailed insert error:', {
+            error: insertError,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint,
+            code: insertError.code
+          });
+        }
+
+        if (!voteId && !insertError) {
           setVoteError("Failed to submit vote. Please try again.");
           return;
         } else {
