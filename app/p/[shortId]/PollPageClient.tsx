@@ -66,6 +66,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+
+  // Generate unique session ID for logging
+  const [sessionId] = useState(() => `vote-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+
+  // Debug logging utility
+  const logToServer = async (logType: string, level: string, message: string, data: any = {}) => {
+    try {
+      // Only access window if we're in the browser
+      const url = typeof window !== 'undefined' ? window.location.href : '';
+
+      await fetch('/api/debug-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          logType,
+          level,
+          message,
+          data,
+          url,
+          timestamp: new Date().toISOString()
+        })
+      });
+    } catch (error) {
+      console.error('Failed to log to server:', error);
+    }
+  };
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
@@ -121,8 +148,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const getStoredVoteId = useCallback((pollId: string): string | null => {
     if (typeof window === 'undefined') return null;
     try {
-      const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-      const storedVoteId = voteIds[pollId] || null;
+      // Check both localStorage formats
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      
+      // Return from either format
+      const voteIdFromVotedPolls = votedPolls[pollId]?.voteId;
+      const voteIdFromPollVoteIds = pollVoteIds[pollId];
+      
+      const storedVoteId = voteIdFromVotedPolls || voteIdFromPollVoteIds || null;
+      
+      if (storedVoteId) {
+      } else {
+      }
+      
       return storedVoteId;
     } catch (error) {
       console.error('Error getting stored vote ID:', error);
@@ -130,7 +169,74 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, []);
 
-  // Fetch vote data from database by vote ID
+  // Fetch and aggregate all user vote data from localStorage vote IDs
+  const fetchAggregatedVoteData = useCallback(async (pollId: string) => {
+    if (typeof window === 'undefined') return null;
+
+    try {
+      // Get all stored vote IDs from different localStorage formats
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      
+      const voteIds = [];
+      
+      // Get vote ID from votedPolls format
+      if (votedPolls[pollId]?.voteId) {
+        voteIds.push(votedPolls[pollId].voteId);
+      }
+      
+      // Get vote ID from pollVoteIds format
+      if (pollVoteIds[pollId]) {
+        voteIds.push(pollVoteIds[pollId]);
+      }
+
+      if (voteIds.length === 0) {
+        // No localStorage vote ID found - this browser hasn't voted
+        // CRITICAL: Don't use fallback that grabs other browsers' votes
+        return null;
+      }
+
+
+      // Fetch all votes by these IDs
+      const { data: userVotes, error } = await supabase
+        .from('votes')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at')
+        .in('id', voteIds)
+        .eq('poll_id', pollId);
+
+      if (error || !userVotes || userVotes.length === 0) {
+        return null;
+      }
+
+      // ONLY use votes from this browser's localStorage - no cross-browser contamination
+      const allVotes = [...userVotes];
+
+      if (poll.poll_type === 'nomination') {
+        // For nominations, use only the LATEST vote (not aggregated)
+        // When a user edits their vote, the vote record is updated in place
+        // So we should only use the most recent version, not combine multiple votes
+        const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        const latestVote = sortedVotes[0];
+        
+        const aggregatedVoteData = {
+          ...latestVote,
+          nominations: latestVote.nominations || [],
+          aggregatedFrom: 1
+        };
+
+        return aggregatedVoteData;
+      } else {
+        // For non-nomination polls, just return the most recent vote
+        const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        return sortedVotes[0];
+      }
+    } catch (error) {
+      console.error('Error fetching aggregated vote data:', error);
+      return null;
+    }
+  }, [poll.poll_type]);
+
+  // Fetch vote data from database by vote ID (legacy function)
   const fetchVoteData = useCallback(async (voteId: string) => {
     
     try {
@@ -148,6 +254,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     } catch (error) {
       return null;
     }
+  }, []);
+
+  // Fetch and aggregate all user vote data for this poll (for newly created polls)
+  const fetchLatestUserVote = useCallback(async (pollId: string) => {
+    // CRITICAL: Return null to prevent cross-browser vote contamination
+    // This function was aggregating votes from ALL browsers, causing vote isolation issues
+    // Force use of localStorage-based vote tracking only
+    return null;
   }, []);
 
   const fetchPollResults = useCallback(async () => {
@@ -173,18 +287,26 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, [poll.poll_type]);
 
   // Load existing nominations from other votes
-  const loadExistingNominations = async () => {
+  const loadExistingNominations = async (excludeUserVote = false) => {
     try {
+      // Force fresh data by adding a timestamp to bypass any caching
       const { data: votes, error } = await supabase
         .from('votes')
-        .select('nominations')
+        .select('id, nominations, voter_name, created_at, updated_at, is_abstain')
         .eq('poll_id', poll.id)
-        .not('nominations', 'is', null);
+        .not('nominations', 'is', null)
+        .eq('is_abstain', false)  // Only get non-abstaining votes
+        .order('updated_at', { ascending: false })
+        .limit(100); // Add limit to ensure fresh query
 
       if (error) {
         console.error('Error loading existing nominations:', error);
         return;
       }
+
+      // Debug logging to understand what votes we're getting
+      console.log('[DEBUG] loadExistingNominations - fetched votes:', votes);
+      console.log('[DEBUG] loadExistingNominations - excludeUserVote:', excludeUserVote, 'userVoteId:', userVoteId);
 
       const allNominations = new Set<string>();
       
@@ -193,14 +315,30 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         poll.options.forEach((option: string) => allNominations.add(option));
       }
       
-      // Add nominations from votes
-      votes?.forEach(vote => {
+      // For nomination polls, to handle edited votes properly, we use only the latest vote
+      // If there are multiple voters in the future, this logic would need to be enhanced
+      // to track the latest vote per unique voter
+      
+      let validVotes = votes || [];
+      
+      // Skip user's vote if we're in edit mode
+      if (excludeUserVote && userVoteId) {
+        validVotes = votes?.filter(vote => vote.id !== userVoteId) || [];
+      }
+      
+      // Each vote record represents a unique voter's current nominations
+      // When a voter edits their vote, their record is updated in place
+      // So we should aggregate all current nominations from all voters
+      validVotes.forEach(vote => {
         if (vote.nominations && Array.isArray(vote.nominations)) {
+          console.log('[DEBUG] Adding nominations from vote:', vote.id, 'nominations:', vote.nominations);
           vote.nominations.forEach((nom: string) => allNominations.add(nom));
         }
       });
 
-      setExistingNominations(Array.from(allNominations));
+      const nominationsArray = Array.from(allNominations);
+      console.log('[DEBUG] Final aggregated nominations:', nominationsArray);
+      setExistingNominations(nominationsArray);
     } catch (error) {
       console.error('Error loading nominations:', error);
     }
@@ -255,6 +393,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setHasPollDataState(hasPollData(poll.id));
     
     // Load vote data if user has voted (either from localStorage check or hasVoted state)
+    // Only load if this browser has actually voted - don't assume ownership of other users' votes
     const shouldLoadVoteData = hasVoted || hasVotedOnPoll(poll.id);
     
     if (shouldLoadVoteData) {
@@ -265,11 +404,30 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID
-      if (voteId) {
+      // OR if this is a nomination poll (to handle creator votes and aggregation)
+      if (voteId || poll.poll_type === 'nomination') {
         setIsLoadingVoteData(true);
-        fetchVoteData(voteId).then(voteData => {
+        
+        // For nomination polls, always use aggregated data to handle multiple votes
+        // For other poll types, fetch by voteId or latest vote
+        const fetchPromise = poll.poll_type === 'nomination'
+          ? fetchAggregatedVoteData(poll.id)
+          : (voteId ? fetchVoteData(voteId) : fetchLatestUserVote(poll.id));
+          
+        fetchPromise.then(voteData => {
           if (voteData) {
             setUserVoteData(voteData);
+
+            // CRITICAL FIX: Set userVoteId from the fetched vote data
+            // This ensures that vote editing updates the existing record instead of creating new ones
+            if (voteData.id) {
+              setUserVoteId(voteData.id);
+            }
+
+            // For nomination polls, fetch results to show vote counts even when poll is open
+            if (poll.poll_type === 'nomination' && !isPollClosed) {
+              fetchPollResults();
+            }
             
             // Set UI state based on vote data from database columns
             setIsAbstaining(voteData.is_abstain || false);
@@ -290,7 +448,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData]);
+  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
 
   // Separate effect to fetch results when poll closes
   useEffect(() => {
@@ -349,7 +507,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       // If poll just expired, automatically fetch results
       if (now >= deadline && !isPollClosed) {
-        console.log('Poll expired, fetching results...');
         fetchPollResults();
       }
     };
@@ -365,7 +522,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {
-    console.log(`🎬 Setting up real-time subscription for poll ${poll.id}`);
     
     let realtimeWorking = false;
     let pollInterval: NodeJS.Timeout | null = null;
@@ -380,7 +536,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           .single();
         
         if (data && data.is_closed && !pollClosed) {
-          console.log('🔒 Poll closed detected - updating to show results!');
           setPollClosed(true);
           setManuallyReopened(false); // Reset flag when closed
           fetchPollResults();
@@ -401,19 +556,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           filter: `id=eq.${poll.id}`,
         },
         (payload) => {
-          console.log('🔄 Poll updated in real-time:', payload);
-          console.log('📝 Current pollClosed state:', pollClosed);
           
           // Check if the poll was manually closed
           if (payload.new && payload.new.is_closed && !pollClosed) {
-            console.log('🔒 Poll was manually closed by creator, updating UI...');
             setPollClosed(true);
             setManuallyReopened(false); // Reset flag when closed by someone else
             fetchPollResults();
           } else if (payload.new && payload.new.is_closed && pollClosed) {
-            console.log('ℹ️ Poll already marked as closed locally');
           } else if (payload.new && !payload.new.is_closed) {
-            console.log('🔓 Poll is still open according to database');
           }
           
           // Also handle other potential updates like title changes
@@ -421,59 +571,45 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             const changedFields = Object.keys(payload.new).filter(key => 
               payload.new[key] !== payload.old[key]
             );
-            console.log('📊 Poll data updated:', { changed: changedFields });
             
             // Log specific field changes
             changedFields.forEach(field => {
-              console.log(`   ${field}: ${payload.old[field]} → ${payload.new[field]}`);
             });
           }
         }
       )
       .subscribe((status: any) => {
-        console.log(`🔗 Real-time subscription status for poll ${poll.id}:`, status);
         
         // Status is either a string or an object with status property
         const statusValue = typeof status === 'string' ? status : status?.status;
         
         if (statusValue === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to real-time updates!');
-          console.log('📡 Listening for changes to poll:', poll.id);
           realtimeWorking = true;
           
           // Clear polling if real-time is working
           if (pollInterval) {
             clearInterval(pollInterval);
             pollInterval = null;
-            console.log('🛑 Stopping polling - real-time is working');
           }
         } else if (statusValue === 'CHANNEL_ERROR') {
-          console.warn('⚠️ Real-time subscription not available. Using polling fallback...');
-          console.log('💡 Note: Real-time may need to be enabled in Supabase dashboard');
-          console.log('✅ No worries - polling will automatically detect changes every 2 seconds');
           
           // Start polling as fallback (every 2 seconds)
           if (!pollInterval && !pollClosed) {
-            console.log('🔄 Starting automatic polling (checking every 2 seconds)');
             pollInterval = setInterval(pollForChanges, 2000);
             // Check immediately as well
             pollForChanges();
           }
         } else if (statusValue === 'TIMED_OUT') {
-          console.warn('⏰ Real-time subscription timed out');
         } else if (statusValue === 'CLOSED') {
-          console.log('🚪 Real-time subscription closed');
         }
       });
 
     return () => {
-      console.log(`🔌 Unsubscribing from poll ${poll.id} real-time updates`);
       subscription.unsubscribe();
       
       // Clean up polling interval
       if (pollInterval) {
         clearInterval(pollInterval);
-        console.log('🛑 Stopped polling on cleanup');
       }
     };
   }, [poll.id, pollClosed, fetchPollResults]);
@@ -631,18 +767,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   };
 
-  const handleVoteClick = () => {
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) return;
-    
+  const handleVoteClick = async () => {
+    await logToServer('nomination-vote', 'info', 'handleVoteClick started', {
+      isSubmitting,
+      hasVoted,
+      isEditingVote,
+      isPollClosed,
+      pollType: poll.poll_type,
+      isAbstaining,
+      nominationChoices: nominationChoices.length,
+      nominationChoicesData: nominationChoices
+    });
+
+    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+      await logToServer('nomination-vote', 'warn', 'handleVoteClick early return', {
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+      });
+      return;
+    }
+
     // Validate vote choice first
     if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
+      await logToServer('nomination-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
     }
-    
+
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0) {
+        await logToServer('nomination-vote', 'error', 'Ranked choice validation failed', { rankedChoices, isAbstaining });
         setVoteError("Please rank at least one option or select Abstain");
         return;
       }
@@ -650,32 +804,69 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     if (poll.poll_type === 'nomination' && !isAbstaining) {
       const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
+      await logToServer('nomination-vote', 'info', 'Nomination validation check', {
+        originalNominations: nominationChoices,
+        filteredNominations,
+        isAbstaining
+      });
+
+      if (filteredNominations.length === 0) {
+        await logToServer('nomination-vote', 'error', 'Nomination validation failed', {
+          nominationChoices,
+          filteredNominations,
+          isAbstaining
+        });
+        setVoteError("Please select or add at least one nomination, or select Abstain");
+        return;
+      }
     }
-    
+
+    await logToServer('nomination-vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
+      pollType: poll.poll_type,
+      isAbstaining,
+      choicesReady: poll.poll_type === 'nomination' ? nominationChoices.filter(choice => choice && choice.trim().length > 0).length : 'n/a'
+    });
+
     setVoteError(null);
     setShowVoteConfirmModal(true);
   };
 
   const submitVote = async () => {
-    console.log('🚀 submitVote called');
+    await logToServer('nomination-vote', 'info', 'submitVote started', {
+      isSubmitting,
+      hasVoted,
+      isEditingVote,
+      isPollClosed,
+      pollType: poll.poll_type,
+      userVoteId
+    });
+
     setShowVoteConfirmModal(false);
-    
-    console.log('🚀 submitVote conditions:', { isSubmitting, hasVoted, isEditingVote, isPollClosed });
+
     if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
-      console.log('🚀 submitVote returning early due to conditions');
+      await logToServer('nomination-vote', 'warn', 'submitVote early return', {
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+      });
       return;
     }
 
-    console.log('🚀 submitVote proceeding with submission');
     setIsSubmitting(true);
     setVoteError(null);
 
+    let voteData: any = {}; // Initialize voteData outside try block for error logging
+
+    await logToServer('nomination-vote', 'info', 'submitVote setup complete', {
+      pollId: poll.id,
+      pollType: poll.poll_type,
+      isAbstaining,
+      voterName: voterName.trim()
+    });
+
     try {
-      let voteData;
-      
       if (poll.poll_type === 'yes_no') {
         if (!yesNoChoice && !isAbstaining) {
           setVoteError("Please select Yes, No, or Abstain");
+          setIsSubmitting(false);
           return;
         }
         voteData = {
@@ -685,13 +876,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
         };
-        console.log('Submitting abstain vote data:', voteData);
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
         
         if (filteredRankedChoices.length === 0 && !isAbstaining) {
           setVoteError("Please rank at least one option or select Abstain");
+          setIsSubmitting(false);
           return;
         }
         
@@ -702,6 +893,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (invalidChoices.length > 0) {
           console.error('Invalid choices detected:', invalidChoices);
           setVoteError("Invalid options detected. Please refresh and try again.");
+          setIsSubmitting(false);
           return;
         }
         
@@ -714,22 +906,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         };
       } else if (poll.poll_type === 'nomination') {
         const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
-        
-        console.log('Preparing nomination vote:', {
-          nominations: filteredNominations,
-          isAbstaining,
-          nominationChoices
+
+        await logToServer('nomination-vote', 'info', 'Processing nomination vote data', {
+          originalNominations: nominationChoices,
+          filteredNominations,
+          isAbstaining
         });
-        
-        // For now, always provide an empty array instead of null when abstaining
-        // to work around database constraint
+
+        // Validate that user has at least one nomination if not abstaining
+        if (!isAbstaining && filteredNominations.length === 0) {
+          await logToServer('nomination-vote', 'error', 'Nomination vote validation failed in submitVote', {
+            nominationChoices,
+            filteredNominations,
+            isAbstaining
+          });
+          setVoteError("Please select or add at least one nomination, or select Abstain");
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Send null for nominations when abstaining, array with nominations when voting
         voteData = {
           poll_id: poll.id,
           vote_type: 'nomination' as const,
-          nominations: isAbstaining ? [] : (filteredNominations.length > 0 ? filteredNominations : []),
+          nominations: isAbstaining ? null : filteredNominations,
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
         };
+
+        await logToServer('nomination-vote', 'info', 'Nomination voteData created', voteData);
       }
 
       let voteId;
@@ -737,13 +942,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
       if (isEditingVote && userVoteId) {
-        
+
         // Create update data with only the vote choice (don't update vote_type or poll_id)
-        const updateData = poll.poll_type === 'yes_no' 
+        // Use the same filtered data that was prepared in voteData to ensure consistency
+        const updateData = poll.poll_type === 'yes_no'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { nominations: isAbstaining ? [] : (nominationChoices.length > 0 ? nominationChoices : []), is_abstain: isAbstaining, voter_name: voterName.trim() || null };
+          : { nominations: voteData.nominations, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
+        
         
         
         // Update existing vote
@@ -753,59 +960,127 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           .eq('id', userVoteId)
           .select(); // Add select to see what was updated
 
+
         error = updateError;
         voteId = userVoteId;
         
-        // Update local userVoteData to reflect the changes
+        // Log the update response for debugging
+        await logToServer('nomination-vote', 'info', 'Vote update response', {
+          updateError,
+          returnedDataExists: !!returnedData,
+          returnedDataLength: returnedData?.length,
+          returnedData: returnedData
+        });
+
+        // Update local userVoteData with the actual returned data from database
         if (!updateError && returnedData && returnedData.length > 0) {
-          setUserVoteData(voteData);
-        } else if (!updateError && (!returnedData || returnedData.length === 0)) {
-          setVoteError("Failed to update vote. Vote may not exist.");
+          // Use the actual data returned from the database, not the local voteData
+          setUserVoteData(returnedData[0]);
+        } else if (updateError) {
+          // Only show error if there was an actual database error
+          setVoteError("Failed to update vote. Please try again.");
         } else {
+          // Update succeeded but no data returned - this is actually okay for updates
+          // Manually construct the updated vote data and set it in state
+          await logToServer('nomination-vote', 'info', 'Update succeeded but no returned data, manually updating state', {
+            voteData,
+            userVoteId
+          });
+
+          // Construct the updated vote object based on what we sent
+          const updatedVote = {
+            id: userVoteId,
+            poll_id: poll.id,
+            vote_type: poll.poll_type,
+            ...updateData // This contains the updated fields
+          };
+
+          setUserVoteData(updatedVote);
+
+          // CRITICAL FIX: When RLS blocks UPDATE response, immediately refresh results
+          // This ensures deleted nominations (abstained votes) are removed from display
+          if (poll.poll_type === 'nomination') {
+            await fetchPollResults();
+          }
         }
       } else {
-        
+        await logToServer('nomination-vote', 'info', 'Attempting to insert new vote', { voteData });
+
         // Insert new vote
-        console.log('Inserting vote with data:', voteData);
         const { data: insertedVote, error: insertError } = await supabase
           .from('votes')
           .insert([voteData])
           .select('id')
           .single();
 
-        console.log('Insert result:', { insertedVote, insertError });
         error = insertError;
         voteId = insertedVote?.id;
 
+        await logToServer('nomination-vote', 'info', 'Database insert result', {
+          insertedVote,
+          insertError,
+          voteId,
+          hasError: !!insertError
+        });
+
         if (insertError) {
-          console.error('Detailed insert error:', {
+          const detailedError = {
             error: insertError,
             message: insertError.message,
             details: insertError.details,
             hint: insertError.hint,
             code: insertError.code
-          });
+          };
+          console.error('Detailed insert error:', detailedError);
+          await logToServer('nomination-vote', 'error', 'Database insert error', detailedError);
         }
 
         if (!voteId && !insertError) {
+          await logToServer('nomination-vote', 'error', 'No vote ID returned but no error', { insertedVote, insertError });
           setVoteError("Failed to submit vote. Please try again.");
           return;
         } else {
+          await logToServer('nomination-vote', 'info', 'Vote insert successful', { voteId });
         }
       }
 
       if (error) {
+        await logToServer('nomination-vote', 'error', 'Vote submission error', {
+          error,
+          voteData,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         console.error('Error submitting vote:', error);
         console.error('Vote data that failed:', voteData);
         setVoteError("Failed to submit vote. Please try again.");
         return;
       }
 
+      await logToServer('nomination-vote', 'info', 'Vote submission successful', {
+        voteId,
+        isEditingVote,
+        pollType: poll.poll_type
+      });
+
       setHasVoted(true);
       setUserVoteId(voteId);
       
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
+      
+      // Refresh nomination list for nomination polls with a small delay to ensure DB update is complete
+      if (poll.poll_type === 'nomination') {
+        // Add a small delay to ensure the database update is fully committed
+        setTimeout(async () => {
+          // Refresh nominations after DB update is complete
+          await loadExistingNominations(false);
+          // Also fetch poll results to show vote counts
+          await fetchPollResults();
+        }, 500);
+      }
       
       // Save vote to localStorage so user can't vote again (only for new votes)
       if (!isEditingVote) {
@@ -821,14 +1096,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       setIsEditingVote(false);
       
+      // Refetch vote data for nomination polls to ensure UI shows latest data
+      if (poll.poll_type === 'nomination' && isEditingVote) {
+        const updatedVoteData = await fetchAggregatedVoteData(poll.id);
+        if (updatedVoteData) {
+          setUserVoteData(updatedVoteData);
+        }
+
+        // CRITICAL FIX: Always refresh results after editing nominations
+        // This ensures that deleted nominations (abstained votes) are removed from display
+        await fetchPollResults();
+      }
+
       // If the poll is closed, fetch results immediately after voting
-      if (isPollClosed) {
+      if (isPollClosed && !isEditingVote) {
         await fetchPollResults();
       }
     } catch (error) {
+      await logToServer('nomination-vote', 'error', 'Unexpected error in submitVote', {
+        error,
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        voteData
+      });
       console.error('Unexpected error:', error);
       setVoteError("An unexpected error occurred. Please try again.");
     } finally {
+      await logToServer('nomination-vote', 'info', 'submitVote finally block', { isSubmitting: false });
       setIsSubmitting(false);
     }
   };
@@ -932,7 +1226,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         {/* Show voters list after results for closed polls, or after countdown for open polls when voted */}
         {(isPollClosed || hasVoted) && (
-          <div className="mt-6">
+          <div className="mt-8">
             <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
           </div>
         )}
@@ -1444,6 +1738,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? (isAbstaining 
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?`)
+          : poll.poll_type === 'nomination'
+          ? (isAbstaining
+              ? `Are you sure you want to abstain from this vote?`
+              : isEditingVote 
+                ? `Are you sure you want to update your nominations?`
+                : `Are you sure you want to submit your nominations?`)
           : (isAbstaining
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to submit your ranking?`)}

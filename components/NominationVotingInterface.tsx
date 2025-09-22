@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollActionsCard from "@/components/PollActionsCard";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput from "@/components/OptionsInput";
+import NominationsList from "@/components/NominationsList";
 
 interface NominationVotingInterfaceProps {
   poll: any;
   existingNominations: string[];
   nominationChoices: string[];
-  setNominationChoices: (choices: string[]) => void;
+  setNominationChoices: Dispatch<SetStateAction<string[]>>;
   isAbstaining: boolean;
   handleAbstain: () => void;
   voteError: string | null;
@@ -57,6 +58,47 @@ export default function NominationVotingInterface({
   loadExistingNominations
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
+  const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
+
+  // Helper function to convert existingNominations to format expected by NominationsList
+  const getNominationsWithCounts = () => {
+    if (pollResults?.options && pollResults.poll_type === 'nomination') {
+      // Use pollResults data when available (shows vote counts)
+      // pollResults.options is already in the correct format
+      return pollResults.options;
+    } else {
+      // Fallback to existingNominations without counts
+      return existingNominations.map(nomination => ({
+        option: nomination,
+        count: 0
+      }));
+    }
+  };
+
+  // Initialize edit mode - show user's nominations as editable and others as selectable
+  useEffect(() => {
+    if (isEditingVote && userVoteData?.nominations && Array.isArray(userVoteData.nominations)) {
+      // In edit mode, put ALL user's nominations into text fields for editing
+      // This allows them to edit any nomination they made, whether originally created or seconded
+      const editableNoms = [...userVoteData.nominations];
+      // Add empty field at the end for new nominations
+      if (editableNoms.length === 0 || editableNoms[editableNoms.length - 1] !== '') {
+        editableNoms.push('');
+      }
+      setNewNominations(editableNoms);
+
+      // Show ALL existing nominations from others as buttons
+      // Filter out the user's own nominations to avoid duplication
+      const otherNominations = existingNominations.filter(nom => !userVoteData.nominations.includes(nom));
+      setFilteredExistingNominations(otherNominations);
+
+      // Pre-select the user's existing nominations so they can see what they voted for
+      setNominationChoices([...userVoteData.nominations]);
+    } else {
+      // Not in edit mode, show all existing nominations
+      setFilteredExistingNominations(existingNominations);
+    }
+  }, [isEditingVote, userVoteData, existingNominations, setNominationChoices]);
 
   // Add existing nomination to choices
   const addExistingNomination = (nomination: string) => {
@@ -74,25 +116,38 @@ export default function NominationVotingInterface({
   useEffect(() => {
     const filledNominations = newNominations.filter(n => n.trim() !== '');
     // Filter out duplicates
-    const uniqueNewNoms = filledNominations.filter((nom, index, self) => 
+    const uniqueNewNoms = filledNominations.filter((nom, index, self) =>
       self.indexOf(nom) === index
     );
-    
-    // Don't include nominations that are already in existingNominations
-    const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingNominations.includes(nom));
-    
-    // Update choices with new nominations (keep existing selections)
-    setNominationChoices(prevChoices => {
-      const selectedExisting = prevChoices.filter(n => existingNominations.includes(n));
-      return [...selectedExisting, ...newNomsNotInExisting];
+
+    // Update choices with new nominations
+    setNominationChoices((prevChoices: string[]) => {
+      if (isEditingVote) {
+        // In edit mode: ONLY use text field nominations + manually selected existing buttons
+        // Get manually selected existing nominations (not from text fields)
+        const manuallySelectedExisting = prevChoices.filter(n =>
+          existingNominations.includes(n) &&
+          !uniqueNewNoms.includes(n) && // Not in text fields
+          !userVoteData.nominations.includes(n) // Not user's original nominations
+        );
+
+        // Combine text field nominations + manually selected buttons
+        return [...uniqueNewNoms, ...manuallySelectedExisting];
+      } else {
+        // Normal mode - don't include nominations that are already in existingNominations
+        const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingNominations.includes(nom));
+        // Keep existing selections + new nominations
+        const selectedExisting = prevChoices.filter(n => existingNominations.includes(n));
+        const newChoices = [...selectedExisting, ...newNomsNotInExisting];
+        return newChoices;
+      }
     });
-  }, [newNominations, existingNominations, setNominationChoices]);
+  }, [newNominations, existingNominations, setNominationChoices, isEditingVote, userVoteData]);
 
   // Poll is closed
   if (isPollClosed) {
     return (
       <div className="text-center py-3">
-        <h3 className="text-lg font-semibold mb-4">Poll Closed</h3>
         {loadingResults ? (
           <div className="flex justify-center">
             <svg className="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -128,7 +183,7 @@ export default function NominationVotingInterface({
       <div className="text-center py-3">
         <div className="text-left">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium">Your nominations:</h4>
+            <h4 className="font-medium">All nominations:</h4>
             {!isLoadingVoteData && !isPollClosed && (
               <button
                 onClick={() => setIsEditingVote(true)}
@@ -141,14 +196,9 @@ export default function NominationVotingInterface({
           {isLoadingVoteData ? (
             <div className="space-y-2">
               {[1, 2, 3].map((num) => (
-                <div key={num} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
-                  <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
-                    <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  </div>
+                <div key={num} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
                   <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
+                  <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
                 </div>
               ))}
             </div>
@@ -156,27 +206,32 @@ export default function NominationVotingInterface({
             <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3">
               <span className="text-yellow-800 dark:text-yellow-200">You abstained from this vote</span>
             </div>
-          ) : userVoteData?.nominations && userVoteData.nominations.length > 0 ? (
-            <div className="space-y-2">
-              {userVoteData.nominations.map((nomination: string, index: number) => (
-                <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                  <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
-                    {index + 1}
-                  </div>
-                  <span>{nomination}</span>
-                </div>
-              ))}
-            </div>
+          ) : existingNominations.length > 0 ? (
+            <NominationsList
+              nominations={getNominationsWithCounts()}
+              userNominations={userVoteData?.nominations || []}
+              showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
+              showUserIndicator={true}
+            />
           ) : (
-            <p className="text-gray-600 dark:text-gray-400">No nominations recorded</p>
+            <p className="text-gray-600 dark:text-gray-400">No nominations available</p>
           )}
         </div>
         
-        <p className="mt-4 text-gray-600 dark:text-gray-400 italic">
-          Thank you for voting! Results will be shown when the poll closes.
-        </p>
-        
         <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
+        
+        {/* Close Poll Button for Creator */}
+        {isCreator && !isPollClosed && (
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={handleCloseClick}
+              disabled={isClosingPoll}
+              className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
+            >
+              {isClosingPoll ? 'Closing Poll...' : 'Close Poll'}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -185,13 +240,13 @@ export default function NominationVotingInterface({
     <>
       <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
         {/* Existing nominations from other voters */}
-        {existingNominations.length > 0 && (
+        {filteredExistingNominations.length > 0 && (
           <div className="mb-4">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Existing nominations (select to second):
+              {isEditingVote ? 'Other nominations (select to second):' : 'Existing nominations (select to second):'}
             </h5>
             <div className="space-y-2">
-              {existingNominations.map((nomination, index) => {
+              {filteredExistingNominations.map((nomination, index) => {
                 const isSelected = nominationChoices.includes(nomination);
                 return (
                   <button
@@ -225,19 +280,28 @@ export default function NominationVotingInterface({
             setOptions={setNewNominations}
             isLoading={isSubmitting || isAbstaining}
             pollType="nomination"
-            label="Add new nominations:"
+            label={isEditingVote ? "Your nominations:" : "Add new nominations:"}
           />
         </div>
 
-        {/* Abstain button */}
+        {/* Abstain button - disabled when nominations exist */}
         <div className="mb-4">
+          {/* Show explanation when abstain is disabled due to nominations */}
+          {nominationChoices.length > 0 && !isAbstaining && (
+            <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md text-sm text-blue-800 dark:text-blue-200">
+              To abstain, you must first remove all your nominations.
+            </div>
+          )}
+          
           <button 
             onClick={handleAbstain}
-            disabled={isSubmitting}
+            disabled={isSubmitting || (nominationChoices.length > 0 && !isAbstaining)}
             className={`w-full py-3 px-4 rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${
               isAbstaining
                 ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
+                : (nominationChoices.length > 0 && !isAbstaining)
+                  ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-2 border-gray-200 dark:border-gray-600'
+                  : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
             }`}
           >
             {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain'}
