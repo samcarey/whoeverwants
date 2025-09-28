@@ -294,11 +294,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Force fresh data by adding a timestamp to bypass any caching
       const { data: votes, error } = await supabase
         .from('votes')
-        .select('id, nominations, voter_name, created_at, updated_at, is_abstain')
+        .select('id, nominations, voter_name, created_at, is_abstain')
         .eq('poll_id', poll.id)
         .not('nominations', 'is', null)
         .eq('is_abstain', false)  // Only get non-abstaining votes
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(100); // Add limit to ensure fresh query
 
       if (error) {

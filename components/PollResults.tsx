@@ -357,12 +357,12 @@ function NominationResults({ results, isPollClosed, userVoteData }: { results: P
         // Fetch all nominations from votes for this poll
         const { data: votes, error } = await supabase
           .from('votes')
-          .select('nominations, is_abstain, id, updated_at')
+          .select('nominations, is_abstain, id, created_at')
           .eq('poll_id', results.poll_id)
           .eq('vote_type', 'nomination')
           .eq('is_abstain', false)  // Only count non-abstaining votes
           .not('nominations', 'is', null)
-          .order('updated_at', { ascending: false }); // Order by most recent first
+          .order('created_at', { ascending: false }); // Order by most recent first
 
         if (error) {
           console.error('Error fetching nominations:', error);
