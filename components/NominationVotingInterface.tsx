@@ -269,7 +269,7 @@ export default function NominationVotingInterface({
         )}
 
         {/* Add new nominations using shared component */}
-        <div className="mb-4">
+        <div className="mt-6 mb-4">
           <OptionsInput
             options={newNominations}
             setOptions={setNewNominations}

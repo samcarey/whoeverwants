@@ -279,12 +279,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Initialize currentTime on client side to avoid hydration issues
   useEffect(() => {
     setCurrentTime(new Date());
-    
+
     // Load existing nominations for nomination polls
     if (poll.poll_type === 'nomination') {
       loadExistingNominations();
+      // Also fetch results to show vote counts for nomination polls
+      fetchPollResults();
     }
-  }, [poll.poll_type]);
+  }, [poll.poll_type, fetchPollResults]);
 
   // Load existing nominations from other votes
   const loadExistingNominations = async (excludeUserVote = false) => {
