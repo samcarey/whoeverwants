@@ -242,7 +242,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain')
         .eq('id', voteId)
         .single();
 
@@ -420,7 +420,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
             // CRITICAL FIX: Set userVoteId from the fetched vote data
             // This ensures that vote editing updates the existing record instead of creating new ones
-            if (voteData.id) {
+            if (voteData && 'id' in voteData && voteData.id) {
               setUserVoteId(voteData.id);
             }
 

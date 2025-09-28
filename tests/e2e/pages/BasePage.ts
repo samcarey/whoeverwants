@@ -55,7 +55,7 @@ export class BasePage {
         
       } catch (error) {
         attempts++;
-        console.log(`Navigation attempt ${attempts} failed:`, error.message);
+        console.log(`Navigation attempt ${attempts} failed:`, error instanceof Error ? error.message : String(error));
         
         if (attempts >= maxAttempts) {
           throw error;
