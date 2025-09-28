@@ -641,3 +641,35 @@ The database will be completely reset and rebuilt with the latest schema.
 - ⚠️ Consider data backup strategies before running
 - never ask me to look at the console for logs to debug. instead send logs to the server's log endpoint and then tell me to run my test manually and then analyze the resulting logs
 - never ask me to check the browser console
+
+## 🚨 CRITICAL: Database Constraint Debugging
+
+### When "Failed to submit vote" Errors Occur
+
+**ALWAYS add comprehensive logging FIRST before attempting fixes:**
+
+1. **Add server-side logging immediately** to capture exact database errors
+2. **Check `/debug-logs/` directory** for detailed error messages
+3. **Look for constraint violations** - they often "stack" (fixing one reveals another)
+
+### Common Constraint Issues (in order of likelihood):
+1. `votes_vote_type_check` - Missing 'nomination' in allowed types (migration 048)
+2. `vote_yes_no_valid` - Outdated constraint blocking nominations (migration 047)
+3. `vote_structure_valid` - Structure validation for vote types (migration 043/044)
+
+### Key Lesson from Nomination Voting Debug:
+**PostgreSQL only reports the FIRST failing constraint.** After fixing one constraint, ALWAYS test again immediately - another constraint may be blocking. The nomination voting fix required fixing TWO separate constraints that were hiding behind each other.
+
+### Quick Debug Commands:
+```bash
+# Check latest logs
+cat debug-logs/nomination-vote-$(date +%Y-%m-%d).log | tail -50
+
+# Apply specific migration
+./scripts/apply-single-migration.sh database/migrations/048_fix_vote_type_check_constraint_up.sql
+
+# Clear cache and restart
+rm -rf .next && npm run dev
+```
+
+**Time-saving tip**: Don't guess at the problem. Add logging, get the exact error, then fix the specific constraint.

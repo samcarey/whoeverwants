@@ -12,7 +12,6 @@ export default function HomeDebug() {
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   const addDebugInfo = (info: string) => {
-    console.log(`[DEBUG] ${info}`);
     setDebugInfo(prev => [...prev, `${new Date().toISOString()}: ${info}`]);
   };
 

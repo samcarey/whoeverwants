@@ -1,0 +1,32 @@
+[2025-09-13T18:41:55.446Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "Test Nomination 1 for Logging Syste"
+  ]
+}
+---
+[2025-09-13T18:41:55.466Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "Test Nomination 1 for Logging Syste"
+  ],
+  "filteredNominations": [
+    "Test Nomination 1 for Logging Syste"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-13T18:41:55.489Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---

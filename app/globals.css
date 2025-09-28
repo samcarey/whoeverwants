@@ -22,18 +22,30 @@
 html {
   /* Allow content to extend into safe areas on iOS */
   background: var(--background);
-  /* Essential for safe area insets to work */
-  min-height: calc(100% + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  /* Ensure full viewport coverage */
-  min-height: 100vh;
-  min-height: -webkit-fill-available;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Apply safe area padding only on iOS devices (more specific detection) */
+@supports (-webkit-touch-callout: none) and (not (hover: hover)) {
+  html {
+    /* Essential for safe area insets to work on iOS */
+    min-height: calc(100% + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  body {
+    /* Ensure full viewport coverage on iOS */
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    overflow: auto;
+  }
 }
 
 /* Safari iOS viewport fix - dynamic viewport units to handle address bar behavior */
@@ -52,14 +64,14 @@ body {
 }
 
 /* Safari iOS specific fixes to prevent scrolling issues */
-@supports (-webkit-touch-callout: none) {
+@supports (-webkit-touch-callout: none) and (not (hover: hover)) {
   /* This targets Safari on iOS specifically */
   .h-screen-safe {
     /* Prevent bounce scrolling at the document level */
     position: relative;
     overflow: hidden;
   }
-  
+
   /* Ensure proper touch scrolling within the scrollable areas */
   .safari-scroll-container {
     -webkit-overflow-scrolling: touch;
@@ -108,6 +120,60 @@ body {
   max-width: 28rem; /* 448px - narrower for poll pages */
   margin: 0 auto;
 }
+
+/* 
+ * Responsive Scaling for Desktop 
+ * 
+ * Pure CSS implementation that applies scaling immediately during page load
+ * without JavaScript or transitions to prevent disconcerting text growing animations.
+ * 
+ * Scaling levels:
+ * - Mobile/Tablet (<1024px): 1x (default)
+ * - Desktop (1024px-1279px): 1.5x 
+ * - Large Desktop (1280px+): 2x
+ */
+.responsive-scaling-container {
+  transform-origin: top left;
+  /* Default mobile/tablet scale - prevents layout flicker */
+  transform: scale(1);
+  width: 100%;
+}
+
+/* Desktop scaling (1024px-1279px) - 1.5x scale */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .responsive-scaling-container {
+    transform: scale(1.5) !important;
+    width: 66.67% !important;
+    /* Prevent scaled content from exceeding viewport */
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+}
+
+/* Extra large desktop scaling (1280px+) - 2x scale */
+@media (min-width: 1280px) {
+  .responsive-scaling-container {
+    transform: scale(2) !important;
+    width: 50% !important;
+    /* Prevent scaled content from exceeding viewport */
+    max-height: 100vh !important;
+    overflow: hidden !important;
+  }
+}
+
+/* Prevent horizontal scrolling on scaled content and fix scroll issues on desktop */
+@media (min-width: 1024px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Force container overflow to be hidden on desktop to prevent double scrollbars */
+  .safari-scroll-container {
+    overflow: hidden !important;
+  }
+}
+
+/* Modal and header elements are positioned via portals outside the scaled container */
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {

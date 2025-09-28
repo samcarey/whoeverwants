@@ -57,7 +57,7 @@ function PollContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <svg className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -71,7 +71,7 @@ function PollContent() {
 
   if (error || !poll) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-600 dark:text-red-400 mb-4">
             <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,11 +91,17 @@ function PollContent() {
     );
   }
 
-  const createdDate = new Date(poll.created_at).toLocaleDateString("en-US", {
+  const createdDateTime = new Date(poll.created_at);
+  const createdTime = createdDateTime.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  });
+  const createdDate = `@ ${createdTime} ${createdDateTime.toLocaleDateString("en-US", {
     year: "2-digit",
     month: "numeric",
     day: "numeric",
-  });
+  })}`;
 
   return (
     <div className="pb-4">
@@ -107,7 +113,7 @@ function PollContent() {
 export default function PollPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-pulse">
             <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-lg w-64 mx-auto mb-4"></div>

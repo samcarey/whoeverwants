@@ -31,9 +31,9 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated (lowest Borda score)
           ]},
           { round: 3, results: [
-            ['A', 1, false],  // A: 1 vote, survives (alphabetically first)
-            ['D', 1, false],  // D: 1 vote, survives
-            ['E', 1, true]    // E: 1 vote, eliminated (alphabetical tiebreaker - E comes after D)
+            ['E', 1, true],   // E: 1 vote, eliminated (alphabetically last among tied)
+            ['D', 1, false],  // D: 1 vote, survives  
+            ['A', 1, false]   // A: 1 vote, survives
           ]},
           { round: 4, results: [
             ['A', 2, false],  // A: gets E's transfer, wins
@@ -57,8 +57,8 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first
           ]},
           { round: 2, results: [
-            ['A', 1, false],  // A: 1 vote, survives (alphabetically first)
-            ['C', 1, true]    // C: eliminated (alphabetical tiebreaker)
+            ['C', 1, true],   // C: 1 vote, eliminated (alphabetically last)
+            ['A', 1, false]   // A: survives (alphabetical tiebreaker)
           ]},
           { round: 3, results: [
             ['A', 2, false]   // A: gets C's transfer, wins
@@ -106,22 +106,22 @@ describe('Zero Vote Elimination Bug Fix', () => {
             ['B', 0, true]    // B: 0 votes, eliminated first (lowest Borda)
           ]},
           { round: 2, results: [
-            ['D', 1, false],  // D: 1 vote, survives
             ['A', 1, false],  // A: 1 vote, survives
             ['C', 1, false],  // C: 1 vote, survives
-            ['E', 1, true]    // E: eliminated (lowest Borda among remaining)
+            ['D', 1, false],  // D: 1 vote, survives
+            ['E', 1, true]    // E: eliminated (alphabetically last when tied)
           ]},
           { round: 3, results: [
-            ['C', 2, false],  // C: gets E's transfer, survives
             ['A', 1, false],  // A: 1 vote, survives
-            ['D', 1, true]    // D: eliminated (lowest Borda)
+            ['C', 2, false],  // C: gets E's transfer, survives
+            ['D', 1, true]    // D: eliminated (alphabetically last when tied with A)
           ]},
           { round: 4, results: [
-            ['A', 2, false],  // A: gets D's transfer, survives
-            ['C', 2, true]    // C: eliminated (Borda tiebreaker)
+            ['C', 2, true],   // C: eliminated (alphabetically last when tied)
+            ['A', 2, false]   // A: survives
           ]},
           { round: 5, results: [
-            ['A', 4, false]   // A: gets all transfers, wins
+            ['A', 4, false]   // A: gets C's transfer, wins
           ]}
         ])
         .expectWinner('A')
@@ -164,11 +164,11 @@ describe('Zero Vote Elimination Bug Fix', () => {
           { round: 2, results: [
             ['A', 2, false],  // A: 2 votes, survives 
             ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, true]    // D: eliminated (alphabetical tiebreaker - D comes after C)
+            ['D', 1, true]    // D: 1 vote, eliminated (alphabetically last when tied with C)
           ]},
           { round: 3, results: [
-            ['A', 3, false],  // A: 3 votes, wins with majority
-            ['C', 1, false]   // C: 1 vote, not eliminated - A wins
+            ['A', 3, false],  // A: 3 votes, gets D's transfer (ballot 3: [D,A,C])
+            ['C', 1, false]   // C: 1 vote, survives
           ]}
         ])
         .expectWinner('A')

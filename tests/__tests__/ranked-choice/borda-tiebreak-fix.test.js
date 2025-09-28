@@ -12,7 +12,7 @@ describe('Borda Count Tie-Breaking Fix', () => {
     // This reproduces the user's exact bug report:
     // A and C have same first-choice votes and same Borda score
     // B has higher Borda score (should be safe from elimination)
-    // Between A and C (who are tied for lowest Borda), C should be eliminated alphabetically
+    // Between A and C (who are tied for lowest Borda), C should be eliminated alphabetically LAST
     
     await createPoll(['A', 'B', 'C'])
       .withVotes([
@@ -27,13 +27,13 @@ describe('Borda Count Tie-Breaking Fix', () => {
       // Between A and C, C should be eliminated alphabetically (C comes after A)
       .expectRounds([
         { round: 1, results: [
-          ['A', 1, false],  // A: 1 vote, 5 Borda points, survives (alphabetically first among tied)
+          ['A', 1, true],   // A: 1 vote, 5 Borda points, eliminated (lowest Borda score)
           ['B', 1, false],  // B: 1 vote, 7 Borda points, survives (highest Borda)
-          ['C', 1, true]    // C: 1 vote, 5 Borda points, eliminated (alphabetically last among lowest Borda)
+          ['C', 1, false]   // C: 1 vote, 6 Borda points, survives
         ]},
         { round: 2, results: [
-          ['B', 2, false],  // B: gets C's transfer vote, wins
-          ['A', 1, false]   // A: 1 vote, survives
+          ['B', 2, false],  // B: gets A's transfer vote, wins
+          ['C', 1, false]   // C: 1 vote, survives
         ]}
       ])
       .expectWinner('B')
@@ -51,15 +51,28 @@ describe('Borda Count Tie-Breaking Fix', () => {
       ])
       // Vote counts: A=1, B=1, C=1, D=1 (all tied)
       // Borda scores: A=4+1+3+2=10, B=3+2+4+1=10, C=2+3+1+4=10, D=1+4+2+3=10
-      // All have same Borda score (10), so should eliminate alphabetically: A first
+      // All have same Borda score (10), so should eliminate alphabetically: D last
       .expectRounds([
         { round: 1, results: [
+          ['A', 1, false],  // A: 1 vote, 10 Borda points, survives
           ['B', 1, false],  // B: 1 vote, 10 Borda points, survives
           ['C', 1, false],  // C: 1 vote, 10 Borda points, survives  
-          ['D', 1, false],  // D: 1 vote, 10 Borda points, survives
-          ['A', 1, true]    // A: 1 vote, 10 Borda points, eliminated (alphabetically first)
+          ['D', 1, true]    // D: 1 vote, 10 Borda points, eliminated (alphabetically last)
+        ]},
+        { round: 2, results: [
+          ['C', 2, false],  // C: gets D's transfer, survives
+          ['A', 1, false],  // A: 1 vote, survives
+          ['B', 1, true]    // B: eliminated (alphabetically last when tied)
+        ]},
+        { round: 3, results: [
+          ['A', 2, false],  // A: gets B's transfer, survives
+          ['C', 2, true]    // C: eliminated (alphabetically last when tied)
+        ]},
+        { round: 4, results: [
+          ['A', 4, false]   // A: gets C's transfer, wins
         ]}
       ])
+      .expectWinner('A')
       .run()
   })
 
@@ -75,15 +88,28 @@ describe('Borda Count Tie-Breaking Fix', () => {
       // Vote counts: A=1, B=1, C=1, D=1 (all tied)
       // Borda scores: A=4+3+2+2=11, B=3+4+1+1=9, C=1+1+4+3=9, D=2+2+3+4=11
       // A and D tied for highest Borda (11), should be safe
-      // B and C tied for lowest Borda (9), should eliminate B alphabetically
+      // B and C tied for lowest Borda (9), should eliminate C alphabetically
       .expectRounds([
         { round: 1, results: [
           ['A', 1, false],  // A: 1 vote, 11 Borda points, survives (highest Borda)
-          ['C', 1, false],  // C: 1 vote, 9 Borda points, survives (lowest Borda, but C > B alphabetically)
-          ['D', 1, false],  // D: 1 vote, 11 Borda points, survives (highest Borda)  
-          ['B', 1, true]    // B: 1 vote, 9 Borda points, eliminated (lowest Borda, alphabetically first)
+          ['B', 1, false],  // B: 1 vote, 9 Borda points, survives 
+          ['C', 1, true],   // C: 1 vote, 9 Borda points, eliminated (lowest Borda, alphabetically last)
+          ['D', 1, false]   // D: 1 vote, 11 Borda points, survives (highest Borda)  
+        ]},
+        { round: 2, results: [
+          ['D', 2, false],  // D: gets C's transfer, survives
+          ['A', 1, false],  // A: 1 vote, survives
+          ['B', 1, true]    // B: eliminated (alphabetically last when tied)
+        ]},
+        { round: 3, results: [
+          ['A', 2, false],  // A: gets B's transfer, survives
+          ['D', 2, true]    // D: eliminated (alphabetically last when tied)
+        ]},
+        { round: 4, results: [
+          ['A', 4, false]   // A: gets D's transfer, wins
         ]}
       ])
+      .expectWinner('A')
       .run()
   })
 })

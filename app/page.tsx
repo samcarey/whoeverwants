@@ -40,8 +40,6 @@ export default function Home() {
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
-  const [isPulling, setIsPulling] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
 
   // Initialize and rotate phrases
   useEffect(() => {
@@ -130,10 +128,8 @@ export default function Home() {
         try {
           const discoveryResult = await discoverRelatedPolls();
           if (discoveryResult.newPollIds.length > 0) {
-            console.log(`🔗 Discovered ${discoveryResult.newPollIds.length} follow-up polls`);
           }
         } catch (discoveryError) {
-          console.warn('Poll discovery failed, continuing with existing polls:', discoveryError);
         }
 
         // Get polls this browser has access to
@@ -166,10 +162,8 @@ export default function Home() {
       try {
         const discoveryResult = await discoverRelatedPolls();
         if (discoveryResult.newPollIds.length > 0) {
-          console.log(`🔗 Discovered ${discoveryResult.newPollIds.length} follow-up polls`);
         }
       } catch (discoveryError) {
-        console.warn('Poll discovery failed, continuing with existing polls:', discoveryError);
       }
 
       // Get polls this browser has access to
@@ -189,103 +183,9 @@ export default function Home() {
     }
   };
 
-  // Pull-to-refresh functionality for iOS PWA
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    // Always enable for testing - check iOS PWA later
-    console.log('Pull-to-refresh: Setting up event listeners');
-    
-    let startY = 0;
-    let currentY = 0;
-    let isAtTop = true;
-    let isDragging = false;
-    
-    const handleTouchStart = (e: TouchEvent) => {
-      console.log('Touch start detected');
-      startY = e.touches[0].clientY;
-      const scrollContainer = document.querySelector('.safari-scroll-container');
-      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
-      console.log('At top:', isAtTop, 'ScrollTop:', scrollContainer?.scrollTop);
-    };
-    
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isAtTop) return;
-      
-      currentY = e.touches[0].clientY;
-      const deltaY = currentY - startY;
-      
-      console.log('Touch move - deltaY:', deltaY);
-      
-      if (deltaY > 10) {
-        // Pulling down from top
-        isDragging = true;
-        setPullDistance(deltaY);
-        setIsPulling(deltaY > 60);
-        console.log('Pull distance:', deltaY, 'Is pulling:', deltaY > 60);
-        
-        // Prevent default scrolling when pulling
-        e.preventDefault();
-      }
-    };
-    
-    const handleTouchEnd = () => {
-      console.log('Touch end - isPulling:', isPulling, 'pullDistance:', pullDistance, 'isDragging:', isDragging);
-      
-      if (isDragging && pullDistance > 60) {
-        console.log('Triggering refresh!');
-        // Trigger refresh
-        refreshPolls();
-      }
-      
-      // Reset state
-      isDragging = false;
-      setIsPulling(false);
-      setPullDistance(0);
-    };
-    
-    // Add to document body to capture all touch events
-    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
-    
-    return () => {
-      document.body.removeEventListener('touchstart', handleTouchStart);
-      document.body.removeEventListener('touchmove', handleTouchMove);
-      document.body.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [pullDistance, refreshPolls]);
 
   return (
     <>
-      {/* Pull-to-refresh indicator */}
-      {isPulling && (
-        <div 
-          className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
-          style={{
-            transform: `translateY(${Math.min(pullDistance - 60, 40)}px)`,
-            opacity: pullDistance > 30 ? 1 : pullDistance / 30
-          }}
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2 mt-4">
-            <svg 
-              className={`w-6 h-6 text-blue-600 dark:text-blue-400 ${
-                pullDistance > 60 ? 'animate-spin' : ''
-              }`} 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-              />
-            </svg>
-          </div>
-        </div>
-      )}
 
       {loading && (
         <div className="flex justify-center items-center py-8">

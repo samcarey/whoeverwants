@@ -43,8 +43,8 @@ describe('Edge Cases and Boundary Conditions', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A survives (alphabetical tiebreaker - A comes first)
-            ['B', 1, true]    // B eliminated first (alphabetical when Borda tied)
+            ['A', 1, false],  // A survives (early alphabet advantage)
+            ['B', 1, true]    // B eliminated first (alphabetically last when Borda tied)
           ]},
           { round: 2, results: [
             ['A', 2, false]   // A gets B's transfer, wins
@@ -89,14 +89,18 @@ describe('Edge Cases and Boundary Conditions', () => {
         .expectRounds([
           { round: 1, results: [
             ['A', 2, false],  // A: 2 votes, survives
-            ['B', 1, false],  // B: 1 vote, survives (7 Borda points)
-            ['C', 1, false],  // C: 1 vote, survives (7 Borda points)
-            ['D', 0, true]    // D: 0 votes, eliminated (2 Borda points)
+            ['B', 1, false],  // B: 1 vote, survives  
+            ['C', 1, false],  // C: 1 vote, survives
+            ['D', 0, true]    // D: 0 votes, eliminated (lowest Borda score)
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes (50% = majority with 4 total), wins
-            ['B', 1, false],  // B: 1 vote, survives  
-            ['C', 1, true]    // C: eliminated (Borda tie with B, alphabetical after B)
+            ['A', 2, false],  // A: 2 votes (50% of 4, needs >50% for majority)
+            ['B', 1, false],  // B: 1 vote, survives (alphabetically before C)
+            ['C', 1, true]    // C: 1 vote, eliminated (alphabetically last when tied)
+          ]},
+          { round: 3, results: [
+            ['A', 2, false],  // A: 2 votes, wins with 67% of 3 active ballots (majority)
+            ['B', 1, false]   // B: 1 vote (not eliminated - round ends with A's majority win)
           ]}
         ])
         .expectWinner('A')
@@ -231,8 +235,8 @@ describe('Edge Cases and Boundary Conditions', () => {
             ['C', 0, true]    // C: 0 votes, eliminated
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes, survives
-            ['B', 2, true]    // B: eliminated (alphabetical when Borda tied - B comes after A)
+            ['A', 2, false],  // A: 2 votes, survives (early alphabet advantage)
+            ['B', 2, true]    // B: 2 votes, eliminated (alphabetically last when tied)
           ]},
           { round: 3, results: [
             ['A', 4, false]   // A: gets B's transfer, wins

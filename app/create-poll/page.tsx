@@ -27,7 +27,7 @@ function CreatePollContent() {
   debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf, duplicateOf }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'poll' | 'nomination'>('poll');
+  const [pollType, setPollType] = useState<'poll' | 'nomination'>('nomination');
   const [options, setOptions] = useState<string[]>(['']);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
@@ -69,7 +69,6 @@ function CreatePollContent() {
         creatorName
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
-      console.log('💾 Form state saved:', formState);
     }
   }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName]);
 
@@ -98,7 +97,6 @@ function CreatePollContent() {
       if (saved) {
         try {
           const formState = JSON.parse(saved);
-          console.log('📥 Form state loaded:', formState);
           setTitle(formState.title || '');
           setPollType(formState.pollType || 'poll');
           setOptions(formState.options || ['']);
@@ -110,7 +108,6 @@ function CreatePollContent() {
           console.error('Failed to load form state:', error);
         }
       } else {
-        console.log('📥 No saved form state found');
       }
     }
   };
@@ -149,11 +146,11 @@ function CreatePollContent() {
   const getValidationError = (): string | null => {
     // Check title first
     if (!title.trim()) {
-      return "Please enter a poll title.";
+      return "Please enter a title.";
     }
     
     if (title.length > 50) {
-      return "Poll title must be 50 characters or less.";
+      return "Title must be 50 characters or less.";
     }
 
     // Check custom deadline if selected
@@ -197,11 +194,8 @@ function CreatePollContent() {
       }
     }
     
-    // If no options (yes/no poll), that's valid unless it's nomination type
+    // If no options, that's valid for all poll types
     if (filledOptions.length === 0) {
-      if (pollType === 'nomination') {
-        return "Nomination polls require at least one starting option.";
-      }
       return null;
     }
     
@@ -617,9 +611,10 @@ function CreatePollContent() {
       const creatorSecret = generateCreatorSecret();
       
       // Prepare poll data
+      const dbPollType = getPollType();
       const pollData: any = {
         title,
-        poll_type: pollType,
+        poll_type: dbPollType,
         response_deadline: responseDeadline,
         creator_secret: creatorSecret
       };
@@ -643,12 +638,12 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add options for ranked choice and nomination polls
-      if (pollType === 'ranked_choice' || getPollType() === 'nomination') {
+      // Add options for ranked choice polls only
+      // For nomination polls, initial options become the creator's vote (not poll content)
+      if (dbPollType === 'ranked_choice') {
         pollData.options = filledOptions;
       }
 
-      console.log("Creating poll with data:", pollData);
       
       const { data, error } = await supabase
         .from("polls")
@@ -691,34 +686,14 @@ function CreatePollContent() {
       // Record poll creation in browser storage
       recordPollCreation(data[0].id, creatorSecret);
 
-      // For nomination polls, submit the creator's initial options as the first "vote"
-      if (getPollType() === 'nomination' && filledOptions.length > 0) {
-        try {
-          const nominationVoteData = {
-            type: 'nomination',
-            nominations: filledOptions
-          };
-
-          await supabase
-            .from('votes')
-            .insert({
-              poll_id: data[0].id,
-              vote_data: nominationVoteData
-            });
-
-          console.log('Creator initial nominations submitted:', nominationVoteData);
-        } catch (nominationError) {
-          console.error('Failed to submit creator nominations:', nominationError);
-          // Don't fail the poll creation if nomination submission fails
-        }
-      }
+      // For nomination polls, creators vote after creation like any other participant
+      // No initial vote is created
 
       // Trigger poll discovery if this is a follow-up poll
       if (followUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
         } catch (error) {
-          console.warn('Failed to trigger poll discovery:', error);
           // Don't fail the poll creation if discovery fails
         }
       }
@@ -736,7 +711,7 @@ function CreatePollContent() {
 
       // Use UUID for now (short_id not available due to incomplete migration)
       const redirectId = data[0].id;
-      router.push(`/p/${redirectId}?new=true`);
+      router.push(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
@@ -760,7 +735,7 @@ function CreatePollContent() {
         <>
           <ForkHeader forkOfPollId={forkOf} />
           {!hasFormChanged && (
-            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
               <p className="text-sm text-yellow-700 dark:text-yellow-300">
                 Make changes to create your fork. The submit button will be enabled once you modify the poll.
               </p>
@@ -769,16 +744,8 @@ function CreatePollContent() {
         </>
       )}
 
-      {!followUpTo && !forkOf && !duplicateOf && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <p className="text-sm text-blue-700 dark:text-blue-300 text-center">
-            Private until you share the link
-          </p>
-        </div>
-      )}
-
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
+        <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
         </div>
       )}
@@ -789,51 +756,19 @@ function CreatePollContent() {
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
           <div>
-            <label htmlFor="title" className="block text-sm font-medium mb-2">
-              Poll Title
-            </label>
-            <input
-              type="text"
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={isLoading}
-              maxLength={50}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your poll title..."
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-3">
-              Type
-            </label>
-            <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-lg p-1 mb-1">
+            <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-1">
               <div 
-                className={`absolute top-1 bottom-1 rounded-md shadow-sm transition-all duration-200 ease-in-out ${
+                className={`absolute top-1 bottom-1 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
                   pollType === 'nomination' 
                     ? 'bg-blue-100 dark:bg-blue-900/30' 
                     : 'bg-green-100 dark:bg-green-900/30'
                 }`}
                 style={{
                   width: 'calc(50% - 4px)',
-                  left: pollType === 'nomination' ? 'calc(50% + 2px)' : '4px'
+                  left: pollType === 'nomination' ? '4px' : 'calc(50% + 2px)'
                 }}
               />
               <div className="relative flex w-full">
-                <button
-                  type="button"
-                  onClick={() => setPollType('poll')}
-                  disabled={isLoading}
-                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
-                    pollType === 'poll'
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  Poll
-                </button>
                 <button
                   type="button"
                   onClick={() => setPollType('nomination')}
@@ -844,23 +779,50 @@ function CreatePollContent() {
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Nomination
+                  Suggestions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPollType('poll')}
+                  disabled={isLoading}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                    pollType === 'poll'
+                      ? 'text-gray-900 dark:text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  Preferences
                 </button>
               </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">
-              {pollType === 'nomination' 
-                ? 'Starting Options' 
-                : 'Poll Options'}{' '}
-              <span className="text-gray-500 font-normal">
-                {pollType === 'nomination' 
-                  ? '(voters can add more)' 
-                  : '(blank for yes/no)'}
-              </span>
+            <label htmlFor="title" className="block text-sm font-medium mb-2">
+              Title
             </label>
+            <input
+              type="text"
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={isLoading}
+              maxLength={50}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder="Enter your title..."
+              required
+            />
+          </div>
+
+          {/* Hide options field for nomination polls - creators vote after creation */}
+          {pollType !== 'nomination' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Options{' '}
+                <span className="text-gray-500 font-normal">
+                  (blank for yes/no)
+                </span>
+              </label>
               <div className="space-y-2">
                 {options.map((option, index) => {
                   const isDuplicate = isDuplicateOption(index);
@@ -923,7 +885,8 @@ function CreatePollContent() {
                   );
                 })}
               </div>
-          </div>
+            </div>
+          )}
 
           <div>
             <label htmlFor="deadline" className="block text-sm font-medium mb-2">
@@ -1032,6 +995,12 @@ function CreatePollContent() {
             )}
           </button>
         </form>
+
+        {!followUpTo && !forkOf && !duplicateOf && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-3">
+            Private until you share the link
+          </p>
+        )}
       
       <ConfirmationModal
         isOpen={showConfirmModal}

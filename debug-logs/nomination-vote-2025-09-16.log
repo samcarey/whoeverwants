@@ -1,0 +1,1295 @@
+[2025-09-16T00:01:56.801Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-09-16T00:01:57.087Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:01:57.467Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:01:58.743Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-09-16T00:01:58.930Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:01:59.093Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:01:59.325Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:01:59.413Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Samuel"
+  }
+}
+---
+[2025-09-16T00:01:59.662Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "c730f161-4238-47e5-bb70-67da233a0f1d"
+  },
+  "insertError": null,
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d",
+  "hasError": false
+}
+---
+[2025-09-16T00:01:59.743Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d"
+}
+---
+[2025-09-16T00:01:59.943Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:02:00.182Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:02:10.087Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "B"
+  ]
+}
+---
+[2025-09-16T00:02:10.282Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:10.355Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:02:11.159Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "c730f161-4238-47e5-bb70-67da233a0f1d"
+}
+---
+[2025-09-16T00:02:11.213Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:02:11.398Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:11.626Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "vote_type": "nomination",
+  "nominations": [
+    "B"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:02:11.957Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "c730f161-4238-47e5-bb70-67da233a0f1d",
+      "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T00:01:59.628164+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "B"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T00:02:11.854289+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T00:02:11.995Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:02:12.554Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:02:33.098Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "C"
+  ]
+}
+---
+[2025-09-16T00:02:33.275Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "C"
+  ],
+  "filteredNominations": [
+    "C"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:33.365Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:02:34.150Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "c730f161-4238-47e5-bb70-67da233a0f1d"
+}
+---
+[2025-09-16T00:02:34.203Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:02:34.388Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "C"
+  ],
+  "filteredNominations": [
+    "C"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:34.493Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "vote_type": "nomination",
+  "nominations": [
+    "C"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:02:34.717Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "c730f161-4238-47e5-bb70-67da233a0f1d",
+      "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T00:01:59.628164+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "C"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T00:02:34.679653+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T00:02:34.905Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:02:35.352Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:02:47.050Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "D"
+  ]
+}
+---
+[2025-09-16T00:02:47.293Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "D"
+  ],
+  "filteredNominations": [
+    "D"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:47.514Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:02:48.382Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "c730f161-4238-47e5-bb70-67da233a0f1d"
+}
+---
+[2025-09-16T00:02:48.557Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:02:48.628Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "D"
+  ],
+  "filteredNominations": [
+    "D"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:02:48.849Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+  "vote_type": "nomination",
+  "nominations": [
+    "D"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:02:49.217Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "c730f161-4238-47e5-bb70-67da233a0f1d",
+      "poll_id": "f0dae478-4f45-433b-9e50-4d46ee4d26a0",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T00:01:59.628164+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "D"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T00:02:49.100982+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T00:02:49.286Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "c730f161-4238-47e5-bb70-67da233a0f1d",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:02:49.780Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:03:09.050Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-09-16T00:03:09.295Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:03:09.387Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:03:10.074Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-09-16T00:03:10.253Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:03:10.323Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:03:10.432Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:03:10.670Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Samuel"
+  }
+}
+---
+[2025-09-16T00:03:11.043Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "807e1c7a-6c5f-4678-b791-da0f689e8876"
+  },
+  "insertError": null,
+  "voteId": "807e1c7a-6c5f-4678-b791-da0f689e8876",
+  "hasError": false
+}
+---
+[2025-09-16T00:03:11.270Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "807e1c7a-6c5f-4678-b791-da0f689e8876"
+}
+---
+[2025-09-16T00:03:11.349Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "807e1c7a-6c5f-4678-b791-da0f689e8876",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:03:11.463Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:03:17.711Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "B"
+  ]
+}
+---
+[2025-09-16T00:03:17.946Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:03:18.175Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:03:18.961Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "807e1c7a-6c5f-4678-b791-da0f689e8876"
+}
+---
+[2025-09-16T00:03:19.143Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T00:03:19.223Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:03:19.456Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+  "vote_type": "nomination",
+  "nominations": [
+    "B"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T00:03:20.023Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "807e1c7a-6c5f-4678-b791-da0f689e8876",
+      "poll_id": "0f4a170d-e2c4-4850-b61a-e194e6d76c90",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T00:03:11.015899+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "B"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T00:03:19.881147+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T00:03:20.085Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "807e1c7a-6c5f-4678-b791-da0f689e8876",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T00:03:20.964Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T00:06:14.144Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstNom"
+  ]
+}
+---
+[2025-09-16T00:06:14.410Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstNom"
+  ],
+  "filteredNominations": [
+    "FirstNom"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:06:14.436Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:10:28.538Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "Original"
+  ]
+}
+---
+[2025-09-16T00:10:28.760Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "Original"
+  ],
+  "filteredNominations": [
+    "Original"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:10:28.842Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:12:41.361Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstChoice"
+  ]
+}
+---
+[2025-09-16T00:12:41.392Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstChoice"
+  ],
+  "filteredNominations": [
+    "FirstChoice"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:12:41.572Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:13:47.806Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstChoice"
+  ]
+}
+---
+[2025-09-16T00:13:47.868Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstChoice"
+  ],
+  "filteredNominations": [
+    "FirstChoice"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:13:48.016Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T00:14:42.371Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstChoice"
+  ]
+}
+---
+[2025-09-16T00:14:42.403Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstChoice"
+  ],
+  "filteredNominations": [
+    "FirstChoice"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T00:14:42.579Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T11:51:52.543Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-09-16T11:51:52.768Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:51:52.941Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T11:51:54.337Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-09-16T11:51:54.562Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "9ad8681c-25b7-4305-803b-086f2d406317",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T11:51:54.682Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:51:54.899Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "9ad8681c-25b7-4305-803b-086f2d406317",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T11:51:54.984Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "9ad8681c-25b7-4305-803b-086f2d406317",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Samuel"
+  }
+}
+---
+[2025-09-16T11:51:55.280Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd"
+  },
+  "insertError": null,
+  "voteId": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd",
+  "hasError": false
+}
+---
+[2025-09-16T11:51:55.380Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd"
+}
+---
+[2025-09-16T11:51:55.573Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T11:51:55.812Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T11:52:03.047Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "B"
+  ]
+}
+---
+[2025-09-16T11:52:03.269Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:52:03.491Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T11:52:04.682Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd"
+}
+---
+[2025-09-16T11:52:04.867Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "9ad8681c-25b7-4305-803b-086f2d406317",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T11:52:04.947Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:52:05.172Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "9ad8681c-25b7-4305-803b-086f2d406317",
+  "vote_type": "nomination",
+  "nominations": [
+    "B"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T11:52:05.493Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd",
+      "poll_id": "9ad8681c-25b7-4305-803b-086f2d406317",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T11:51:55.067466+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "B"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T11:52:05.270354+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T11:52:05.582Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "9402a5f4-ea2e-4050-9d1a-5c427a6bb7dd",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T11:52:06.084Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T11:52:53.014Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-09-16T11:52:53.274Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:52:53.368Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T11:52:54.092Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-09-16T11:52:54.283Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T11:52:54.360Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:52:54.583Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T11:52:54.799Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Samuel"
+  }
+}
+---
+[2025-09-16T11:52:55.079Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "7f685323-ff19-4956-a1b0-35b523affc9c"
+  },
+  "insertError": null,
+  "voteId": "7f685323-ff19-4956-a1b0-35b523affc9c",
+  "hasError": false
+}
+---
+[2025-09-16T11:52:55.266Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "7f685323-ff19-4956-a1b0-35b523affc9c"
+}
+---
+[2025-09-16T11:52:55.337Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "7f685323-ff19-4956-a1b0-35b523affc9c",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T11:52:55.558Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T11:53:01.988Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T11:53:02.739Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": "7f685323-ff19-4956-a1b0-35b523affc9c"
+}
+---
+[2025-09-16T11:53:02.934Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Samuel"
+}
+---
+[2025-09-16T11:53:03.024Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "B"
+  ],
+  "filteredNominations": [
+    "B"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:53:03.238Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+  "vote_type": "nomination",
+  "nominations": [
+    "B"
+  ],
+  "is_abstain": false,
+  "voter_name": "Samuel"
+}
+---
+[2025-09-16T11:53:03.573Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "7f685323-ff19-4956-a1b0-35b523affc9c",
+      "poll_id": "4d3874ba-148d-4548-a2c9-30023e4697c8",
+      "vote_type": "nomination",
+      "yes_no_choice": null,
+      "ranked_choices": null,
+      "created_at": "2025-09-16T11:52:54.945295+00:00",
+      "voter_name": "Samuel",
+      "is_abstain": false,
+      "nominations": [
+        "B"
+      ],
+      "abstain_reason": null,
+      "updated_at": "2025-09-16T11:53:03.336378+00:00"
+    }
+  ]
+}
+---
+[2025-09-16T11:53:03.775Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "7f685323-ff19-4956-a1b0-35b523affc9c",
+  "isEditingVote": true,
+  "pollType": "nomination"
+}
+---
+[2025-09-16T11:53:04.366Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-09-16T11:56:39.272Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstNom"
+  ]
+}
+---
+[2025-09-16T11:56:39.345Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstNom"
+  ],
+  "filteredNominations": [
+    "FirstNom"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T11:56:39.515Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-09-16T13:10:14.697Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "FirstNomination"
+  ]
+}
+---
+[2025-09-16T13:10:14.767Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "FirstNomination"
+  ],
+  "filteredNominations": [
+    "FirstNomination"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-09-16T13:10:14.935Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---

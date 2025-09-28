@@ -3,8 +3,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import ProfileButton from '@/components/ProfileButton';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
+import HeaderPortal from '@/components/HeaderPortal';
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -16,12 +18,17 @@ export default function Template({ children }: AppTemplateProps) {
   const [isExternalReferrer, setIsExternalReferrer] = useState(false);
   const [shouldShowHomeButton, setShouldShowHomeButton] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   const [isIOSPWA, setIsIOSPWA] = useState(false);
   const lastScrollY = useRef(0);
   const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
+
+  // Pull-to-refresh state
+  const [isPulling, setIsPulling] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
   
   // Check if referrer is from a different domain or if this is a new tab/external entry
   // Also determine if back button should show home icon instead
@@ -106,10 +113,15 @@ export default function Template({ children }: AppTemplateProps) {
       setIsIOSPWA(isStandalone && isIOS);
     }
   }, [pathname]);
+
+  // Set mounted state for portal rendering
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Determine initial state based on pathname to avoid layout shift
   const getInitialPageTitle = () => {
-    if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Create New Poll';
+    if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Ask For...';
     return '';
   };
   
@@ -129,7 +141,7 @@ export default function Template({ children }: AppTemplateProps) {
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname === '/create-poll' || pathname === '/create-poll/') {
-      setPageTitle('Create New Poll');
+      setPageTitle('Ask For...');
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname.startsWith('/p/')) {
@@ -167,40 +179,40 @@ export default function Template({ children }: AppTemplateProps) {
         const target = e.target as HTMLElement;
         const currentScrollY = target.scrollTop;
         const maxScrollY = target.scrollHeight - target.clientHeight;
-        
+
         // Detect iOS rubber band overshoot
         const isOvershootTop = currentScrollY < 0;
         const isOvershootBottom = currentScrollY > maxScrollY;
         const isInOvershoot = isOvershootTop || isOvershootBottom;
-        
+
         // If we detect overshoot, enter bounce mode and ignore this event
         if (isInOvershoot) {
           isInBounceRef.current = true;
-          
+
           // Clear any existing timeout and set a new one to exit bounce mode
           if (bounceTimeoutRef.current) {
             clearTimeout(bounceTimeoutRef.current);
           }
-          
+
           bounceTimeoutRef.current = setTimeout(() => {
             isInBounceRef.current = false;
             bounceTimeoutRef.current = null;
           }, 150); // Wait 150ms after overshoot ends
-          
+
           return; // Ignore this scroll event
         }
-        
+
         // If we're still in bounce mode from previous overshoot, ignore this event
         if (isInBounceRef.current) {
           return;
         }
-        
+
         // Normal scroll processing
         const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-        
+
         // Only trigger if scroll difference is above threshold
         if (scrollDifference < scrollThreshold.current) return;
-        
+
         if (currentScrollY > lastScrollY.current) {
           // Scrolling down - hide bottom bar
           setShowBottomBar(false);
@@ -208,21 +220,21 @@ export default function Template({ children }: AppTemplateProps) {
           // Scrolling up - show bottom bar
           setShowBottomBar(true);
         }
-        
+
         // Always show at the very top
         if (currentScrollY === 0) {
           setShowBottomBar(true);
         }
-        
+
         lastScrollY.current = currentScrollY;
       };
 
       // Add scroll listener to the scrollable container, not window
       const scrollContainer = scrollContainerRef.current;
-      
+
       if (scrollContainer) {
         scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-        
+
         return () => {
           scrollContainer.removeEventListener('scroll', handleScroll);
           // Clean up timeout on unmount
@@ -238,12 +250,97 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
+  // Pull-to-refresh functionality
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let startY = 0;
+    let currentY = 0;
+    let isAtTop = true;
+    let isDragging = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      startY = e.touches[0].clientY;
+      const scrollContainer = scrollContainerRef.current;
+      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isAtTop) return;
+
+      currentY = e.touches[0].clientY;
+      const deltaY = currentY - startY;
+
+      if (deltaY > 10) {
+        // Pulling down from top
+        isDragging = true;
+        setPullDistance(deltaY);
+        setIsPulling(deltaY > 60);
+
+        // Prevent default scrolling when pulling
+        e.preventDefault();
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (isDragging && pullDistance > 60) {
+        // Trigger page reload for all pages
+        window.location.reload();
+      }
+
+      // Reset state
+      isDragging = false;
+      setIsPulling(false);
+      setPullDistance(0);
+    };
+
+    // Add to document body to capture all touch events
+    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      document.body.removeEventListener('touchstart', handleTouchStart);
+      document.body.removeEventListener('touchmove', handleTouchMove);
+      document.body.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [pullDistance]);
+
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
 
   return (
     <>
+      {/* Pull-to-refresh indicator */}
+      {isPulling && (
+        <div
+          className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
+          style={{
+            transform: `translateY(${Math.min(pullDistance - 60, 40)}px)`,
+            opacity: pullDistance > 30 ? 1 : pullDistance / 30
+          }}
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2 mt-4">
+            <svg
+              className={`w-6 h-6 text-blue-600 dark:text-blue-400 ${
+                pullDistance > 60 ? 'animate-spin' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </div>
+        </div>
+      )}
+
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
       {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
@@ -273,7 +370,7 @@ export default function Template({ children }: AppTemplateProps) {
       )}
 
       {/* Scrollable Content Area - consistent across all pages */}
-      <div 
+      <div
         ref={scrollContainerRef}
         className="flex-1 overflow-auto safari-scroll-container" 
         style={{ 
@@ -282,58 +379,10 @@ export default function Template({ children }: AppTemplateProps) {
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
           paddingBottom: '1rem'
         }}>
-        <div className="min-h-full">
-          {/* Back arrow and title for pages without top bar */}
+        <div>
+          {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
-              {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
-              {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
-                <div className="absolute left-0 top-4 z-10">
-                {shouldShowHomeButton ? (
-                  <button 
-                    onClick={() => window.location.href = '/'}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                    aria-label="Go to home"
-                  >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => window.history.back()}
-                    className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                    aria-label="Go back"
-                  >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                )}
-                </div>
-              )}
-              
-              {/* Copy link button in upper right for poll pages */}
-              {isPollPage && (
-                <div className="absolute right-0 top-4 z-10">
-                  <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
-                </div>
-              )}
-              
-              {/* New poll button in upper right for home page */}
-              {pathname === '/' && (
-                <div className="absolute right-0 top-4 z-10">
-                  <Link
-                    href="/create-poll"
-                    className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                    aria-label="Create new poll"
-                  >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </Link>
-                </div>
-              )}
               
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
@@ -348,7 +397,7 @@ export default function Template({ children }: AppTemplateProps) {
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1 className="text-2xl font-bold text-center break-words">
-                    Create New Poll
+                    Ask For...
                   </h1>
                 </div>
               )}
@@ -376,22 +425,23 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'} ${pathname === '/' ? 'text-red-600' : ''}`}>
             {children}
           </div>
         </div>
       </div>
 
-      {/* Scroll-aware bottom bar */}
-      <div 
-        className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg shadow-lg z-50 transition-opacity duration-200 ease-out ${
-          showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
-        style={{
-          // Extend background into safe area - always apply for proper iOS support
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
-        }}
-      >
+      {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
+      {isMounted && createPortal(
+        <div
+          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 transition-opacity duration-200 ease-out ${
+            showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          style={{
+            // Extend background into safe area - always apply for proper iOS support
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+          }}
+        >
         <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
           <div className="flex items-center justify-center gap-12">
             {/* Home button */}
@@ -435,7 +485,61 @@ export default function Template({ children }: AppTemplateProps) {
             </button>
           </div>
         </div>
-      </div>
+        </div>,
+        document.getElementById('bottom-bar-portal')!
+      )}
+
+      {/* Header elements rendered outside scaling container */}
+      <HeaderPortal>
+        {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
+        {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
+          <div className="fixed left-4 top-4 z-50">
+            {shouldShowHomeButton ? (
+                <button 
+                  onClick={() => window.location.href = '/'}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                  aria-label="Go to home"
+                >
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                  </svg>
+                </button>
+            ) : (
+              <button 
+                onClick={() => window.history.back()}
+                className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                aria-label="Go back"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* Copy link button in upper right for poll pages */}
+        {isPollPage && (
+          <div className="fixed right-4 top-4 z-50">
+            <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
+          </div>
+        )}
+        
+        {/* New poll button in upper right for home page */}
+        {pathname === '/' && (
+          <div className="fixed right-4 top-4 z-50">
+            <Link
+              href="/create-poll"
+              className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+              aria-label="Create new poll"
+            >
+              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </Link>
+          </div>
+        )}
+      </HeaderPortal>
     </>
   );
 }

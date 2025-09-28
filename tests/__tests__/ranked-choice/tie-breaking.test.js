@@ -42,17 +42,21 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
         .expectRounds([
           { round: 1, results: [
             ['A', 1, false],  // A: 1 vote, 12 Borda points, survives
-            ['B', 1, false],  // B: 1 vote, 8 Borda points, survives  
+            ['B', 1, false],  // B: 1 vote, 8 Borda points, survives
             ['C', 1, false],  // C: 1 vote, 12 Borda points, survives
-            ['D', 1, true]    // D: 1 vote, 8 Borda points, eliminated (tied with B, alphabetically after B)
+            ['D', 1, true]    // D: 1 vote, 8 Borda points, eliminated (tied with B, alphabetically last)
           ]},
           { round: 2, results: [
             ['A', 2, false],  // A: gets D's transfer
-            ['B', 1, false],  
-            ['C', 1, true]    // C: eliminated next by Borda (or ties, algorithm decides)
+            ['B', 1, true],   // B: eliminated next (lowest Borda)
+            ['C', 1, false]   
           ]},
           { round: 3, results: [
-            ['A', 3, false]   // A: gets C's transfer, wins
+            ['A', 2, false],  // A: 2 votes, survives
+            ['C', 2, true]    // C: gets B's transfer, eliminated (alphabetical when tied)
+          ]},
+          { round: 4, results: [
+            ['A', 4, false]   // A: gets C's transfer, wins
           ]}
         ])
         .expectWinner('A')
@@ -67,8 +71,8 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives (alphabetical when Borda tied)
-            ['B', 1, true]    // B: 1 vote, eliminated
+            ['A', 1, false],  // A: 1 vote, survives
+            ['B', 1, true]    // B: 1 vote, eliminated (alphabetically last when Borda tied)
           ]},
           { round: 2, results: [
             ['A', 2, false]   // A: gets B's transfer, wins
@@ -123,25 +127,25 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, true],   // A: 1 vote, eliminated (alphabetical when Borda tied)
+            ['A', 1, false],  // A: 1 vote, survives
             ['B', 1, false],  // B: 1 vote, survives
             ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, false]   // D: 1 vote, survives
+            ['D', 1, true]    // D: 1 vote, eliminated (alphabetically last when Borda tied)
           ]},
           { round: 2, results: [
-            ['C', 2, false],  // C: gets A's transfer, survives
-            ['D', 1, false],  // D: 1 vote, survives
-            ['B', 1, true]    // B: eliminated next
+            ['B', 2, false],  // B: gets D's transfer, survives
+            ['A', 1, false],  // A: 1 vote, survives
+            ['C', 1, true]    // C: eliminated next
           ]},
           { round: 3, results: [
-            ['D', 2, false],  // D: gets B's transfer, survives
-            ['C', 2, true]    // C: eliminated (Borda tiebreaker)
+            ['A', 2, false],  // A: gets C's transfer, survives
+            ['B', 2, true]    // B: eliminated (alphabetically last when tied)
           ]},
           { round: 4, results: [
-            ['D', 4, false]   // D: gets all transfers, wins
+            ['A', 4, false]   // A: gets B's transfer, wins
           ]}
         ])
-        .expectWinner('D')
+        .expectWinner('A')
         .run()
     })
   })
@@ -180,13 +184,13 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
             ['D', 0, true]    // D: 0 votes, eliminated (lowest Borda score)
           ]},
           { round: 2, results: [
+            ['A', 1, false],  // A: 1 vote, survives (early alphabet advantage)
             ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives
-            ['A', 1, true]    // A: 1 vote, eliminated (alphabetical when Borda tied)
+            ['C', 1, true]    // C: 1 vote, eliminated (alphabetically last among tied)
           ]},
           { round: 3, results: [
-            ['B', 2, false],  // B: gets A's transfer, wins
-            ['C', 1, false]   // C: 1 vote, survives
+            ['A', 2, false],  // A: gets C's transfer, wins
+            ['B', 1, false]   // B: 1 vote, survives
           ]}
         ])
         .expectWinner('A')

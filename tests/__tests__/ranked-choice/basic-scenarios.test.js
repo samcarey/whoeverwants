@@ -119,16 +119,16 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
         ])
         .expectRounds([
           { round: 1, results: [
+            ['A', 1, false],  // A: 1 vote, survives
             ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives
-            ['A', 1, true]    // A: 1 vote, eliminated first (alphabetical order when Borda tied)
+            ['C', 1, true]    // C: 1 vote, eliminated first (alphabetically last when Borda tied)
           ]},
           { round: 2, results: [
-            ['B', 2, false],  // B: gets A's transfer, wins
-            ['C', 1, false]   
+            ['A', 2, false],  // A: gets C's transfer, wins
+            ['B', 1, false]   
           ]}
         ])
-        .expectWinner('B')
+        .expectWinner('A')
         .run()
     })
 

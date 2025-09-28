@@ -64,7 +64,6 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
             filter: `poll_id=eq.${pollId}`
           },
           (payload) => {
-            console.log('Vote change received:', payload);
             // Refetch voters when any vote changes
             fetchVoters();
           }
@@ -87,13 +86,20 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (loading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
-        <div className="flex items-center justify-center py-4">
-          <svg className="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">Voters</h3>
+        <div className="flex flex-wrap justify-center gap-2">
+          {/* Shimmer effect for loading voter bubbles */}
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div 
+              key={i} 
+              className="animate-pulse inline-block px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700"
+              style={{
+                width: `${60 + (i * 15) % 40}px`,
+                height: '28px'
+              }}
+            />
+          ))}
         </div>
       </div>
     );
@@ -101,20 +107,15 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1 shadow-sm ${className}`}>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">Voters</h3>
         <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
       </div>
     );
   }
 
   if (voters.length === 0) {
-    return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">Voters</h3>
-        <div className="text-sm text-gray-500 dark:text-gray-400 italic">No votes yet</div>
-      </div>
-    );
+    return null;
   }
 
   // Get named voters (excluding anonymous ones) and sort alphabetically
@@ -142,14 +143,14 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm ${className}`}>
-      <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
+    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+      <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">
         Voters ({voters.length})
       </h3>
       
       <div className="text-center">
         {/* Named voters - displayed as colored bubbles in a flowing layout */}
-        <div className="flex flex-wrap justify-center gap-2 mb-3">
+        <div className="flex flex-wrap justify-center gap-2 mb-1.5">
           {namedVoters.map((voter, index) => (
             <span 
               key={voter.id} 

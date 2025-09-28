@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import ModalPortal from "./ModalPortal";
 
 interface SuccessPopupProps {
   show: boolean;
@@ -38,13 +39,14 @@ export default function SuccessPopup({ show, onClose }: SuccessPopupProps) {
   if (!isVisible) return null;
 
   return (
-    <div 
-      className={`fixed top-14 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
-        isAnimatingOut 
-          ? '-translate-y-full opacity-0' 
-          : 'translate-y-0 opacity-100'
-      }`}
-    >
+    <ModalPortal>
+      <div 
+        className={`fixed top-14 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ease-out ${
+          isAnimatingOut 
+            ? '-translate-y-full opacity-0' 
+            : 'translate-y-0 opacity-100'
+        }`}
+      >
       <div className="bg-green-600 text-white px-2 py-0.5 rounded-lg shadow-lg flex items-center space-x-2 whitespace-nowrap">
         <div className="flex-shrink-0">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,6 +72,7 @@ export default function SuccessPopup({ show, onClose }: SuccessPopupProps) {
           </svg>
         </button>
       </div>
-    </div>
+      </div>
+    </ModalPortal>
   );
 }

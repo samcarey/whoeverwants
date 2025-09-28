@@ -1,0 +1,1774 @@
+
+> whoeverwants@0.1.0 test
+> vitest --max-workers=4
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90m/home/sccarey/whoeverwants[39m
+
+[90mstdout[2m | tests/__tests__/voting-algorithms/borda-count-compensation.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ballot-logic/data-integrity.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ranked-choice/edge-cases.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [31m❯[39m tests/__tests__/ballot-logic/data-integrity.test.js [2m([22m[2m16 tests[22m[2m | [22m[31m16 failed[39m[2m)[22m[33m 3385[2mms[22m[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify no preference items never appear in database[39m[32m 109[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould prevent SQL injection in candidate names[39m[32m 135[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify ballot data matches UI state exactly[39m[32m 117[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould handle concurrent submission prevention[39m[32m 234[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify ballot immutability after submission[39m[32m 99[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould maintain consistency during database transactions[39m[32m 92[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould handle database failures gracefully[39m[32m 235[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould verify ballot retrieval accuracy[39m[32m 98[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould handle network interruption gracefully[39m[32m 95[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould validate data integrity after system recovery[39m[32m 108[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould maintain referential integrity[39m[32m 142[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould preserve audit trail for ballot submissions[39m[32m 111[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould log ballot modification attempts[39m[32m 144[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould maintain data lineage for ballot processing[39m[32m 115[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m5. Cross-System Data Validation[2m > [22mshould validate data consistency across multiple queries[39m[32m 118[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Data Integrity Tests[2m > [22m5. Cross-System Data Validation[2m > [22mshould maintain data integrity during high concurrency[39m[33m 320[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+ [31m❯[39m tests/__tests__/voting-algorithms/borda-count-compensation.test.js [2m([22m[2m11 tests[22m[2m | [22m[31m11 failed[39m[2m)[22m[33m 3584[2mms[22m[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould compensate points so each ballot contributes equally[39m[33m 475[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould handle mixed ballot lengths with fair compensation[39m[32m 191[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould verify mathematical properties of compensation[39m[32m 209[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould ensure consistent winner regardless of ballot completion rates[39m[32m 179[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould handle edge case of single candidate ballots[39m[32m 190[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould maintain proportional relationships across compensation[39m[32m 225[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould maintain monotonicity property[39m[32m 204[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould demonstrate independence of irrelevant alternatives[39m[32m 209[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould produce consistent results under symmetry[39m[32m 197[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m4. Performance and Scalability[2m > [22mshould handle large numbers of incomplete ballots efficiently[39m[32m 192[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: Borda Count - Point Compensation Algorithm[2m > [22m4. Performance and Scalability[2m > [22mshould maintain precision with complex compensation calculations[39m[32m 192[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[90mstdout[2m | tests/__tests__/ranked-choice/zero-vote-elimination.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ranked-choice/tie-breaking.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [31m❯[39m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js [2m([22m[2m8 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 6308[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie-Breaking[2m > [22mClassic Borda Count Scenarios[2m > [22meliminates candidate with lowest Borda score when tied for last place[39m[33m 895[2mms[22m[39m
+[31m     → A elimination status mismatch in round 3: expected false to be true // Object.is equality[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking[2m > [22mClassic Borda Count Scenarios[2m > [22muses Borda count to determine which candidate survives comeback scenario [33m 856[2mms[22m[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking[2m > [22mClassic Borda Count Scenarios[2m > [22mhandles Borda count when some candidates not ranked by all voters [33m 661[2mms[22m[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking[2m > [22mZero Vote Candidates with Borda Scoring[2m > [22muses Borda scores to eliminate among zero-vote candidates [33m 607[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie-Breaking[2m > [22mZero Vote Candidates with Borda Scoring[2m > [22meliminates candidate with lowest Borda among multiple zero-vote candidates[39m[33m 598[2mms[22m[39m
+[31m     → expected 0 to be greater than 0[39m
+[31m   [31m×[31m Borda Count Tie-Breaking[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mapplies Borda count repeatedly across multiple rounds[39m[32m 236[2mms[22m[39m
+[31m     → Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking[2m > [22mDeterministic Tie-Breaking[2m > [22muses alphabetical sorting as secondary sort when Borda scores are identical [33m 653[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie-Breaking[2m > [22mDeterministic Tie-Breaking[2m > [22mhandles perfect Borda ties with alphabetical elimination[39m[33m 540[2mms[22m[39m
+[31m     → A elimination status mismatch in round 1: expected false to be true // Object.is equality[39m
+ [31m❯[39m tests/__tests__/ranked-choice/edge-cases.test.js [2m([22m[2m9 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 6628[2mms[22m[39m
+   [33m[2m✓[22m[39m Edge Cases and Boundary Conditions[2m > [22mEmpty and Minimal Votes[2m > [22mhandles poll with no votes [33m 424[2mms[22m[39m
+   [33m[2m✓[22m[39m Edge Cases and Boundary Conditions[2m > [22mEmpty and Minimal Votes[2m > [22mhandles single vote scenario [33m 513[2mms[22m[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mEmpty and Minimal Votes[2m > [22mhandles two candidates with one vote each[39m[33m 577[2mms[22m[39m
+[31m     → expected 'B' to be 'A' // Object.is equality[39m
+   [33m[2m✓[22m[39m Edge Cases and Boundary Conditions[2m > [22mIncomplete and Invalid Ballots[2m > [22mhandles ballots with only one candidate ranked [33m 734[2mms[22m[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mIncomplete and Invalid Ballots[2m > [22mhandles mixed complete and incomplete ballots[39m[33m 790[2mms[22m[39m
+[31m     → B elimination status mismatch in round 2: expected true to be false // Object.is equality[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mLarge Number of Candidates[2m > [22mhandles many candidates with systematic elimination[39m[33m 673[2mms[22m[39m
+[31m     → expected 'B' to be 'A' // Object.is equality[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mUnusual Voting Patterns[2m > [22mhandles reverse-order voting patterns[39m[32m 272[2mms[22m[39m
+[31m     → Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mUnusual Voting Patterns[2m > [22mhandles strategic voting attempts[39m[33m 785[2mms[22m[39m
+[31m     → expected 'C' to be 'A' // Object.is equality[39m
+[31m   [31m×[31m Edge Cases and Boundary Conditions[2m > [22mBoundary Conditions[2m > [22mhandles exactly 50-50 split requiring runoff[39m[33m 741[2mms[22m[39m
+[31m     → expected 'B' to be 'A' // Object.is equality[39m
+[90mstdout[2m | tests/__tests__/ballot-logic/edge-cases.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ranked-choice/borda-tiebreak-fix.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [31m❯[39m tests/__tests__/ranked-choice/zero-vote-elimination.test.js [2m([22m[2m6 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 3865[2mms[22m[39m
+[31m   [31m×[31m Zero Vote Elimination Bug Fix[2m > [22mOriginal Production Bug Scenario[2m > [22meliminates B and C with 0 first-place votes before A, D, E with 1 vote each[39m[33m 421[2mms[22m[39m
+[31m     → Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[31m   [31m×[31m Zero Vote Elimination Bug Fix[2m > [22mOriginal Production Bug Scenario[2m > [22meliminates single candidate with 0 votes when others are tied with 1[39m[33m 598[2mms[22m[39m
+[31m     → expected 'C' to be 'A' // Object.is equality[39m
+   [33m[2m✓[22m[39m Zero Vote Elimination Bug Fix[2m > [22mMultiple Zero Vote Scenarios[2m > [22meliminates all candidates with 0 votes when clear winner exists [33m 641[2mms[22m[39m
+[31m   [31m×[31m Zero Vote Elimination Bug Fix[2m > [22mMultiple Zero Vote Scenarios[2m > [22meliminates candidates with 0 votes in correct order when multiple rounds needed[39m[33m 720[2mms[22m[39m
+[31m     → expected 'C' to be 'A' // Object.is equality[39m
+   [33m[2m✓[22m[39m Zero Vote Elimination Bug Fix[2m > [22mEdge Cases[2m > [22mhandles single voter with some candidates getting 0 votes [33m 503[2mms[22m[39m
+[31m   [31m×[31m Zero Vote Elimination Bug Fix[2m > [22mEdge Cases[2m > [22meliminates candidates with partial rankings and 0 first-place votes[39m[33m 531[2mms[22m[39m
+[31m     → Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[90mstdout[2m | tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [31m❯[39m tests/__tests__/ballot-logic/edge-cases.test.js [2m([22m[2m23 tests[22m[2m | [22m[31m13 failed[39m[2m)[22m[33m 2686[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle exactly 1 candidate in main list[32m 110[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle maximum allowed candidates[32m 130[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle submission after moving all items back and forth multiple times[32m 1[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle candidates with emoji and unicode characters[32m 92[2mms[22m[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle very long candidate names (boundary testing)[39m[32m 108[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle submission during network connectivity issues[39m[32m 94[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle submission with browser local storage disabled[32m 1[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle graceful degradation when JavaScript is limited[32m 1[2mms[22m[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould filter ballots with 50+ candidates efficiently[32m 1[2mms[22m[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould test submission speed with maximum candidate counts[39m[32m 86[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould verify memory usage doesn't grow during filtering[32m 46[2mms[22m[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould test concurrent submissions from multiple users[39m[33m 335[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould verify database performance with filtered ballot storage[39m[32m 92[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould test filtering performance on slower devices/networks[32m 1[2mms[22m[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould handle rapid successive ballot submissions[39m[32m 130[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould handle maximum database load[39m[32m 120[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould verify system stability under continuous load[39m[32m 80[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould recover gracefully from temporary database errors[39m[32m 82[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould maintain data consistency after system recovery[39m[32m 86[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould handle partial data corruption scenarios[39m[32m 78[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m5. Integration Edge Cases[2m > [22mshould handle polls with zero existing votes[39m[32m 85[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 2: Edge Cases and Performance Tests[2m > [22m5. Integration Edge Cases[2m > [22mshould handle polls with mixed vote types (if applicable)[39m[32m 80[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+   [32m✓[39m Phase 2: Edge Cases and Performance Tests[2m > [22m5. Integration Edge Cases[2m > [22mshould handle edge cases in poll option parsing[32m 1[2mms[22m[39m
+ [31m❯[39m tests/__tests__/ranked-choice/tie-breaking.test.js [2m([22m[2m7 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[33m 5879[2mms[22m[39m
+   [33m[2m✓[22m[39m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mBorda Count vs Old Batch Elimination[2m > [22muses Borda count to eliminate single candidate instead of all tied candidates [33m 794[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mBorda Count vs Old Batch Elimination[2m > [22meliminates candidate with lowest Borda score from tied group[39m[33m 993[2mms[22m[39m
+[31m     → expected 'C' to be 'A' // Object.is equality[39m
+[31m   [31m×[31m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mBorda Count vs Old Batch Elimination[2m > [22mhandles perfect Borda score ties with alphabetical elimination[39m[33m 762[2mms[22m[39m
+[31m     → expected 'B' to be 'A' // Object.is equality[39m
+[31m   [31m×[31m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mapplies Borda count in each round separately[39m[33m 665[2mms[22m[39m
+[31m     → Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[31m   [31m×[31m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mcontinues eliminating until clear winner emerges[39m[33m 846[2mms[22m[39m
+[31m     → C elimination status mismatch in round 3: expected false to be true // Object.is equality[39m
+   [33m[2m✓[22m[39m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mZero Vote Candidate Scenarios[2m > [22muses Borda count even among zero-vote candidates [33m 581[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie Breaking - Updated for New Algorithm[2m > [22mZero Vote Candidate Scenarios[2m > [22meliminates zero-vote candidate with lowest Borda score[39m[33m 724[2mms[22m[39m
+[31m     → expected 'B' to be 'A' // Object.is equality[39m
+ [31m❯[39m tests/__tests__/ranked-choice/borda-tiebreak-fix.test.js [2m([22m[2m3 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 3021[2mms[22m[39m
+[31m   [31m×[31m Borda Count Tie-Breaking Fix[2m > [22mshould eliminate C before A when A and C have same Borda score but B has higher score[39m[33m 769[2mms[22m[39m
+[31m     → A elimination status mismatch in round 1: expected true to be false // Object.is equality[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking Fix[2m > [22mshould handle multiple candidates tied for lowest Borda score [33m 860[2mms[22m[39m
+   [33m[2m✓[22m[39m Borda Count Tie-Breaking Fix[2m > [22mshould only consider lowest Borda score candidates for alphabetical elimination [33m 911[2mms[22m[39m
+[90mstdout[2m | tests/__tests__/ranked-choice/basic-scenarios.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ballot-logic/ballot-filtering.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/ballot-logic/ballot-validation.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [32m✓[39m tests/__tests__/ballot-logic/ballot-validation.test.js [2m([22m[2m25 tests[22m[2m)[22m[33m 1022[2mms[22m[39m
+[90mstdout[2m | tests/__tests__/components/RankableOptions.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+ [32m✓[39m tests/__tests__/components/RankableOptions.test.js [2m([22m[2m39 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m tests/__tests__/ballot-logic/ballot-filtering.test.js [2m([22m[2m26 tests[22m[2m)[22m[33m 2624[2mms[22m[39m
+ [31m❯[39m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js [2m([22m[2m11 tests[22m[2m | [22m[31m8 failed[39m[2m)[22m[33m 5011[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m1. Progressive Ballot Elimination[2m > [22mshould handle ballot elimination when all ranked candidates are eliminated [33m 740[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m1. Progressive Ballot Elimination[2m > [22mshould correctly calculate majority thresholds with incomplete ballots [33m 835[2mms[22m[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m1. Progressive Ballot Elimination[2m > [22mshould handle scenario where all ballots become inactive[39m[33m 447[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m2. Active Ballot Tracking[2m > [22mshould properly track which ballots remain active in each round[39m[32m 238[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m2. Active Ballot Tracking[2m > [22mshould handle mixed ballot lengths correctly in vote redistribution[39m[32m 187[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould maintain mathematical properties of IRV with incomplete ballots[39m[32m 209[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould produce deterministic results with same input[39m[32m 203[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould handle edge case of single candidate ballots[39m[32m 206[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+   [32m✓[39m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m4. Edge Cases and Boundary Conditions[2m > [22mshould handle polls where no ballots rank any candidates[32m 209[2mms[22m[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m4. Edge Cases and Boundary Conditions[2m > [22mshould handle extremely uneven ballot completeness[39m[32m 196[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[31m   [31m×[31m Phase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m4. Edge Cases and Boundary Conditions[2m > [22mshould maintain performance with incomplete ballots[39m[32m 185[2mms[22m[39m
+[31m     → expected { code: '23503', …(3) } to be null[39m
+[90mstdout[2m | tests/__tests__/integration/vote-retrieval.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/integration/vote-retrieval.test.js[2m > [22m[2mVote Storage and Retrieval[2m > [22m[2mVote Retrieval Bug[2m > [22m[2mshould correctly retrieve and display YES vote (not NO)
+[22m[39mRetrieved vote data: { poll_id: [32m'bug-test-poll'[39m, vote_type: [32m'yes_no'[39m, yes_no_choice: [32m'yes'[39m }
+
+ [32m✓[39m tests/__tests__/integration/vote-retrieval.test.js [2m([22m[2m5 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+[90mstdout[2m | tests/__tests__/integration/poll-page-vote-display.test.js
+[22m[39m🧪 Test environment initialized
+📊 Testing against: https://kfngceqepnzlljkwedtd.supabase.co
+
+[90mstdout[2m | tests/__tests__/integration/poll-page-vote-display.test.js[2m > [22m[2mPollPageClient Vote Display Logic[2m > [22m[2mVote Data Processing[2m > [22m[2mshould detect if vote data has unexpected structure
+[22m[39mTesting: Correct structure
+Testing: Nested structure
+Testing: Missing field
+Testing: Boolean instead of string
+
+[90mstdout[2m | tests/__tests__/integration/poll-page-vote-display.test.js[2m > [22m[2mPollPageClient Vote Display Logic[2m > [22m[2mlocalStorage and State Sync[2m > [22m[2mshould not use stale localStorage data when fetching from database
+[22m[39mOld localStorage vote data (should not be used): { yesNoChoice: [32m'yes'[39m }
+
+ [32m✓[39m tests/__tests__/integration/poll-page-vote-display.test.js [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m tests/__tests__/ranked-choice/basic-scenarios.test.js [2m([22m[2m6 tests[22m[2m)[22m[33m 5257[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mImmediate Winners[2m > [22mdeclares winner immediately when candidate has majority in first round [33m 1024[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mImmediate Winners[2m > [22mcontinues to elimination when no candidate has majority [33m 853[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mSequential Elimination[2m > [22meliminates candidates one by one until winner emerges [33m 795[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mSequential Elimination[2m > [22mhandles complex vote redistribution across multiple rounds [33m 878[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mVote Transfer Logic[2m > [22mtransfers votes correctly when preferred candidate is eliminated [33m 663[2mms[22m[39m
+   [33m[2m✓[22m[39m Basic Ranked Choice Voting Scenarios[2m > [22mVote Transfer Logic[2m > [22mskips eliminated candidates when transferring votes [33m 600[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 68 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify no preference items never appear in database
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m64:21[22m[39m
+    [90m 62| [39m        [33m.[39m[34mselect[39m()
+    [90m 63| [39m
+    [90m 64| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m 65| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m(mainList)
+    [90m 66| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39mnot[33m.[39m[34mtoContain[39m([32m'Secure Option C'[39m)
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould prevent SQL injection in candidate names
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m104:21[22m[39m
+    [90m102| [39m        [33m.[39m[34mselect[39m()
+    [90m103| [39m
+    [90m104| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m105| [39m      expect(data[0].ranked_choices).toEqual(['Secure Option A', 'Secu…
+    [90m106| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify ballot data matches UI state exactly
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m137:21[22m[39m
+    [90m135| [39m        [33m.[39m[34mselect[39m()
+    [90m136| [39m
+    [90m137| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m138| [39m      
+    [90m139| [39m      [90m// Verify exact match with UI state[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould handle concurrent submission prevention
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m170:30[22m[39m
+    [90m168| [39m      // All should succeed (anonymous voting allows multiple submissi…
+    [90m169| [39m      results[33m.[39m[34mforEach[39m(result [33m=>[39m {
+    [90m170| [39m        [34mexpect[39m(result[33m.[39merror)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                             [31m^[39m
+    [90m171| [39m        expect(result.data[0].ranked_choices).toEqual(['Secure Option …
+    [90m172| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m result[33m.[39mdata[[34m0[39m][33m.[39mid })
+[90m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m169:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m1. Database Security and Integrity[2m > [22mshould verify ballot immutability after submission
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m188:21[22m[39m
+    [90m186| [39m        [33m.[39m[34mselect[39m()
+    [90m187| [39m
+    [90m188| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m189| [39m      [35mconst[39m voteId [33m=[39m data[[34m0[39m][33m.[39mid
+    [90m190| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould maintain consistency during database transactions
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m242:23[22m[39m
+    [90m240| [39m          [33m.[39m[34mselect[39m()
+    [90m241| [39m        
+    [90m242| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m243| [39m        results[33m.[39m[34mpush[39m(data[[34m0[39m])
+    [90m244| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould handle database failures gracefully
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m282:26[22m[39m
+    [90m280| [39m        [33m.[39m[34mselect[39m()
+    [90m281| [39m
+    [90m282| [39m      [34mexpect[39m(validError)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                         [31m^[39m
+    [90m283| [39m      [34mexpect[39m(validData[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Secure Option A'[39m])
+    [90m284| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m2. Data Consistency During Transactions[2m > [22mshould verify ballot retrieval accuracy
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m308:23[22m[39m
+    [90m306| [39m          [33m.[39m[34mselect[39m()
+    [90m307| [39m        
+    [90m308| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m309| [39m        insertedIds[33m.[39m[34mpush[39m(data[[34m0[39m][33m.[39mid)
+    [90m310| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould handle network interruption gracefully
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m342:21[22m[39m
+    [90m340| [39m
+    [90m341| [39m      [90m// Should succeed under normal conditions[39m
+    [90m342| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m343| [39m      expect(data[0].ranked_choices).toEqual(['Secure Option A', 'Secu…
+    [90m344| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould validate data integrity after system recovery
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m361:27[22m[39m
+    [90m359| [39m        [33m.[39m[34mselect[39m()
+    [90m360| [39m
+    [90m361| [39m      [34mexpect[39m(insertError)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                          [31m^[39m
+    [90m362| [39m      [35mconst[39m voteId [33m=[39m insertData[[34m0[39m][33m.[39mid
+    [90m363| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m3. Error Handling and Recovery[2m > [22mshould maintain referential integrity
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m394:21[22m[39m
+    [90m392| [39m        [33m.[39m[34mselect[39m()
+    [90m393| [39m
+    [90m394| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m395| [39m      
+    [90m396| [39m      [90m// Verify the poll still exists[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould preserve audit trail for ballot submissions
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m428:21[22m[39m
+    [90m426| [39m      [35mconst[39m afterSubmission [33m=[39m [35mnew[39m [33mDate[39m()
+    [90m427| [39m
+    [90m428| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m429| [39m      
+    [90m430| [39m      [90m// Verify audit fields[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould log ballot modification attempts
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m454:21[22m[39m
+    [90m452| [39m        [33m.[39m[34mselect[39m()
+    [90m453| [39m
+    [90m454| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m455| [39m      
+    [90m456| [39m      [90m// Attempt modification (should fail silently or be logged)[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m4. Data Audit and Logging[2m > [22mshould maintain data lineage for ballot processing
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m494:21[22m[39m
+    [90m492| [39m        [33m.[39m[34mselect[39m()
+    [90m493| [39m
+    [90m494| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m495| [39m      
+    [90m496| [39m      [90m// Verify data lineage[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m5. Cross-System Data Validation[2m > [22mshould validate data consistency across multiple queries
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m522:21[22m[39m
+    [90m520| [39m        [33m.[39m[34mselect[39m()
+    [90m521| [39m
+    [90m522| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m523| [39m      [35mconst[39m voteId [33m=[39m data[[34m0[39m][33m.[39mid
+    [90m524| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/data-integrity.test.js[2m > [22mPhase 2: Data Integrity Tests[2m > [22m5. Cross-System Data Validation[2m > [22mshould maintain data integrity during high concurrency
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m558:30[22m[39m
+    [90m556| [39m      [90m// All should succeed with correct data[39m
+    [90m557| [39m      results[33m.[39m[34mforEach[39m((result[33m,[39m index) [33m=>[39m {
+    [90m558| [39m        [34mexpect[39m(result[33m.[39merror)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                             [31m^[39m
+    [90m559| [39m        expect(result.data[0].ranked_choices).toEqual(concurrentBallot…
+    [90m560| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m result[33m.[39mdata[[34m0[39m][33m.[39mid })
+[90m [2m❯[22m tests/__tests__/ballot-logic/data-integrity.test.js:[2m557:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle very long candidate names (boundary testing)
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m168:21[22m[39m
+    [90m166| [39m        [33m.[39m[34mselect[39m()
+    [90m167| [39m
+    [90m168| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m169| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices[33m.[39mlength)[33m.[39m[34mtoBe[39m([34m2[39m)
+    [90m170| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m1. Edge Case Scenarios[2m > [22mshould handle submission during network connectivity issues
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m188:21[22m[39m
+    [90m186| [39m
+    [90m187| [39m      [90m// Should succeed under normal conditions[39m
+    [90m188| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m189| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Edge A'[39m[33m,[39m [32m'Edge C'[39m])
+    [90m190| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould test submission speed with maximum candidate counts
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m250:21[22m[39m
+    [90m248| [39m      [35mconst[39m endTime [33m=[39m [33mDate[39m[33m.[39m[34mnow[39m()
+    [90m249| [39m      
+    [90m250| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m251| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices[33m.[39mlength)[33m.[39m[34mtoBe[39m([34m5[39m)
+    [90m252| [39m      expect(endTime - startTime).toBeLessThan(5000) // Should complet…
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould test concurrent submissions from multiple users
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m292:30[22m[39m
+    [90m290| [39m      [90m// All submissions should succeed[39m
+    [90m291| [39m      results[33m.[39m[34mforEach[39m((result[33m,[39m index) [33m=>[39m {
+    [90m292| [39m        [34mexpect[39m(result[33m.[39merror)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                             [31m^[39m
+    [90m293| [39m        expect(result.data[0].ranked_choices).toEqual(concurrentBallot…
+    [90m294| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m result[33m.[39mdata[[34m0[39m][33m.[39mid })
+[90m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m291:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m2. Performance Tests[2m > [22mshould verify database performance with filtered ballot storage
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m316:23[22m[39m
+    [90m314| [39m          [33m.[39m[34mselect[39m()
+    [90m315| [39m        
+    [90m316| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m317| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m318| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould handle rapid successive ballot submissions
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m363:30[22m[39m
+    [90m361| [39m      
+    [90m362| [39m      results[33m.[39m[34mforEach[39m((result[33m,[39m index) [33m=>[39m {
+    [90m363| [39m        [34mexpect[39m(result[33m.[39merror)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                             [31m^[39m
+    [90m364| [39m        expect(result.data[0].ranked_choices).toEqual(rapidBallots[ind…
+    [90m365| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m result[33m.[39mdata[[34m0[39m][33m.[39mid })
+[90m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m362:15[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould handle maximum database load
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m391:32[22m[39m
+    [90m389| [39m        
+    [90m390| [39m        batchResults[33m.[39m[34mforEach[39m(result [33m=>[39m {
+    [90m391| [39m          [34mexpect[39m(result[33m.[39merror)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                               [31m^[39m
+    [90m392| [39m          cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m result[33m.[39mdata[[34m0[39m][33m.[39mid })
+    [90m393| [39m        })
+[90m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m390:22[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m3. Stress Testing[2m > [22mshould verify system stability under continuous load
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m413:23[22m[39m
+    [90m411| [39m          [33m.[39m[34mselect[39m()
+    [90m412| [39m        
+    [90m413| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m414| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m415| [39m        
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould recover gracefully from temporary database errors
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m441:21[22m[39m
+    [90m439| [39m        [33m.[39m[34mselect[39m()
+    [90m440| [39m
+    [90m441| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m442| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Edge A'[39m[33m,[39m [32m'Edge B'[39m])
+    [90m443| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould maintain data consistency after system recovery
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m459:21[22m[39m
+    [90m457| [39m        [33m.[39m[34mselect[39m()
+    [90m458| [39m
+    [90m459| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m460| [39m      
+    [90m461| [39m      [90m// Verify data persistence after brief delay[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m4. Error Recovery and Resilience[2m > [22mshould handle partial data corruption scenarios
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m489:21[22m[39m
+    [90m487| [39m        [33m.[39m[34mselect[39m()
+    [90m488| [39m
+    [90m489| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m490| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Edge A'[39m])
+    [90m491| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m5. Integration Edge Cases[2m > [22mshould handle polls with zero existing votes
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m510:21[22m[39m
+    [90m508| [39m        [33m.[39m[34mselect[39m()
+    [90m509| [39m
+    [90m510| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m511| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Edge A'[39m[33m,[39m [32m'Edge B'[39m])
+    [90m512| [39m      
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ballot-logic/edge-cases.test.js[2m > [22mPhase 2: Edge Cases and Performance Tests[2m > [22m5. Integration Edge Cases[2m > [22mshould handle polls with mixed vote types (if applicable)
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/ballot-logic/edge-cases.test.js:[2m529:21[22m[39m
+    [90m527| [39m        [33m.[39m[34mselect[39m()
+    [90m528| [39m
+    [90m529| [39m      [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                    [31m^[39m
+    [90m530| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mvote_type)[33m.[39m[34mtoBe[39m([32m'ranked_choice'[39m)
+    [90m531| [39m      [34mexpect[39m(data[[34m0[39m][33m.[39mranked_choices)[33m.[39m[34mtoEqual[39m([[32m'Edge A'[39m])
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js[2m > [22mBorda Count Tie-Breaking[2m > [22mClassic Borda Count Scenarios[2m > [22meliminates candidate with lowest Borda score when tied for last place
+[31m[1mAssertionError[22m: A elimination status mismatch in round 3: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m117:123[22m[39m
+    [90m115| [39m        expect(candidateResult, `Candidate ${candidate} not found in r…
+    [90m116| [39m        expect(candidateResult.vote_count, `${candidate} vote count mi…
+    [90m117| [39m        expect(candidateResult.is_eliminated, `${candidate} eliminatio…
+    [90m   | [39m                                                                                                                          [31m^[39m
+    [90m118| [39m      }
+    [90m119| [39m    }
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js:[2m13:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js[2m > [22mBorda Count Tie-Breaking[2m > [22mZero Vote Candidates with Borda Scoring[2m > [22meliminates candidate with lowest Borda among multiple zero-vote candidates
+[31m[1mAssertionError[22m: expected 0 to be greater than 0[39m
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m110:34[22m[39m
+    [90m108| [39m
+    [90m109| [39m      const actualRound = rounds.filter(r => r.round_number === expect…
+    [90m110| [39m      [34mexpect[39m(actualRound[33m.[39mlength)[33m.[39m[34mtoBeGreaterThan[39m([34m0[39m)
+    [90m   | [39m                                 [31m^[39m
+    [90m111| [39m
+    [90m112| [39m      for (const [candidate, expectedVotes, expectedEliminated] of exp…
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js:[2m125:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js[2m > [22mBorda Count Tie-Breaking[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mapplies Borda count repeatedly across multiple rounds
+[31m[1mError[22m: Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[36m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m61:30[22m[39m
+    [90m 59| [39m          })
+    [90m 60| [39m
+    [90m 61| [39m        if (voteError) throw new Error(`Failed to insert vote: ${voteE…
+    [90m   | [39m                             [31m^[39m
+    [90m 62| [39m      }
+    [90m 63| [39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js:[2m162:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js[2m > [22mBorda Count Tie-Breaking[2m > [22mDeterministic Tie-Breaking[2m > [22mhandles perfect Borda ties with alphabetical elimination
+[31m[1mAssertionError[22m: A elimination status mismatch in round 1: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m117:123[22m[39m
+    [90m115| [39m        expect(candidateResult, `Candidate ${candidate} not found in r…
+    [90m116| [39m        expect(candidateResult.vote_count, `${candidate} vote count mi…
+    [90m117| [39m        expect(candidateResult.is_eliminated, `${candidate} eliminatio…
+    [90m   | [39m                                                                                                                          [31m^[39m
+    [90m118| [39m      }
+    [90m119| [39m    }
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/borda-count-tie-breaking.test.js:[2m228:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/borda-tiebreak-fix.test.js[2m > [22mBorda Count Tie-Breaking Fix[2m > [22mshould eliminate C before A when A and C have same Borda score but B has higher score
+[31m[1mAssertionError[22m: A elimination status mismatch in round 1: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m117:123[22m[39m
+    [90m115| [39m        expect(candidateResult, `Candidate ${candidate} not found in r…
+    [90m116| [39m        expect(candidateResult.vote_count, `${candidate} vote count mi…
+    [90m117| [39m        expect(candidateResult.is_eliminated, `${candidate} eliminatio…
+    [90m   | [39m                                                                                                                          [31m^[39m
+    [90m118| [39m      }
+    [90m119| [39m    }
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/borda-tiebreak-fix.test.js:[2m17:5[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mEmpty and Minimal Votes[2m > [22mhandles two candidates with one vote each
+[31m[1mAssertionError[22m: expected 'B' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"B"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m39:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mIncomplete and Invalid Ballots[2m > [22mhandles mixed complete and incomplete ballots
+[31m[1mAssertionError[22m: B elimination status mismatch in round 2: expected true to be false // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- false[39m
+[31m+ true[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m117:123[22m[39m
+    [90m115| [39m        expect(candidateResult, `Candidate ${candidate} not found in r…
+    [90m116| [39m        expect(candidateResult.vote_count, `${candidate} vote count mi…
+    [90m117| [39m        expect(candidateResult.is_eliminated, `${candidate} eliminatio…
+    [90m   | [39m                                                                                                                          [31m^[39m
+    [90m118| [39m      }
+    [90m119| [39m    }
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m82:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mLarge Number of Candidates[2m > [22mhandles many candidates with systematic elimination
+[31m[1mAssertionError[22m: expected 'B' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"B"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m109:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mUnusual Voting Patterns[2m > [22mhandles reverse-order voting patterns
+[31m[1mError[22m: Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[36m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m61:30[22m[39m
+    [90m 59| [39m          })
+    [90m 60| [39m
+    [90m 61| [39m        if (voteError) throw new Error(`Failed to insert vote: ${voteE…
+    [90m   | [39m                             [31m^[39m
+    [90m 62| [39m      }
+    [90m 63| [39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m167:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mUnusual Voting Patterns[2m > [22mhandles strategic voting attempts
+[31m[1mAssertionError[22m: expected 'C' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"C"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m189:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/edge-cases.test.js[2m > [22mEdge Cases and Boundary Conditions[2m > [22mBoundary Conditions[2m > [22mhandles exactly 50-50 split requiring runoff
+[31m[1mAssertionError[22m: expected 'B' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"B"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/edge-cases.test.js:[2m220:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/tie-breaking.test.js[2m > [22mBorda Count Tie Breaking - Updated for New Algorithm[2m > [22mBorda Count vs Old Batch Elimination[2m > [22meliminates candidate with lowest Borda score from tied group
+[31m[1mAssertionError[22m: expected 'C' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"C"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/tie-breaking.test.js:[2m35:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/tie-breaking.test.js[2m > [22mBorda Count Tie Breaking - Updated for New Algorithm[2m > [22mBorda Count vs Old Batch Elimination[2m > [22mhandles perfect Borda score ties with alphabetical elimination
+[31m[1mAssertionError[22m: expected 'B' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"B"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/tie-breaking.test.js:[2m63:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/tie-breaking.test.js[2m > [22mBorda Count Tie Breaking - Updated for New Algorithm[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mapplies Borda count in each round separately
+[31m[1mError[22m: Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[36m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m61:30[22m[39m
+    [90m 59| [39m          })
+    [90m 60| [39m
+    [90m 61| [39m        if (voteError) throw new Error(`Failed to insert vote: ${voteE…
+    [90m   | [39m                             [31m^[39m
+    [90m 62| [39m      }
+    [90m 63| [39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/tie-breaking.test.js:[2m84:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/tie-breaking.test.js[2m > [22mBorda Count Tie Breaking - Updated for New Algorithm[2m > [22mComplex Multi-Round Borda Scenarios[2m > [22mcontinues eliminating until clear winner emerges
+[31m[1mAssertionError[22m: C elimination status mismatch in round 3: expected false to be true // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- true[39m
+[31m+ false[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m117:123[22m[39m
+    [90m115| [39m        expect(candidateResult, `Candidate ${candidate} not found in r…
+    [90m116| [39m        expect(candidateResult.vote_count, `${candidate} vote count mi…
+    [90m117| [39m        expect(candidateResult.is_eliminated, `${candidate} eliminatio…
+    [90m   | [39m                                                                                                                          [31m^[39m
+    [90m118| [39m      }
+    [90m119| [39m    }
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/tie-breaking.test.js:[2m117:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/tie-breaking.test.js[2m > [22mBorda Count Tie Breaking - Updated for New Algorithm[2m > [22mZero Vote Candidate Scenarios[2m > [22meliminates zero-vote candidate with lowest Borda score
+[31m[1mAssertionError[22m: expected 'B' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"B"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/tie-breaking.test.js:[2m169:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/zero-vote-elimination.test.js[2m > [22mZero Vote Elimination Bug Fix[2m > [22mOriginal Production Bug Scenario[2m > [22meliminates B and C with 0 first-place votes before A, D, E with 1 vote each
+[31m[1mError[22m: Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[36m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m61:30[22m[39m
+    [90m 59| [39m          })
+    [90m 60| [39m
+    [90m 61| [39m        if (voteError) throw new Error(`Failed to insert vote: ${voteE…
+    [90m   | [39m                             [31m^[39m
+    [90m 62| [39m      }
+    [90m 63| [39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/zero-vote-elimination.test.js:[2m13:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/zero-vote-elimination.test.js[2m > [22mZero Vote Elimination Bug Fix[2m > [22mOriginal Production Bug Scenario[2m > [22meliminates single candidate with 0 votes when others are tied with 1
+[31m[1mAssertionError[22m: expected 'C' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"C"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/zero-vote-elimination.test.js:[2m48:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[47/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/zero-vote-elimination.test.js[2m > [22mZero Vote Elimination Bug Fix[2m > [22mMultiple Zero Vote Scenarios[2m > [22meliminates candidates with 0 votes in correct order when multiple rounds needed
+[31m[1mAssertionError[22m: expected 'C' to be 'A' // Object.is equality[39m
+
+Expected: [32m"A"[39m
+Received: [31m"C"[39m
+
+[36m [2m❯[22m PollBuilder._assertResults tests/helpers/poll-builder.js:[2m99:29[22m[39m
+    [90m 97| [39m    [90m// Check winner if specified[39m
+    [90m 98| [39m    [35mif[39m ([35mthis[39m[33m.[39mexpectedWinner [33m!==[39m [35mnull[39m) {
+    [90m 99| [39m      [34mexpect[39m(result[33m.[39mwinner)[33m.[39m[34mtoBe[39m([35mthis[39m[33m.[39mexpectedWinner)
+    [90m   | [39m                            [31m^[39m
+    [90m100| [39m    }
+    [90m101| [39m
+[90m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m81:12[22m[39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/zero-vote-elimination.test.js:[2m93:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[48/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/ranked-choice/zero-vote-elimination.test.js[2m > [22mZero Vote Elimination Bug Fix[2m > [22mEdge Cases[2m > [22meliminates candidates with partial rankings and 0 first-place votes
+[31m[1mError[22m: Failed to insert vote: insert or update on table "votes" violates foreign key constraint "votes_poll_id_fkey"[39m
+[36m [2m❯[22m PollBuilder.run tests/helpers/poll-builder.js:[2m61:30[22m[39m
+    [90m 59| [39m          })
+    [90m 60| [39m
+    [90m 61| [39m        if (voteError) throw new Error(`Failed to insert vote: ${voteE…
+    [90m   | [39m                             [31m^[39m
+    [90m 62| [39m      }
+    [90m 63| [39m
+[90m [2m❯[22m tests/__tests__/ranked-choice/zero-vote-elimination.test.js:[2m150:7[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[49/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould compensate points so each ballot contributes equally
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m77:23[22m[39m
+    [90m 75| [39m          [33m.[39m[34mselect[39m()
+    [90m 76| [39m
+    [90m 77| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m 78| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m 79| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[50/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould handle mixed ballot lengths with fair compensation
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m136:23[22m[39m
+    [90m134| [39m          [33m.[39m[34mselect[39m()
+    [90m135| [39m
+    [90m136| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m137| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m138| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[51/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m1. Equal Contribution Verification[2m > [22mshould verify mathematical properties of compensation
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m187:23[22m[39m
+    [90m185| [39m          [33m.[39m[34mselect[39m()
+    [90m186| [39m
+    [90m187| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m188| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m189| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[52/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould ensure consistent winner regardless of ballot completion rates
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m244:23[22m[39m
+    [90m242| [39m          [33m.[39m[34mselect[39m()
+    [90m243| [39m
+    [90m244| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m245| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m246| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[53/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould handle edge case of single candidate ballots
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m287:23[22m[39m
+    [90m285| [39m          [33m.[39m[34mselect[39m()
+    [90m286| [39m
+    [90m287| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m288| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m289| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[54/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m2. Fairness Across Different Ballot Types[2m > [22mshould maintain proportional relationships across compensation
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m343:23[22m[39m
+    [90m341| [39m          [33m.[39m[34mselect[39m()
+    [90m342| [39m
+    [90m343| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m344| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m345| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[55/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould maintain monotonicity property
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m387:23[22m[39m
+    [90m385| [39m          [33m.[39m[34mselect[39m()
+    [90m386| [39m
+    [90m387| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m388| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m389| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[56/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould demonstrate independence of irrelevant alternatives
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m443:23[22m[39m
+    [90m441| [39m          [33m.[39m[34mselect[39m()
+    [90m442| [39m
+    [90m443| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m444| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m445| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[57/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m3. Mathematical Properties Verification[2m > [22mshould produce consistent results under symmetry
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m483:23[22m[39m
+    [90m481| [39m          [33m.[39m[34mselect[39m()
+    [90m482| [39m
+    [90m483| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m484| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m485| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[58/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m4. Performance and Scalability[2m > [22mshould handle large numbers of incomplete ballots efficiently
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m541:23[22m[39m
+    [90m539| [39m          [33m.[39m[34mselect[39m()
+    [90m540| [39m
+    [90m541| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m542| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m543| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[59/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/borda-count-compensation.test.js[2m > [22mPhase 3: Borda Count - Point Compensation Algorithm[2m > [22m4. Performance and Scalability[2m > [22mshould maintain precision with complex compensation calculations
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/borda-count-compensation.test.js:[2m583:23[22m[39m
+    [90m581| [39m          [33m.[39m[34mselect[39m()
+    [90m582| [39m
+    [90m583| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m584| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m585| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[60/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m1. Progressive Ballot Elimination[2m > [22mshould handle scenario where all ballots become inactive
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m182:23[22m[39m
+    [90m180| [39m          [33m.[39m[34mselect[39m()
+    [90m181| [39m
+    [90m182| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m183| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m184| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[61/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m2. Active Ballot Tracking[2m > [22mshould properly track which ballots remain active in each round
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m220:23[22m[39m
+    [90m218| [39m          [33m.[39m[34mselect[39m()
+    [90m219| [39m
+    [90m220| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m221| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m222| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[62/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m2. Active Ballot Tracking[2m > [22mshould handle mixed ballot lengths correctly in vote redistribution
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m279:23[22m[39m
+    [90m277| [39m          [33m.[39m[34mselect[39m()
+    [90m278| [39m
+    [90m279| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m280| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m281| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[63/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould maintain mathematical properties of IRV with incomplete ballots
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m339:23[22m[39m
+    [90m337| [39m          [33m.[39m[34mselect[39m()
+    [90m338| [39m
+    [90m339| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m340| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m341| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[64/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould produce deterministic results with same input
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m401:23[22m[39m
+    [90m399| [39m          [33m.[39m[34mselect[39m()
+    [90m400| [39m
+    [90m401| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m402| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m403| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[65/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m3. Mathematical Correctness Verification[2m > [22mshould handle edge case of single candidate ballots
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m442:23[22m[39m
+    [90m440| [39m          [33m.[39m[34mselect[39m()
+    [90m441| [39m
+    [90m442| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m443| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m444| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[66/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m4. Edge Cases and Boundary Conditions[2m > [22mshould handle extremely uneven ballot completeness
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m508:23[22m[39m
+    [90m506| [39m          [33m.[39m[34mselect[39m()
+    [90m507| [39m
+    [90m508| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m509| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m510| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[67/68]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js[2m > [22mPhase 3: IRV Algorithm - Incomplete Ballot Handling[2m > [22m4. Edge Cases and Boundary Conditions[2m > [22mshould maintain performance with incomplete ballots
+[31m[1mAssertionError[22m: expected { code: '23503', …(3) } to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+{
+  "code": "23503",
+  "details": "Key is not present in table \"polls\".",
+  "hint": null,
+  "message": "insert or update on table \"votes\" violates foreign key constraint \"votes_poll_id_fkey\"",
+}
+
+[36m [2m❯[22m tests/__tests__/voting-algorithms/irv-incomplete-ballots.test.js:[2m549:23[22m[39m
+    [90m547| [39m          [33m.[39m[34mselect[39m()
+    [90m548| [39m
+    [90m549| [39m        [34mexpect[39m(error)[33m.[39m[34mtoBeNull[39m()
+    [90m   | [39m                      [31m^[39m
+    [90m550| [39m        cleanup[33m.[39m[34mpush[39m({ type[33m:[39m [32m'vote'[39m[33m,[39m id[33m:[39m data[[34m0[39m][33m.[39mid })
+    [90m551| [39m      }
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[68/68]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m9 failed[39m[22m[2m | [22m[1m[32m6 passed[39m[22m[90m (15)[39m
+[2m      Tests [22m [1m[31m68 failed[39m[22m[2m | [22m[1m[32m131 passed[39m[22m[90m (199)[39m
+[2m   Start at [22m 09:30:31
+[2m   Duration [22m 17.57s[2m (transform 517ms, setup 1.56s, collect 1.85s, tests 49.31s, environment 8.65s, prepare 1.52s)[22m
+

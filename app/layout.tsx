@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import BuildTimer from "@/components/BuildTimer";
+import ResponsiveScaling from "@/components/ResponsiveScaling";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en">
       <head>
         <meta name="build-id" content={process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || process.env.BUILD_TIMESTAMP || 'dev'} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -63,13 +64,21 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1+Code:wght@700&display=swap" rel="stylesheet" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-full`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <BuildTimer />
-        <div className="h-screen-safe flex flex-col font-[family-name:var(--font-geist-sans)]">
-          {/* This is where content from each page will be rendered */}
-          {children}
-        </div>
+        <ResponsiveScaling>
+          <div className="h-screen-safe flex flex-col font-[family-name:var(--font-geist-sans)]">
+            {/* This is where content from each page will be rendered */}
+            {children}
+          </div>
+        </ResponsiveScaling>
+        
+        {/* Header elements rendered outside scaling to maintain proper positioning */}
+        <div id="header-portal"></div>
+        
+        {/* Bottom bar rendered outside scaling to maintain proper positioning */}
+        <div id="bottom-bar-portal"></div>
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -78,7 +87,6 @@ export default function RootLayout({
                   // Register enhanced service worker for mobile optimization
                   navigator.serviceWorker.register('/sw-mobile.js')
                     .then(function(registration) {
-                      console.log('SW registered: ', registration);
                       
                       // Send message to precache critical pages
                       if (registration.active) {
@@ -99,7 +107,6 @@ export default function RootLayout({
                       }, 500);
                     })
                     .catch(function(registrationError) {
-                      console.log('SW registration failed: ', registrationError);
                       // Fallback to basic service worker
                       navigator.serviceWorker.register('/sw.js').catch(() => {});
                     });

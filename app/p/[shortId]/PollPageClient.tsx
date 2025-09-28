@@ -802,23 +802,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
     }
 
-    if (poll.poll_type === 'nomination' && !isAbstaining) {
+    if (poll.poll_type === 'nomination') {
       const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
       await logToServer('nomination-vote', 'info', 'Nomination validation check', {
         originalNominations: nominationChoices,
         filteredNominations,
-        isAbstaining
+        willAbstain: filteredNominations.length === 0
       });
-
-      if (filteredNominations.length === 0) {
-        await logToServer('nomination-vote', 'error', 'Nomination validation failed', {
-          nominationChoices,
-          filteredNominations,
-          isAbstaining
-        });
-        setVoteError("Please select or add at least one nomination, or select Abstain");
-        return;
-      }
+      // No validation error - empty nominations will be treated as abstain
     }
 
     await logToServer('nomination-vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
@@ -913,24 +904,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           isAbstaining
         });
 
-        // Validate that user has at least one nomination if not abstaining
-        if (!isAbstaining && filteredNominations.length === 0) {
-          await logToServer('nomination-vote', 'error', 'Nomination vote validation failed in submitVote', {
-            nominationChoices,
-            filteredNominations,
-            isAbstaining
-          });
-          setVoteError("Please select or add at least one nomination, or select Abstain");
-          setIsSubmitting(false);
-          return;
-        }
+        // Empty nominations will be treated as abstain
+        const willAbstain = filteredNominations.length === 0;
+        await logToServer('nomination-vote', 'info', 'Nomination vote processing', {
+          nominationChoices,
+          filteredNominations,
+          willAbstain,
+          isAbstaining
+        });
 
         // Send null for nominations when abstaining, array with nominations when voting
+        // Abstain if explicitly set OR if no nominations provided
+        const finalAbstain = isAbstaining || willAbstain;
         voteData = {
           poll_id: poll.id,
           vote_type: 'nomination' as const,
-          nominations: isAbstaining ? null : filteredNominations,
-          is_abstain: isAbstaining,
+          nominations: finalAbstain ? null : filteredNominations,
+          is_abstain: finalAbstain,
           voter_name: voterName.trim() || null
         };
 

@@ -79,7 +79,47 @@ export async function getPollResults(pollId: string): Promise<PollResults> {
     throw new Error(`Failed to fetch poll results: ${error.message}`);
   }
 
+  // For nomination polls, manually calculate vote counts since poll_results view doesn't include them
+  if (data && data.poll_type === 'nomination') {
+    const nominationCounts = await getNominationVoteCounts(pollId);
+    return {
+      ...data,
+      options: nominationCounts
+    };
+  }
+
   return data;
+}
+
+export async function getNominationVoteCounts(pollId: string): Promise<{ option: string; count: number }[]> {
+  const { data: votes, error } = await supabase
+    .from('votes')
+    .select('nominations')
+    .eq('poll_id', pollId)
+    .eq('vote_type', 'nomination')
+    .eq('is_abstain', false)  // Only count non-abstaining votes
+    .not('nominations', 'is', null);
+
+  if (error) {
+    throw new Error(`Failed to fetch nomination votes: ${error.message}`);
+  }
+
+  // Count occurrences of each nomination
+  const nominationCounts: Record<string, number> = {};
+
+  votes.forEach(vote => {
+    if (vote.nominations && Array.isArray(vote.nominations)) {
+      vote.nominations.forEach((nomination: string) => {
+        nominationCounts[nomination] = (nominationCounts[nomination] || 0) + 1;
+      });
+    }
+  });
+
+  // Convert to array format expected by component
+  return Object.entries(nominationCounts).map(([option, count]) => ({
+    option,
+    count
+  })).sort((a, b) => b.count - a.count); // Sort by vote count descending
 }
 
 export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoiceRound[]> {

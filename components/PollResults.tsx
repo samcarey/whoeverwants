@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
+import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
+import NominationsList from "./NominationsList";
 
 interface PollResultsProps {
   results: PollResults;
@@ -40,15 +41,9 @@ function YesNoResults({ results, isPollClosed, userVoteData }: { results: PollRe
   const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
 
   if (totalVotes === 0) {
-    const title = isPollClosed ? "No Votes Received" : "No Votes Yet";
-    const message = isPollClosed 
-      ? "This poll did not receive any votes." 
-      : "This poll hasn't received any votes.";
-    
     return (
       <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
-        <p className="text-gray-600 dark:text-gray-400">{message}</p>
+        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
       </div>
     );
   }
@@ -190,9 +185,8 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
 
   if (results.total_votes === 0) {
     return (
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">No Votes Yet</h3>
-        <p className="text-gray-600 dark:text-gray-400">This poll hasn&apos;t received any votes.</p>
+      <div className="text-center">
+        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
       </div>
     );
   }
@@ -360,10 +354,58 @@ function NominationResults({ results, isPollClosed, userVoteData }: { results: P
   useEffect(() => {
     const loadNominations = async () => {
       try {
-        // For now, we'll get nominations from poll options since there's no specific nomination results view
-        // In the future, this could be enhanced to count actual nomination votes
+        // Fetch all nominations from votes for this poll
+        const { data: votes, error } = await supabase
+          .from('votes')
+          .select('nominations, is_abstain, id, updated_at')
+          .eq('poll_id', results.poll_id)
+          .eq('vote_type', 'nomination')
+          .eq('is_abstain', false)  // Only count non-abstaining votes
+          .not('nominations', 'is', null)
+          .order('updated_at', { ascending: false }); // Order by most recent first
+
+        if (error) {
+          console.error('Error fetching nominations:', error);
+          setNominations([]);
+          return;
+        }
+
+        // Count each nomination
+        const nominationMap = new Map<string, number>();
+        
+        // Add starting options from poll (initialize with 0 votes, not 1)
         const pollOptions = typeof results.options === 'string' ? JSON.parse(results.options) : results.options || [];
-        const nominationCounts = pollOptions.map((option: string) => ({ option, count: 1 }));
+        pollOptions.forEach((option: any) => {
+          // Handle both string options and object options
+          const optionString = typeof option === 'string' ? option : option?.option || option?.toString() || '';
+          if (optionString) {
+            nominationMap.set(optionString, 0);  // Initialize with 0, not 1
+          }
+        });
+        
+        // Count actual nominations from votes
+        console.log('[PollResults] Processing votes for counting:', votes);
+        votes?.forEach(vote => {
+          console.log('[PollResults] Processing vote:', vote.id, 'nominations:', vote.nominations, 'is_abstain:', vote.is_abstain);
+          if (vote.nominations && Array.isArray(vote.nominations)) {
+            vote.nominations.forEach((nom: any) => {
+              // Handle both string nominations and object nominations
+              const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
+              if (nomString) {
+                console.log('[PollResults] Adding nomination to count:', nomString);
+                nominationMap.set(nomString, (nominationMap.get(nomString) || 0) + 1);
+              }
+            });
+          }
+        });
+
+        console.log('[PollResults] Final nomination counts:', Array.from(nominationMap.entries()));
+
+        // Convert to sorted array
+        const nominationCounts = Array.from(nominationMap.entries())
+          .map(([option, count]) => ({ option, count }))
+          .sort((a, b) => b.count - a.count);
+        
         setNominations(nominationCounts);
       } catch (error) {
         console.error('Error loading nominations:', error);
@@ -376,18 +418,15 @@ function NominationResults({ results, isPollClosed, userVoteData }: { results: P
     loadNominations();
   }, [results]);
 
-  const totalVotes = results.total_votes;
+  const totalVoters = results.total_votes;
+  
+  // Count of unique nomination items
+  const uniqueNominationCount = nominations.length;
 
-  if (totalVotes === 0) {
-    const title = isPollClosed ? "No Nominations Received" : "No Nominations Yet";
-    const message = isPollClosed 
-      ? "This poll did not receive any nominations." 
-      : "This poll hasn't received any nominations.";
-    
+  if (totalVoters === 0) {
     return (
       <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
-        <p className="text-gray-600 dark:text-gray-400">{message}</p>
+        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
       </div>
     );
   }
@@ -405,57 +444,21 @@ function NominationResults({ results, isPollClosed, userVoteData }: { results: P
 
   return (
     <div className="space-y-4">
-      <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">
-          Nomination Results
-        </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} nomination{totalVotes !== 1 ? 's' : ''} submitted
-        </p>
-      </div>
-
       <div className="space-y-3">
-        <h4 className="font-medium text-gray-900 dark:text-white">All Nominations:</h4>
         {nominations.length === 0 ? (
           <p className="text-gray-600 dark:text-gray-400 text-center py-4">
             No nominations available.
           </p>
         ) : (
-          <div className="grid gap-2">
-            {nominations.map((nomination, index) => (
-              <div 
-                key={index}
-                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
-              >
-                <span className="text-gray-900 dark:text-white font-medium">
-                  {nomination.option}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {nomination.count} nomination{nomination.count !== 1 ? 's' : ''}
-                  </span>
-                  <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                    {index + 1}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <NominationsList
+            nominations={nominations}
+            userNominations={userVoteData?.nominations || []}
+            showVoteCounts={true}
+            showUserIndicator={true}
+          />
         )}
       </div>
 
-      {userVoteData?.nominations && (
-        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-          <h5 className="font-medium text-blue-900 dark:text-blue-100 mb-2">Your Nominations:</h5>
-          <div className="space-y-1">
-            {userVoteData.nominations.map((nomination: string, index: number) => (
-              <div key={index} className="text-sm text-blue-800 dark:text-blue-200">
-                • {nomination}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

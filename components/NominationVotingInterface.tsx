@@ -182,17 +182,16 @@ export default function NominationVotingInterface({
     return (
       <div className="text-center py-3">
         <div className="text-left">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium">All nominations:</h4>
-            {!isLoadingVoteData && !isPollClosed && (
+          {!isLoadingVoteData && !isPollClosed && (
+            <div className="flex justify-end mb-2">
               <button
                 onClick={() => setIsEditingVote(true)}
                 className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
               >
                 Edit
               </button>
-            )}
-          </div>
+            </div>
+          )}
           {isLoadingVoteData ? (
             <div className="space-y-2">
               {[1, 2, 3].map((num) => (
@@ -202,14 +201,10 @@ export default function NominationVotingInterface({
                 </div>
               ))}
             </div>
-          ) : userVoteData?.is_abstain ? (
-            <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-lg p-3">
-              <span className="text-yellow-800 dark:text-yellow-200">You abstained from this vote</span>
-            </div>
           ) : existingNominations.length > 0 ? (
             <NominationsList
               nominations={getNominationsWithCounts()}
-              userNominations={userVoteData?.nominations || []}
+              userNominations={userVoteData?.is_abstain ? [] : (userVoteData?.nominations || [])}
               showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
               showUserIndicator={true}
             />
@@ -258,7 +253,7 @@ export default function NominationVotingInterface({
                         addExistingNomination(nomination);
                       }
                     }}
-                    disabled={isSubmitting || isAbstaining}
+                    disabled={isSubmitting}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/40 text-green-900 dark:text-green-100 font-medium border border-green-300 dark:border-green-700'
@@ -278,35 +273,12 @@ export default function NominationVotingInterface({
           <OptionsInput
             options={newNominations}
             setOptions={setNewNominations}
-            isLoading={isSubmitting || isAbstaining}
+            isLoading={isSubmitting}
             pollType="nomination"
             label={isEditingVote ? "Your nominations:" : "Add new nominations:"}
           />
         </div>
 
-        {/* Abstain button - disabled when nominations exist */}
-        <div className="mb-4">
-          {/* Show explanation when abstain is disabled due to nominations */}
-          {nominationChoices.length > 0 && !isAbstaining && (
-            <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md text-sm text-blue-800 dark:text-blue-200">
-              To abstain, you must first remove all your nominations.
-            </div>
-          )}
-          
-          <button 
-            onClick={handleAbstain}
-            disabled={isSubmitting || (nominationChoices.length > 0 && !isAbstaining)}
-            className={`w-full py-3 px-4 rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${
-              isAbstaining
-                ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                : (nominationChoices.length > 0 && !isAbstaining)
-                  ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-2 border-gray-200 dark:border-gray-600'
-                  : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
-            }`}
-          >
-            {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain'}
-          </button>
-        </div>
         
         {voteError && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
@@ -332,12 +304,21 @@ export default function NominationVotingInterface({
       </div>
 
       {/* Submit Button */}
-      <button 
+      <button
         onClick={handleVoteClick}
-        disabled={isSubmitting || (nominationChoices.length === 0 && !isAbstaining)}
-        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
+        disabled={isSubmitting}
+        className={`w-full py-3 px-4 rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${
+          nominationChoices.length === 0 && !isSubmitting
+            ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
+            : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white'
+        }`}
       >
-        {isSubmitting ? 'Submitting...' : 'Submit Vote'}
+        {isSubmitting
+          ? 'Submitting...'
+          : nominationChoices.length === 0
+            ? 'Submit (Abstain)'
+            : 'Submit Vote'
+        }
       </button>
 
       {/* Close Poll Button for Creator */}

@@ -28,19 +28,24 @@
     "db:clear-test": "./scripts/direct-api-migration.sh clear",
     "debug:console": "node scripts/debug-console.cjs",
     "debug:react": "node scripts/debug-react-state.cjs",
-    "dev:watch-timestamps": "node scripts/watch-and-update-timestamp.cjs"
+    "dev:watch-timestamps": "node scripts/watch-and-update-timestamp.cjs",
+    "test:e2e": "playwright test --config=tests/e2e/config/playwright.config.ts",
+    "test:e2e:verbose": "playwright test --config=tests/e2e/config/playwright.config.ts --reporter=line",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:codegen": "playwright codegen http://localhost:3000"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",
     "next": "15.3.3",
     "pg": "^8.16.3",
-    "playwright": "^1.54.2",
+    "playwright": "^1.55.0",
     "puppeteer": "^24.10.2",
     "pushover-notifications": "^1.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
@@ -55,6 +60,7 @@
     "eslint": "^9.29.0",
     "eslint-config-next": "^15.3.4",
     "jsdom": "^26.1.0",
+    "node-fetch": "^2.7.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"

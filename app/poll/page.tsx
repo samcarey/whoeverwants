@@ -14,9 +14,8 @@ function PollRedirect() {
 
   useEffect(() => {
     if (id) {
-      // Redirect to new URL structure, preserving the 'new' parameter if it exists
-      const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
-      router.replace(newUrl);
+      // Redirect to new URL structure
+      router.replace(`/p/${id}`);
     } else {
       // If no id, redirect to home
       router.replace('/');

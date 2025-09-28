@@ -25,17 +25,14 @@ function PollRedirect() {
 
           if (!error && poll?.short_id) {
             // Redirect to new short URL format
-            const newUrl = isNew ? `/p/${poll.short_id}?new=true` : `/p/${poll.short_id}`;
-            router.replace(newUrl);
+            router.replace(`/p/${poll.short_id}`);
           } else {
             // Fallback: redirect to UUID format (backward compatibility)
-            const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
-            router.replace(newUrl);
+            router.replace(`/p/${id}`);
           }
         } catch (error) {
           // If we can't fetch the poll, just redirect with the ID
-          const newUrl = isNew ? `/p/${id}?new=true` : `/p/${id}`;
-          router.replace(newUrl);
+          router.replace(`/p/${id}`);
         }
       } else {
         // If no id, redirect to home

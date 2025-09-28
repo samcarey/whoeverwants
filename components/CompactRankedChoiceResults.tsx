@@ -271,34 +271,25 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
     );
   }
 
-  if (results.total_votes === 0) {
-    const title = isPollClosed ? "No Votes Received" : "No Votes Yet";
-    const message = isPollClosed 
-      ? "This poll did not receive any votes." 
-      : "This poll hasn't received any votes.";
-    
-    return (
-      <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">{title}</h3>
-        <p className="text-gray-600 dark:text-gray-400">{message}</p>
-      </div>
-    );
-  }
-
   if (roundVisualizations.length === 0) {
-    return (
-      <div className="text-center">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">No Ranking Results</h3>
-        <p className="text-gray-600 dark:text-gray-400">
-          This poll received only abstain votes, so no ranking could be determined.
-        </p>
-        {results.total_votes > 0 && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-            Total votes: {results.total_votes} (all abstained)
+    // Check if there are any votes at all
+    if (results.total_votes === 0) {
+      return (
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">No Voters</p>
+        </div>
+      );
+    } else {
+      // There are votes but all abstained
+      return (
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">No Votes</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            All voters abstained
           </p>
-        )}
-      </div>
-    );
+        </div>
+      );
+    }
   }
 
   const currentRound = roundVisualizations[currentRoundIndex];

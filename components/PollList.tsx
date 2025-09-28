@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createPortal } from "react-dom";
 import { Poll } from "@/lib/supabase";
 import ClientOnly from "@/components/ClientOnly";
+import ModalPortal from "@/components/ModalPortal";
 
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
@@ -79,6 +79,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const [showModal, setShowModal] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const isScrolling = useRef(false);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -199,18 +201,26 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
+                isScrolling.current = false;
+                touchStartPos.current = {
+                  x: e.touches[0].clientX,
+                  y: e.touches[0].clientY
+                };
+
                 longPressTimer.current = setTimeout(() => {
-                  isLongPress.current = true;
-                  // Vibrate on Android (iOS doesn't support Vibration API)
-                  if ('vibrate' in navigator) {
-                    try {
-                      navigator.vibrate(50);
-                    } catch (err) {
-                      // Silently fail on iOS
+                  if (!isScrolling.current) {
+                    isLongPress.current = true;
+                    // Vibrate on Android (iOS doesn't support Vibration API)
+                    if ('vibrate' in navigator) {
+                      try {
+                        navigator.vibrate(50);
+                      } catch (err) {
+                        // Silently fail on iOS
+                      }
                     }
+                    setModalPoll(poll);
+                    setShowModal(true);
                   }
-                  setModalPoll(poll);
-                  setShowModal(true);
                 }, 500); // 500ms for long press
               };
 
@@ -219,15 +229,32 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   clearTimeout(longPressTimer.current);
                   longPressTimer.current = null;
                 }
-                if (!isLongPress.current) {
+
+                // Only navigate if not scrolling and not long press
+                if (!isScrolling.current && !isLongPress.current) {
                   router.push(`/p/${poll.id}`);
                 }
+
+                // Reset states
+                touchStartPos.current = null;
+                isScrolling.current = false;
               };
 
-              const handleTouchMove = () => {
-                if (longPressTimer.current) {
-                  clearTimeout(longPressTimer.current);
-                  longPressTimer.current = null;
+              const handleTouchMove = (e: React.TouchEvent) => {
+                if (!touchStartPos.current) return;
+
+                const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+                const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+
+                // If moved more than 10px in any direction, consider it scrolling
+                if (deltaX > 10 || deltaY > 10) {
+                  isScrolling.current = true;
+
+                  // Cancel long press timer if scrolling
+                  if (longPressTimer.current) {
+                    clearTimeout(longPressTimer.current);
+                    longPressTimer.current = null;
+                  }
                 }
               };
 
@@ -290,18 +317,26 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
+                  isScrolling.current = false;
+                  touchStartPos.current = {
+                    x: e.touches[0].clientX,
+                    y: e.touches[0].clientY
+                  };
+
                   longPressTimer.current = setTimeout(() => {
-                    isLongPress.current = true;
-                    // Vibrate on Android (iOS doesn't support Vibration API)
-                    if ('vibrate' in navigator) {
-                      try {
-                        navigator.vibrate(50);
-                      } catch (err) {
-                        // Silently fail on iOS
+                    if (!isScrolling.current) {
+                      isLongPress.current = true;
+                      // Vibrate on Android (iOS doesn't support Vibration API)
+                      if ('vibrate' in navigator) {
+                        try {
+                          navigator.vibrate(50);
+                        } catch (err) {
+                          // Silently fail on iOS
+                        }
                       }
+                      setModalPoll(poll);
+                      setShowModal(true);
                     }
-                    setModalPoll(poll);
-                    setShowModal(true);
                   }, 500); // 500ms for long press
                 };
 
@@ -310,15 +345,32 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                     clearTimeout(longPressTimer.current);
                     longPressTimer.current = null;
                   }
-                  if (!isLongPress.current) {
+
+                  // Only navigate if not scrolling and not long press
+                  if (!isScrolling.current && !isLongPress.current) {
                     router.push(`/p/${poll.id}`);
                   }
+
+                  // Reset states
+                  touchStartPos.current = null;
+                  isScrolling.current = false;
                 };
 
-                const handleTouchMove = () => {
-                  if (longPressTimer.current) {
-                    clearTimeout(longPressTimer.current);
-                    longPressTimer.current = null;
+                const handleTouchMove = (e: React.TouchEvent) => {
+                  if (!touchStartPos.current) return;
+
+                  const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+                  const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+
+                  // If moved more than 10px in any direction, consider it scrolling
+                  if (deltaX > 10 || deltaY > 10) {
+                    isScrolling.current = true;
+
+                    // Cancel long press timer if scrolling
+                    if (longPressTimer.current) {
+                      clearTimeout(longPressTimer.current);
+                      longPressTimer.current = null;
+                    }
                   }
                 };
 
@@ -361,7 +413,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div>
                     <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors pr-20">
                       <span className="mr-2 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
                       </span>
                       {poll.title}
                     </h3>
@@ -374,8 +426,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       )}
 
       {/* Follow-up Modal - render in portal to ensure it's above everything */}
-      {showModal && modalPoll && typeof window !== 'undefined' && createPortal(
-        <>
+      {showModal && modalPoll && (
+        <ModalPortal>
           {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-black/50 dark:bg-black/70 z-[100] animate-fade-in"
@@ -460,8 +512,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               </div>
             </div>
           </div>
-        </>,
-        document.body
+        </ModalPortal>
       )}
     </div>
   );
