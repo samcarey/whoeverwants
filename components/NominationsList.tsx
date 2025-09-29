@@ -92,7 +92,7 @@ export default function NominationsList({
         <div className="mt-3 flex justify-end items-center gap-2">
           <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
           <span className="text-xs text-gray-600 dark:text-gray-400">
-            Includes your nominations
+            Your idea
           </span>
         </div>
       )}
