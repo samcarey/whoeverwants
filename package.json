@@ -32,7 +32,8 @@
     "test:e2e": "playwright test --config=tests/e2e/config/playwright.config.ts",
     "test:e2e:verbose": "playwright test --config=tests/e2e/config/playwright.config.ts --reporter=line",
     "test:e2e:report": "playwright show-report",
-    "test:e2e:codegen": "playwright codegen http://localhost:3000"
+    "test:e2e:codegen": "playwright codegen http://localhost:3000",
+    "publish": "./scripts/publish.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",

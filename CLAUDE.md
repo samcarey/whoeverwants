@@ -204,6 +204,28 @@ const fetchData = async () => {
 
 ## Custom Claude Commands
 
+### /publish
+Complete deployment workflow - commit, merge to main, push, and apply database migrations:
+
+```bash
+npm run publish
+```
+
+This command will:
+1. Commit any uncommitted changes (with option to customize message)
+2. Push current branch to origin
+3. Checkout and pull latest main
+4. Merge current branch into main
+5. Check for and optionally apply new database migrations to production
+6. Push main to origin
+7. Optionally delete the feature branch
+
+**Usage:**
+- Run from any feature branch (not main)
+- Automatically handles git operations with Claude co-authorship
+- Tracks which migrations have been applied to production
+- Provides interactive prompts for important decisions
+
 ### /restart-services
 Restart both the development server and tunnel services:
 
@@ -213,7 +235,7 @@ Restart both the development server and tunnel services:
 
 This script will:
 - Kill any existing processes on port 3000
-- Kill any running tunnel processes  
+- Kill any running tunnel processes
 - Start dev server (Next.js will auto-select available port)
 - Wait for dev server to initialize
 - Start Pinggy tunnel to expose the correct port
