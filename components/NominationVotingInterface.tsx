@@ -182,16 +182,6 @@ export default function NominationVotingInterface({
     return (
       <div className="text-center py-3">
         <div className="text-left">
-          {!isLoadingVoteData && !isPollClosed && (
-            <div className="flex justify-end mb-2">
-              <button
-                onClick={() => setIsEditingVote(true)}
-                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-              >
-                Edit
-              </button>
-            </div>
-          )}
           {isLoadingVoteData ? (
             <div className="space-y-2">
               {[1, 2, 3].map((num) => (
@@ -207,6 +197,8 @@ export default function NominationVotingInterface({
               userNominations={userVoteData?.is_abstain ? [] : (userVoteData?.nominations || [])}
               showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
               showUserIndicator={true}
+              showEditButton={!isLoadingVoteData && !isPollClosed}
+              onEditClick={() => setIsEditingVote(true)}
             />
           ) : (
             <p className="text-gray-600 dark:text-gray-400">No nominations available</p>

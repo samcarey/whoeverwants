@@ -11,6 +11,9 @@ interface NominationsListProps {
   showVoteCounts?: boolean;
   showUserIndicator?: boolean;
   className?: string;
+  showEditButton?: boolean;
+  onEditClick?: () => void;
+  isEditDisabled?: boolean;
 }
 
 export default function NominationsList({
@@ -18,7 +21,10 @@ export default function NominationsList({
   userNominations = [],
   showVoteCounts = true,
   showUserIndicator = true,
-  className = ""
+  className = "",
+  showEditButton = false,
+  onEditClick,
+  isEditDisabled = false
 }: NominationsListProps) {
   if (nominations.length === 0) {
     return (
@@ -32,9 +38,20 @@ export default function NominationsList({
 
   return (
     <div className={className}>
-      <h4 className="font-medium text-lg text-gray-900 dark:text-white mb-2">
-        Nominations {uniqueCount > 0 && `(${uniqueCount})`}
-      </h4>
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="font-medium text-lg text-gray-900 dark:text-white">
+          Nominations {uniqueCount > 0 && `(${uniqueCount})`}
+        </h4>
+        {showEditButton && onEditClick && (
+          <button
+            onClick={onEditClick}
+            disabled={isEditDisabled}
+            className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 disabled:bg-yellow-300 text-yellow-900 font-medium text-sm rounded-md transition-colors disabled:cursor-not-allowed"
+          >
+            Edit
+          </button>
+        )}
+      </div>
       <div className="grid gap-2">
         {nominations.map((nomination, index) => {
           const isUserNomination = userNominations.includes(nomination.option);
