@@ -942,7 +942,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { nominations: voteData.nominations, is_abstain: isAbstaining, voter_name: voterName.trim() || null };
+          : { nominations: voteData.nominations, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
         
         
         
