@@ -43,6 +43,7 @@ function CreatePollContent() {
   const [creatorName, setCreatorName] = useState<string>("");
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -389,6 +390,7 @@ function CreatePollContent() {
       setShouldFocusNewOption(false);
     }
   }, [options.length, shouldFocusNewOption]);
+
 
   // Handle options for ranked choice polls
   const updateOption = (index: number, value: string) => {
@@ -771,7 +773,13 @@ function CreatePollContent() {
               <div className="relative flex w-full">
                 <button
                   type="button"
-                  onClick={() => setPollType('nomination')}
+                  onClick={() => {
+                    // Focus BEFORE state change (synchronously in event handler)
+                    if (titleInputRef.current) {
+                      titleInputRef.current.focus();
+                    }
+                    setPollType('nomination');
+                  }}
                   disabled={isLoading}
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
                     pollType === 'nomination'
@@ -783,7 +791,13 @@ function CreatePollContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPollType('poll')}
+                  onClick={() => {
+                    // Focus BEFORE state change (synchronously in event handler)
+                    if (titleInputRef.current) {
+                      titleInputRef.current.focus();
+                    }
+                    setPollType('poll');
+                  }}
                   disabled={isLoading}
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
                     pollType === 'poll'
@@ -804,6 +818,7 @@ function CreatePollContent() {
             <input
               type="text"
               id="title"
+              ref={titleInputRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               disabled={isLoading}
