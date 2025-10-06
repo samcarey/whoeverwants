@@ -447,7 +447,7 @@ function NominationResults({ results, isPollClosed, userVoteData }: { results: P
       <div className="space-y-3">
         {nominations.length === 0 ? (
           <p className="text-gray-600 dark:text-gray-400 text-center py-4">
-            No nominations available.
+            No suggestions available.
           </p>
         ) : (
           <NominationsList

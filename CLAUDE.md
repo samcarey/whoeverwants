@@ -7,21 +7,17 @@
 Before claiming any URL is accessible, ALWAYS run:
 ```bash
 # Test local dev server (check which port Next.js is actually using)
-curl -s -I http://localhost:3001 | head -3
-
-# Test public tunnel  
-curl -s -I https://decisionbot.a.pinggy.link | head -3
+curl -s -I http://localhost:3000 | head -3
 ```
 
-**Only mention URLs after confirming 200 OK responses.** Services showing "active" in systemctl does NOT guarantee URL accessibility. The tunnel frequently drops connection while showing active status.
+**Only mention URLs after confirming 200 OK responses.**
 
 ## ⚠️ CRITICAL: DEV SERVER PORT MANAGEMENT
 
 **The development server MUST ALWAYS run on port 3000.** Never allow Next.js to auto-select alternative ports like 3001, 3002, etc.
 
 ### Why Port 3000 is Required:
-- Tunnel service is configured to forward port 3000
-- External URLs depend on port 3000 being active
+- Tailscale network access is configured for port 3000
 - Multiple dev servers cause cache conflicts and debugging issues
 
 ### If Port 3000 is Busy:
@@ -50,7 +46,7 @@ curl -s -I http://localhost:3000 | head -3
 
 ## ⚠️ CRITICAL: HYDRATION ERROR PREVENTION
 
-**React hydration errors occur when server-rendered HTML doesn't match client-rendered HTML.** This breaks the external tunnel site rendering.
+**React hydration errors occur when server-rendered HTML doesn't match client-rendered HTML.**
 
 ### Common Causes & Solutions
 
@@ -99,14 +95,14 @@ After making changes that involve:
 - Conditional rendering based on `typeof window`
 - Math.random() or other non-deterministic functions
 
-**ALWAYS test the external tunnel URL immediately** as hydration errors may only appear there due to different rendering conditions.
+**ALWAYS test thoroughly** as hydration errors can cause rendering issues.
 
 ### Quick Fix Checklist
 
 1. **Replace `new Date()` calls** with `typeof window` guards
 2. **Move client-specific logic** to `useEffect` hooks
 3. **Initialize state with empty/neutral values** that match server rendering
-4. **Test both localhost:3001 AND tunnel URL** after changes
+4. **Test localhost after changes**
 
 ### Emergency Fix Pattern
 
@@ -226,135 +222,32 @@ This command will:
 - Tracks which migrations have been applied to production
 - Provides interactive prompts for important decisions
 
-### /restart-services
-Restart both the development server and tunnel services:
+## Development Server Access
 
-```bash
-./scripts/restart-services.sh
-```
-
-This script will:
-- Kill any existing processes on port 3000
-- Kill any running tunnel processes
-- Start dev server (Next.js will auto-select available port)
-- Wait for dev server to initialize
-- Start Pinggy tunnel to expose the correct port
-- Test both services and report status
-
-## 🚀 AUTO-STARTING SERVICES
-
-This project has systemd services configured to automatically run the development server and Pinggy tunnel on system boot.
-
-### Service Status Check
-**IMPORTANT**: Always check that these services are running when working on this project:
-
-```bash
-# Check if services are running
-sudo systemctl status whoeverwants-dev whoeverwants-tunnel
-
-# If not running, start them:
-sudo systemctl start whoeverwants-dev
-sudo systemctl start whoeverwants-tunnel
-```
-
-### Development URL
-When services are running, the application is accessible at:
-- **Public URL**: https://decisionbot.a.pinggy.link (requires Pinggy Pro)
-- **Local URL**: http://localhost:3001 (port varies - Next.js auto-selects available port)
-
-### Pinggy Pro Configuration
-To use the persistent `decisionbot.a.pinggy.link` subdomain, you need to set your Pinggy Pro token:
-
-```bash
-# Add to ~/.bashrc or set before running tunnel
-export PINGGY_TOKEN=your_pinggy_token_here
-```
-
-Without the token, the tunnel will use a free temporary URL that expires in 60 minutes.
-
-### Service Details
-
-#### 1. **whoeverwants-dev.service**
-- Runs the Next.js development server (`npm run dev`)
-- Auto-restarts on failure
-- Next.js auto-selects available port (usually 3001 if 3000 is busy)
-
-#### 2. **whoeverwants-tunnel.service**
-- Creates a Pinggy tunnel to expose the dev server port to the internet
-- Domain: decisionbot.a.pinggy.link
-- **IMPORTANT**: Tunnel port must match actual dev server port
-- Depends on the dev service
-
-### Service Management Commands
-
-```bash
-# View logs
-sudo journalctl -u whoeverwants-dev -f      # Dev server logs
-sudo journalctl -u whoeverwants-tunnel -f   # Tunnel logs
-
-# Control services
-sudo systemctl restart whoeverwants-dev     # Restart dev server
-sudo systemctl restart whoeverwants-tunnel  # Restart tunnel
-sudo systemctl stop whoeverwants-dev whoeverwants-tunnel    # Stop both
-sudo systemctl start whoeverwants-dev whoeverwants-tunnel   # Start both
-
-# Check status
-sudo systemctl status whoeverwants-dev
-sudo systemctl status whoeverwants-tunnel
-```
-
-### Initial Setup (If Services Not Installed)
-
-If the services are not yet installed on the system:
-
-```bash
-# Run the setup script
-sudo /home/ubuntu/whoeverwants/scripts/setup-services.sh
-```
-
-This will:
-1. Copy service files to `/etc/systemd/system/`
-2. Enable services to start on boot
-3. Start the services immediately
-
-### Service Files Location
-- Service definitions: `/home/ubuntu/whoeverwants/services/`
-- Setup script: `/home/ubuntu/whoeverwants/scripts/setup-services.sh`
-
-### Troubleshooting
-
-If services fail to start:
-1. Check Node.js is available: `which node`
-2. Check npm packages are installed: `cd /home/ubuntu/whoeverwants && npm install`
-3. Check ports are free: `sudo lsof -i :3000` and `sudo lsof -i :3001`
-4. View detailed logs: `sudo journalctl -u whoeverwants-dev -n 100`
+The development server runs on **port 3000** and is accessible via:
+- **Local URL**: http://localhost:3000
+- **Tailscale network**: Use Tailscale to access from other devices on your network
 
 ## 🔧 TROUBLESHOOTING: Development Server Issues
 
-### Problem: Dev Server Not Rendering (Hydration + Port Conflicts)
+### Problem: Dev Server Not Rendering
 
 If the development server appears to be running but the site doesn't load properly, check these issues:
 
 #### **1. Port Conflicts**
-Next.js automatically switches ports when 3000 is busy:
-- Dev server may start on 3001 instead of 3000
-- Tunnel service must be updated to match the correct port
+Next.js automatically switches ports when 3000 is busy. Always ensure it's running on port 3000.
 
 **Fix Process:**
 1. Check which port Next.js actually started on:
    ```bash
-   sudo systemctl status whoeverwants-dev
-   # Look for: "Local: http://localhost:3001" in the logs
+   lsof -i :3000
    ```
 
-2. Update tunnel configuration in `package.json`:
-   ```json
-   "tunnel": "ssh -p 443 -R0:localhost:3001 -L4300:localhost:4300 ..."
-   ```
-
-3. Restart tunnel service:
+2. If port 3000 is busy, kill the process and restart:
    ```bash
-   sudo systemctl restart whoeverwants-tunnel
+   kill -9 [PID]
+   rm -rf .next
+   npm run dev
    ```
 
 #### **2. React Hydration Errors**
@@ -408,21 +301,17 @@ When dev server has multiple issues:
 
 3. **Identify actual port:**
    ```bash
-   sudo systemctl status whoeverwants-dev
+   lsof -i :3000
    ```
 
-4. **Update tunnel port in package.json** to match dev server port
-
-5. **Restart services:**
+4. **Restart dev server:**
    ```bash
-   sudo systemctl restart whoeverwants-dev
-   sudo systemctl restart whoeverwants-tunnel
+   npm run dev
    ```
 
-6. **Verify both URLs work:**
+5. **Verify URL works:**
    ```bash
-   curl -s -I http://localhost:3001 | head -3
-   curl -s -I https://decisionbot.a.pinggy.link | head -3
+   curl -s -I http://localhost:3000 | head -3
    ```
 
 #### **5. Debug Browser Console**
@@ -436,7 +325,7 @@ This helps identify hydration errors and JavaScript loading issues.
 - No hydration warnings in browser console
 - "Loading spinner present: false"
 - API calls successfully loading data
-- Both local and tunnel URLs return HTTP 200
+- Local URL returns HTTP 200
 
 ---
 

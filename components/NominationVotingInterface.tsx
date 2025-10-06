@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import PollActionsCard from "@/components/PollActionsCard";
+import FollowUpButton from "@/components/FollowUpButton";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput from "@/components/OptionsInput";
 import NominationsList from "@/components/NominationsList";
@@ -30,6 +30,7 @@ interface NominationVotingInterfaceProps {
   pollResults: any;
   loadingResults: boolean;
   loadExistingNominations: () => void;
+  setShowFollowUpModal: (show: boolean) => void;
 }
 
 export default function NominationVotingInterface({
@@ -55,7 +56,8 @@ export default function NominationVotingInterface({
   isLoadingVoteData,
   pollResults,
   loadingResults,
-  loadExistingNominations
+  loadExistingNominations,
+  setShowFollowUpModal
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -166,8 +168,6 @@ export default function NominationVotingInterface({
                 </div>
               </div>
             )}
-            
-            <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
           </>
         ) : (
           <div className="text-center py-4">
@@ -197,16 +197,25 @@ export default function NominationVotingInterface({
               userNominations={userVoteData?.is_abstain ? [] : (userVoteData?.nominations || [])}
               showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
               showUserIndicator={true}
-              showEditButton={!isLoadingVoteData && !isPollClosed}
-              onEditClick={() => setIsEditingVote(true)}
             />
           ) : (
-            <p className="text-gray-600 dark:text-gray-400">No nominations available</p>
+            <p className="text-gray-600 dark:text-gray-400">No suggestions available</p>
           )}
         </div>
-        
-        <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
-        
+
+        {/* Edit and Follow Up Buttons */}
+        {!isPollClosed && !isLoadingVoteData && (
+          <div className="mt-4 flex justify-center items-center relative">
+            <FollowUpButton onClick={() => setShowFollowUpModal(true)} />
+            <button
+              onClick={() => setIsEditingVote(true)}
+              className="absolute right-0 px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+            >
+              Edit
+            </button>
+          </div>
+        )}
+
         {/* Close Poll Button for Creator */}
         {isCreator && !isPollClosed && (
           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -225,12 +234,12 @@ export default function NominationVotingInterface({
 
   return (
     <>
-      <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
+      <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
         {/* Existing nominations from other voters */}
         {filteredExistingNominations.length > 0 && (
-          <div className="mb-4">
+          <div className="mb-3">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {isEditingVote ? 'Other nominations (select to second):' : 'Existing nominations (select to second):'}
+              {isEditingVote ? 'Other suggestions (select to second):' : 'Existing suggestions (select to second):'}
             </h5>
             <div className="space-y-2">
               {filteredExistingNominations.map((nomination, index) => {
@@ -261,19 +270,19 @@ export default function NominationVotingInterface({
         )}
 
         {/* Add new nominations using shared component */}
-        <div className="mt-6 mb-4">
+        <div className={filteredExistingNominations.length > 0 ? "mt-3" : ""}>
           <OptionsInput
             options={newNominations}
             setOptions={setNewNominations}
             isLoading={isSubmitting}
             pollType="nomination"
-            label={isEditingVote ? "Your nominations:" : "Add new nominations:"}
+            label={isEditingVote ? "Your suggestions:" : "Add new suggestions:"}
           />
         </div>
 
-        
+
         {voteError && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+          <div className="mt-3 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
             {voteError}
           </div>
         )}

@@ -83,9 +83,9 @@ export default function OptionsInput({
     
     if (pollType === 'nomination') {
       if (isLastField) {
-        return filledOptions.length === 0 ? "Add a nomination" : "Add another nomination...";
+        return filledOptions.length === 0 ? "Add a suggestion" : "Add another suggestion...";
       }
-      return `Nomination ${index + 1}`;
+      return `Suggestion ${index + 1}`;
     } else {
       if (isLastField) {
         return filledOptions.length === 0 ? "Add an option" : "Add another option...";

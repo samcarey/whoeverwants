@@ -29,7 +29,7 @@ export default function NominationsList({
   if (nominations.length === 0) {
     return (
       <div className={`text-center py-4 ${className}`}>
-        <p className="text-gray-600 dark:text-gray-400">No nominations yet</p>
+        <p className="text-gray-600 dark:text-gray-400">No suggestions yet</p>
       </div>
     );
   }
@@ -40,27 +40,27 @@ export default function NominationsList({
     <div className={className}>
       <div className="flex items-center justify-between mb-2">
         <h4 className="font-medium text-lg text-gray-900 dark:text-white">
-          Nominations {uniqueCount > 0 && `(${uniqueCount})`}
+          Suggestions {uniqueCount > 0 && `(${uniqueCount})`}
         </h4>
-        {showEditButton && onEditClick && (
-          <button
-            onClick={onEditClick}
-            disabled={isEditDisabled}
-            className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 disabled:bg-yellow-300 text-yellow-900 font-medium text-sm rounded-md transition-colors disabled:cursor-not-allowed"
-          >
-            Edit
-          </button>
+        {userNominations.length > 0 && showUserIndicator && (
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              Yours
+            </span>
+          </div>
         )}
       </div>
+
       <div className="grid gap-2">
         {nominations.map((nomination, index) => {
           const isUserNomination = userNominations.includes(nomination.option);
-          const voteText = showVoteCounts 
+          const voteText = showVoteCounts
             ? `${nomination.count} vote${nomination.count !== 1 ? 's' : ''}`
             : '';
-          
+
           return (
-            <div 
+            <div
               key={index}
               className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
             >
@@ -70,8 +70,8 @@ export default function NominationsList({
               <div className="flex items-center gap-2">
                 {showVoteCounts && (
                   <span className={`inline-flex items-center justify-center px-3 py-1 text-sm font-medium rounded-full min-w-[4.5rem] text-center ${
-                    isUserNomination 
-                      ? 'bg-blue-500 text-white' 
+                    isUserNomination
+                      ? 'bg-blue-500 text-white'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                   }`}>
                     {voteText}
@@ -87,15 +87,6 @@ export default function NominationsList({
           );
         })}
       </div>
-      
-      {userNominations.length > 0 && showUserIndicator && (
-        <div className="mt-3 flex justify-end items-center gap-2">
-          <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-          <span className="text-xs text-gray-600 dark:text-gray-400">
-            Your idea
-          </span>
-        </div>
-      )}
     </div>
   );
 }

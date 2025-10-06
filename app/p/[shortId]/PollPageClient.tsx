@@ -12,9 +12,9 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
-import PollActionsCard from "@/components/PollActionsCard";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
+import FollowUpModal from "@/components/FollowUpModal";
 import VoterList from "@/components/VoterList";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -97,6 +97,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
   const isPollExpired = useMemo(() => {
     // Use server-safe check
@@ -1207,7 +1208,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </svg>
               </div>
             ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+              <>
+                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                {/* Follow Up Button */}
+                <div className="mt-4 flex justify-center">
+                  <button
+                    onClick={() => setShowFollowUpModal(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium text-sm rounded-lg transition-colors duration-200 border border-gray-200 dark:border-gray-700"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                    Follow up
+                  </button>
+                </div>
+              </>
             ) : (
               <div className="text-center py-1.5">
                 <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -1249,8 +1264,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       )}
                       
                       
-                      {/* Poll actions card */}
-                      <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
                       
                     </>
                   ) : (
@@ -1313,8 +1326,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
                   
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
@@ -1409,8 +1420,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
                   
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
@@ -1438,7 +1447,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               )}
             </div>
           ) : poll.poll_type === 'nomination' ? (
-            <NominationVotingInterface 
+            <NominationVotingInterface
               poll={poll}
               existingNominations={existingNominations}
               nominationChoices={nominationChoices}
@@ -1462,6 +1471,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               pollResults={pollResults}
               loadingResults={loadingResults}
               loadExistingNominations={loadExistingNominations}
+              setShowFollowUpModal={setShowFollowUpModal}
             />
           ) : (
             <div>
@@ -1488,8 +1498,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       )}
                       
                       
-                      {/* Poll actions card */}
-                      <PollActionsCard poll={poll} isPollClosed={isPollClosed} />
                       
                     </>
                   ) : (
@@ -1549,8 +1557,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
                   
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
@@ -1637,8 +1643,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
                   
-                  {/* Poll actions card */}
-                  <PollActionsCard poll={poll} isPollClosed={false} />
                   
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
@@ -1733,9 +1737,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           : poll.poll_type === 'nomination'
           ? (isAbstaining
               ? `Are you sure you want to abstain from this vote?`
-              : isEditingVote 
-                ? `Are you sure you want to update your nominations?`
-                : `Are you sure you want to submit your nominations?`)
+              : isEditingVote
+                ? `Are you sure you want to update your suggestions?`
+                : `Are you sure you want to submit your suggestions?`)
           : (isAbstaining
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to submit your ranking?`)}
@@ -1780,7 +1784,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         cancelText="Cancel"
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
-      
+
+      {/* Follow-up Modal */}
+      <FollowUpModal
+        isOpen={showFollowUpModal}
+        poll={poll}
+        onClose={() => setShowFollowUpModal(false)}
+      />
+
     </>
   );
 }

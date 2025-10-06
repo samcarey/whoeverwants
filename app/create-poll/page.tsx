@@ -1008,8 +1008,8 @@ function CreatePollContent() {
         onCancel={() => setShowConfirmModal(false)}
         title="Create Poll"
         message={`Are you sure you want to create this ${
-          getPollType() === 'yes_no' ? 'Yes/No' 
-          : getPollType() === 'nomination' ? 'Nomination' 
+          getPollType() === 'yes_no' ? 'Yes/No'
+          : getPollType() === 'nomination' ? 'Suggestion'
           : 'Ranked Choice'
         } poll? It will be private and require the full link to access.`}
         confirmText="Create Poll"
