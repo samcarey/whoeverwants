@@ -1471,7 +1471,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               pollResults={pollResults}
               loadingResults={loadingResults}
               loadExistingNominations={loadExistingNominations}
-              setShowFollowUpModal={setShowFollowUpModal}
             />
           ) : (
             <div>

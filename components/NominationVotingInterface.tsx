@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import FollowUpButton from "@/components/FollowUpButton";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput from "@/components/OptionsInput";
 import NominationsList from "@/components/NominationsList";
@@ -30,7 +29,6 @@ interface NominationVotingInterfaceProps {
   pollResults: any;
   loadingResults: boolean;
   loadExistingNominations: () => void;
-  setShowFollowUpModal: (show: boolean) => void;
 }
 
 export default function NominationVotingInterface({
@@ -56,8 +54,7 @@ export default function NominationVotingInterface({
   isLoadingVoteData,
   pollResults,
   loadingResults,
-  loadExistingNominations,
-  setShowFollowUpModal
+  loadExistingNominations
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -77,27 +74,19 @@ export default function NominationVotingInterface({
     }
   };
 
-  // Initialize edit mode - show user's nominations as editable and others as selectable
+  // Initialize edit mode - show ALL nominations as selectable buttons, empty text fields for new ones
   useEffect(() => {
     if (isEditingVote && userVoteData?.nominations && Array.isArray(userVoteData.nominations)) {
-      // In edit mode, put ALL user's nominations into text fields for editing
-      // This allows them to edit any nomination they made, whether originally created or seconded
-      const editableNoms = [...userVoteData.nominations];
-      // Add empty field at the end for new nominations
-      if (editableNoms.length === 0 || editableNoms[editableNoms.length - 1] !== '') {
-        editableNoms.push('');
-      }
-      setNewNominations(editableNoms);
+      // In edit mode, show ALL existing nominations (user's + others') as toggle buttons
+      setFilteredExistingNominations(existingNominations);
 
-      // Show ALL existing nominations from others as buttons
-      // Filter out the user's own nominations to avoid duplication
-      const otherNominations = existingNominations.filter(nom => !userVoteData.nominations.includes(nom));
-      setFilteredExistingNominations(otherNominations);
-
-      // Pre-select the user's existing nominations so they can see what they voted for
+      // Pre-select the user's existing nominations
       setNominationChoices([...userVoteData.nominations]);
+
+      // Start with one empty text field for adding new nominations
+      setNewNominations(['']);
     } else {
-      // Not in edit mode, show all existing nominations
+      // Not in edit mode, show all existing nominations as secondable buttons
       setFilteredExistingNominations(existingNominations);
     }
   }, [isEditingVote, userVoteData, existingNominations, setNominationChoices]);
@@ -125,16 +114,14 @@ export default function NominationVotingInterface({
     // Update choices with new nominations
     setNominationChoices((prevChoices: string[]) => {
       if (isEditingVote) {
-        // In edit mode: ONLY use text field nominations + manually selected existing buttons
-        // Get manually selected existing nominations (not from text fields)
+        // In edit mode: Combine manually selected existing buttons + new nominations from text fields
+        // Get manually selected existing nominations (anything from the existing list)
         const manuallySelectedExisting = prevChoices.filter(n =>
-          existingNominations.includes(n) &&
-          !uniqueNewNoms.includes(n) && // Not in text fields
-          !userVoteData.nominations.includes(n) // Not user's original nominations
+          existingNominations.includes(n) && !uniqueNewNoms.includes(n)
         );
 
-        // Combine text field nominations + manually selected buttons
-        return [...uniqueNewNoms, ...manuallySelectedExisting];
+        // Combine selected existing + new nominations from text fields
+        return [...manuallySelectedExisting, ...uniqueNewNoms];
       } else {
         // Normal mode - don't include nominations that are already in existingNominations
         const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingNominations.includes(nom));
@@ -144,7 +131,14 @@ export default function NominationVotingInterface({
         return newChoices;
       }
     });
-  }, [newNominations, existingNominations, setNominationChoices, isEditingVote, userVoteData]);
+  }, [newNominations, existingNominations, setNominationChoices, isEditingVote]);
+
+  // Clear abstain flag when user adds nominations while editing
+  useEffect(() => {
+    if (isEditingVote && isAbstaining && nominationChoices.length > 0) {
+      handleAbstain(); // This will toggle isAbstaining to false
+    }
+  }, [nominationChoices, isEditingVote, isAbstaining, handleAbstain]);
 
   // Poll is closed
   if (isPollClosed) {
@@ -203,13 +197,12 @@ export default function NominationVotingInterface({
           )}
         </div>
 
-        {/* Edit and Follow Up Buttons */}
+        {/* Edit Button */}
         {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4 flex justify-center items-center relative">
-            <FollowUpButton onClick={() => setShowFollowUpModal(true)} />
+          <div className="mt-4 flex justify-center">
             <button
               onClick={() => setIsEditingVote(true)}
-              className="absolute right-0 px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+              className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
             >
               Edit
             </button>
@@ -235,11 +228,11 @@ export default function NominationVotingInterface({
   return (
     <>
       <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-        {/* Existing nominations from other voters */}
+        {/* Existing nominations - all can be toggled in edit mode */}
         {filteredExistingNominations.length > 0 && (
           <div className="mb-3">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              {isEditingVote ? 'Other suggestions (select to second):' : 'Existing suggestions (select to second):'}
+              {isEditingVote ? 'All suggestions (select to second/unsecond):' : 'Existing suggestions (select to second):'}
             </h5>
             <div className="space-y-2">
               {filteredExistingNominations.map((nomination, index) => {
@@ -270,13 +263,13 @@ export default function NominationVotingInterface({
         )}
 
         {/* Add new nominations using shared component */}
-        <div className={filteredExistingNominations.length > 0 ? "mt-3" : ""}>
+        <div className={filteredExistingNominations.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
           <OptionsInput
             options={newNominations}
             setOptions={setNewNominations}
             isLoading={isSubmitting}
             pollType="nomination"
-            label={isEditingVote ? "Your suggestions:" : "Add new suggestions:"}
+            label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
           />
         </div>
 
