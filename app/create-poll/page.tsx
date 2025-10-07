@@ -725,15 +725,8 @@ function CreatePollContent() {
 
   return (
     <div className="poll-content">
-      {followUpTo && (
-        <FollowUpHeader followUpToPollId={followUpTo} />
-      )}
-
-      {duplicateOf && (
-        <FollowUpHeader followUpToPollId={duplicateOf} />
-      )}
-
-      {forkOf && (
+      {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
+      {forkOf ? (
         <>
           <ForkHeader forkOfPollId={forkOf} />
           {!hasFormChanged && (
@@ -744,7 +737,11 @@ function CreatePollContent() {
             </div>
           )}
         </>
-      )}
+      ) : duplicateOf ? (
+        <FollowUpHeader followUpToPollId={duplicateOf} />
+      ) : followUpTo ? (
+        <FollowUpHeader followUpToPollId={followUpTo} />
+      ) : null}
 
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
@@ -759,15 +756,15 @@ function CreatePollContent() {
         }} className="space-y-4">
           <div>
             <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-1">
-              <div 
+              <div
                 className={`absolute top-1 bottom-1 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
-                  pollType === 'nomination' 
-                    ? 'bg-blue-100 dark:bg-blue-900/30' 
+                  pollType === 'nomination'
+                    ? 'bg-blue-100 dark:bg-blue-900/30'
                     : 'bg-green-100 dark:bg-green-900/30'
                 }`}
                 style={{
-                  width: 'calc(50% - 4px)',
-                  left: pollType === 'nomination' ? '4px' : 'calc(50% + 2px)'
+                  width: 'calc(50% - 8px)',
+                  left: pollType === 'nomination' ? '4px' : 'calc(50% + 4px)'
                 }}
               />
               <div className="relative flex w-full">
@@ -1022,12 +1019,8 @@ function CreatePollContent() {
         onConfirm={handleConfirmSubmit}
         onCancel={() => setShowConfirmModal(false)}
         title="Create Poll"
-        message={`Are you sure you want to create this ${
-          getPollType() === 'yes_no' ? 'Yes/No'
-          : getPollType() === 'nomination' ? 'Suggestion'
-          : 'Ranked Choice'
-        } poll? It will be private and require the full link to access.`}
-        confirmText="Create Poll"
+        message={`Are you sure you want to create "${title}"?`}
+        confirmText="Create"
         cancelText="Cancel"
       />
       

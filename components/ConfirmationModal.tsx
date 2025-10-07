@@ -31,13 +31,13 @@ export default function ConfirmationModal({
         onCancel();
       }
     };
-    
+
     if (isOpen) {
       document.addEventListener('keydown', handleEscape);
       // Prevent scrolling when modal is open
       document.body.style.overflow = 'hidden';
     }
-    
+
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
@@ -50,32 +50,21 @@ export default function ConfirmationModal({
     <ModalPortal>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         {/* Backdrop */}
-        <div 
+        <div
           className="absolute inset-0 bg-black/50 dark:bg-black/70"
           onClick={onCancel}
         />
-        
+
         {/* Modal */}
-        <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
-          <h2 className="text-xl font-bold mb-3 text-gray-900 dark:text-white">
-            {title}
-          </h2>
-          
-          <p className="text-gray-600 dark:text-gray-300 mb-6">
+        <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full px-4 py-3">
+          <p className="text-gray-900 dark:text-white mb-3 text-base font-normal text-center">
             {message}
           </p>
-          
-          <div className="flex gap-3 justify-end">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
-            >
-              {cancelText}
-            </button>
-            
+
+          <div className="flex justify-center">
             <button
               onClick={onConfirm}
-              className={`px-4 py-2 rounded-lg transition-colors font-medium ${confirmButtonClass}`}
+              className={`px-6 py-2 rounded-lg transition-colors font-medium ${confirmButtonClass}`}
             >
               {confirmText}
             </button>

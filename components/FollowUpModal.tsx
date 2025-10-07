@@ -57,11 +57,10 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                   pollType: poll.poll_type,
                   options: poll.options,
                   responseDeadline: poll.response_deadline,
-                  closeAutomatically: poll.is_closed,
-                  followUpTo: poll.id
+                  closeAutomatically: poll.is_closed
                 };
                 localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(duplicateData));
-                router.push(`/create-poll?duplicate=${poll.id}&followUpTo=${poll.id}`);
+                router.push(`/create-poll?duplicate=${poll.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors duration-200"

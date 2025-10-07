@@ -121,7 +121,7 @@ export default function Template({ children }: AppTemplateProps) {
   
   // Determine initial state based on pathname to avoid layout shift
   const getInitialPageTitle = () => {
-    if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Ask For...';
+    if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Ask For…';
     return '';
   };
   
@@ -141,7 +141,7 @@ export default function Template({ children }: AppTemplateProps) {
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname === '/create-poll' || pathname === '/create-poll/') {
-      setPageTitle('Ask For...');
+      setPageTitle('Ask For…');
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname.startsWith('/p/')) {
@@ -397,7 +397,7 @@ export default function Template({ children }: AppTemplateProps) {
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1 className="text-2xl font-bold text-center break-words">
-                    Ask For...
+                    Ask For…
                   </h1>
                 </div>
               )}
