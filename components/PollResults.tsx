@@ -9,15 +9,16 @@ interface PollResultsProps {
   results: PollResults;
   isPollClosed?: boolean;
   userVoteData?: any;
+  onFollowUpClick?: () => void;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
     return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
   }
 
   if (results.poll_type === 'ranked_choice') {
-    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} />;
+    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
 
   if (results.poll_type === 'nomination') {
