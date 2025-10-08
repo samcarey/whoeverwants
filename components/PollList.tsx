@@ -286,7 +286,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div>
                     <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors pr-20">
                       <span className="mr-2 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
                       </span>
                       {poll.title}
                     </h3>
