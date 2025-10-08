@@ -1,0 +1,358 @@
+[2025-10-07T12:35:29.553Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-10-07T12:35:29.658Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "willAbstain": false
+}
+---
+[2025-10-07T12:35:29.733Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-10-07T12:35:30.371Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-10-07T12:35:30.409Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "8d682a39-1b75-4abd-9682-115ae592ed6c",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-07T12:35:30.456Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-10-07T12:35:30.509Z] INFO: Nomination vote processing
+  DATA: {
+  "nominationChoices": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "willAbstain": false,
+  "isAbstaining": false
+}
+---
+[2025-10-07T12:35:30.543Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "8d682a39-1b75-4abd-9682-115ae592ed6c",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Sambo"
+}
+---
+[2025-10-07T12:35:30.660Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "8d682a39-1b75-4abd-9682-115ae592ed6c",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Sambo"
+  }
+}
+---
+[2025-10-07T12:35:30.837Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "9b7d7dc3-bc31-41f8-a111-62a5c87ce727"
+  },
+  "insertError": null,
+  "voteId": "9b7d7dc3-bc31-41f8-a111-62a5c87ce727",
+  "hasError": false
+}
+---
+[2025-10-07T12:35:30.860Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "9b7d7dc3-bc31-41f8-a111-62a5c87ce727"
+}
+---
+[2025-10-07T12:35:30.897Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "9b7d7dc3-bc31-41f8-a111-62a5c87ce727",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-10-07T12:35:30.950Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-07T12:35:35.409Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-10-07T12:35:35.450Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "willAbstain": false
+}
+---
+[2025-10-07T12:35:35.513Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-10-07T14:12:34.285Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "nominationChoices": 1,
+  "nominationChoicesData": [
+    "A"
+  ]
+}
+---
+[2025-10-07T14:12:34.324Z] INFO: Nomination validation check
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "willAbstain": false
+}
+---
+[2025-10-07T14:12:34.375Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "choicesReady": 1
+}
+---
+[2025-10-07T14:12:35.030Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "nomination",
+  "userVoteId": null
+}
+---
+[2025-10-07T14:12:35.084Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "9f97808f-323e-4f5a-a3af-a3c3049c5277",
+  "pollType": "nomination",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-07T14:12:35.139Z] INFO: Processing nomination vote data
+  DATA: {
+  "originalNominations": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "isAbstaining": false
+}
+---
+[2025-10-07T14:12:35.193Z] INFO: Nomination vote processing
+  DATA: {
+  "nominationChoices": [
+    "A"
+  ],
+  "filteredNominations": [
+    "A"
+  ],
+  "willAbstain": false,
+  "isAbstaining": false
+}
+---
+[2025-10-07T14:12:35.247Z] INFO: Nomination voteData created
+  DATA: {
+  "poll_id": "9f97808f-323e-4f5a-a3af-a3c3049c5277",
+  "vote_type": "nomination",
+  "nominations": [
+    "A"
+  ],
+  "is_abstain": false,
+  "voter_name": "Sambo"
+}
+---
+[2025-10-07T14:12:35.290Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "9f97808f-323e-4f5a-a3af-a3c3049c5277",
+    "vote_type": "nomination",
+    "nominations": [
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Sambo"
+  }
+}
+---
+[2025-10-07T14:12:35.471Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "221e6a18-69de-47eb-9a3c-3c805c127c7a"
+  },
+  "insertError": null,
+  "voteId": "221e6a18-69de-47eb-9a3c-3c805c127c7a",
+  "hasError": false
+}
+---
+[2025-10-07T14:12:35.491Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "221e6a18-69de-47eb-9a3c-3c805c127c7a"
+}
+---
+[2025-10-07T14:12:35.510Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "221e6a18-69de-47eb-9a3c-3c805c127c7a",
+  "isEditingVote": false,
+  "pollType": "nomination"
+}
+---
+[2025-10-07T14:12:35.549Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-07T14:14:14.608Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "ranked_choice",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-07T14:14:14.694Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "ranked_choice",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-07T14:14:15.292Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "ranked_choice",
+  "userVoteId": null
+}
+---
+[2025-10-07T14:14:15.377Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "2e4fe37a-770c-402b-8bc9-81d4d8e61ac9",
+  "pollType": "ranked_choice",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-07T14:14:15.438Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "2e4fe37a-770c-402b-8bc9-81d4d8e61ac9",
+    "vote_type": "ranked_choice",
+    "ranked_choices": [
+      "B",
+      "A"
+    ],
+    "is_abstain": false,
+    "voter_name": "Sambo"
+  }
+}
+---
+[2025-10-07T14:14:15.695Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "0d284912-3d23-4528-9752-ad3d1c2c8253"
+  },
+  "insertError": null,
+  "voteId": "0d284912-3d23-4528-9752-ad3d1c2c8253",
+  "hasError": false
+}
+---
+[2025-10-07T14:14:15.742Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "0d284912-3d23-4528-9752-ad3d1c2c8253"
+}
+---
+[2025-10-07T14:14:15.797Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "0d284912-3d23-4528-9752-ad3d1c2c8253",
+  "isEditingVote": false,
+  "pollType": "ranked_choice"
+}
+---
+[2025-10-07T14:14:15.835Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---

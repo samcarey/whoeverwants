@@ -1248,9 +1248,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </div>
                         </div>
                       )}
-                      
-                      
-                      
+
                     </>
                   ) : (
                     <div className="text-center py-4">
@@ -1263,14 +1261,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your vote:</h4>
-                      {!isLoadingVoteData && !isPollClosed && (
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      )}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1311,8 +1301,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
-                  
-                  
+
+                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {!isPollClosed && !isLoadingVoteData && (
+                    <div className="mt-4 relative flex justify-end items-center">
+                      <div className="absolute left-1/2 -translate-x-1/2">
+                        <button
+                          onClick={() => setShowFollowUpModal(true)}
+                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                          style={{
+                            border: '2px solid transparent',
+                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                            backgroundOrigin: 'border-box',
+                            backgroundClip: 'padding-box, border-box'
+                          }}
+                        >
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                          </svg>
+                          <span className="font-semibold">Follow up</span>
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setIsEditingVote(true)}
+                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
                     <div className="mt-3 flex justify-center">
@@ -1482,9 +1500,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </div>
                         </div>
                       )}
-                      
-                      
-                      
+
                     </>
                   ) : (
                     <div className="text-center py-4">
@@ -1497,14 +1513,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your ranking:</h4>
-                      {!isLoadingVoteData && !isPollClosed && (
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      )}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
@@ -1542,8 +1550,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
-                  
-                  
+
+                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {!isPollClosed && !isLoadingVoteData && (
+                    <div className="mt-4 relative flex justify-end items-center">
+                      <div className="absolute left-1/2 -translate-x-1/2">
+                        <button
+                          onClick={() => setShowFollowUpModal(true)}
+                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                          style={{
+                            border: '2px solid transparent',
+                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                            backgroundOrigin: 'border-box',
+                            backgroundClip: 'padding-box, border-box'
+                          }}
+                        >
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                          </svg>
+                          <span className="font-semibold">Follow up</span>
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setIsEditingVote(true)}
+                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+
                   {/* Close Poll button row */}
                   {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
                     <div className="mt-3 flex justify-center">
