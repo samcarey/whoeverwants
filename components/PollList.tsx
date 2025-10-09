@@ -53,10 +53,10 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   }, [deadline, isClient]);
 
   return (
-    <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+    <>
       <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span>
       {timeLeft !== "Expired" && " left"}
-    </div>
+    </>
   );
 };
 
@@ -261,37 +261,35 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2 ml-7">
                       Already Voted
                     </div>
                   )}
-                  <div
-                    onClick={() => router.push(`/p/${poll.id}`)}
-                    onTouchStart={handleTouchStart}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchMove={handleTouchMove}
-                    className={`block ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer relative select-none`}
-                  >
-                  {poll.response_deadline && (
-                    <div className="absolute top-1 right-2 z-10">
-                      <ClientOnly fallback={
-                        <div className="text-right text-xs text-gray-500 dark:text-gray-400">
-                          Loading...
-                        </div>
-                      }>
-                        <SimpleCountdown deadline={poll.response_deadline} />
-                      </ClientOnly>
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors pr-20">
-                      <span className="mr-2 text-base">
+                  <div key={poll.id}>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-shrink-0 text-base">
                         {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
-                      </span>
-                      {poll.title}
-                    </h3>
-                </div>
-              </div>
+                      </div>
+                      <div
+                        onClick={() => router.push(`/p/${poll.id}`)}
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
+                        onTouchMove={handleTouchMove}
+                        className={`flex-1 ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer select-none`}
+                      >
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors">
+                          {poll.title}
+                        </h3>
+                      </div>
+                    </div>
+                    {poll.response_deadline && (
+                      <div className="text-right mt-1 mr-0 text-xs text-gray-500 dark:text-gray-400">
+                        <ClientOnly fallback={<>Loading...</>}>
+                          <SimpleCountdown deadline={poll.response_deadline} />
+                        </ClientOnly>
+                      </div>
+                    )}
+                  </div>
                 </React.Fragment>
               );
             })}
@@ -299,17 +297,15 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
         </div>
       )}
 
-      {/* Horizontal divider between sections - only show if both sections have content */}
-      {openPolls.length > 0 && closedPolls.length > 0 && (
-        <div className="mb-8">
-          <hr className="border-gray-200 dark:border-gray-700" />
-        </div>
-      )}
-
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
         <div className="mb-8">
-            <div className="space-y-3">
+          {openPolls.length > 0 && (
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2 ml-7">
+              Closed
+            </div>
+          )}
+          <div className="space-y-3">
               {closedPolls.map((poll, index) => {
                 const isVoted = votedPollIds.has(poll.id);
                 const isAbstained = abstainedPollIds.has(poll.id);
@@ -375,22 +371,31 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 };
 
                 return (
-                  <div
-                    key={poll.id}
-                    onClick={() => router.push(`/p/${poll.id}`)}
-                    onTouchStart={handleTouchStart}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchMove={handleTouchMove}
-                    className={`block bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 relative select-none`}
-                  >
+                  <div key={poll.id}>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex-shrink-0 text-base">
+                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
+                      </div>
+                      <div
+                        onClick={() => router.push(`/p/${poll.id}`)}
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={handleTouchEnd}
+                        onTouchMove={handleTouchMove}
+                        className={`flex-1 bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 select-none`}
+                      >
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                          {poll.title}
+                        </h3>
+                      </div>
+                    </div>
                     {poll.response_deadline && (
-                      <div className="absolute top-1 right-2 z-10">
+                      <div className="text-right -mt-1 mr-0">
                         <span className="text-xs text-gray-500 dark:text-gray-400">
                           Closed {(() => {
                             const deadline = new Date(poll.response_deadline);
                             const now = new Date();
                             const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
-                            
+
                             if (hoursAgo <= 24) {
                               // Within 24 hours, show only time
                               return deadline.toLocaleTimeString("en-US", {
@@ -410,15 +415,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </span>
                       </div>
                     )}
-                  <div>
-                    <h3 className="font-medium text-lg line-clamp-1 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors pr-20">
-                      <span className="mr-2 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
-                      </span>
-                      {poll.title}
-                    </h3>
                   </div>
-                </div>
               );
             })}
             </div>
