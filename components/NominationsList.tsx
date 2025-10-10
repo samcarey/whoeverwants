@@ -53,6 +53,15 @@ export default function NominationsList({
             <span className="text-xs text-gray-600 dark:text-gray-400">
               Yours
             </span>
+            {showEditButton && (
+              <button
+                onClick={onEditClick}
+                disabled={isEditDisabled}
+                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Edit
+              </button>
+            )}
           </div>
         )}
       </div>

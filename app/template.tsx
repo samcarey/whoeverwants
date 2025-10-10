@@ -413,7 +413,7 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Home page title */}
               {pathname === '/' && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-2 pt-4 pb-1">
                   <div className="text-center">
                     <h1 className="text-2xl font-bold mb-1">Whoever Wants</h1>
                     <div className="h-7 flex items-center justify-center mb-4" id="home-phrase-content">
@@ -425,7 +425,7 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto px-4 ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'} ${pathname === '/' ? 'text-red-600' : ''}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? 'px-2' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'} ${pathname === '/' ? 'text-red-600' : ''}`}>
             {children}
           </div>
         </div>

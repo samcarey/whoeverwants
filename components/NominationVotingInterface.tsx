@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput from "@/components/OptionsInput";
 import NominationsList from "@/components/NominationsList";
+import PollManagementButtons from "@/components/PollManagementButtons";
+import VoterList from "@/components/VoterList";
 
 interface NominationVotingInterfaceProps {
   poll: any;
@@ -193,51 +195,40 @@ export default function NominationVotingInterface({
               userNominations={userVoteData?.is_abstain ? [] : (userVoteData?.nominations || [])}
               showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
               showUserIndicator={true}
+              showEditButton={!isPollClosed}
+              onEditClick={() => setIsEditingVote(true)}
+              isEditDisabled={isLoadingVoteData}
             />
           ) : (
             <p className="text-gray-600 dark:text-gray-400">No suggestions available</p>
           )}
         </div>
 
-        {/* Edit Button and Follow Up Button - shown when poll is open and user has voted */}
+        {/* Follow Up Button - shown when poll is open and user has voted */}
         {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4 relative flex justify-end items-center">
-            <div className="absolute left-1/2 -translate-x-1/2">
-              <button
-                onClick={onFollowUpClick}
-                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                style={{
-                  border: '2px solid transparent',
-                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                  backgroundOrigin: 'border-box',
-                  backgroundClip: 'padding-box, border-box'
-                }}
-              >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-                <span className="font-semibold">Follow up</span>
-              </button>
-            </div>
+          <div className="mt-4 flex justify-center">
             <button
-              onClick={() => setIsEditingVote(true)}
-              className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+              onClick={onFollowUpClick}
+              className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+              style={{
+                border: '2px solid transparent',
+                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                backgroundOrigin: 'border-box',
+                backgroundClip: 'padding-box, border-box'
+              }}
             >
-              Edit
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              <span className="font-semibold">Follow up</span>
             </button>
           </div>
         )}
 
-        {/* Close Poll Button for Creator */}
-        {isCreator && !isPollClosed && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={handleCloseClick}
-              disabled={isClosingPoll}
-              className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
-            >
-              {isClosingPoll ? 'Closing Poll...' : 'Close Poll'}
-            </button>
+        {/* Voter list for open nomination polls - shown after Follow-up button when voted */}
+        {!isPollClosed && !isLoadingVoteData && (
+          <div className="mt-8">
+            <VoterList pollId={poll.id} refreshTrigger={0} />
           </div>
         )}
       </div>
@@ -333,19 +324,6 @@ export default function NominationVotingInterface({
             : 'Submit Vote'
         }
       </button>
-
-      {/* Close Poll Button for Creator */}
-      {isCreator && !isPollClosed && (
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={handleCloseClick}
-            disabled={isClosingPoll}
-            className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg font-medium transition-colors disabled:cursor-not-allowed"
-          >
-            {isClosingPoll ? 'Closing Poll...' : 'Close Poll'}
-          </button>
-        </div>
-      )}
     </>
   );
 }

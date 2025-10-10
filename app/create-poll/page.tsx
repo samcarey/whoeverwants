@@ -21,10 +21,16 @@ function CreatePollContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const followUpTo = searchParams.get('followUpTo');
-  const forkOf = searchParams.get('fork');
-  const duplicateOf = searchParams.get('duplicate');
-  
-  debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf, duplicateOf }, 'CreatePoll');
+  const forkOfParam = searchParams.get('fork');
+  const duplicateOfParam = searchParams.get('duplicate');
+  const voteFromNominationParam = searchParams.get('voteFromNomination');
+
+  // Track duplicate and fork relationships as part of form state
+  const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+  const [forkOf, setForkOf] = useState<string | null>(null);
+  const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
+
+  debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'poll' | 'nomination'>('nomination');
@@ -233,38 +239,41 @@ function CreatePollContent() {
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
-    
-    // Only load form state if this is NOT a follow-up, fork, or duplicate
-    // (blank follow-ups should start with a clean form)
-    if (!followUpTo && !forkOf && !duplicateOf) {
+
+    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
+    // (these special cases load their own data from URL params)
+    if (!followUpTo && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
       loadFormState();
     }
-    
+
     // Load saved user name if no name in form state
     const savedName = getUserName();
     if (savedName && !creatorName) {
       setCreatorName(savedName);
     }
-  }, [followUpTo, forkOf, duplicateOf]);
+  }, [followUpTo, forkOfParam, duplicateOfParam, voteFromNominationParam, creatorName]);
 
   // Load fork data if this is a fork
   useEffect(() => {
-    debugLog.logObject('Fork useEffect running', { forkOf, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
-    
-    if (forkOf && typeof window !== 'undefined') {
-      const forkDataKey = `fork-data-${forkOf}`;
+    debugLog.logObject('Fork useEffect running', { forkOfParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+
+    if (forkOfParam && typeof window !== 'undefined') {
+      // Set the fork relationship in state
+      setForkOf(forkOfParam);
+
+      const forkDataKey = `fork-data-${forkOfParam}`;
       const savedForkData = localStorage.getItem(forkDataKey);
-      
+
       debugLog.logObject('Fork data lookup', { forkDataKey, found: !!savedForkData, data: savedForkData }, 'CreatePoll');
-      
+
       if (savedForkData) {
         try {
           const forkData = JSON.parse(savedForkData);
           debugLog.logObject('Parsed fork data', forkData, 'CreatePoll');
-          
+
           // Store original data for change comparison
           setOriginalPollData(forkData);
-          
+
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
@@ -275,7 +284,7 @@ function CreatePollContent() {
             const deadline = new Date(forkData.response_deadline);
             const now = new Date();
             const diffMs = deadline.getTime() - now.getTime();
-            
+
             if (diffMs > 0) {
               const diffMinutes = Math.round(diffMs / (1000 * 60));
               if (diffMinutes <= 10) setDeadlineOption("10min");
@@ -293,34 +302,47 @@ function CreatePollContent() {
         }
       }
     }
-  }, [forkOf]);
+  }, [forkOfParam]);
 
   // Load duplicate data if this is a duplicate (for follow-up polls)
   useEffect(() => {
-    debugLog.logObject('Duplicate useEffect running', { duplicateOf, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
-    
-    if (duplicateOf && typeof window !== 'undefined') {
-      const duplicateDataKey = `duplicate-data-${duplicateOf}`;
+    debugLog.logObject('Duplicate useEffect running', { duplicateOfParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+
+    if (duplicateOfParam && typeof window !== 'undefined') {
+      // Set the duplicate relationship in state
+      setDuplicateOf(duplicateOfParam);
+
+      const duplicateDataKey = `duplicate-data-${duplicateOfParam}`;
       const savedDuplicateData = localStorage.getItem(duplicateDataKey);
-      
+
       debugLog.logObject('Duplicate data lookup', { duplicateDataKey, found: !!savedDuplicateData, data: savedDuplicateData }, 'CreatePoll');
-      
+
       if (savedDuplicateData) {
         try {
           const duplicateData = JSON.parse(savedDuplicateData);
           debugLog.logObject('Parsed duplicate data', duplicateData, 'CreatePoll');
-          
+
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
-          if (duplicateData.poll_type === 'ranked_choice' && duplicateData.options) {
-            setOptions(duplicateData.options);
+
+          // Set poll type based on duplicated poll
+          if (duplicateData.pollType === 'ranked_choice') {
+            setPollType('poll');
+            setOptions(duplicateData.options || ['']);
+          } else if (duplicateData.pollType === 'nomination') {
+            setPollType('nomination');
+            setOptions(['']);
+          } else {
+            // yes_no poll
+            setPollType('poll');
+            setOptions(['']);
           }
           if (duplicateData.response_deadline) {
             // Parse the deadline and set appropriate form values
             const deadline = new Date(duplicateData.response_deadline);
             const now = new Date();
             const diffMs = deadline.getTime() - now.getTime();
-            
+
             if (diffMs > 0) {
               const diffMinutes = Math.round(diffMs / (1000 * 60));
               if (diffMinutes <= 10) setDeadlineOption("10min");
@@ -333,16 +355,67 @@ function CreatePollContent() {
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
           }
-          
+
           // Clean up the duplicate data from localStorage after loading
           localStorage.removeItem(duplicateDataKey);
           debugLog.info('Cleaned up duplicate data from localStorage', 'CreatePoll');
+
+          // Clear the duplicate URL parameter so refresh works correctly
+          // Replace the URL without the duplicate parameter
+          const url = new URL(window.location.href);
+          url.searchParams.delete('duplicate');
+          window.history.replaceState({}, '', url.toString());
         } catch (error) {
           console.error('Error loading duplicate data:', error);
         }
       }
     }
-  }, [duplicateOf]);
+  }, [duplicateOfParam]);
+
+  // Load vote-from-nomination data if creating preference poll from nominations
+  useEffect(() => {
+    debugLog.logObject('VoteFromNomination useEffect running', { voteFromNominationParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+
+    if (voteFromNominationParam && typeof window !== 'undefined') {
+      // Set the vote-from-nomination relationship in state
+      setVoteFromNomination(voteFromNominationParam);
+
+      const voteDataKey = `vote-from-nomination-${voteFromNominationParam}`;
+      const savedVoteData = localStorage.getItem(voteDataKey);
+
+      debugLog.logObject('Vote data lookup', { voteDataKey, found: !!savedVoteData, data: savedVoteData }, 'CreatePoll');
+
+      if (savedVoteData) {
+        try {
+          const voteData = JSON.parse(savedVoteData);
+          debugLog.logObject('Parsed vote data', voteData, 'CreatePoll');
+
+          // Auto-fill form with preference poll type and nominated options
+          setTitle(voteData.title || "");
+          setPollType('poll'); // Set to preference poll
+          setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
+
+          // Clean up the vote data from localStorage after loading
+          localStorage.removeItem(voteDataKey);
+          debugLog.info('Cleaned up vote data from localStorage', 'CreatePoll');
+
+          // Clear the voteFromNomination URL parameter
+          const url = new URL(window.location.href);
+          url.searchParams.delete('voteFromNomination');
+
+          // Set followUpTo parameter to link the new poll
+          if (voteData.followUpTo) {
+            url.searchParams.set('followUpTo', voteData.followUpTo);
+            window.history.replaceState({}, '', url.toString());
+          } else {
+            window.history.replaceState({}, '', url.toString());
+          }
+        } catch (error) {
+          console.error('Error loading vote-from-nomination data:', error);
+        }
+      }
+    }
+  }, [voteFromNominationParam]);
 
   // Set default date/time values after client initialization
   useEffect(() => {
@@ -358,7 +431,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName, isClient, saveFormState]);
+  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -707,7 +780,7 @@ function CreatePollContent() {
 
       // Clear saved form state since poll was created successfully
       clearFormState();
-      
+
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 

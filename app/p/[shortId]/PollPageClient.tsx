@@ -16,6 +16,7 @@ import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
 import FollowUpModal from "@/components/FollowUpModal";
 import VoterList from "@/components/VoterList";
+import PollManagementButtons from "@/components/PollManagementButtons";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -1208,7 +1209,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </svg>
               </div>
             ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={() => setShowFollowUpModal(true)} />
+              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
             ) : (
               <div className="text-center py-1.5">
                 <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -1216,14 +1217,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             )}
           </div>
         )}
-        
-        {/* Show voters list after results for closed polls, or after countdown for open polls when voted */}
-        {(isPollClosed || hasVoted) && (
+
+        {/* Follow-up button for closed polls - always shown after results */}
+        {isPollClosed && (
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={() => setShowFollowUpModal(true)}
+              className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+              style={{
+                border: '2px solid transparent',
+                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                backgroundOrigin: 'border-box',
+                backgroundClip: 'padding-box, border-box'
+              }}
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              <span className="font-semibold">Follow up</span>
+            </button>
+          </div>
+        )}
+
+        {/* Voter list for closed polls - always shown after Follow-up button */}
+        {isPollClosed && (
           <div className="mt-8">
             <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
           </div>
         )}
-        
+
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
@@ -1331,26 +1353,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Voter list for open yes/no polls - shown after Follow-up button when voted */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-8">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
                 </div>
@@ -1423,30 +1429,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
-                  
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -1580,26 +1562,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
+                  {/* Voter list for open ranked choice polls - shown after Follow-up button when voted */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-8">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
                 </div>
@@ -1664,37 +1630,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
-                  
-                  
-                  {/* Close Poll button row */}
-                  {!isPollClosed && (isCreator || process.env.NODE_ENV === 'development') && (
-                    <div className="mt-3 flex justify-center">
-                      <button
-                        onClick={handleCloseClick}
-                        disabled={isClosingPoll}
-                        className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-                      >
-                        {isClosingPoll ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Closing Poll...
-                          </>
-                        ) : (
-                          'Close Poll'
-                        )}
-                      </button>
-                    </div>
-                  )}
                 </>
               )}
             </div>
           )}
-          
 
-          
+
+
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -1704,47 +1646,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
-          {/* Forget Poll Button */}
-          {hasPollDataState && (
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
-              <button
-                onClick={() => setShowForgetConfirmModal(true)}
-                className="inline-flex py-2 px-4 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-red-50 hover:border-red-300 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:border-red-600 dark:hover:text-red-400 transition-all duration-200"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  <span>Forget this poll</span>
-                </div>
-              </button>
+          {/* Poll Management Buttons - Close, Reopen, and Forget Poll */}
+          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && (isCreator || process.env.NODE_ENV === 'development'))) && (
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <PollManagementButtons
+                showCloseButton={!isPollClosed && (isCreator || process.env.NODE_ENV === 'development')}
+                showReopenButton={isPollClosed && process.env.NODE_ENV === 'development'}
+                showForgetButton={hasPollDataState}
+                onCloseClick={handleCloseClick}
+                onReopenClick={handleReopenClick}
+                onForgetClick={() => setShowForgetConfirmModal(true)}
+                isClosingPoll={isClosingPoll}
+                isReopeningPoll={isReopeningPoll}
+              />
             </div>
           )}
-
-      {/* Reopen Poll button at the very bottom */}
-      {isPollClosed && process.env.NODE_ENV === 'development' && (
-        <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
-          <div className="flex justify-center">
-            <button
-              onClick={handleReopenClick}
-              disabled={isReopeningPoll}
-              className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed"
-            >
-              {isReopeningPoll ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Reopening Poll...
-                </>
-              ) : (
-                'Reopen Poll (Dev)'
-              )}
-            </button>
-          </div>
-        </div>
-      )}
       </div>
 
       <ConfirmationModal
