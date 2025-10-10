@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Poll } from "@/lib/supabase";
+import { useState, useEffect } from "react";
+import { Poll, supabase } from "@/lib/supabase";
 import ModalPortal from "@/components/ModalPortal";
 
 interface FollowUpModalProps {
@@ -12,6 +13,74 @@ interface FollowUpModalProps {
 
 export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalProps) {
   const router = useRouter();
+  const [nominations, setNominations] = useState<string[]>([]);
+  const [loadingNominations, setLoadingNominations] = useState(false);
+
+  // Fetch actual nominations for nomination polls
+  useEffect(() => {
+    if (!isOpen || poll.poll_type !== 'nomination') {
+      setNominations([]);
+      return;
+    }
+
+    const fetchNominations = async () => {
+      setLoadingNominations(true);
+      try {
+        const { data: votes, error } = await supabase
+          .from('votes')
+          .select('nominations')
+          .eq('poll_id', poll.id)
+          .eq('vote_type', 'nomination')
+          .eq('is_abstain', false)
+          .not('nominations', 'is', null);
+
+        if (error) {
+          console.error('Error fetching nominations:', error);
+          setNominations([]);
+          return;
+        }
+
+        // Collect all unique nominations
+        const nominationSet = new Set<string>();
+        votes?.forEach(vote => {
+          if (vote.nominations && Array.isArray(vote.nominations)) {
+            vote.nominations.forEach((nom: any) => {
+              const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
+              if (nomString) {
+                nominationSet.add(nomString);
+              }
+            });
+          }
+        });
+
+        setNominations(Array.from(nominationSet));
+      } catch (error) {
+        console.error('Error loading nominations:', error);
+        setNominations([]);
+      } finally {
+        setLoadingNominations(false);
+      }
+    };
+
+    fetchNominations();
+  }, [isOpen, poll.poll_type, poll.id]);
+
+  const handleVoteClick = () => {
+    // Use the fetched nominations for the new preference poll
+    const nominatedOptions = nominations;
+
+    // Store data for the new preference poll
+    const voteData = {
+      title: poll.title,
+      options: nominatedOptions,
+      followUpTo: poll.id
+    };
+    localStorage.setItem(`vote-from-nomination-${poll.id}`, JSON.stringify(voteData));
+
+    // Navigate to create-poll page with vote parameter
+    router.push(`/create-poll?voteFromNomination=${poll.id}`);
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -26,16 +95,29 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              Follow up with the same recipients
-            </h3>
-          </div>
+          {poll.poll_type === 'nomination' && nominations.length >= 2 && (
+            <div className="mb-4">
+              <button
+                onClick={handleVoteClick}
+                disabled={loadingNominations}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-semibold text-lg rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loadingNominations ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Loading...
+                  </>
+                ) : (
+                  <>Vote on it</>
+                )}
+              </button>
+            </div>
+          )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 mb-4">
             <button
               onClick={() => {
                 router.push(`/create-poll?followUpTo=${poll.id}`);
@@ -97,6 +179,15 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
               </svg>
               Fork
             </button>
+          </div>
+
+          <div className="mt-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center justify-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Follow up with the same recipients
+            </h3>
           </div>
         </div>
       </div>

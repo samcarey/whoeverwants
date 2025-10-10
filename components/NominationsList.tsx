@@ -36,9 +36,14 @@ export default function NominationsList({
 
   const uniqueCount = nominations.length;
 
+  // Sort nominations alphabetically
+  const sortedNominations = [...nominations].sort((a, b) =>
+    a.option.localeCompare(b.option)
+  );
+
   return (
     <div className={className}>
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <h4 className="font-medium text-lg text-gray-900 dark:text-white">
           Suggestions {uniqueCount > 0 && `(${uniqueCount})`}
         </h4>
@@ -52,37 +57,35 @@ export default function NominationsList({
         )}
       </div>
 
-      <div className="grid gap-2">
-        {nominations.map((nomination, index) => {
+      <div className="flex flex-wrap justify-center gap-2">
+        {sortedNominations.map((nomination, index) => {
           const isUserNomination = userNominations.includes(nomination.option);
-          const voteText = showVoteCounts
-            ? `${nomination.count} vote${nomination.count !== 1 ? 's' : ''}`
-            : '';
 
           return (
             <div
               key={index}
-              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+              className={`inline-flex items-center rounded-full overflow-hidden ${
+                isUserNomination
+                  ? 'bg-blue-100 dark:bg-blue-900/30'
+                  : 'bg-gray-100 dark:bg-gray-700'
+              }`}
             >
-              <span className="text-gray-900 dark:text-white">
+              <span className={`px-3 py-1 text-sm font-medium ${
+                isUserNomination
+                  ? 'text-blue-900 dark:text-blue-100'
+                  : 'text-gray-900 dark:text-gray-100'
+              }`}>
                 {nomination.option}
               </span>
-              <div className="flex items-center gap-2">
-                {showVoteCounts && (
-                  <span className={`inline-flex items-center justify-center px-3 py-1 text-sm font-medium rounded-full min-w-[4.5rem] text-center ${
-                    isUserNomination
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                  }`}>
-                    {voteText}
-                  </span>
-                )}
-                {!showVoteCounts && isUserNomination && showUserIndicator && (
-                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
-                    <div className="w-3 h-3 bg-white rounded-full"></div>
-                  </div>
-                )}
-              </div>
+              {showVoteCounts && (
+                <span className={`px-2.5 py-1 text-sm font-bold ${
+                  isUserNomination
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                }`}>
+                  {nomination.count}
+                </span>
+              )}
             </div>
           );
         })}
