@@ -501,53 +501,53 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, [poll.id]);
 
   // Fetch nominations for nomination polls to show "Vote on it" button
-  useEffect(() => {
+  const fetchNominations = useCallback(async () => {
     if (poll.poll_type !== 'nomination') {
       setNominations([]);
       return;
     }
 
-    const fetchNominations = async () => {
-      setLoadingNominations(true);
-      try {
-        const { data: votes, error } = await supabase
-          .from('votes')
-          .select('nominations')
-          .eq('poll_id', poll.id)
-          .eq('vote_type', 'nomination')
-          .eq('is_abstain', false)
-          .not('nominations', 'is', null);
+    setLoadingNominations(true);
+    try {
+      const { data: votes, error } = await supabase
+        .from('votes')
+        .select('nominations')
+        .eq('poll_id', poll.id)
+        .eq('vote_type', 'nomination')
+        .eq('is_abstain', false)
+        .not('nominations', 'is', null);
 
-        if (error) {
-          console.error('Error fetching nominations:', error);
-          setNominations([]);
-          return;
-        }
-
-        // Collect all unique nominations
-        const nominationSet = new Set<string>();
-        votes?.forEach(vote => {
-          if (vote.nominations && Array.isArray(vote.nominations)) {
-            vote.nominations.forEach((nom: any) => {
-              const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
-              if (nomString) {
-                nominationSet.add(nomString);
-              }
-            });
-          }
-        });
-
-        setNominations(Array.from(nominationSet));
-      } catch (error) {
-        console.error('Error loading nominations:', error);
+      if (error) {
+        console.error('Error fetching nominations:', error);
         setNominations([]);
-      } finally {
-        setLoadingNominations(false);
+        return;
       }
-    };
 
-    fetchNominations();
+      // Collect all unique nominations
+      const nominationSet = new Set<string>();
+      votes?.forEach(vote => {
+        if (vote.nominations && Array.isArray(vote.nominations)) {
+          vote.nominations.forEach((nom: any) => {
+            const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
+            if (nomString) {
+              nominationSet.add(nomString);
+            }
+          });
+        }
+      });
+
+      setNominations(Array.from(nominationSet));
+    } catch (error) {
+      console.error('Error loading nominations:', error);
+      setNominations([]);
+    } finally {
+      setLoadingNominations(false);
+    }
   }, [poll.poll_type, poll.id]);
+
+  useEffect(() => {
+    fetchNominations();
+  }, [fetchNominations]);
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -1137,6 +1137,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           await loadExistingNominations(false);
           // Also fetch poll results to show vote counts
           await fetchPollResults();
+          // Fetch nominations to update "Vote on it" button visibility
+          await fetchNominations();
         }, 500);
       }
       
@@ -1164,6 +1166,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // CRITICAL FIX: Always refresh results after editing nominations
         // This ensures that deleted nominations (abstained votes) are removed from display
         await fetchPollResults();
+        // Fetch nominations to update "Vote on it" button visibility
+        await fetchNominations();
       }
 
       // If the poll is closed, fetch results immediately after voting
