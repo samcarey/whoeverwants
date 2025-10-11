@@ -369,13 +369,8 @@ function CreatePollContent() {
 
           // Don't clean up the duplicate data yet - keep it until poll is created
           // so that refresh doesn't lose the data
+          // Keep the duplicate URL parameter so refresh works correctly
           debugLog.info('Loaded duplicate data from localStorage (will clean up after submission)', 'CreatePoll');
-
-          // Clear the duplicate URL parameter so refresh works correctly
-          // Replace the URL without the duplicate parameter
-          const url = new URL(window.location.href);
-          url.searchParams.delete('duplicate');
-          window.history.replaceState({}, '', url.toString());
         } catch (error) {
           console.error('Error loading duplicate data:', error);
         }
@@ -410,15 +405,11 @@ function CreatePollContent() {
           // so that refresh doesn't lose the data
           debugLog.info('Loaded vote data from localStorage (will clean up after submission)', 'CreatePoll');
 
-          // Clear the voteFromNomination URL parameter
-          const url = new URL(window.location.href);
-          url.searchParams.delete('voteFromNomination');
-
-          // Set followUpTo parameter to link the new poll
+          // Keep the voteFromNomination parameter so refresh works
+          // Also set followUpTo parameter to link the new poll
           if (voteData.followUpTo) {
+            const url = new URL(window.location.href);
             url.searchParams.set('followUpTo', voteData.followUpTo);
-            window.history.replaceState({}, '', url.toString());
-          } else {
             window.history.replaceState({}, '', url.toString());
           }
         } catch (error) {
