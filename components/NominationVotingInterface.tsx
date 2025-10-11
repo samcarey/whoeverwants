@@ -32,6 +32,9 @@ interface NominationVotingInterfaceProps {
   loadingResults: boolean;
   loadExistingNominations: () => void;
   onFollowUpClick: () => void;
+  nominations: string[];
+  loadingNominations: boolean;
+  onVoteOnNominationsClick: () => void;
 }
 
 export default function NominationVotingInterface({
@@ -58,7 +61,10 @@ export default function NominationVotingInterface({
   pollResults,
   loadingResults,
   loadExistingNominations,
-  onFollowUpClick
+  onFollowUpClick,
+  nominations,
+  loadingNominations,
+  onVoteOnNominationsClick
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -206,13 +212,13 @@ export default function NominationVotingInterface({
 
         {/* Follow Up Button - shown when poll is open and user has voted */}
         {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4 flex justify-center">
+          <div className="mt-4 flex justify-between items-center">
             <button
               onClick={onFollowUpClick}
               className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
               style={{
                 border: '2px solid transparent',
-                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
                 backgroundOrigin: 'border-box',
                 backgroundClip: 'padding-box, border-box'
               }}
@@ -222,6 +228,36 @@ export default function NominationVotingInterface({
               </svg>
               <span className="font-semibold">Follow up</span>
             </button>
+            {nominations.length >= 2 && (
+              <button
+                onClick={onVoteOnNominationsClick}
+                disabled={loadingNominations}
+                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  border: '2px solid transparent',
+                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
+                  backgroundOrigin: 'border-box',
+                  backgroundClip: 'padding-box, border-box'
+                }}
+              >
+                {loadingNominations ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span className="font-semibold">Loading...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Vote on it</span>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                    </svg>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
 

@@ -99,6 +99,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [nominations, setNominations] = useState<string[]>([]);
+  const [loadingNominations, setLoadingNominations] = useState(false);
 
   const isPollExpired = useMemo(() => {
     // Use server-safe check
@@ -498,6 +500,55 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     fetchFollowUpPolls();
   }, [poll.id]);
 
+  // Fetch nominations for nomination polls to show "Vote on it" button
+  useEffect(() => {
+    if (poll.poll_type !== 'nomination') {
+      setNominations([]);
+      return;
+    }
+
+    const fetchNominations = async () => {
+      setLoadingNominations(true);
+      try {
+        const { data: votes, error } = await supabase
+          .from('votes')
+          .select('nominations')
+          .eq('poll_id', poll.id)
+          .eq('vote_type', 'nomination')
+          .eq('is_abstain', false)
+          .not('nominations', 'is', null);
+
+        if (error) {
+          console.error('Error fetching nominations:', error);
+          setNominations([]);
+          return;
+        }
+
+        // Collect all unique nominations
+        const nominationSet = new Set<string>();
+        votes?.forEach(vote => {
+          if (vote.nominations && Array.isArray(vote.nominations)) {
+            vote.nominations.forEach((nom: any) => {
+              const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
+              if (nomString) {
+                nominationSet.add(nomString);
+              }
+            });
+          }
+        });
+
+        setNominations(Array.from(nominationSet));
+      } catch (error) {
+        console.error('Error loading nominations:', error);
+        setNominations([]);
+      } finally {
+        setLoadingNominations(false);
+      }
+    };
+
+    fetchNominations();
+  }, [poll.poll_type, poll.id]);
+
   // Real-time timer to check for poll expiration
   useEffect(() => {
     if (!poll.response_deadline || pollClosed) {
@@ -824,6 +875,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     setVoteError(null);
     setShowVoteConfirmModal(true);
+  };
+
+  const handleVoteOnNominationsClick = () => {
+    // Store data for the new preference poll
+    const voteData = {
+      title: poll.title,
+      options: nominations,
+      followUpTo: poll.id
+    };
+    localStorage.setItem(`vote-from-nomination-${poll.id}`, JSON.stringify(voteData));
+
+    // Navigate to create-poll page with vote parameter
+    router.push(`/create-poll?voteFromNomination=${poll.id}`);
   };
 
   const submitVote = async () => {
@@ -1220,22 +1284,52 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
         {/* Follow-up button for closed polls - always shown after results */}
         {isPollClosed && (
-          <div className="mt-4 flex justify-center">
-            <button
-              onClick={() => setShowFollowUpModal(true)}
-              className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-              style={{
-                border: '2px solid transparent',
-                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                backgroundOrigin: 'border-box',
-                backgroundClip: 'padding-box, border-box'
-              }}
-            >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              <span className="font-semibold">Follow up</span>
-            </button>
+          <div className="mt-4 flex justify-between items-center">
+              <button
+                onClick={() => setShowFollowUpModal(true)}
+                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                style={{
+                  border: '2px solid transparent',
+                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                  backgroundOrigin: 'border-box',
+                  backgroundClip: 'padding-box, border-box'
+                }}
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                <span className="font-semibold">Follow up</span>
+              </button>
+            {poll.poll_type === 'nomination' && nominations.length >= 2 && (
+              <button
+                onClick={handleVoteOnNominationsClick}
+                disabled={loadingNominations}
+                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  border: '2px solid transparent',
+                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
+                  backgroundOrigin: 'border-box',
+                  backgroundClip: 'padding-box, border-box'
+                }}
+              >
+                {loadingNominations ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span className="font-semibold">Loading...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold">Vote on it</span>
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                    </svg>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
 
@@ -1326,14 +1420,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
-                    <div className="mt-4 relative flex justify-end items-center">
-                      <div className="absolute left-1/2 -translate-x-1/2">
-                        <button
+                    <div className="mt-4 flex justify-between items-center">
+                      <button
                           onClick={() => setShowFollowUpModal(true)}
                           className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
                           style={{
                             border: '2px solid transparent',
-                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
                             backgroundOrigin: 'border-box',
                             backgroundClip: 'padding-box, border-box'
                           }}
@@ -1343,13 +1436,44 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </button>
+                      <div className="flex items-center gap-2">
+                        {poll.poll_type === 'nomination' && nominations.length >= 2 && (
+                          <button
+                            onClick={handleVoteOnNominationsClick}
+                            disabled={loadingNominations}
+                            className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{
+                              border: '2px solid transparent',
+                              backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
+                              backgroundOrigin: 'border-box',
+                              backgroundClip: 'padding-box, border-box'
+                            }}
+                          >
+                          {loadingNominations ? (
+                            <>
+                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <span className="font-semibold">Loading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-semibold">Vote on it</span>
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                              </svg>
+                            </>
+                          )}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
                       </div>
-                      <button
-                        onClick={() => setIsEditingVote(true)}
-                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                      >
-                        Edit
-                      </button>
                     </div>
                   )}
 
@@ -1458,6 +1582,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               loadingResults={loadingResults}
               loadExistingNominations={loadExistingNominations}
               onFollowUpClick={() => setShowFollowUpModal(true)}
+              nominations={nominations}
+              loadingNominations={loadingNominations}
+              onVoteOnNominationsClick={handleVoteOnNominationsClick}
             />
           ) : (
             <div>
@@ -1535,14 +1662,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
-                    <div className="mt-4 relative flex justify-end items-center">
-                      <div className="absolute left-1/2 -translate-x-1/2">
-                        <button
+                    <div className="mt-4 flex justify-between items-center">
+                      <button
                           onClick={() => setShowFollowUpModal(true)}
                           className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
                           style={{
                             border: '2px solid transparent',
-                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(234, 179, 8), rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
+                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
                             backgroundOrigin: 'border-box',
                             backgroundClip: 'padding-box, border-box'
                           }}
@@ -1552,13 +1678,44 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </button>
-                      </div>
-                      <button
+                      <div className="flex items-center gap-2">
+                        {poll.poll_type === 'nomination' && nominations.length >= 2 && (
+                        <button
+                          onClick={handleVoteOnNominationsClick}
+                          disabled={loadingNominations}
+                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{
+                            border: '2px solid transparent',
+                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
+                            backgroundOrigin: 'border-box',
+                            backgroundClip: 'padding-box, border-box'
+                          }}
+                        >
+                          {loadingNominations ? (
+                            <>
+                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <span className="font-semibold">Loading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-semibold">Vote on it</span>
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
+                              </svg>
+                            </>
+                          )}
+                        </button>
+                        )}
+                        <button
                         onClick={() => setIsEditingVote(true)}
                         className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
                       >
                         Edit
                       </button>
+                      </div>
                     </div>
                   )}
 
