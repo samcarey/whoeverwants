@@ -123,6 +123,17 @@ function CreatePollContent() {
   const clearFormState = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('pollFormState');
+
+      // Also clean up any special poll creation data
+      if (voteFromNomination) {
+        localStorage.removeItem(`vote-from-nomination-${voteFromNomination}`);
+      }
+      if (forkOf) {
+        localStorage.removeItem(`fork-data-${forkOf}`);
+      }
+      if (duplicateOf) {
+        localStorage.removeItem(`duplicate-data-${duplicateOf}`);
+      }
     }
   };
 
@@ -356,9 +367,9 @@ function CreatePollContent() {
             setCreatorName(duplicateData.creator_name);
           }
 
-          // Clean up the duplicate data from localStorage after loading
-          localStorage.removeItem(duplicateDataKey);
-          debugLog.info('Cleaned up duplicate data from localStorage', 'CreatePoll');
+          // Don't clean up the duplicate data yet - keep it until poll is created
+          // so that refresh doesn't lose the data
+          debugLog.info('Loaded duplicate data from localStorage (will clean up after submission)', 'CreatePoll');
 
           // Clear the duplicate URL parameter so refresh works correctly
           // Replace the URL without the duplicate parameter
@@ -395,9 +406,9 @@ function CreatePollContent() {
           setPollType('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
-          // Clean up the vote data from localStorage after loading
-          localStorage.removeItem(voteDataKey);
-          debugLog.info('Cleaned up vote data from localStorage', 'CreatePoll');
+          // Don't clean up the vote data yet - keep it until poll is created
+          // so that refresh doesn't lose the data
+          debugLog.info('Loaded vote data from localStorage (will clean up after submission)', 'CreatePoll');
 
           // Clear the voteFromNomination URL parameter
           const url = new URL(window.location.href);
