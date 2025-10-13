@@ -33,8 +33,12 @@ function CreatePollContent() {
   debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'poll' | 'nomination'>('nomination');
+  const [pollType, setPollType] = useState<'poll' | 'nomination' | 'participation'>('nomination');
   const [options, setOptions] = useState<string[]>(['']);
+  const [minParticipants, setMinParticipants] = useState<number | null>(1);
+  const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
+  const [minEnabled, setMinEnabled] = useState(true);
+  const [maxEnabled, setMaxEnabled] = useState(false);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -138,9 +142,12 @@ function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' => {
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
     if (pollType === 'nomination') {
       return 'nomination';
+    }
+    if (pollType === 'participation') {
+      return 'participation';
     }
     const filledOptions = options.filter(opt => opt.trim() !== '');
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
@@ -263,6 +270,15 @@ function CreatePollContent() {
       setCreatorName(savedName);
     }
   }, [followUpTo, forkOfParam, duplicateOfParam, voteFromNominationParam, creatorName]);
+
+  // Emit poll type changes to update the header
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pollTypeChange', {
+        detail: { pollType }
+      }));
+    }
+  }, [pollType]);
 
   // Load fork data if this is a fork
   useEffect(() => {
@@ -721,7 +737,19 @@ function CreatePollContent() {
         pollData.options = filledOptions;
       }
 
-      
+      // Add min/max participants for participation polls
+      if (dbPollType === 'participation') {
+        // Min is always required
+        if (minParticipants !== null) {
+          pollData.min_participants = minParticipants;
+        }
+        // Max is optional
+        if (maxEnabled && maxParticipants !== null) {
+          pollData.max_participants = maxParticipants;
+        }
+      }
+
+
       const { data, error } = await supabase
         .from("polls")
         .insert([pollData])
@@ -829,55 +857,72 @@ function CreatePollContent() {
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
-          <div>
-            <div className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-full p-1 mb-1">
+          <div className="flex justify-center">
+            <div className="relative w-48 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 mb-1">
               <div
-                className={`absolute top-1 bottom-1 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
+                className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
                   pollType === 'nomination'
                     ? 'bg-blue-100 dark:bg-blue-900/30'
-                    : 'bg-green-100 dark:bg-green-900/30'
+                    : pollType === 'poll'
+                    ? 'bg-green-100 dark:bg-green-900/30'
+                    : 'bg-purple-100 dark:bg-purple-900/30'
                 }`}
                 style={{
-                  width: 'calc(50% - 8px)',
-                  left: pollType === 'nomination' ? '4px' : 'calc(50% + 4px)'
+                  width: 'calc(33.333% - 4px)',
+                  left: pollType === 'nomination' ? '2px' : pollType === 'poll' ? 'calc(33.333% + 1px)' : 'calc(66.666% - 0px)'
                 }}
               />
               <div className="relative flex w-full">
                 <button
                   type="button"
                   onClick={() => {
-                    // Focus BEFORE state change (synchronously in event handler)
                     if (titleInputRef.current) {
                       titleInputRef.current.focus();
                     }
                     setPollType('nomination');
                   }}
                   disabled={isLoading}
-                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
                     pollType === 'nomination'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  💡 Suggestions
+                  💡
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    // Focus BEFORE state change (synchronously in event handler)
                     if (titleInputRef.current) {
                       titleInputRef.current.focus();
                     }
                     setPollType('poll');
                   }}
                   disabled={isLoading}
-                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
+                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
                     pollType === 'poll'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  🗳️ Preferences
+                  🗳️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (titleInputRef.current) {
+                      titleInputRef.current.focus();
+                    }
+                    setPollType('participation');
+                  }}
+                  disabled={isLoading}
+                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
+                    pollType === 'participation'
+                      ? 'text-gray-900 dark:text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  🙋
                 </button>
               </div>
             </div>
@@ -901,8 +946,116 @@ function CreatePollContent() {
             />
           </div>
 
-          {/* Hide options field for nomination polls - creators vote after creation */}
-          {pollType !== 'nomination' && (
+          {/* Participant counter for participation polls */}
+          {pollType === 'participation' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                How many participants?
+              </label>
+              <div className="flex justify-between items-center gap-4">
+                {/* Min participants counter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Min:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (minParticipants !== null && minParticipants > 1) {
+                        setMinParticipants(minParticipants - 1);
+                      }
+                    }}
+                    disabled={minParticipants === null || minParticipants <= 1}
+                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <div
+                    className="min-w-[3rem] px-3 py-1 rounded-md font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 border-2 border-blue-500 flex items-center justify-center"
+                  >
+                    {minParticipants ?? 1}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (minParticipants !== null) {
+                        const newMin = minParticipants + 1;
+                        setMinParticipants(newMin);
+                        // If max is enabled and new min is greater than max, update max
+                        if (maxEnabled && maxParticipants !== null && newMin > maxParticipants) {
+                          setMaxParticipants(newMin);
+                        }
+                      }
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Max participants counter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Max:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (maxEnabled && maxParticipants !== null) {
+                        const minValue = minParticipants ?? 1;
+                        if (maxParticipants > minValue) {
+                          setMaxParticipants(maxParticipants - 1);
+                        }
+                      }
+                    }}
+                    disabled={!maxEnabled || maxParticipants === null || maxParticipants <= (minParticipants ?? 1)}
+                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (maxEnabled) {
+                        setMaxEnabled(false);
+                        setMaxParticipants(null);
+                      } else {
+                        setMaxEnabled(true);
+                        const startValue = minParticipants ?? 1;
+                        setMaxParticipants(startValue);
+                      }
+                    }}
+                    className={`min-w-[3rem] px-3 py-1 rounded-md font-medium transition-colors ${
+                      maxEnabled
+                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 border-2 border-blue-500'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-2 border-gray-300 dark:border-gray-600'
+                    }`}
+                  >
+                    {maxEnabled && maxParticipants !== null ? maxParticipants : '—'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (maxEnabled && maxParticipants !== null) {
+                        setMaxParticipants(maxParticipants + 1);
+                      }
+                    }}
+                    disabled={!maxEnabled}
+                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hide options field for nomination and participation polls */}
+          {pollType !== 'nomination' && pollType !== 'participation' && (
             <div>
               <label className="block text-sm font-medium mb-2">
                 Options{' '}

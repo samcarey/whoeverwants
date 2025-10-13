@@ -133,6 +133,7 @@ export default function Template({ children }: AppTemplateProps) {
   const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   const [pollPageTitle, setPollPageTitle] = useState('');
+  const [createPollType, setCreatePollType] = useState<'nomination' | 'poll' | 'participation'>('nomination');
 
   // Determine page-specific header content based on pathname
   useEffect(() => {
@@ -163,9 +164,22 @@ export default function Template({ children }: AppTemplateProps) {
     };
 
     window.addEventListener('pageTitleChange', handleTitleChange as EventListener);
-    
+
     return () => {
       window.removeEventListener('pageTitleChange', handleTitleChange as EventListener);
+    };
+  }, []);
+
+  // Listen for poll type changes from create-poll page
+  useEffect(() => {
+    const handlePollTypeChange = (event: CustomEvent) => {
+      setCreatePollType(event.detail.pollType);
+    };
+
+    window.addEventListener('pollTypeChange', handlePollTypeChange as EventListener);
+
+    return () => {
+      window.removeEventListener('pollTypeChange', handlePollTypeChange as EventListener);
     };
   }, []);
 
@@ -396,8 +410,14 @@ export default function Template({ children }: AppTemplateProps) {
               {/* Create poll page title */}
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1 className="text-2xl font-bold text-center break-words">
-                    Ask For…
+                  <h1 className="text-2xl font-bold text-center whitespace-nowrap">
+                    Ask For{' '}
+                    <span
+                      className="text-blue-600 dark:text-blue-400"
+                      style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
+                    >
+                      {createPollType === 'nomination' ? 'Suggestions' : createPollType === 'poll' ? 'Preferences' : 'Participation'}
+                    </span>
                   </h1>
                 </div>
               )}
