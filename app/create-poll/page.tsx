@@ -968,7 +968,7 @@ function CreatePollContent() {
             </div>
           </div>
 
-          <div>
+          <div className="-mt-4">
             <label htmlFor="title" className="block text-sm font-medium mb-2">
               Title
             </label>
