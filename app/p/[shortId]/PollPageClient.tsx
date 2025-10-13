@@ -17,6 +17,7 @@ import ProfileButton from "@/components/ProfileButton";
 import FollowUpModal from "@/components/FollowUpModal";
 import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
+import GradientBorderButton from "@/components/GradientBorderButton";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -1289,38 +1290,26 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Follow-up button for closed polls - always shown after results */}
         {isPollClosed && (
           <div className="mt-4 flex justify-between items-center">
-              <button
+              <GradientBorderButton
                 onClick={() => setShowFollowUpModal(true)}
-                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                style={{
-                  border: '2px solid transparent',
-                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                  backgroundOrigin: 'border-box',
-                  backgroundClip: 'padding-box, border-box'
-                }}
+                gradient="blue-purple"
               >
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                 </svg>
                 <span className="font-semibold">Follow up</span>
-              </button>
+              </GradientBorderButton>
             {poll.poll_type === 'nomination' && nominations.length >= 2 && (
-              <button
+              <GradientBorderButton
                 onClick={handleVoteOnNominationsClick}
                 disabled={loadingNominations}
-                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  border: '2px solid transparent',
-                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
-                  backgroundOrigin: 'border-box',
-                  backgroundClip: 'padding-box, border-box'
-                }}
+                gradient="red-orange"
               >
                 {loadingNominations ? (
                   <>
                     <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <span className="font-semibold">Loading...</span>
                   </>
@@ -1332,7 +1321,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </svg>
                   </>
                 )}
-              </button>
+              </GradientBorderButton>
             )}
           </div>
         )}
@@ -1425,33 +1414,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="mt-4 flex justify-between items-center">
-                      <button
+                      <GradientBorderButton
                           onClick={() => setShowFollowUpModal(true)}
-                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                          style={{
-                            border: '2px solid transparent',
-                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                            backgroundOrigin: 'border-box',
-                            backgroundClip: 'padding-box, border-box'
-                          }}
+                          gradient="blue-purple"
                         >
                           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                           </svg>
                           <span className="font-semibold">Follow up</span>
-                        </button>
+                        </GradientBorderButton>
                       <div className="flex items-center gap-2">
-                        {poll.poll_type === 'nomination' && nominations.length >= 2 && (
-                          <button
+                        {false && nominations.length >= 2 && (
+                          <GradientBorderButton
                             onClick={handleVoteOnNominationsClick}
                             disabled={loadingNominations}
-                            className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                            style={{
-                              border: '2px solid transparent',
-                              backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
-                              backgroundOrigin: 'border-box',
-                              backgroundClip: 'padding-box, border-box'
-                            }}
+                            gradient="red-orange"
                           >
                           {loadingNominations ? (
                             <>
@@ -1469,7 +1446,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               </svg>
                             </>
                           )}
-                          </button>
+                          </GradientBorderButton>
                         )}
                         <button
                           onClick={() => setIsEditingVote(true)}
@@ -1667,33 +1644,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="mt-4 flex justify-between items-center">
-                      <button
+                      <GradientBorderButton
                           onClick={() => setShowFollowUpModal(true)}
-                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-                          style={{
-                            border: '2px solid transparent',
-                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                            backgroundOrigin: 'border-box',
-                            backgroundClip: 'padding-box, border-box'
-                          }}
+                          gradient="blue-purple"
                         >
                           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                           </svg>
                           <span className="font-semibold">Follow up</span>
-                        </button>
+                        </GradientBorderButton>
                       <div className="flex items-center gap-2">
-                        {poll.poll_type === 'nomination' && nominations.length >= 2 && (
-                        <button
+                        {false && nominations.length >= 2 && (
+                        <GradientBorderButton
                           onClick={handleVoteOnNominationsClick}
                           disabled={loadingNominations}
-                          className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                          style={{
-                            border: '2px solid transparent',
-                            backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
-                            backgroundOrigin: 'border-box',
-                            backgroundClip: 'padding-box, border-box'
-                          }}
+                          gradient="red-orange"
                         >
                           {loadingNominations ? (
                             <>
@@ -1711,7 +1676,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               </svg>
                             </>
                           )}
-                        </button>
+                        </GradientBorderButton>
                         )}
                         <button
                         onClick={() => setIsEditingVote(true)}
@@ -1812,7 +1777,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
                 showCloseButton={!isPollClosed && (isCreator || process.env.NODE_ENV === 'development')}
-                showReopenButton={isPollClosed && process.env.NODE_ENV === 'development'}
+                showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
                 showForgetButton={hasPollDataState}
                 onCloseClick={handleCloseClick}
                 onReopenClick={handleReopenClick}
