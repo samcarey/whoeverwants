@@ -189,8 +189,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     <div>
       {/* Open Polls Section */}
       {openPolls.length > 0 && (
-        <div className="mb-8">
-          <div className="space-y-3">
+        <div className="mb-3">
+          <div className="space-y-1">
             {openPolls.map((poll, index) => {
               const isVoted = votedPollIds.has(poll.id);
               const isAbstained = abstainedPollIds.has(poll.id);
@@ -261,14 +261,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2 ml-7">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-2.5 mb-2 ml-7">
                       Already Voted
                     </div>
                   )}
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : '☰'}
                       </div>
                       <div
                         onClick={() => router.push(`/p/${poll.id}`)}
@@ -299,13 +299,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
-        <div className="mb-8">
+        <div className="mb-3">
           {openPolls.length > 0 && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-6 mb-2 ml-7">
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-2.5 mb-2 ml-7">
               Closed
             </div>
           )}
-          <div className="space-y-3">
+          <div className="space-y-1">
               {closedPolls.map((poll, index) => {
                 const isVoted = votedPollIds.has(poll.id);
                 const isAbstained = abstainedPollIds.has(poll.id);
@@ -374,7 +374,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '✋' : poll.poll_type === 'ranked_choice' ? '🏆' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : '☰'}
                       </div>
                       <div
                         onClick={() => router.push(`/p/${poll.id}`)}

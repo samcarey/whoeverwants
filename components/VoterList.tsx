@@ -87,12 +87,12 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   if (loading) {
     return (
       <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">Voters</h3>
-        <div className="flex flex-wrap justify-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Respondents</h3>
           {/* Shimmer effect for loading voter bubbles */}
           {[1, 2, 3, 4, 5].map((i) => (
-            <div 
-              key={i} 
+            <div
+              key={i}
               className="animate-pulse inline-block px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700"
               style={{
                 width: `${60 + (i * 15) % 40}px`,
@@ -107,9 +107,11 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-1 shadow-sm ${className}`}>
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">Voters</h3>
-        <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Respondents</h3>
+          <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
+        </div>
       </div>
     );
   }
@@ -144,23 +146,21 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   return (
     <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
-      <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1.5">
-        Voters ({voters.length})
-      </h3>
-      
-      <div className="text-center">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+          Respondents ({voters.length})
+        </h3>
+
         {/* Named voters - displayed as colored bubbles in a flowing layout */}
-        <div className="flex flex-wrap justify-center gap-2 mb-1.5">
-          {namedVoters.map((voter, index) => (
-            <span 
-              key={voter.id} 
-              className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getVoterColor(index)}`}
-            >
-              {voter.voter_name}
-            </span>
-          ))}
-        </div>
-        
+        {namedVoters.map((voter, index) => (
+          <span
+            key={voter.id}
+            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getVoterColor(index)}`}
+          >
+            {voter.voter_name}
+          </span>
+        ))}
+
         {/* Anonymous voters count */}
         {anonymousCount > 0 && (
           <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">

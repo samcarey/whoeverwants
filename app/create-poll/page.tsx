@@ -859,7 +859,7 @@ function CreatePollContent() {
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Suggestions
+                  💡 Suggestions
                 </button>
                 <button
                   type="button"
@@ -877,7 +877,7 @@ function CreatePollContent() {
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  Preferences
+                  🗳️ Preferences
                 </button>
               </div>
             </div>

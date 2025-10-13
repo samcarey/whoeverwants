@@ -6,6 +6,7 @@ import OptionsInput from "@/components/OptionsInput";
 import NominationsList from "@/components/NominationsList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
+import GradientBorderButton from "@/components/GradientBorderButton";
 
 interface NominationVotingInterfaceProps {
   poll: any;
@@ -213,32 +214,20 @@ export default function NominationVotingInterface({
         {/* Follow Up Button - shown when poll is open and user has voted */}
         {!isPollClosed && !isLoadingVoteData && (
           <div className="mt-4 flex justify-between items-center">
-            <button
+            <GradientBorderButton
               onClick={onFollowUpClick}
-              className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
-              style={{
-                border: '2px solid transparent',
-                backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(34, 197, 94), rgb(59, 130, 246), rgb(147, 51, 234))',
-                backgroundOrigin: 'border-box',
-                backgroundClip: 'padding-box, border-box'
-              }}
+              gradient="blue-purple"
             >
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
               </svg>
               <span className="font-semibold">Follow up</span>
-            </button>
+            </GradientBorderButton>
             {nominations.length >= 2 && (
-              <button
+              <GradientBorderButton
                 onClick={onVoteOnNominationsClick}
                 disabled={loadingNominations}
-                className="relative inline-flex items-center gap-2 px-2.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold text-lg rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  border: '2px solid transparent',
-                  backgroundImage: 'linear-gradient(white, white), linear-gradient(to top right, rgb(239, 68, 68), rgb(249, 115, 22), rgb(234, 179, 8))',
-                  backgroundOrigin: 'border-box',
-                  backgroundClip: 'padding-box, border-box'
-                }}
+                gradient="red-orange"
               >
                 {loadingNominations ? (
                   <>
@@ -256,7 +245,7 @@ export default function NominationVotingInterface({
                     </svg>
                   </>
                 )}
-              </button>
+              </GradientBorderButton>
             )}
           </div>
         )}
