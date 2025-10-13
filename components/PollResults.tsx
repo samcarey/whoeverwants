@@ -17,6 +17,10 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
     return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
 
+  if (results.poll_type === 'participation') {
+    return <ParticipationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+  }
+
   if (results.poll_type === 'ranked_choice') {
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
@@ -342,6 +346,140 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
               </div>
             );
           })}
+      </div>
+    </div>
+  );
+}
+
+function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+  const yesCount = results.yes_count || 0;
+  const noCount = results.no_count || 0;
+  const totalVotes = results.total_votes;
+  const minParticipants = results.min_participants;
+  const maxParticipants = results.max_participants;
+
+  // Determine if the event is happening based on participant count being in range
+  let isHappening = yesCount > 0; // Default: happening if anyone said yes
+  let statusMessage = '';
+
+  if (minParticipants !== undefined && minParticipants !== null) {
+    if (yesCount < minParticipants) {
+      isHappening = false;
+      statusMessage = `Need at least ${minParticipants} participants`;
+    }
+  }
+
+  if (maxParticipants !== undefined && maxParticipants !== null) {
+    if (yesCount > maxParticipants) {
+      isHappening = false;
+      statusMessage = `Maximum ${maxParticipants} participants exceeded`;
+    }
+  }
+
+  if (isHappening && minParticipants && maxParticipants) {
+    statusMessage = `Within range (${minParticipants}-${maxParticipants})`;
+  } else if (isHappening && minParticipants) {
+    statusMessage = `Met minimum (${minParticipants}+)`;
+  } else if (isHappening && maxParticipants) {
+    statusMessage = `Within limit (max ${maxParticipants})`;
+  } else if (isHappening) {
+    statusMessage = 'Participants confirmed';
+  }
+
+  const isDev = process.env.NODE_ENV === 'development';
+  const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
+  const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
+
+  if (totalVotes === 0) {
+    return (
+      <div className="text-center">
+        <div className="mb-6 p-4 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-2 text-red-800 dark:text-red-200">
+              Not happening
+            </div>
+            <div className="text-sm text-red-700 dark:text-red-300">
+              No responses received
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-center mb-6">
+        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {totalVotes} total response{totalVotes !== 1 ? 's' : ''}
+        </p>
+      </div>
+
+      {/* Event Status */}
+      <div className={`mb-6 p-4 rounded-lg border-2 ${
+        isHappening
+          ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600'
+          : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600'
+      }`}>
+        <div className="text-center">
+          <div className={`text-2xl font-bold mb-2 ${
+            isHappening
+              ? 'text-green-800 dark:text-green-200'
+              : 'text-red-800 dark:text-red-200'
+          }`}>
+            {isHappening ? "It's happening! 🎉" : "Not happening"}
+          </div>
+          {statusMessage && (
+            <div className={`text-sm ${
+              isHappening
+                ? 'text-green-700 dark:text-green-300'
+                : 'text-red-700 dark:text-red-300'
+            }`}>
+              {statusMessage}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* In Results */}
+        <div className="p-4 rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-1 text-green-800 dark:text-green-200">
+              {yesCount}
+            </div>
+            <div className="text-lg mb-2 text-green-900 dark:text-green-100 font-bold">
+              I&apos;m in!
+            </div>
+            {userVotedYes && (
+              <div className="mt-2">
+                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                  Your Response
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Out Results */}
+        <div className="p-4 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-300 dark:border-red-600">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-1 text-red-800 dark:text-red-200">
+              {noCount}
+            </div>
+            <div className="text-lg mb-2 text-red-900 dark:text-red-100 font-bold">
+              Can&apos;t make it
+            </div>
+            {userVotedNo && (
+              <div className="mt-2">
+                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                  Your Response
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

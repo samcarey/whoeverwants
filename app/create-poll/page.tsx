@@ -303,9 +303,34 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
+
+          // Set poll type and options based on forked poll
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
+            setPollType('poll');
             setOptions(forkData.options);
+          } else if (forkData.poll_type === 'nomination') {
+            setPollType('nomination');
+            setOptions(['']);
+          } else if (forkData.poll_type === 'participation') {
+            setPollType('participation');
+            setOptions(['']);
+            // Load participant counts
+            if (forkData.min_participants !== null && forkData.min_participants !== undefined) {
+              setMinParticipants(forkData.min_participants);
+            }
+            if (forkData.max_participants !== null && forkData.max_participants !== undefined) {
+              setMaxParticipants(forkData.max_participants);
+              setMaxEnabled(true);
+            } else {
+              setMaxEnabled(false);
+              setMaxParticipants(null);
+            }
+          } else {
+            // yes_no poll
+            setPollType('poll');
+            setOptions(['']);
           }
+
           if (forkData.response_deadline) {
             // Parse the deadline and set appropriate form values
             const deadline = new Date(forkData.response_deadline);
@@ -353,12 +378,27 @@ function CreatePollContent() {
           setTitle(duplicateData.title || "");
 
           // Set poll type based on duplicated poll
-          if (duplicateData.pollType === 'ranked_choice') {
+          if (duplicateData.poll_type === 'ranked_choice') {
             setPollType('poll');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.pollType === 'nomination') {
+          } else if (duplicateData.poll_type === 'nomination') {
             setPollType('nomination');
             setOptions(['']);
+          } else if (duplicateData.poll_type === 'participation') {
+            setPollType('participation');
+            setOptions(['']);
+            // Load participant counts
+            if (duplicateData.min_participants !== null && duplicateData.min_participants !== undefined) {
+              setMinParticipants(duplicateData.min_participants);
+              setMinEnabled(true);
+            }
+            if (duplicateData.max_participants !== null && duplicateData.max_participants !== undefined) {
+              setMaxParticipants(duplicateData.max_participants);
+              setMaxEnabled(true);
+            } else {
+              setMaxEnabled(false);
+              setMaxParticipants(null);
+            }
           } else {
             // yes_no poll
             setPollType('poll');

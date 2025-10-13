@@ -45,10 +45,12 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                 // Store poll data for duplication
                 const duplicateData = {
                   title: poll.title,
-                  pollType: poll.poll_type,
+                  poll_type: poll.poll_type,
                   options: poll.options,
-                  responseDeadline: poll.response_deadline,
-                  closeAutomatically: poll.is_closed
+                  response_deadline: poll.response_deadline,
+                  creator_name: poll.creator_name,
+                  min_participants: poll.min_participants,
+                  max_participants: poll.max_participants
                 };
                 localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(duplicateData));
                 router.push(`/create-poll?duplicate=${poll.id}`);
@@ -68,10 +70,12 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                 // Store poll data for fork
                 const forkData = {
                   title: poll.title,
-                  pollType: poll.poll_type,
+                  poll_type: poll.poll_type,
                   options: poll.options,
-                  responseDeadline: poll.response_deadline,
-                  closeAutomatically: poll.is_closed
+                  response_deadline: poll.response_deadline,
+                  creator_name: poll.creator_name,
+                  min_participants: poll.min_participants,
+                  max_participants: poll.max_participants
                 };
                 localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(forkData));
                 router.push(`/create-poll?fork=${poll.id}`);

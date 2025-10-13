@@ -268,7 +268,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
                       </div>
                       <div
                         onClick={() => router.push(`/p/${poll.id}`)}
@@ -374,7 +374,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : '☰'}
+                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
                       </div>
                       <div
                         onClick={() => router.push(`/p/${poll.id}`)}

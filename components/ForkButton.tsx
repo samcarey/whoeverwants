@@ -19,7 +19,9 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
       poll_type: poll.poll_type,
       options: poll.options,
       response_deadline: poll.response_deadline,
-      creator_name: poll.creator_name
+      creator_name: poll.creator_name,
+      min_participants: poll.min_participants,
+      max_participants: poll.max_participants
     };
     
     debugLog.logObject('Fork button clicked', { pollId: poll.id, forkData }, 'ForkButton');

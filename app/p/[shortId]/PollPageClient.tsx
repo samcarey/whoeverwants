@@ -843,7 +843,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
 
     // Validate vote choice first
-    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
+    if ((poll.poll_type === 'yes_no' || poll.poll_type === 'participation') && !yesNoChoice && !isAbstaining) {
       await logToServer('nomination-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
@@ -932,6 +932,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         voteData = {
           poll_id: poll.id,
           vote_type: 'yes_no' as const,
+          yes_no_choice: isAbstaining ? null : yesNoChoice,
+          is_abstain: isAbstaining,
+          voter_name: voterName.trim() || null
+        };
+      } else if (poll.poll_type === 'participation') {
+        if (!yesNoChoice && !isAbstaining) {
+          setVoteError("Please select Yes, No, or Abstain");
+          setIsSubmitting(false);
+          return;
+        }
+        voteData = {
+          poll_id: poll.id,
+          vote_type: 'participation' as const,
           yes_no_choice: isAbstaining ? null : yesNoChoice,
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
@@ -1385,27 +1398,27 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className={`flex items-center p-3 rounded-lg ${
                         userVoteData?.is_abstain || isAbstaining
                           ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
-                          : yesNoChoice === 'yes' 
-                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700' 
+                          : userVoteData?.yes_no_choice === 'yes'
+                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
                             : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                       }`}>
                         <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
                           userVoteData?.is_abstain || isAbstaining
                             ? 'bg-yellow-600 text-white'
-                            : yesNoChoice === 'yes'
+                            : userVoteData?.yes_no_choice === 'yes'
                               ? 'bg-green-600 text-white'
                               : 'bg-red-600 text-white'
                         }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? '' : yesNoChoice === 'yes' ? '✓' : '✗'}
+                          {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
                         </span>
                         <span className={`font-medium ${
                           userVoteData?.is_abstain || isAbstaining
                             ? 'text-yellow-800 dark:text-yellow-200'
-                            : yesNoChoice === 'yes'
+                            : userVoteData?.yes_no_choice === 'yes'
                               ? 'text-green-800 dark:text-green-200'
                               : 'text-red-800 dark:text-red-200'
                         }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : yesNoChoice === 'yes' ? 'Yes' : 'No'}
+                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? 'Yes' : 'No'}
                         </span>
                       </div>
                     )}
@@ -1531,6 +1544,188 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
                     className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Vote'}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : poll.poll_type === 'participation' ? (
+            <div>
+              {isPollClosed ? (
+                <div className="py-6">
+                  {loadingResults ? (
+                    <div className="flex justify-center items-center py-8">
+                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  ) : pollResults ? (
+                    <>
+                      {userVoteData?.is_abstain && (
+                        <div className="mt-4 flex justify-center">
+                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
+                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                              You Abstained
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
+                    </div>
+                  )}
+                </div>
+              ) : hasVoted && !isEditingVote ? (
+                <div className="text-center py-3">
+                  <div className="text-left">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium">Your response:</h4>
+                    </div>
+                    {isLoadingVoteData ? (
+                      <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
+                          <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                        <span className="font-medium text-gray-600 dark:text-gray-400">Loading your response...</span>
+                      </div>
+                    ) : (
+                      <div className={`flex items-center p-3 rounded-lg ${
+                        userVoteData?.is_abstain || isAbstaining
+                          ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
+                          : userVoteData?.yes_no_choice === 'yes'
+                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
+                            : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
+                      }`}>
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                          userVoteData?.is_abstain || isAbstaining
+                            ? 'bg-yellow-600 text-white'
+                            : userVoteData?.yes_no_choice === 'yes'
+                              ? 'bg-green-600 text-white'
+                              : 'bg-red-600 text-white'
+                        }`}>
+                          {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
+                        </span>
+                        <span className={`font-medium ${
+                          userVoteData?.is_abstain || isAbstaining
+                            ? 'text-yellow-800 dark:text-yellow-200'
+                            : userVoteData?.yes_no_choice === 'yes'
+                              ? 'text-green-800 dark:text-green-200'
+                              : 'text-red-800 dark:text-red-200'
+                        }`}>
+                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? "I'm in!" : "Can't make it"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {!isPollClosed && !isLoadingVoteData && (
+                    <div className="mt-4 flex justify-between items-center">
+                      <GradientBorderButton
+                          onClick={() => setShowFollowUpModal(true)}
+                          gradient="blue-purple"
+                        >
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                          </svg>
+                          <span className="font-semibold">Follow up</span>
+                        </GradientBorderButton>
+                      <button
+                        onClick={() => setIsEditingVote(true)}
+                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-8">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4 text-center">
+                    <h3 className="text-lg font-semibold mb-4">Are you in?</h3>
+
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYesNoChoice('yes');
+                          setIsAbstaining(false);
+                        }}
+                        disabled={isSubmitting}
+                        className={`flex-1 max-w-[200px] py-3 px-4 rounded-lg font-medium transition-colors ${
+                          yesNoChoice === 'yes' && !isAbstaining
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        ✓ Yes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYesNoChoice('no');
+                          setIsAbstaining(false);
+                        }}
+                        disabled={isSubmitting}
+                        className={`flex-1 max-w-[200px] py-3 px-4 rounded-lg font-medium transition-colors ${
+                          yesNoChoice === 'no' && !isAbstaining
+                            ? 'bg-red-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        ✗ No
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAbstain}
+                      disabled={isSubmitting || justCancelledAbstain}
+                      className="mt-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isAbstaining ? 'Cancel abstain' : 'Abstain'}
+                    </button>
+                  </div>
+
+                  {voteError && (
+                    <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
+                      <p className="text-sm text-red-800 dark:text-red-200">{voteError}</p>
+                    </div>
+                  )}
+
+                  <div className="mb-4">
+                    <label htmlFor="voterName" className="block text-sm font-medium mb-2">
+                      Your Name <span className="text-gray-500 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="voterName"
+                      value={voterName}
+                      onChange={(e) => setVoterName(e.target.value)}
+                      disabled={isSubmitting}
+                      maxLength={30}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      placeholder="Enter your name..."
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleVoteClick}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
