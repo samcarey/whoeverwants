@@ -18,6 +18,7 @@ import FollowUpModal from "@/components/FollowUpModal";
 import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
+import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -1228,7 +1229,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           const now = currentTime || new Date();
           const isExpired = deadline && deadline <= now;
           
-          // Case 1: Poll was manually closed (is_closed is true, but might not have reached deadline)
+          // Case 1: Poll was automatically closed due to max capacity
+          if (pollClosed && poll.close_reason === 'max_capacity') {
+            return (
+              <div className="mb-3 text-center">
+                <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                  Poll automatically closed - maximum capacity reached
+                </span>
+              </div>
+            );
+          }
+
+          // Case 2: Poll was manually closed (is_closed is true, but might not have reached deadline)
           if (pollClosed && deadline && deadline > now) {
             // Manually closed before deadline
             const closedDate = new Date(); // We'd need to track when it was closed, for now use current
@@ -1237,7 +1249,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <span className="text-sm font-bold text-red-700 dark:text-red-300">
                   Closed manually on {closedDate.toLocaleString("en-US", {
                     month: "numeric",
-                    day: "numeric", 
+                    day: "numeric",
                     year: "2-digit",
                     hour: "numeric",
                     minute: "2-digit",
@@ -1248,7 +1260,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             );
           }
           
-          // Case 2: Poll expired and is closed
+          // Case 3: Poll expired and is closed
           if (isPollClosed && isExpired) {
             return (
               <div className="mb-3 text-center">
@@ -1265,13 +1277,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </div>
             );
           }
-          
-          // Case 3: Poll is still open and not expired - show countdown
+
+          // Case 4: Poll is still open and not expired - show countdown
           if (!isPollClosed && !isExpired && deadline) {
             return <Countdown deadline={poll.response_deadline || null} />;
           }
-          
-          // Case 4: Timer expired but poll is still open - don't show a card
+
+          // Case 5: Timer expired but poll is still open - don't show a card
           if (!isPollClosed && isExpired) {
             return null;
           }
@@ -1485,37 +1497,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       Select your preference
                     </h4>
                     
-                    <div className="flex gap-2 mb-4">
-                      <button 
-                        onClick={() => handleYesNoVote('yes')}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'yes' 
-                            ? 'bg-green-200 dark:bg-green-800 text-green-900 dark:text-green-100 border-2 border-green-400 dark:border-green-600' 
-                            : 'bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 border-2 border-transparent'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                      <button 
-                        onClick={() => handleYesNoVote('no')}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'no' 
-                            ? 'bg-red-200 dark:bg-red-800 text-red-900 dark:text-red-100 border-2 border-red-400 dark:border-red-600' 
-                            : 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 border-2 border-transparent'
-                        }`}
-                      >
-                        No
-                      </button>
-                      <button 
-                        onClick={() => handleAbstain()}
-                        className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                          isAbstaining
-                            ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                            : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
-                        }`}
-                      >
-                        Abstain
-                      </button>
+                    <div className="mb-4">
+                      <YesNoAbstainButtons
+                        yesNoChoice={yesNoChoice}
+                        isAbstaining={isAbstaining}
+                        onYesClick={() => handleYesNoVote('yes')}
+                        onNoClick={() => handleYesNoVote('no')}
+                        onAbstainClick={handleAbstain}
+                      />
                     </div>
                     
                     {voteError && (
@@ -1580,7 +1569,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
                 </div>
               ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-3">
+                <div className="text-center py-1.5">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your response:</h4>
@@ -1656,47 +1645,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="mb-4 text-center">
                     <h3 className="text-lg font-semibold mb-4">Are you in?</h3>
 
-                    <div className="flex gap-2 justify-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setYesNoChoice('yes');
-                          setIsAbstaining(false);
-                        }}
-                        disabled={isSubmitting}
-                        className={`flex-1 max-w-[200px] py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'yes' && !isAbstaining
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        ✓ Yes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setYesNoChoice('no');
-                          setIsAbstaining(false);
-                        }}
-                        disabled={isSubmitting}
-                        className={`flex-1 max-w-[200px] py-3 px-4 rounded-lg font-medium transition-colors ${
-                          yesNoChoice === 'no' && !isAbstaining
-                            ? 'bg-red-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        ✗ No
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAbstain}
-                      disabled={isSubmitting || justCancelledAbstain}
-                      className="mt-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isAbstaining ? 'Cancel abstain' : 'Abstain'}
-                    </button>
+                    <YesNoAbstainButtons
+                      yesNoChoice={yesNoChoice}
+                      onYesClick={() => handleYesNoVote('yes')}
+                      onNoClick={() => handleYesNoVote('no')}
+                      disabled={isSubmitting}
+                      showAbstain={false}
+                    />
                   </div>
 
                   {voteError && (

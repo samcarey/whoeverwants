@@ -20,7 +20,7 @@ export const supabase = createClient(
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination';
+  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -28,8 +28,11 @@ export interface Poll {
   creator_secret?: string;
   creator_name?: string;
   is_closed?: boolean;
+  close_reason?: 'manual' | 'deadline' | 'max_capacity';
   follow_up_to?: string;
   fork_of?: string;
+  min_participants?: number;
+  max_participants?: number;
 }
 
 export interface Vote {
@@ -42,7 +45,7 @@ export interface Vote {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination';
+  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -53,6 +56,10 @@ export interface PollResults {
   no_percentage?: number;
   winner?: string;
   total_rounds?: number;
+  min_participants?: number;
+  max_participants?: number;
+  participants_in_count?: number;
+  is_happening?: boolean;
 }
 
 export interface RankedChoiceRound {
