@@ -20,17 +20,18 @@ function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const followUpTo = searchParams.get('followUpTo');
+  const followUpToParam = searchParams.get('followUpTo');
   const forkOfParam = searchParams.get('fork');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromNominationParam = searchParams.get('voteFromNomination');
 
   // Track duplicate and fork relationships as part of form state
+  const [followUpTo, setFollowUpTo] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [forkOf, setForkOf] = useState<string | null>(null);
   const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
 
-  debugLog.logObject('Create poll page loaded with params', { followUpTo, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
+  debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
   
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'poll' | 'nomination' | 'participation'>('nomination');
@@ -254,13 +255,21 @@ function CreatePollContent() {
     return `${year}-${month}-${day}`;
   };
 
+  // Initialize state from URL params
+  useEffect(() => {
+    if (followUpToParam) setFollowUpTo(followUpToParam);
+    if (forkOfParam) setForkOf(forkOfParam);
+    if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
+    if (voteFromNominationParam) setVoteFromNomination(voteFromNominationParam);
+  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
+
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
 
     // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
     // (these special cases load their own data from URL params)
-    if (!followUpTo && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
+    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
       loadFormState();
     }
 
@@ -269,7 +278,7 @@ function CreatePollContent() {
     if (savedName && !creatorName) {
       setCreatorName(savedName);
     }
-  }, [followUpTo, forkOfParam, duplicateOfParam, voteFromNominationParam, creatorName]);
+  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam, creatorName]);
 
   // Emit poll type changes to update the header
   useEffect(() => {
@@ -494,15 +503,49 @@ function CreatePollContent() {
   // Track form changes for fork validation
   useEffect(() => {
     if (originalPollData && forkOf) {
-      const hasChanged = 
+      const hasChanged =
         title !== originalPollData.title ||
         JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
         creatorName !== (originalPollData.creator_name || "") ||
         pollType !== 'poll'; // Nomination polls are always considered changed
-      
+
       setHasFormChanged(hasChanged);
     }
   }, [title, pollType, options, creatorName, originalPollData, forkOf]);
+
+  // Handle removal of parent poll association
+  const handleRemoveAssociation = useCallback(() => {
+    // Clear the relationship states
+    setFollowUpTo(null);
+    setForkOf(null);
+    setDuplicateOf(null);
+    setOriginalPollData(null);
+    setHasFormChanged(false);
+
+    // Clear localStorage data
+    if (typeof window !== 'undefined') {
+      if (followUpTo) {
+        localStorage.removeItem(`duplicate-data-${followUpTo}`);
+      }
+      if (forkOf) {
+        localStorage.removeItem(`fork-data-${forkOf}`);
+      }
+      if (duplicateOf) {
+        localStorage.removeItem(`duplicate-data-${duplicateOf}`);
+      }
+      if (voteFromNomination) {
+        localStorage.removeItem(`vote-from-nomination-${voteFromNomination}`);
+      }
+    }
+
+    // Update URL to remove query parameters
+    const url = new URL(window.location.href);
+    url.searchParams.delete('followUpTo');
+    url.searchParams.delete('fork');
+    url.searchParams.delete('duplicate');
+    url.searchParams.delete('voteFromNomination');
+    window.history.replaceState({}, '', url.toString());
+  }, [followUpTo, forkOf, duplicateOf, voteFromNomination]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -868,30 +911,12 @@ function CreatePollContent() {
 
   return (
     <div className="poll-content">
-      {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
-      {forkOf ? (
-        <>
-          <ForkHeader forkOfPollId={forkOf} />
-          {!hasFormChanged && (
-            <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-              <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                Make changes to create your fork. The submit button will be enabled once you modify the poll.
-              </p>
-            </div>
-          )}
-        </>
-      ) : duplicateOf ? (
-        <FollowUpHeader followUpToPollId={duplicateOf} />
-      ) : followUpTo ? (
-        <FollowUpHeader followUpToPollId={followUpTo} />
-      ) : null}
-
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
         </div>
       )}
-      
+
       <form onSubmit={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -968,7 +993,25 @@ function CreatePollContent() {
             </div>
           </div>
 
-          <div className="-mt-4">
+          {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
+          {forkOf ? (
+            <>
+              <ForkHeader forkOfPollId={forkOf} onRemove={handleRemoveAssociation} />
+              {!hasFormChanged && (
+                <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    Make changes to create your fork. The submit button will be enabled once you modify the poll.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : duplicateOf ? (
+            <FollowUpHeader followUpToPollId={duplicateOf} onRemove={handleRemoveAssociation} />
+          ) : followUpTo ? (
+            <FollowUpHeader followUpToPollId={followUpTo} onRemove={handleRemoveAssociation} />
+          ) : null}
+
+          <div className={(forkOf || duplicateOf || followUpTo) ? '' : '-mt-4'}>
             <label htmlFor="title" className="block text-sm font-medium mb-2">
               Title
             </label>

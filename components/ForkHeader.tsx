@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 interface ForkHeaderProps {
   forkOfPollId: string;
+  onRemove?: () => void;
 }
 
-export default function ForkHeader({ forkOfPollId }: ForkHeaderProps) {
+export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) {
   const router = useRouter();
   const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function fetchOriginalPoll() {
@@ -44,6 +48,28 @@ export default function ForkHeader({ forkOfPollId }: ForkHeaderProps) {
 
     fetchOriginalPoll();
   }, [forkOfPollId]);
+
+  const handleLongPressStart = () => {
+    if (onRemove) {
+      longPressTimer.current = setTimeout(() => {
+        setShowRemoveModal(true);
+      }, 500); // 500ms long press
+    }
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRemoveConfirm = () => {
+    setShowRemoveModal(false);
+    if (onRemove) {
+      onRemove();
+    }
+  };
 
   if (loading) {
     return (
@@ -85,21 +111,40 @@ export default function ForkHeader({ forkOfPollId }: ForkHeaderProps) {
   }
 
   return (
-    <div className="-mt-2 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center">
-      <div className="text-sm text-green-900 dark:text-green-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
-        <span>Fork of</span>
-        <button 
-          onClick={() => router.push(`/p/${forkOfPollId}`)}
-          className="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-900/50 hover:bg-green-200 dark:hover:bg-green-800/70 rounded text-sm font-medium text-green-800 dark:text-green-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
-          title={originalPollTitle}
-        >
-          <span className="truncate">{originalPollTitle}</span>
-          <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-green-100 dark:from-green-900/50 to-transparent pointer-events-none"></div>
-        </button>
+    <>
+      <div
+        className="-mt-2 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none"
+        onMouseDown={handleLongPressStart}
+        onMouseUp={handleLongPressEnd}
+        onMouseLeave={handleLongPressEnd}
+        onTouchStart={handleLongPressStart}
+        onTouchEnd={handleLongPressEnd}
+      >
+        <div className="text-sm text-green-900 dark:text-green-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
+          <span>Fork of</span>
+          <button
+            onClick={() => router.push(`/p/${forkOfPollId}`)}
+            className="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-900/50 hover:bg-green-200 dark:hover:bg-green-800/70 rounded text-sm font-medium text-green-800 dark:text-green-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
+            title={originalPollTitle}
+          >
+            <span className="truncate">{originalPollTitle}</span>
+            <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-green-100 dark:from-green-900/50 to-transparent pointer-events-none"></div>
+          </button>
+        </div>
+        <p className="text-xs text-green-600 dark:text-green-400">
+          Based on the original poll structure
+        </p>
       </div>
-      <p className="text-xs text-green-600 dark:text-green-400">
-        Based on the original poll structure
-      </p>
-    </div>
+
+      <ConfirmationModal
+        isOpen={showRemoveModal}
+        onConfirm={handleRemoveConfirm}
+        onCancel={() => setShowRemoveModal(false)}
+        title="Remove Fork Association"
+        message="Are you sure you want to remove the connection to the parent poll? This will create a fresh, independent poll."
+        confirmText="Remove"
+        cancelText="Cancel"
+      />
+    </>
   );
 }

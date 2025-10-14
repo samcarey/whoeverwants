@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ConfirmationModal from "@/components/ConfirmationModal";
 
 interface FollowUpHeaderProps {
   followUpToPollId: string;
+  onRemove?: () => void;
 }
 
-export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps) {
+export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpHeaderProps) {
   const router = useRouter();
   const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function fetchOriginalPoll() {
@@ -44,6 +48,28 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
 
     fetchOriginalPoll();
   }, [followUpToPollId]);
+
+  const handleLongPressStart = () => {
+    if (onRemove) {
+      longPressTimer.current = setTimeout(() => {
+        setShowRemoveModal(true);
+      }, 500); // 500ms long press
+    }
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRemoveConfirm = () => {
+    setShowRemoveModal(false);
+    if (onRemove) {
+      onRemove();
+    }
+  };
 
   if (loading) {
     return (
@@ -85,21 +111,40 @@ export default function FollowUpHeader({ followUpToPollId }: FollowUpHeaderProps
   }
 
   return (
-    <div className="-mt-2 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center">
-      <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
-        <span>Follow up to</span>
-        <button 
-          onClick={() => router.push(`/p/${followUpToPollId}`)}
-          className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
-          title={originalPollTitle}
-        >
-          <span className="truncate">{originalPollTitle}</span>
-          <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-blue-100 dark:from-blue-900/50 to-transparent pointer-events-none"></div>
-        </button>
+    <>
+      <div
+        className="-mt-2 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center select-none"
+        onMouseDown={handleLongPressStart}
+        onMouseUp={handleLongPressEnd}
+        onMouseLeave={handleLongPressEnd}
+        onTouchStart={handleLongPressStart}
+        onTouchEnd={handleLongPressEnd}
+      >
+        <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
+          <span>Follow up to</span>
+          <button
+            onClick={() => router.push(`/p/${followUpToPollId}`)}
+            className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
+            title={originalPollTitle}
+          >
+            <span className="truncate">{originalPollTitle}</span>
+            <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-blue-100 dark:from-blue-900/50 to-transparent pointer-events-none"></div>
+          </button>
+        </div>
+        <p className="text-xs text-blue-600 dark:text-blue-400">
+          Accessible to the same recipients
+        </p>
       </div>
-      <p className="text-xs text-blue-600 dark:text-blue-400">
-        Accessible to the same recipients
-      </p>
-    </div>
+
+      <ConfirmationModal
+        isOpen={showRemoveModal}
+        onConfirm={handleRemoveConfirm}
+        onCancel={() => setShowRemoveModal(false)}
+        title="Remove Follow-Up Association"
+        message="Are you sure you want to remove the connection to the parent poll? This will create a fresh, independent poll."
+        confirmText="Remove"
+        cancelText="Cancel"
+      />
+    </>
   );
 }
