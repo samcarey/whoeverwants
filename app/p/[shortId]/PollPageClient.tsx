@@ -1216,13 +1216,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             <>Created {createdDate}</>
           )}
         </div>
-        
-        {/* Show follow-up header if this poll is a follow-up to another poll */}
-        {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-        
-        {/* Show fork header if this poll is a fork of another poll */}
-        {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-        
+
         {/* Poll status card - show expired, expiring, or manually closed */}
         {(() => {
           const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
@@ -1536,6 +1530,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
+
+                  {/* Show follow-up/fork header after submit button */}
+                  <div className="mt-4">
+                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                  </div>
                 </>
               )}
             </div>
@@ -1684,6 +1684,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
+
+                  {/* Show follow-up/fork header after submit button */}
+                  <div className="mt-4">
+                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                  </div>
                 </>
               )}
             </div>
@@ -1906,6 +1912,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
+
+                  {/* Show follow-up/fork header after submit button */}
+                  <div className="mt-4">
+                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                  </div>
                 </>
               )}
             </div>

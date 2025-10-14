@@ -993,25 +993,7 @@ function CreatePollContent() {
             </div>
           </div>
 
-          {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
-          {forkOf ? (
-            <>
-              <ForkHeader forkOfPollId={forkOf} onRemove={handleRemoveAssociation} />
-              {!hasFormChanged && (
-                <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                    Make changes to create your fork. The submit button will be enabled once you modify the poll.
-                  </p>
-                </div>
-              )}
-            </>
-          ) : duplicateOf ? (
-            <FollowUpHeader followUpToPollId={duplicateOf} onRemove={handleRemoveAssociation} />
-          ) : followUpTo ? (
-            <FollowUpHeader followUpToPollId={followUpTo} onRemove={handleRemoveAssociation} />
-          ) : null}
-
-          <div className={(forkOf || duplicateOf || followUpTo) ? '' : '-mt-4'}>
+          <div className="-mt-4">
             <label htmlFor="title" className="block text-sm font-medium mb-2">
               Title
             </label>
@@ -1318,6 +1300,28 @@ function CreatePollContent() {
             )}
           </button>
         </form>
+
+        {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
+        {forkOf ? (
+          <div className="mt-4">
+            <ForkHeader forkOfPollId={forkOf} onRemove={handleRemoveAssociation} />
+            {!hasFormChanged && (
+              <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                  Make changes to create your fork. The submit button will be enabled once you modify the poll.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : duplicateOf ? (
+          <div className="mt-4">
+            <FollowUpHeader followUpToPollId={duplicateOf} onRemove={handleRemoveAssociation} />
+          </div>
+        ) : followUpTo ? (
+          <div className="mt-4">
+            <FollowUpHeader followUpToPollId={followUpTo} onRemove={handleRemoveAssociation} />
+          </div>
+        ) : null}
 
         {!followUpTo && !forkOf && !duplicateOf && (
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-3">
