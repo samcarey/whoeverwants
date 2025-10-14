@@ -55,6 +55,7 @@ function CreatePollContent() {
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -68,12 +69,18 @@ function CreatePollContent() {
     }
   }, []);
 
-  // Save form state to localStorage
+  // Save poll type preference separately (persists across submissions)
+  const savePollTypePreference = useCallback((type: 'poll' | 'nomination' | 'participation') => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pollTypePreference', type);
+    }
+  }, []);
+
+  // Save form state to localStorage (excluding poll type which is saved separately)
   const saveFormState = useCallback(() => {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
-        pollType,
         options,
         deadlineOption,
         customDate,
@@ -82,7 +89,7 @@ function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -102,7 +109,18 @@ function CreatePollContent() {
     };
   };
 
-  // Load form state from localStorage
+  // Load poll type preference from localStorage
+  const loadPollTypePreference = () => {
+    if (typeof window !== 'undefined') {
+      const savedPollType = localStorage.getItem('pollTypePreference');
+      if (savedPollType && (savedPollType === 'poll' || savedPollType === 'nomination' || savedPollType === 'participation')) {
+        setPollType(savedPollType as 'poll' | 'nomination' | 'participation');
+      }
+      setHasLoadedPollType(true);
+    }
+  };
+
+  // Load form state from localStorage (excluding poll type which is loaded separately)
   const loadFormState = () => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('pollFormState');
@@ -110,7 +128,6 @@ function CreatePollContent() {
         try {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
-          setPollType(formState.pollType || 'poll');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -263,6 +280,11 @@ function CreatePollContent() {
     if (voteFromNominationParam) setVoteFromNomination(voteFromNominationParam);
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
+  // Load poll type preference first (runs once on mount)
+  useEffect(() => {
+    loadPollTypePreference();
+  }, []); // Empty deps - only run once on mount
+
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
@@ -273,21 +295,27 @@ function CreatePollContent() {
       loadFormState();
     }
 
-    // Load saved user name if no name in form state
+    // Load saved user name
     const savedName = getUserName();
-    if (savedName && !creatorName) {
+    if (savedName) {
       setCreatorName(savedName);
     }
-  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam, creatorName]);
+  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
-  // Emit poll type changes to update the header
+  // Save poll type preference and emit poll type changes to update the header
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // Only save after initial load to avoid overwriting saved preference
+      if (hasLoadedPollType) {
+        savePollTypePreference(pollType);
+      }
+
+      // Emit event to update the header
       window.dispatchEvent(new CustomEvent('pollTypeChange', {
         detail: { pollType }
       }));
     }
-  }, [pollType]);
+  }, [pollType, hasLoadedPollType, savePollTypePreference]);
 
   // Load fork data if this is a fork
   useEffect(() => {
@@ -493,12 +521,12 @@ function CreatePollContent() {
     }
   }, [isClient, customDate, customTime]);
 
-  // Save form state whenever form data changes
+  // Save form state whenever form data changes (pollType is saved separately)
   useEffect(() => {
     if (isClient) {
       saveFormState();
     }
-  }, [title, pollType, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState]);
 
   // Track form changes for fork validation
   useEffect(() => {
