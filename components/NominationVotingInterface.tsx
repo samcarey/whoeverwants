@@ -252,6 +252,14 @@ export default function NominationVotingInterface({
           </div>
         )}
 
+        {/* Show follow-up/fork header after Follow up button when voted */}
+        {!isPollClosed && !isLoadingVoteData && (
+          <div className="mt-4">
+            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+          </div>
+        )}
+
         {/* Voter list for open nomination polls - shown after Follow-up button when voted */}
         {!isPollClosed && !isLoadingVoteData && (
           <div className="mt-8">

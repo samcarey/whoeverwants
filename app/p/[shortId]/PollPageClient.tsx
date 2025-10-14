@@ -1345,6 +1345,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
         )}
 
+        {/* Show follow-up/fork header after Follow up button for closed polls */}
+        {isPollClosed && (
+          <div className="mt-4">
+            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+          </div>
+        )}
+
         {/* Voter list for closed polls - always shown after Follow-up button */}
         {isPollClosed && (
           <div className="mt-8">
@@ -1474,6 +1482,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           Edit
                         </button>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Show follow-up/fork header after Follow up button when voted */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-4">
+                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                     </div>
                   )}
 
@@ -1631,6 +1647,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       >
                         Edit
                       </button>
+                    </div>
+                  )}
+
+                  {/* Show follow-up/fork header after Follow up button when voted */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-4">
+                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                     </div>
                   )}
 
@@ -1841,6 +1865,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         Edit
                       </button>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Show follow-up/fork header after Follow up button when voted */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-4">
+                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                     </div>
                   )}
 
