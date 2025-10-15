@@ -81,6 +81,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isLongPress = useRef(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
+  const [pressedPollId, setPressedPollId] = useState<string | null>(null);
+  const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -202,6 +204,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
                 isScrolling.current = false;
+                setPressedPollId(poll.id); // Set pressed state immediately
                 touchStartPos.current = {
                   x: e.touches[0].clientX,
                   y: e.touches[0].clientY
@@ -220,6 +223,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                     }
                     setModalPoll(poll);
                     setShowModal(true);
+                    setPressedPollId(null); // Clear pressed state when modal opens
                   }
                 }, 500); // 500ms for long press
               };
@@ -232,10 +236,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                 // Only navigate if not scrolling and not long press
                 if (!isScrolling.current && !isLongPress.current) {
+                  setNavigatingPollId(poll.id); // Show loading state
+                  setPressedPollId(null); // Clear pressed state
                   router.push(`/p/${poll.id}`);
+                } else {
+                  // Reset states if not navigating
+                  setPressedPollId(null); // Clear pressed state
                 }
 
-                // Reset states
                 touchStartPos.current = null;
                 isScrolling.current = false;
               };
@@ -249,6 +257,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 // If moved more than 10px in any direction, consider it scrolling
                 if (deltaX > 10 || deltaY > 10) {
                   isScrolling.current = true;
+                  setPressedPollId(null); // Clear pressed state when scrolling
 
                   // Cancel long press timer if scrolling
                   if (longPressTimer.current) {
@@ -271,13 +280,24 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
                       </div>
                       <div
-                        onClick={() => router.push(`/p/${poll.id}`)}
+                        onClick={() => {
+                          setNavigatingPollId(poll.id);
+                          router.push(`/p/${poll.id}`);
+                        }}
                         onTouchStart={handleTouchStart}
                         onTouchEnd={handleTouchEnd}
                         onTouchMove={handleTouchMove}
-                        className={`flex-1 ${hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-green-300 dark:hover:border-green-600 transition-all cursor-pointer select-none`}
+                        className={`flex-1 ${pressedPollId === poll.id ? '' : hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 active:scale-95 active:shadow-sm active:border-blue-400 dark:active:border-blue-500 ${pressedPollId === poll.id ? 'scale-95 !shadow-md !border-blue-500 dark:!border-blue-400 !bg-blue-100 dark:!bg-blue-900/40 opacity-100' : ''} transition-all cursor-pointer select-none relative`}
                       >
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-green-600 dark:hover:text-green-400 transition-colors">
+                        {navigatingPollId === poll.id && (
+                          <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 flex items-center justify-center rounded-lg">
+                            <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          </div>
+                        )}
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                           {poll.title}
                         </h3>
                       </div>
@@ -314,6 +334,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
+                  setPressedPollId(poll.id); // Set pressed state immediately
                   touchStartPos.current = {
                     x: e.touches[0].clientX,
                     y: e.touches[0].clientY
@@ -332,6 +353,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       }
                       setModalPoll(poll);
                       setShowModal(true);
+                      setPressedPollId(null); // Clear pressed state when modal opens
                     }
                   }, 500); // 500ms for long press
                 };
@@ -344,10 +366,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                   // Only navigate if not scrolling and not long press
                   if (!isScrolling.current && !isLongPress.current) {
+                    setNavigatingPollId(poll.id); // Show loading state
+                    setPressedPollId(null); // Clear pressed state
                     router.push(`/p/${poll.id}`);
+                  } else {
+                    // Reset states if not navigating
+                    setPressedPollId(null); // Clear pressed state
                   }
 
-                  // Reset states
                   touchStartPos.current = null;
                   isScrolling.current = false;
                 };
@@ -361,6 +387,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   // If moved more than 10px in any direction, consider it scrolling
                   if (deltaX > 10 || deltaY > 10) {
                     isScrolling.current = true;
+                    setPressedPollId(null); // Clear pressed state when scrolling
 
                     // Cancel long press timer if scrolling
                     if (longPressTimer.current) {
@@ -377,13 +404,24 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
                       </div>
                       <div
-                        onClick={() => router.push(`/p/${poll.id}`)}
+                        onClick={() => {
+                          setNavigatingPollId(poll.id);
+                          router.push(`/p/${poll.id}`);
+                        }}
                         onTouchStart={handleTouchStart}
                         onTouchEnd={handleTouchEnd}
                         onTouchMove={handleTouchMove}
-                        className={`flex-1 bg-gray-100 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-red-300 dark:hover:border-red-600 transition-all cursor-pointer opacity-75 select-none`}
+                        className={`flex-1 ${pressedPollId === poll.id ? '' : 'bg-gray-100 dark:bg-gray-800/50'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 active:scale-95 active:shadow-sm active:border-blue-400 dark:active:border-blue-500 ${pressedPollId === poll.id ? 'scale-95 !shadow-md !border-blue-500 dark:!border-blue-400 !bg-blue-100 dark:!bg-blue-900/40 opacity-100' : 'opacity-75'} transition-all cursor-pointer select-none relative`}
                       >
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-red-600 dark:hover:text-red-400 transition-colors">
+                        {navigatingPollId === poll.id && (
+                          <div className="absolute inset-0 bg-gray-100/90 dark:bg-gray-800/90 flex items-center justify-center rounded-lg">
+                            <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          </div>
+                        )}
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                           {poll.title}
                         </h3>
                       </div>

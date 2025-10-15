@@ -40,7 +40,7 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
   return (
     <button
       onClick={handleDuplicate}
-      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors duration-200"
+      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white transition-all duration-200"
       title="Create a follow-up poll with the same structure"
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

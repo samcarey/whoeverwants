@@ -42,7 +42,7 @@ export default function ProfileButton() {
   return (
     <button
       onClick={() => router.push('/profile')}
-      className="flex-shrink-0 w-6 h-6 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center"
+      className="flex-shrink-0 w-6 h-6 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 active:scale-95 transition-all flex items-center justify-center"
       title={userName ? `Profile: ${userName}` : 'Set your name'}
     >
       <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -67,7 +67,7 @@ export default function FloatingCopyLinkButton({ url }: FloatingCopyLinkButtonPr
   return (
     <button
         onClick={copyToClipboard}
-        className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+        className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 active:scale-95 rounded-full transition-all"
         title={copied ? "Copied!" : "Copy poll link"}
         aria-label={copied ? "Link copied to clipboard" : "Copy poll link to clipboard"}
       >

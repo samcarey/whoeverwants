@@ -64,7 +64,7 @@ export default function ConfirmationModal({
           <div className="flex justify-center">
             <button
               onClick={onConfirm}
-              className={`px-6 py-2 rounded-lg transition-colors font-medium ${confirmButtonClass}`}
+              className={`px-6 py-2 rounded-lg transition-all active:scale-95 font-medium ${confirmButtonClass}`}
             >
               {confirmText}
             </button>

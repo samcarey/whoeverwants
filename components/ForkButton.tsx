@@ -40,7 +40,7 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
   return (
     <button
       onClick={handleFork}
-      className={`inline-flex items-center gap-2 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium text-sm rounded-lg transition-colors duration-200 ${className}`}
+      className={`inline-flex items-center gap-2 px-3 py-2 bg-yellow-600 hover:bg-yellow-700 active:bg-yellow-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200 ${className}`}
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
         <circle cx="6" cy="6" r="2"/>

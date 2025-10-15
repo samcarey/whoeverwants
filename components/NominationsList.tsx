@@ -57,7 +57,7 @@ export default function NominationsList({
               <button
                 onClick={onEditClick}
                 disabled={isEditDisabled}
-                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 active:scale-95 text-yellow-900 font-medium text-sm rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Edit
               </button>

@@ -16,6 +16,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -50,14 +51,17 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
   }, [forkOfPollId]);
 
   const handleLongPressStart = () => {
+    setIsPressed(true);
     if (onRemove) {
       longPressTimer.current = setTimeout(() => {
         setShowRemoveModal(true);
+        setIsPressed(false);
       }, 500); // 500ms long press
     }
   };
 
   const handleLongPressEnd = () => {
+    setIsPressed(false);
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
@@ -113,7 +117,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
   return (
     <>
       <div
-        className="my-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none"
+        className={`my-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none transition-all ${isPressed ? 'scale-95 !bg-green-100 dark:!bg-green-900/40 !border-green-400 dark:!border-green-600 shadow-md' : ''}`}
         onMouseDown={handleLongPressStart}
         onMouseUp={handleLongPressEnd}
         onMouseLeave={handleLongPressEnd}

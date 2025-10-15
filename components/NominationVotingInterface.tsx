@@ -293,10 +293,10 @@ export default function NominationVotingInterface({
                       }
                     }}
                     disabled={isSubmitting}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                       isSelected
-                        ? 'bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/40 text-green-900 dark:text-green-100 font-medium border border-green-300 dark:border-green-700'
-                        : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
+                        ? 'bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/40 active:bg-green-300 dark:active:bg-green-900/50 text-green-900 dark:text-green-100 font-medium border border-green-300 dark:border-green-700'
+                        : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
                     }`}
                   >
                     {nomination}
@@ -346,10 +346,10 @@ export default function NominationVotingInterface({
       <button
         onClick={handleVoteClick}
         disabled={isSubmitting}
-        className={`w-full py-3 px-4 rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${
+        className={`w-full py-3 px-4 rounded-lg font-medium transition-all disabled:cursor-not-allowed ${
           nominationChoices.length === 0 && !isSubmitting
-            ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
-            : 'bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white'
+            ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
+            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-400 text-white'
         }`}
       >
         {isSubmitting

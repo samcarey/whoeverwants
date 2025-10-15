@@ -32,7 +32,7 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                 router.push(`/create-poll?followUpTo=${poll.id}`);
                 onClose();
               }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white font-medium text-sm rounded-lg transition-colors duration-200"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <circle cx="12" cy="12" r="10"/>
@@ -56,7 +56,7 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                 router.push(`/create-poll?duplicate=${poll.id}`);
                 onClose();
               }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg transition-colors duration-200"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -81,7 +81,7 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                 router.push(`/create-poll?fork=${poll.id}`);
                 onClose();
               }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm rounded-lg transition-colors duration-200"
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                 <circle cx="6" cy="6" r="2"/>

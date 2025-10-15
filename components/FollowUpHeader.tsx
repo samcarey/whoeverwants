@@ -16,6 +16,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [isPressed, setIsPressed] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -50,14 +51,17 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   }, [followUpToPollId]);
 
   const handleLongPressStart = () => {
+    setIsPressed(true);
     if (onRemove) {
       longPressTimer.current = setTimeout(() => {
         setShowRemoveModal(true);
+        setIsPressed(false);
       }, 500); // 500ms long press
     }
   };
 
   const handleLongPressEnd = () => {
+    setIsPressed(false);
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
@@ -113,7 +117,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   return (
     <>
       <div
-        className="my-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center select-none"
+        className={`my-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center select-none transition-all ${isPressed ? 'scale-95 !bg-blue-100 dark:!bg-blue-900/40 !border-blue-400 dark:!border-blue-600 shadow-md' : ''}`}
         onMouseDown={handleLongPressStart}
         onMouseUp={handleLongPressEnd}
         onMouseLeave={handleLongPressEnd}
