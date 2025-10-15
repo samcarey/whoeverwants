@@ -270,7 +270,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-2.5 mb-2 ml-7">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
                       Already Voted
                     </div>
                   )}
@@ -321,7 +321,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {closedPolls.length > 0 && (
         <div className="mb-3">
           {openPolls.length > 0 && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-2.5 mb-2 ml-7">
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
               Closed
             </div>
           )}
