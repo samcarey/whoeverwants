@@ -116,7 +116,10 @@ function CreatePollContent() {
       if (savedPollType && (savedPollType === 'poll' || savedPollType === 'nomination' || savedPollType === 'participation')) {
         setPollType(savedPollType as 'poll' | 'nomination' | 'participation');
       }
-      setHasLoadedPollType(true);
+      // Delay enabling transitions to avoid animation on initial load
+      setTimeout(() => {
+        setHasLoadedPollType(true);
+      }, 50);
     }
   };
 
@@ -953,7 +956,9 @@ function CreatePollContent() {
           <div className="flex justify-center">
             <div className="relative w-48 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 mb-1">
               <div
-                className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm transition-all duration-200 ease-in-out ${
+                className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm ${
+                  hasLoadedPollType ? 'transition-all duration-200 ease-in-out' : ''
+                } ${
                   pollType === 'nomination'
                     ? 'bg-blue-100 dark:bg-blue-900/30'
                     : pollType === 'poll'
