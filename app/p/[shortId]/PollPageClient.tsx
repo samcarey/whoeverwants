@@ -1544,7 +1544,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
-                    className="w-full rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
@@ -1706,7 +1706,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     type="button"
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
-                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
@@ -1942,7 +1942,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0)}
-                    className="w-full mt-4 rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>

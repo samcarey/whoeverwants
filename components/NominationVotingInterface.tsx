@@ -357,7 +357,7 @@ export default function NominationVotingInterface({
       <button
         onClick={handleVoteClick}
         disabled={isSubmitting}
-        className={`w-full py-3 px-4 rounded-lg font-medium transition-all disabled:cursor-not-allowed ${
+        className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
           nominationChoices.length === 0 && !isSubmitting
             ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
             : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-400 text-white'

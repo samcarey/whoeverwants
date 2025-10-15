@@ -1310,7 +1310,7 @@ function CreatePollContent() {
             type="button"
             onClick={handleSubmitClick}
             disabled={isLoading || isSubmitted || !isFormValid() || (!!forkOf && !hasFormChanged)}
-            className="w-full rounded-full border border-solid border-transparent transition-all flex items-center justify-center bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] active:scale-95 font-medium text-base h-12 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] active:scale-95 font-medium text-base transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
           >
             {isSubmitted ? (
               <>
