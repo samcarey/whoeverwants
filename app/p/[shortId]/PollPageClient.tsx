@@ -1020,6 +1020,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Use the same filtered data that was prepared in voteData to ensure consistency
         const updateData = poll.poll_type === 'yes_no'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
+          : poll.poll_type === 'participation'
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : { nominations: voteData.nominations, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
@@ -1228,7 +1230,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             return (
               <div className="mb-3 text-center">
                 <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                  Poll automatically closed - maximum capacity reached
+                  Poll auto-closed. Capacity reached.
                 </span>
               </div>
             );
@@ -1288,7 +1290,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         {/* For closed polls, show results first */}
         {isPollClosed && (
-          <div className="py-2.5">
+          <div className="pt-2.5">
             {loadingResults ? (
               <div className="flex justify-center items-center py-3">
                 <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1308,7 +1310,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
         {/* Follow-up button for closed polls - always shown after results */}
         {isPollClosed && (
-          <div className="mt-4 flex justify-between items-center">
+          <div className="my-4 flex justify-between items-center">
               <GradientBorderButton
                 onClick={() => setShowFollowUpModal(true)}
                 gradient="blue-purple"
@@ -1440,7 +1442,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
-                    <div className="mt-4 flex justify-between items-center">
+                    <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
                           onClick={() => setShowFollowUpModal(true)}
                           gradient="blue-purple"
@@ -1631,7 +1633,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   {!isPollClosed && !isLoadingVoteData && (
-                    <div className="mt-4 flex justify-between items-center">
+                    <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
                           onClick={() => setShowFollowUpModal(true)}
                           gradient="blue-purple"
@@ -1823,7 +1825,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
-                    <div className="mt-4 flex justify-between items-center">
+                    <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
                           onClick={() => setShowFollowUpModal(true)}
                           gradient="blue-purple"

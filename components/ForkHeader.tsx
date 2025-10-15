@@ -73,7 +73,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
 
   if (loading) {
     return (
-      <div className="-mt-2 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center">
+      <div className="my-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center">
         <div className="text-sm text-green-900 dark:text-green-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Fork of</span>
           <span className="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-900/50 rounded text-sm font-medium text-green-800 dark:text-green-200 relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]">
@@ -94,7 +94,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
 
   if (error || !originalPollTitle) {
     return (
-      <div className="-mt-2 mb-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+      <div className="my-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-8 h-8 bg-yellow-100 dark:bg-yellow-800 rounded-full">
             <svg className="w-4 h-4 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,7 +113,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
   return (
     <>
       <div
-        className="-mt-2 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none"
+        className="my-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none"
         onMouseDown={handleLongPressStart}
         onMouseUp={handleLongPressEnd}
         onMouseLeave={handleLongPressEnd}

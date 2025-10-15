@@ -411,7 +411,7 @@ export default function Template({ children }: AppTemplateProps) {
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1 className="text-2xl font-bold text-center whitespace-nowrap">
-                    Ask For{' '}
+                    Ask for{' '}
                     <span
                       className="text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}

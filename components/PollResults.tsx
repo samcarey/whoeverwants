@@ -358,6 +358,36 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const minParticipants = results.min_participants;
   const maxParticipants = results.max_participants;
 
+  const [participants, setParticipants] = useState<{id: string, voter_name: string | null}[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch participants who voted "yes"
+  useEffect(() => {
+    const fetchParticipants = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('votes')
+          .select('id, voter_name')
+          .eq('poll_id', results.poll_id)
+          .eq('yes_no_choice', 'yes');
+
+        if (error) {
+          console.error('Error fetching participants:', error);
+          setParticipants([]);
+        } else {
+          setParticipants(data || []);
+        }
+      } catch (err) {
+        console.error('Error loading participants:', err);
+        setParticipants([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchParticipants();
+  }, [results.poll_id]);
+
   // Determine if the event is happening based on participant count being in range
   let isHappening = yesCount > 0; // Default: happening if anyone said yes
   let statusMessage = '';
@@ -390,6 +420,32 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
   const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
 
+  // Get named participants and sort alphabetically
+  const namedParticipants = participants
+    .filter(p => p.voter_name && p.voter_name.trim() !== '')
+    .sort((a, b) => {
+      const nameA = (a.voter_name || '').toLowerCase();
+      const nameB = (b.voter_name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+  const anonymousParticipantCount = participants.filter(p => !p.voter_name || p.voter_name.trim() === '').length;
+
+  // Generate consistent colors for participant bubbles
+  const getParticipantColor = (index: number) => {
+    const colors = [
+      'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+      'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+      'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+      'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+      'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+      'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+    ];
+    return colors[index % colors.length];
+  };
+
   if (totalVotes === 0) {
     return (
       <div className="text-center">
@@ -409,12 +465,6 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   return (
     <div>
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} total response{totalVotes !== 1 ? 's' : ''}
-        </p>
-      </div>
 
       {/* Event Status */}
       <div className={`mb-6 p-4 rounded-lg border-2 ${
@@ -431,7 +481,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             {isHappening ? "It's happening! 🎉" : "Not happening"}
           </div>
           {statusMessage && (
-            <div className={`text-sm ${
+            <div className={`text-sm mb-4 ${
               isHappening
                 ? 'text-green-700 dark:text-green-300'
                 : 'text-red-700 dark:text-red-300'
@@ -440,47 +490,38 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             </div>
           )}
         </div>
+
+        {/* Show participant list when event is happening */}
+        {isHappening && (
+          <div className="mt-4 pt-4 border-t border-green-300 dark:border-green-700">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-bold text-green-900 dark:text-green-100">
+                Participants ({yesCount}):
+              </h3>
+
+              {/* Named participants - displayed as colored bubbles */}
+              {namedParticipants.map((participant, index) => (
+                <span
+                  key={participant.id}
+                  className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getParticipantColor(index)}`}
+                >
+                  {participant.voter_name}
+                </span>
+              ))}
+
+              {/* Anonymous participants count */}
+              {anonymousParticipantCount > 0 && (
+                <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-300 italic">
+                    {anonymousParticipantCount} × Anonymous
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* In Results */}
-        <div className="p-4 rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600">
-          <div className="text-center">
-            <div className="text-2xl font-bold mb-1 text-green-800 dark:text-green-200">
-              {yesCount}
-            </div>
-            <div className="text-lg mb-2 text-green-900 dark:text-green-100 font-bold">
-              I&apos;m in!
-            </div>
-            {userVotedYes && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Response
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Out Results */}
-        <div className="p-4 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-300 dark:border-red-600">
-          <div className="text-center">
-            <div className="text-2xl font-bold mb-1 text-red-800 dark:text-red-200">
-              {noCount}
-            </div>
-            <div className="text-lg mb-2 text-red-900 dark:text-red-100 font-bold">
-              Can&apos;t make it
-            </div>
-            {userVotedNo && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Response
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
