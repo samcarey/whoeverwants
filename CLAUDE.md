@@ -31,10 +31,12 @@ ps aux | grep -E "(npm|node|next)" | grep -v grep
 # 3. Kill ALL existing dev servers (use actual PIDs from step 2)
 kill -9 [PID1] [PID2] [PID3]
 
-# 4. Clear Next.js cache and restart on port 3000
+# 4. Clear Next.js cache and restart the background service
 rm -rf .next
-npm run dev
+launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
 ```
+
+**Note:** The dev server runs as a macOS background service (LaunchAgent), not manually via `npm run dev`.
 
 ### Port Verification:
 Always verify the dev server started on port 3000:
@@ -224,9 +226,41 @@ This command will:
 
 ## Development Server Access
 
-The development server runs on **port 3000** and is accessible via:
+**The development server runs as a macOS background service and should ALWAYS be running.**
+
+The service is configured via LaunchAgent at `~/Library/LaunchAgents/com.whoeverwants.dev.plist` and:
+- Starts automatically on login
+- Restarts automatically if it crashes
+- Logs to `dev-server.log` and `dev-server-error.log` in the project root
+
+### Access Points
 - **Local URL**: http://localhost:3000
 - **Tailscale network**: Use Tailscale to access from other devices on your network
+
+### Service Management Commands
+
+```bash
+# Check if service is running
+launchctl list | grep whoeverwants
+
+# Stop the service
+launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist
+
+# Start the service
+launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
+
+# Restart the service
+launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
+
+# View logs
+tail -f dev-server.log        # Server output
+tail -f dev-server-error.log  # Error logs
+```
+
+### Important Notes
+- The service **always ensures port 3000 is available** before starting
+- If port 3000 is busy, follow the port conflict resolution steps below
+- The service runs with your user permissions (not as root)
 
 ## 🔧 TROUBLESHOOTING: Development Server Issues
 
@@ -243,12 +277,14 @@ Next.js automatically switches ports when 3000 is busy. Always ensure it's runni
    lsof -i :3000
    ```
 
-2. If port 3000 is busy, kill the process and restart:
+2. If port 3000 is busy, kill the process and restart the service:
    ```bash
    kill -9 [PID]
    rm -rf .next
-   npm run dev
+   launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
    ```
+
+**Note:** The dev server runs as a background service. Use `launchctl` commands instead of manual `npm run dev`.
 
 #### **2. React Hydration Errors**
 Hydration errors cause the app to show permanent loading spinners.
@@ -304,9 +340,9 @@ When dev server has multiple issues:
    lsof -i :3000
    ```
 
-4. **Restart dev server:**
+4. **Restart dev server service:**
    ```bash
-   npm run dev
+   launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
    ```
 
 5. **Verify URL works:**
