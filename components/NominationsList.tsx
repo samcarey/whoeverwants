@@ -47,23 +47,25 @@ export default function NominationsList({
         <h4 className="font-medium text-lg text-gray-900 dark:text-white">
           Suggestions {uniqueCount > 0 && `(${uniqueCount})`}
         </h4>
-        {userNominations.length > 0 && showUserIndicator && (
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-            <span className="text-xs text-gray-600 dark:text-gray-400">
-              Yours
-            </span>
-            {showEditButton && (
-              <button
-                onClick={onEditClick}
-                disabled={isEditDisabled}
-                className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 active:scale-95 text-yellow-900 font-medium text-sm rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Edit
-              </button>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {userNominations.length > 0 && showUserIndicator && (
+            <>
+              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+              <span className="text-xs text-gray-600 dark:text-gray-400">
+                Yours
+              </span>
+            </>
+          )}
+          {showEditButton && (
+            <button
+              onClick={onEditClick}
+              disabled={isEditDisabled}
+              className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 active:scale-95 text-yellow-900 font-medium text-sm rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Edit
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap justify-center gap-2">

@@ -209,7 +209,18 @@ export default function NominationVotingInterface({
               isEditDisabled={isLoadingVoteData}
             />
           ) : (
-            <p className="text-gray-600 dark:text-gray-400">No suggestions available</p>
+            <div className="flex items-center justify-between">
+              <p className="text-gray-600 dark:text-gray-400">No suggestions available</p>
+              {!isPollClosed && (
+                <button
+                  onClick={() => setIsEditingVote(true)}
+                  disabled={isLoadingVoteData}
+                  className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 active:scale-95 text-yellow-900 font-medium text-sm rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
           )}
         </div>
 
