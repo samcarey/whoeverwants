@@ -1162,8 +1162,8 @@ function CreatePollContent() {
               <label className="block text-sm font-medium mb-2">
                 Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
+              <div className="flex justify-between gap-2">
+                <div className="w-auto">
                   <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">
                     Date
                   </label>
@@ -1174,12 +1174,13 @@ function CreatePollContent() {
                     onChange={(e) => setCustomDate(e.target.value)}
                     disabled={isLoading}
                     min={isClient ? getTodayDate() : ''}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                    style={{ fontSize: '14px' }}
                     required
                   />
                 </div>
-                <div>
-                  <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1">
+                <div className="w-auto">
+                  <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">
                     Time
                   </label>
                   <input
@@ -1188,7 +1189,8 @@ function CreatePollContent() {
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
                     disabled={isLoading}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                    style={{ fontSize: '14px' }}
                     required
                   />
                 </div>
