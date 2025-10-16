@@ -449,7 +449,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   if (totalVotes === 0) {
     return (
       <div className="text-center">
-        <div className="mb-6 p-4 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600">
+        <div className="mb-6 px-4 py-2 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600">
           <div className="text-center">
             <div className="text-2xl font-bold mb-2 text-red-800 dark:text-red-200">
               Not happening
@@ -467,10 +467,10 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     <div>
 
       {/* Event Status */}
-      <div className={`mb-6 p-4 rounded-lg border-2 ${
+      <div className={`mb-6 rounded-lg border-2 ${
         isHappening
-          ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600'
-          : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600'
+          ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4'
+          : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-2'
       }`}>
         <div className="text-center">
           <div className={`text-2xl font-bold mb-2 ${
