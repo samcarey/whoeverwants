@@ -13,7 +13,6 @@ import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
-
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -1044,110 +1043,173 @@ function CreatePollContent() {
             />
           </div>
 
-          {/* Participant counter for participation polls */}
+          {/* Participant counters for participation polls */}
           {pollType === 'participation' && (
             <div>
               <label className="block text-sm font-medium mb-2">
                 How many participants?
               </label>
-              <div className="flex justify-between items-center gap-4">
-                {/* Min participants counter */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Min:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (minParticipants !== null && minParticipants > 1) {
-                        setMinParticipants(minParticipants - 1);
-                      }
-                    }}
-                    disabled={minParticipants === null || minParticipants <= 1}
-                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <div
-                    className="min-w-[3rem] px-3 py-1 rounded-md font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 border-2 border-blue-500 flex items-center justify-center"
-                  >
-                    {minParticipants ?? 1}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (minParticipants !== null) {
-                        const newMin = minParticipants + 1;
-                        setMinParticipants(newMin);
-                        // If max is enabled and new min is greater than max, update max
-                        if (maxEnabled && maxParticipants !== null && newMin > maxParticipants) {
-                          setMaxParticipants(newMin);
+              <div className="relative flex justify-center items-center">
+                <div className="flex items-center gap-3">
+                  {/* Min participants counter */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newMin = (minParticipants ?? 1) + 1;
+                          setMinParticipants(newMin);
+                          // If max is enabled and new min is greater than max, update max
+                          if (maxEnabled && maxParticipants !== null && newMin > maxParticipants) {
+                            setMaxParticipants(newMin);
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentMin = minParticipants ?? 1;
+                          if (currentMin > 1) {
+                            setMinParticipants(currentMin - 1);
+                          }
+                        }}
+                        disabled={isLoading || (minParticipants ?? 1) <= 1}
+                        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={minParticipants ?? ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string or valid numbers
+                        if (value === '') {
+                          setMinParticipants(null);
+                        } else if (/^\d+$/.test(value)) {
+                          const newMin = parseInt(value);
+                          if (!isNaN(newMin)) {
+                            setMinParticipants(newMin);
+                            // If max is enabled and new min is greater than max, update max
+                            if (maxEnabled && maxParticipants !== null && newMin > maxParticipants) {
+                              setMaxParticipants(newMin);
+                            }
+                          }
                         }
-                      }
-                    }}
-                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
+                      }}
+                      onBlur={() => {
+                        // Reset to 1 if empty or invalid on blur
+                        if (minParticipants === null || minParticipants < 1) {
+                          setMinParticipants(1);
+                        }
+                      }}
+                      disabled={isLoading}
+                      className="w-16 px-3 py-2 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                  </div>
+
+                  {/* Hyphen separator */}
+                  <span className="text-xl text-gray-500 dark:text-gray-400">—</span>
+
+                  {/* Max participants counter */}
+                  <div className={`flex items-center gap-2 ${!maxEnabled ? 'opacity-40' : ''}`}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={maxEnabled && maxParticipants !== null ? maxParticipants : ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string or valid numbers
+                        if (value === '' || /^\d+$/.test(value)) {
+                          const newMax = parseInt(value);
+                          if (!isNaN(newMax)) {
+                            const minValue = minParticipants ?? 1;
+                            if (newMax >= minValue) {
+                              if (!maxEnabled) {
+                                setMaxEnabled(true);
+                              }
+                              setMaxParticipants(newMax);
+                            }
+                          } else if (value === '') {
+                            // Allow clearing temporarily
+                            setMaxParticipants(null);
+                          }
+                        }
+                      }}
+                      onBlur={() => {
+                        // Reset to min if empty or invalid on blur
+                        if (maxEnabled && (maxParticipants === null || maxParticipants < (minParticipants ?? 1))) {
+                          setMaxParticipants(minParticipants ?? 1);
+                        }
+                      }}
+                      disabled={isLoading || !maxEnabled}
+                      className="w-16 px-3 py-2 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (maxEnabled) {
+                            setMaxParticipants((maxParticipants ?? minParticipants ?? 1) + 1);
+                          }
+                        }}
+                        disabled={isLoading || !maxEnabled}
+                        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (maxEnabled && maxParticipants !== null) {
+                            const currentMin = minParticipants ?? 1;
+                            if (maxParticipants > currentMin) {
+                              setMaxParticipants(maxParticipants - 1);
+                            }
+                          }
+                        }}
+                        disabled={isLoading || !maxEnabled || maxParticipants === null || maxParticipants <= (minParticipants ?? 1)}
+                        className="p-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Max participants counter */}
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Max:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (maxEnabled && maxParticipants !== null) {
-                        const minValue = minParticipants ?? 1;
-                        if (maxParticipants > minValue) {
-                          setMaxParticipants(maxParticipants - 1);
-                        }
+                {/* Checkbox to enable/disable max - positioned absolutely to not affect centering */}
+                <input
+                  type="checkbox"
+                  checked={maxEnabled}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setMaxEnabled(true);
+                      const minValue = minParticipants ?? 1;
+                      // Set to min if not already set, or if previous value is less than min
+                      if (maxParticipants === null || maxParticipants < minValue) {
+                        setMaxParticipants(minValue);
                       }
-                    }}
-                    disabled={!maxEnabled || maxParticipants === null || maxParticipants <= (minParticipants ?? 1)}
-                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (maxEnabled) {
-                        setMaxEnabled(false);
-                        setMaxParticipants(null);
-                      } else {
-                        setMaxEnabled(true);
-                        const startValue = minParticipants ?? 1;
-                        setMaxParticipants(startValue);
-                      }
-                    }}
-                    className={`min-w-[3rem] px-3 py-1 rounded-md font-medium transition-colors ${
-                      maxEnabled
-                        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100 border-2 border-blue-500'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border-2 border-gray-300 dark:border-gray-600'
-                    }`}
-                  >
-                    {maxEnabled && maxParticipants !== null ? maxParticipants : '—'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (maxEnabled && maxParticipants !== null) {
-                        setMaxParticipants(maxParticipants + 1);
-                      }
-                    }}
-                    disabled={!maxEnabled}
-                    className="w-8 h-8 flex items-center justify-center rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                    </svg>
-                  </button>
-                </div>
+                    } else {
+                      setMaxEnabled(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
+                />
               </div>
             </div>
           )}
