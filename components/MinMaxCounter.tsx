@@ -62,19 +62,20 @@ export default function MinMaxCounter({
   return (
     <div className="relative flex justify-center items-center">
       <div className="flex items-center gap-3">
-        {/* Min counter */}
+        {/* Min counter - arrows on left */}
         <CounterInput
           value={minValue}
           onChange={handleMinChange}
           increment={increment}
           min={minLimit}
           disabled={disabled}
+          arrowPosition="left"
         />
 
         {/* Hyphen separator */}
         <span className="text-xl text-gray-500 dark:text-gray-400">—</span>
 
-        {/* Max counter */}
+        {/* Max counter - arrows on right */}
         <div className={!maxEnabled ? 'opacity-40' : ''}>
           <CounterInput
             value={maxEnabled ? maxValue : null}
@@ -82,6 +83,7 @@ export default function MinMaxCounter({
             increment={increment}
             min={minValue ?? minLimit}
             disabled={disabled || !maxEnabled}
+            arrowPosition="right"
           />
         </div>
       </div>
