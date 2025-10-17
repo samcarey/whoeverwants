@@ -358,10 +358,10 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const minParticipants = results.min_participants;
   const maxParticipants = results.max_participants;
 
-  const [participants, setParticipants] = useState<{id: string, voter_name: string | null}[]>([]);
+  const [participants, setParticipants] = useState<{id: string, voter_name: string | null, vote_id?: string}[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch participants who voted "yes"
+  // Fetch participants who voted "yes" with their vote IDs
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
@@ -375,7 +375,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
           console.error('Error fetching participants:', error);
           setParticipants([]);
         } else {
-          setParticipants(data || []);
+          setParticipants((data || []).map(p => ({ ...p, vote_id: p.id })));
         }
       } catch (err) {
         console.error('Error loading participants:', err);
@@ -389,7 +389,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   }, [results.poll_id]);
 
   // Determine if the event is happening based on participant count being in range
-  let isHappening = yesCount > 0; // Default: happening if anyone said yes
+  let isHappening = yesCount > 0;
   let statusMessage = '';
 
   if (minParticipants !== undefined && minParticipants !== null) {
@@ -406,19 +406,17 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     }
   }
 
-  if (isHappening && minParticipants && maxParticipants) {
-    statusMessage = `Within range (${minParticipants}-${maxParticipants})`;
-  } else if (isHappening && minParticipants) {
-    statusMessage = `Met minimum (${minParticipants}+)`;
-  } else if (isHappening && maxParticipants) {
-    statusMessage = `Within limit (max ${maxParticipants})`;
-  } else if (isHappening) {
-    statusMessage = 'Participants confirmed';
-  }
-
   const isDev = process.env.NODE_ENV === 'development';
   const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
   const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
+
+  // Check if user's personal conditions were met
+  const userMinParticipants = userVoteData?.min_participants;
+  const userMaxParticipants = userVoteData?.max_participants;
+  const userConditionsMet = userVotedYes && (
+    (userMinParticipants === null || userMinParticipants === undefined || yesCount >= userMinParticipants) &&
+    (userMaxParticipants === null || userMaxParticipants === undefined || yesCount <= userMaxParticipants)
+  );
 
   // Get named participants and sort alphabetically
   const namedParticipants = participants
@@ -431,8 +429,15 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   const anonymousParticipantCount = participants.filter(p => !p.voter_name || p.voter_name.trim() === '').length;
 
+  // Check if current user is in the participant list (by vote ID)
+  const userVoteId = userVoteData?.id;
+  const userIsInParticipantList = participants.some(p => p.vote_id === userVoteId);
+
   // Generate consistent colors for participant bubbles
-  const getParticipantColor = (index: number) => {
+  const getParticipantColor = (index: number, isCurrentUser: boolean) => {
+    if (isCurrentUser) {
+      return 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white font-bold ring-2 ring-blue-300 dark:ring-blue-400';
+    }
     const colors = [
       'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -446,6 +451,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     return colors[index % colors.length];
   };
 
+  // SCENARIO: No votes at all
   if (totalVotes === 0) {
     return (
       <div className="text-center">
@@ -463,53 +469,38 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     );
   }
 
-  return (
-    <div>
-
-      {/* Event Status */}
-      <div className={`mb-6 rounded-lg border-2 ${
-        isHappening
-          ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4'
-          : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-2'
-      }`}>
-        <div className="text-center">
-          <div className={`text-2xl font-bold mb-2 ${
-            isHappening
-              ? 'text-green-800 dark:text-green-200'
-              : 'text-red-800 dark:text-red-200'
-          }`}>
-            {isHappening ? "It's happening! 🎉" : "Not happening"}
-          </div>
-          {statusMessage && (
-            <div className={`text-sm mb-4 ${
-              isHappening
-                ? 'text-green-700 dark:text-green-300'
-                : 'text-red-700 dark:text-red-300'
-            }`}>
-              {statusMessage}
+  // CLOSED POLL SCENARIOS
+  if (isPollClosed) {
+    // Scenario: Event IS happening, user voted YES
+    if (isHappening && userVotedYes) {
+      return (
+        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
+          <div className="text-center mb-4">
+            <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
+              🎉 IT'S HAPPENING - You're Going!
             </div>
-          )}
-        </div>
+            <div className="text-sm text-green-700 dark:text-green-300">
+              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+            </div>
+          </div>
 
-        {/* Show participant list when event is happening */}
-        {isHappening && (
-          <div className="mt-4 pt-4 border-t border-green-300 dark:border-green-700">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-green-900 dark:text-green-100">
-                Participants ({yesCount}):
-              </h3>
+          {/* Participant list */}
+          <div className="pt-4 border-t border-green-300 dark:border-green-700">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {/* Named participants */}
+              {namedParticipants.map((participant, index) => {
+                const isCurrentUser = participant.vote_id === userVoteId;
+                return (
+                  <span
+                    key={participant.id}
+                    className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, isCurrentUser)}`}
+                  >
+                    {isCurrentUser ? 'You' : participant.voter_name}
+                  </span>
+                );
+              })}
 
-              {/* Named participants - displayed as colored bubbles */}
-              {namedParticipants.map((participant, index) => (
-                <span
-                  key={participant.id}
-                  className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getParticipantColor(index)}`}
-                >
-                  {participant.voter_name}
-                </span>
-              ))}
-
-              {/* Anonymous participants count */}
+              {/* Anonymous participants */}
               {anonymousParticipantCount > 0 && (
                 <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
                   <span className="text-sm text-gray-600 dark:text-gray-300 italic">
@@ -519,22 +510,89 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               )}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* User's response indicator (only shown when poll is closed) */}
-      {(userVotedYes || userVotedNo) && (
-        <div className="text-center">
-          <span className={`inline-block px-4 py-2 rounded-full text-sm font-medium ${
-            userVotedYes
-              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-2 border-green-400 dark:border-green-600'
-              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200 border-2 border-gray-400 dark:border-gray-600'
-          }`}>
-            {userVotedYes ? 'You accepted' : 'You declined'}
-          </span>
         </div>
-      )}
+      );
+    }
 
+    // Scenario: Event IS happening, user voted NO or didn't vote
+    if (isHappening && (userVotedNo || !userVoteData)) {
+      return (
+        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 px-4 py-3">
+          <div className="text-center">
+            <div className="text-xl font-bold mb-1 text-green-800 dark:text-green-200">
+              ✓ Event is happening
+            </div>
+            <div className="text-sm text-green-700 dark:text-green-300 mb-2">
+              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+            </div>
+            {userVotedNo && (
+              <div className="text-sm text-green-700 dark:text-green-300 opacity-75">
+                You declined
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Scenario: Event NOT happening, user voted YES
+    if (!isHappening && userVotedYes) {
+      const userNeedsText = userMinParticipants && userMaxParticipants
+        ? `${userMinParticipants}-${userMaxParticipants}`
+        : userMinParticipants
+        ? `${userMinParticipants}+`
+        : userMaxParticipants
+        ? `up to ${userMaxParticipants}`
+        : null;
+
+      return (
+        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+          <div className="text-center">
+            <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
+              ✗ Not happening
+            </div>
+            <div className="text-sm text-red-700 dark:text-red-300 mb-2">
+              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+              {(minParticipants || maxParticipants) && (
+                <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
+              )}
+            </div>
+            {userNeedsText && (
+              <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
+                Your needs weren't met ({userNeedsText})
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Scenario: Event NOT happening, user voted NO or didn't vote
+    if (!isHappening) {
+      return (
+        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+          <div className="text-center">
+            <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
+              ✗ Not happening
+            </div>
+            <div className="text-sm text-red-700 dark:text-red-300">
+              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+              {(minParticipants || maxParticipants) && (
+                <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // OPEN POLL: Show live status without revealing results details
+  return (
+    <div className="text-center">
+      <div className="text-gray-600 dark:text-gray-400 text-sm">
+        Poll is still open - results will show when closed
+      </div>
     </div>
   );
 }

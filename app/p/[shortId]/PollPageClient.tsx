@@ -24,6 +24,7 @@ import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAcces
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
+import ParticipationConditions from "@/components/ParticipationConditions";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -104,11 +105,32 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [nominations, setNominations] = useState<string[]>([]);
   const [loadingNominations, setLoadingNominations] = useState(false);
 
+  // Participation poll voter conditions
+  const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(1);
+  const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(null);
+  const [voterMaxEnabled, setVoterMaxEnabled] = useState(false);
+
   const isPollExpired = useMemo(() => {
     // Use server-safe check
     const now = currentTime || new Date();
     return poll.response_deadline && new Date(poll.response_deadline) <= now;
   }, [poll.response_deadline, currentTime]);
+
+  // Check if voter's conditions are met at the stable participation count
+  const areVoterConditionsMet = useMemo(() => {
+    if (poll.poll_type !== 'participation' || !pollResults || !userVoteData) {
+      return null;
+    }
+
+    const stableCount = pollResults.yes_count || 0;
+    const voterMin = userVoteData.min_participants;
+    const voterMax = userVoteData.max_participants;
+
+    const minMet = voterMin === null || voterMin === undefined || stableCount >= voterMin;
+    const maxMet = voterMax === null || voterMax === undefined || stableCount <= voterMax;
+
+    return minMet && maxMet;
+  }, [poll.poll_type, pollResults, userVoteData]);
   
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
@@ -206,7 +228,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Fetch all votes by these IDs
       const { data: userVotes, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants')
         .in('id', voteIds)
         .eq('poll_id', pollId);
 
@@ -244,11 +266,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   // Fetch vote data from database by vote ID (legacy function)
   const fetchVoteData = useCallback(async (voteId: string) => {
-    
+
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants')
         .eq('id', voteId)
         .single();
 
@@ -443,6 +465,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               // Don't set choices for abstain votes
             } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice);
+            } else if (poll.poll_type === 'participation' && voteData.yes_no_choice) {
+              setYesNoChoice(voteData.yes_no_choice);
+              // Load voter's participation conditions
+              if (voteData.min_participants !== null && voteData.min_participants !== undefined) {
+                setVoterMinParticipants(voteData.min_participants);
+              }
+              if (voteData.max_participants !== null && voteData.max_participants !== undefined) {
+                setVoterMaxParticipants(voteData.max_participants);
+                setVoterMaxEnabled(true);
+              } else {
+                setVoterMaxEnabled(false);
+              }
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
             } else if (poll.poll_type === 'nomination' && voteData.nominations) {
@@ -458,14 +492,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
 
-  // Separate effect to fetch results when poll closes
+  // Separate effect to fetch results when poll closes or for participation polls
   useEffect(() => {
     // Fetch results if poll is closed (reactive to state changes)
     const isClosed = pollClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
-    if (isClosed) {
+
+    // Also fetch results for participation polls when voted (to show condition status)
+    const shouldFetchForParticipation = poll.poll_type === 'participation' && hasVoted && !isClosed;
+
+    if (isClosed || shouldFetchForParticipation) {
       fetchPollResults();
     }
-  }, [pollClosed, poll.response_deadline, fetchPollResults]);
+  }, [pollClosed, poll.response_deadline, poll.poll_type, hasVoted, fetchPollResults]);
 
   // Load saved user name
   useEffect(() => {
@@ -948,7 +986,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           vote_type: 'participation' as const,
           yes_no_choice: isAbstaining ? null : yesNoChoice,
           is_abstain: isAbstaining,
-          voter_name: voterName.trim() || null
+          voter_name: voterName.trim() || null,
+          min_participants: voterMinParticipants,
+          max_participants: voterMaxEnabled ? voterMaxParticipants : null
         };
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
@@ -1603,32 +1643,34 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         <span className="font-medium text-gray-600 dark:text-gray-400">Loading your response...</span>
                       </div>
                     ) : (
-                      <div className={`flex items-center p-3 rounded-lg ${
-                        userVoteData?.is_abstain || isAbstaining
-                          ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
-                          : userVoteData?.yes_no_choice === 'yes'
-                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
-                            : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
-                      }`}>
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                      <>
+                        <div className={`flex items-center p-3 rounded-lg ${
                           userVoteData?.is_abstain || isAbstaining
-                            ? 'bg-yellow-600 text-white'
+                            ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
                             : userVoteData?.yes_no_choice === 'yes'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-red-600 text-white'
+                              ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
+                              : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                         }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
-                        </span>
-                        <span className={`font-medium ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'text-yellow-800 dark:text-yellow-200'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'text-green-800 dark:text-green-200'
-                              : 'text-red-800 dark:text-red-200'
-                        }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? "I'm in!" : "Can't make it"}
-                        </span>
-                      </div>
+                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                            userVoteData?.is_abstain || isAbstaining
+                              ? 'bg-yellow-600 text-white'
+                              : userVoteData?.yes_no_choice === 'yes'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-red-600 text-white'
+                          }`}>
+                            {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
+                          </span>
+                          <span className={`font-medium ${
+                            userVoteData?.is_abstain || isAbstaining
+                              ? 'text-yellow-800 dark:text-yellow-200'
+                              : userVoteData?.yes_no_choice === 'yes'
+                                ? 'text-green-800 dark:text-green-200'
+                                : 'text-red-800 dark:text-red-200'
+                          }`}>
+                            {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? "I'm in!" : "Can't make it"}
+                          </span>
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -1670,7 +1712,22 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <>
                   <div className="mb-4 text-center">
                     <h3 className="text-lg font-semibold mb-4">Are you in?</h3>
+                  </div>
 
+                  <div className="mb-4">
+                    <h4 className="text-base font-medium mb-3">Your conditions</h4>
+                    <ParticipationConditions
+                      minValue={voterMinParticipants}
+                      maxValue={voterMaxParticipants}
+                      maxEnabled={voterMaxEnabled}
+                      onMinChange={setVoterMinParticipants}
+                      onMaxChange={setVoterMaxParticipants}
+                      onMaxEnabledChange={setVoterMaxEnabled}
+                      disabled={isSubmitting}
+                    />
+                  </div>
+
+                  <div className="mb-4 text-center">
                     <YesNoAbstainButtons
                       yesNoChoice={yesNoChoice}
                       onYesClick={() => handleYesNoVote('yes')}
