@@ -120,14 +120,52 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     return null;
   }
 
-  // Get named voters (excluding anonymous ones) and sort alphabetically
-  const namedVoters = voters
+  // Get current user's vote ID from localStorage
+  const getUserVoteId = (): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      return pollVoteIds[pollId] || null;
+    } catch (error) {
+      console.error('Error getting vote ID:', error);
+      return null;
+    }
+  };
+
+  const currentUserVoteId = getUserVoteId();
+
+  // Check if current user is in the voter list (could be named or anonymous)
+  const currentUserVote = currentUserVoteId
+    ? voters.find(v => v.id === currentUserVoteId)
+    : null;
+
+  // Get named voters (excluding anonymous ones and current user if anonymous)
+  let allNamedVoters = voters
     .filter(vote => vote.voter_name && vote.voter_name.trim() !== '')
     .sort((a, b) => {
       const nameA = (a.voter_name || '').toLowerCase();
       const nameB = (b.voter_name || '').toLowerCase();
       return nameA.localeCompare(nameB);
     });
+
+  // Separate current user from other named voters
+  const currentUserIsNamed = currentUserVote && currentUserVote.voter_name && currentUserVote.voter_name.trim() !== '';
+
+  const otherVoters = currentUserIsNamed
+    ? allNamedVoters.filter(v => v.id !== currentUserVote.id)
+    : allNamedVoters;
+
+  // Combine: current user first (if named or exists), then others
+  const namedVoters = currentUserIsNamed
+    ? [currentUserVote, ...otherVoters]
+    : currentUserVote
+      ? [currentUserVote, ...otherVoters]  // Include anonymous current user
+      : otherVoters;
+
+  // Adjust anonymous count to exclude current user if they voted anonymously
+  const adjustedAnonymousCount = currentUserVote && !currentUserIsNamed
+    ? anonymousCount - 1
+    : anonymousCount;
 
   // Generate consistent colors for voter bubbles
   const getVoterColor = (index: number) => {
@@ -146,26 +184,35 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   return (
     <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white w-full text-center">
           Respondents ({voters.length})
         </h3>
 
         {/* Named voters - displayed as colored bubbles in a flowing layout */}
-        {namedVoters.map((voter, index) => (
-          <span
-            key={voter.id}
-            className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getVoterColor(index)}`}
-          >
-            {voter.voter_name}
-          </span>
-        ))}
+        {namedVoters.map((voter, index) => {
+          const isCurrentUser = currentUserVote && voter.id === currentUserVote.id;
+          const displayName = isCurrentUser
+            ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
+            : voter.voter_name;
+
+          return (
+            <span
+              key={voter.id}
+              className={`inline-block px-3 py-1 rounded-full text-sm ${
+                isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+              } ${getVoterColor(index)}`}
+            >
+              {displayName}
+            </span>
+          );
+        })}
 
         {/* Anonymous voters count */}
-        {anonymousCount > 0 && (
+        {adjustedAnonymousCount > 0 && (
           <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
             <span className="text-sm text-gray-600 dark:text-gray-300 italic">
-              {anonymousCount} × Anonymous {anonymousCount === 1 ? 'voter' : 'voters'}
+              {adjustedAnonymousCount} × Anonymous {adjustedAnonymousCount === 1 ? 'voter' : 'voters'}
             </span>
           </div>
         )}
