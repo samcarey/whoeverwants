@@ -200,6 +200,69 @@ const fetchData = async () => {
 
 ---
 
+## Participation Poll Philosophy: Maximizing Inclusion
+
+### Core Principle
+
+**When multiple stable participant configurations exist, prioritize voters with fewer constraints to maximize future participation opportunities.**
+
+### Why This Matters
+
+Participation polls create interdependent constraints where each voter's willingness to participate depends on how many others participate. This can create scenarios where multiple valid "stable" configurations exist.
+
+**Example scenario:**
+- Poll requires 1-2 participants (set by creator)
+- Voter A votes YES with conditions: exactly 1 participant (min=1, max=1)
+- Voter B votes YES with conditions: 1+ participants (min=1, max=none)
+
+Both configurations are mathematically valid:
+- Configuration 1: Only Voter A participates (count=1, satisfies A's constraints)
+- Configuration 2: Only Voter B participates (count=1, satisfies B's constraints)
+
+### Selection Algorithm
+
+We choose **Configuration 2** (Voter B) because:
+
+1. **Flexibility**: Voter B's lack of max constraint means additional voters could join later
+2. **Inclusivity**: Maximizes the chance that more people can participate
+3. **Fairness**: Voters with restrictive constraints (like "exactly N") shouldn't block more flexible voters
+
+### Priority Ranking
+
+When selecting among competing voters, we rank by:
+
+1. **No max constraint** → Highest priority (infinite flexibility)
+2. **Higher max value** → Higher priority (more room for others)
+3. **Lower min value** → Higher priority (easier to satisfy)
+4. **Earlier timestamp** → Tiebreaker (first-come-first-served)
+
+### Implementation Strategy
+
+The algorithm uses a **greedy selection with priority ordering**:
+
+1. Calculate all voters who said "yes" to participating
+2. Sort voters by priority (most flexible first)
+3. Greedily include voters in priority order:
+   - Include voter if their constraints are satisfied by current count
+   - Skip voter if including them would violate anyone's constraints
+4. Return the final stable set of participating voters
+
+### Benefits
+
+- **Scalable**: Works for any number of voters with diverse constraints
+- **Predictable**: Voters understand that flexibility increases their participation chances
+- **Optimal**: Maximizes the potential for future participation growth
+- **Fair**: Doesn't arbitrarily favor first voters; favors accommodating voters
+
+### Edge Cases Handled
+
+- **Oscillation**: When no fixed point exists, algorithm still converges
+- **All-or-nothing voters**: Those with restrictive maxes get lower priority
+- **Mixed constraints**: Algorithm finds optimal subset efficiently
+- **Empty result**: If no stable configuration exists, event doesn't happen (count=0)
+
+---
+
 ## Custom Claude Commands
 
 ### /publish

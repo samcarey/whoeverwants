@@ -36,6 +36,7 @@
     "publish": "./scripts/publish.sh"
   },
   "dependencies": {
+    "@ncdai/react-wheel-picker": "^1.0.17",
     "@supabase/supabase-js": "^2.50.0",
     "next": "15.3.3",
     "pg": "^8.16.3",

@@ -1,0 +1,217 @@
+ ⚠ Port 3000 is in use, using available port 3001 instead.
+ ⚠ Cross origin request detected from 100.92.152.37 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Cross origin request detected from 100.92.152.37 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}
+Failed to send debug log: [TypeError: Failed to parse URL from /api/log] {
+  [cause]: [TypeError: Invalid URL] { code: 'ERR_INVALID_URL', input: '/api/log' }
+}

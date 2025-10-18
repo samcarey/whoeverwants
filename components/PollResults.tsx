@@ -361,21 +361,24 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const [participants, setParticipants] = useState<{id: string, voter_name: string | null, vote_id?: string}[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch participants who voted "yes" with their vote IDs
+  // Fetch participants who are actually participating (based on priority algorithm)
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
+        // Get the list of participating voters from the priority algorithm
         const { data, error } = await supabase
-          .from('votes')
-          .select('id, voter_name')
-          .eq('poll_id', results.poll_id)
-          .eq('yes_no_choice', 'yes');
+          .rpc('calculate_participating_voters', { poll_id_param: results.poll_id });
 
         if (error) {
           console.error('Error fetching participants:', error);
           setParticipants([]);
         } else {
-          setParticipants((data || []).map(p => ({ ...p, vote_id: p.id })));
+          // Map the result to match expected format
+          setParticipants((data || []).map((p: any) => ({
+            id: p.vote_id,
+            voter_name: p.voter_name,
+            vote_id: p.vote_id
+          })));
         }
       } catch (err) {
         console.error('Error loading participants:', err);
@@ -471,8 +474,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   // CLOSED POLL SCENARIOS
   if (isPollClosed) {
-    // Scenario: Event IS happening, user voted YES
-    if (isHappening && userVotedYes) {
+    // Scenario: Event IS happening, user voted YES and is in the participating list
+    if (isHappening && userVotedYes && userIsInParticipantList) {
       return (
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
           <div className="text-center mb-4">
@@ -509,6 +512,35 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
+    if (isHappening && userVotedYes && !userIsInParticipantList) {
+      const userNeedsText = userMinParticipants && userMaxParticipants
+        ? `${userMinParticipants}-${userMaxParticipants}`
+        : userMinParticipants
+        ? `${userMinParticipants}+`
+        : userMaxParticipants
+        ? `up to ${userMaxParticipants}`
+        : null;
+
+      return (
+        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+          <div className="text-center">
+            <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
+              ✗ Not happening for you
+            </div>
+            <div className="text-sm text-red-700 dark:text-red-300 mb-2">
+              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+            </div>
+            {userNeedsText && (
+              <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
+                Your needs weren't met ({userNeedsText})
+              </div>
+            )}
           </div>
         </div>
       );

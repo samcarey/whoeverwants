@@ -14,6 +14,7 @@ import { getUserName, saveUserName } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
+import ParticipationConditions from "@/components/ParticipationConditions";
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -1046,22 +1047,15 @@ function CreatePollContent() {
 
           {/* Participant counters for participation polls */}
           {pollType === 'participation' && (
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                How many participants?
-              </label>
-              <MinMaxCounter
-                minValue={minParticipants}
-                maxValue={maxParticipants}
-                maxEnabled={maxEnabled}
-                onMinChange={setMinParticipants}
-                onMaxChange={setMaxParticipants}
-                onMaxEnabledChange={setMaxEnabled}
-                increment={1}
-                minLimit={1}
-                disabled={isLoading}
-              />
-            </div>
+            <ParticipationConditions
+              minValue={minParticipants}
+              maxValue={maxParticipants}
+              maxEnabled={maxEnabled}
+              onMinChange={setMinParticipants}
+              onMaxChange={setMaxParticipants}
+              onMaxEnabledChange={setMaxEnabled}
+              disabled={isLoading}
+            />
           )}
 
           {/* Hide options field for nomination and participation polls */}

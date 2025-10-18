@@ -98,6 +98,20 @@ export async function getPollResults(pollId: string): Promise<PollResults> {
   return data;
 }
 
+// Get list of voters who will participate based on priority algorithm
+export async function getParticipatingVoters(pollId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .rpc('calculate_participating_voters', { poll_id_param: pollId });
+
+  if (error) {
+    console.error('Failed to fetch participating voters:', error);
+    return [];
+  }
+
+  // Return array of vote IDs
+  return data ? data.map((v: any) => v.vote_id) : [];
+}
+
 export async function getNominationVoteCounts(pollId: string): Promise<{ option: string; count: number }[]> {
   const { data: votes, error } = await supabase
     .from('votes')

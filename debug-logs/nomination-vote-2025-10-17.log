@@ -1,0 +1,756 @@
+[2025-10-17T00:41:43.587Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T00:41:43.739Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T00:41:44.431Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T00:41:44.571Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "409b3005-4b99-4241-9d85-68118faa3ad6",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T00:41:44.694Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "409b3005-4b99-4241-9d85-68118faa3ad6",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo"
+  }
+}
+---
+[2025-10-17T00:41:44.999Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "44495d00-e50f-46b5-9642-35b2f6cc97a7"
+  },
+  "insertError": null,
+  "voteId": "44495d00-e50f-46b5-9642-35b2f6cc97a7",
+  "hasError": false
+}
+---
+[2025-10-17T00:41:45.129Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "44495d00-e50f-46b5-9642-35b2f6cc97a7"
+}
+---
+[2025-10-17T00:41:45.268Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "44495d00-e50f-46b5-9642-35b2f6cc97a7",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T00:41:45.395Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T02:22:27.711Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T02:22:27.738Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T02:22:28.659Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T02:22:28.703Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "fb2c503d-a536-4036-ac74-0d8ae5b3c2c9",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T02:22:28.764Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "fb2c503d-a536-4036-ac74-0d8ae5b3c2c9",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo",
+    "min_participants": 2,
+    "max_participants": null
+  }
+}
+---
+[2025-10-17T02:22:29.117Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "12f2097d-f10a-4d85-b438-bee69ab71e25"
+  },
+  "insertError": null,
+  "voteId": "12f2097d-f10a-4d85-b438-bee69ab71e25",
+  "hasError": false
+}
+---
+[2025-10-17T02:22:29.156Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "12f2097d-f10a-4d85-b438-bee69ab71e25"
+}
+---
+[2025-10-17T02:22:29.221Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "12f2097d-f10a-4d85-b438-bee69ab71e25",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T02:22:29.270Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T03:16:13.446Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T03:16:13.473Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T03:16:14.215Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T03:16:14.253Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T03:16:14.303Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo",
+    "min_participants": 1,
+    "max_participants": null
+  }
+}
+---
+[2025-10-17T03:16:14.513Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "f53cc555-d06e-48f9-92cc-312cd83faec9"
+  },
+  "insertError": null,
+  "voteId": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+  "hasError": false
+}
+---
+[2025-10-17T03:16:14.532Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "f53cc555-d06e-48f9-92cc-312cd83faec9"
+}
+---
+[2025-10-17T03:16:14.569Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T03:16:14.599Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T03:16:35.262Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T03:16:35.303Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T03:16:35.966Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": "f53cc555-d06e-48f9-92cc-312cd83faec9"
+}
+---
+[2025-10-17T03:16:36.005Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T03:16:36.207Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+      "poll_id": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+      "vote_type": "participation",
+      "yes_no_choice": "no",
+      "ranked_choices": null,
+      "created_at": "2025-10-17T03:16:14.462413+00:00",
+      "voter_name": "Sambo",
+      "is_abstain": false,
+      "nominations": null,
+      "abstain_reason": null,
+      "updated_at": "2025-10-17T03:16:36.168095+00:00",
+      "min_participants": 1,
+      "max_participants": null
+    }
+  ]
+}
+---
+[2025-10-17T03:16:36.230Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+  "isEditingVote": true,
+  "pollType": "participation"
+}
+---
+[2025-10-17T03:16:36.266Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T03:16:42.343Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T03:16:42.388Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T03:16:43.005Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": "f53cc555-d06e-48f9-92cc-312cd83faec9"
+}
+---
+[2025-10-17T03:16:43.042Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T03:16:43.187Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+      "poll_id": "00aa587a-b8e4-46a0-8f96-ed2fc6f333a4",
+      "vote_type": "participation",
+      "yes_no_choice": "yes",
+      "ranked_choices": null,
+      "created_at": "2025-10-17T03:16:14.462413+00:00",
+      "voter_name": "Sambo",
+      "is_abstain": false,
+      "nominations": null,
+      "abstain_reason": null,
+      "updated_at": "2025-10-17T03:16:43.15337+00:00",
+      "min_participants": 1,
+      "max_participants": null
+    }
+  ]
+}
+---
+[2025-10-17T03:16:43.213Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "f53cc555-d06e-48f9-92cc-312cd83faec9",
+  "isEditingVote": true,
+  "pollType": "participation"
+}
+---
+[2025-10-17T03:16:43.267Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T11:53:19.065Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T11:53:19.089Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T11:53:19.715Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T11:53:19.756Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "498c9aff-18db-4226-9e8e-c4ba6fbbcef8",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T11:53:19.810Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "498c9aff-18db-4226-9e8e-c4ba6fbbcef8",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo",
+    "min_participants": 1,
+    "max_participants": 1
+  }
+}
+---
+[2025-10-17T11:53:19.983Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "8ab4b309-13f4-426e-af94-1d79f38b6de5"
+  },
+  "insertError": null,
+  "voteId": "8ab4b309-13f4-426e-af94-1d79f38b6de5",
+  "hasError": false
+}
+---
+[2025-10-17T11:53:20.003Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "8ab4b309-13f4-426e-af94-1d79f38b6de5"
+}
+---
+[2025-10-17T11:53:20.047Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "8ab4b309-13f4-426e-af94-1d79f38b6de5",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T11:53:20.086Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T11:53:53.823Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T11:53:53.901Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T11:53:54.558Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T11:53:54.618Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "498c9aff-18db-4226-9e8e-c4ba6fbbcef8",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": ""
+}
+---
+[2025-10-17T11:53:54.669Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "498c9aff-18db-4226-9e8e-c4ba6fbbcef8",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": null,
+    "min_participants": 1,
+    "max_participants": null
+  }
+}
+---
+[2025-10-17T11:53:54.900Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "4d1abfcb-8e80-4bae-bf45-acfd17cca18f"
+  },
+  "insertError": null,
+  "voteId": "4d1abfcb-8e80-4bae-bf45-acfd17cca18f",
+  "hasError": false
+}
+---
+[2025-10-17T11:53:54.922Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "4d1abfcb-8e80-4bae-bf45-acfd17cca18f"
+}
+---
+[2025-10-17T11:53:54.960Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "4d1abfcb-8e80-4bae-bf45-acfd17cca18f",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T11:53:55.003Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T14:30:45.754Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T14:30:45.949Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T14:30:46.793Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T14:30:46.944Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "c34cc5b0-8fca-421a-ad58-1cca549433a8",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T14:30:47.066Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "c34cc5b0-8fca-421a-ad58-1cca549433a8",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo",
+    "min_participants": 2,
+    "max_participants": null
+  }
+}
+---
+[2025-10-17T14:30:47.508Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd"
+  },
+  "insertError": null,
+  "voteId": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd",
+  "hasError": false
+}
+---
+[2025-10-17T14:30:47.665Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd"
+}
+---
+[2025-10-17T14:30:47.800Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T14:30:47.924Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T14:31:04.415Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T14:31:04.530Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T14:31:05.766Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": true,
+  "isEditingVote": true,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd"
+}
+---
+[2025-10-17T14:31:05.881Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "c34cc5b0-8fca-421a-ad58-1cca549433a8",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T14:31:06.276Z] INFO: Vote update response
+  DATA: {
+  "updateError": null,
+  "returnedDataExists": true,
+  "returnedDataLength": 1,
+  "returnedData": [
+    {
+      "id": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd",
+      "poll_id": "c34cc5b0-8fca-421a-ad58-1cca549433a8",
+      "vote_type": "participation",
+      "yes_no_choice": "yes",
+      "ranked_choices": null,
+      "created_at": "2025-10-17T14:30:47.418781+00:00",
+      "voter_name": "Sambo",
+      "is_abstain": false,
+      "nominations": null,
+      "abstain_reason": null,
+      "updated_at": "2025-10-17T14:31:06.168218+00:00",
+      "min_participants": 2,
+      "max_participants": null
+    }
+  ]
+}
+---
+[2025-10-17T14:31:06.389Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "b5482c4d-f35d-47b7-a6c2-d15dfeef3efd",
+  "isEditingVote": true,
+  "pollType": "participation"
+}
+---
+[2025-10-17T14:31:06.536Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---
+[2025-10-17T14:54:00.580Z] INFO: handleVoteClick started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "isAbstaining": false,
+  "nominationChoices": 0,
+  "nominationChoicesData": []
+}
+---
+[2025-10-17T14:54:00.708Z] INFO: handleVoteClick validation passed, showing confirmation modal
+  DATA: {
+  "pollType": "participation",
+  "isAbstaining": false,
+  "choicesReady": "n/a"
+}
+---
+[2025-10-17T14:54:01.729Z] INFO: submitVote started
+  DATA: {
+  "isSubmitting": false,
+  "hasVoted": false,
+  "isEditingVote": false,
+  "isPollClosed": false,
+  "pollType": "participation",
+  "userVoteId": null
+}
+---
+[2025-10-17T14:54:01.893Z] INFO: submitVote setup complete
+  DATA: {
+  "pollId": "ea7402ce-8a73-4e8b-9415-e099a40ea0b8",
+  "pollType": "participation",
+  "isAbstaining": false,
+  "voterName": "Sambo"
+}
+---
+[2025-10-17T14:54:02.010Z] INFO: Attempting to insert new vote
+  DATA: {
+  "voteData": {
+    "poll_id": "ea7402ce-8a73-4e8b-9415-e099a40ea0b8",
+    "vote_type": "participation",
+    "yes_no_choice": "yes",
+    "is_abstain": false,
+    "voter_name": "Sambo",
+    "min_participants": 2,
+    "max_participants": null
+  }
+}
+---
+[2025-10-17T14:54:02.338Z] INFO: Database insert result
+  DATA: {
+  "insertedVote": {
+    "id": "a8e97138-acc9-4c95-8f2f-ca7332733082"
+  },
+  "insertError": null,
+  "voteId": "a8e97138-acc9-4c95-8f2f-ca7332733082",
+  "hasError": false
+}
+---
+[2025-10-17T14:54:02.474Z] INFO: Vote insert successful
+  DATA: {
+  "voteId": "a8e97138-acc9-4c95-8f2f-ca7332733082"
+}
+---
+[2025-10-17T14:54:02.596Z] INFO: Vote submission successful
+  DATA: {
+  "voteId": "a8e97138-acc9-4c95-8f2f-ca7332733082",
+  "isEditingVote": false,
+  "pollType": "participation"
+}
+---
+[2025-10-17T14:54:02.715Z] INFO: submitVote finally block
+  DATA: {
+  "isSubmitting": false
+}
+---

@@ -19,7 +19,7 @@ import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
-import { Poll, supabase, PollResults, getPollResults, closePoll, reopenPoll } from "@/lib/supabase";
+import { Poll, supabase, PollResults, getPollResults, getParticipatingVoters, closePoll, reopenPoll } from "@/lib/supabase";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -116,21 +116,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return poll.response_deadline && new Date(poll.response_deadline) <= now;
   }, [poll.response_deadline, currentTime]);
 
-  // Check if voter's conditions are met at the stable participation count
+  // Track which voters are participating (for participation polls)
+  const [participatingVoterIds, setParticipatingVoterIds] = useState<string[]>([]);
+
+  // Check if this voter is actually participating (based on priority algorithm)
   const areVoterConditionsMet = useMemo(() => {
-    if (poll.poll_type !== 'participation' || !pollResults || !userVoteData) {
+    if (poll.poll_type !== 'participation' || !userVoteData) {
       return null;
     }
 
-    const stableCount = pollResults.yes_count || 0;
-    const voterMin = userVoteData.min_participants;
-    const voterMax = userVoteData.max_participants;
-
-    const minMet = voterMin === null || voterMin === undefined || stableCount >= voterMin;
-    const maxMet = voterMax === null || voterMax === undefined || stableCount <= voterMax;
-
-    return minMet && maxMet;
-  }, [poll.poll_type, pollResults, userVoteData]);
+    // Check if this voter's ID is in the list of participating voters
+    return participatingVoterIds.includes(userVoteData.id);
+  }, [poll.poll_type, userVoteData, participatingVoterIds]);
   
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
@@ -297,12 +294,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const results = await getPollResults(poll.id);
       setPollResults(results);
+
+      // For participation polls, also fetch the list of participating voters
+      if (poll.poll_type === 'participation') {
+        const participatingIds = await getParticipatingVoters(poll.id);
+        setParticipatingVoterIds(participatingIds);
+      }
     } catch (error) {
       console.error('Error fetching poll results:', error);
     } finally {
       setLoadingResults(false);
     }
-  }, [poll.id]);
+  }, [poll.id, poll.poll_type]);
 
   // Initialize currentTime on client side to avoid hydration issues
   useEffect(() => {
