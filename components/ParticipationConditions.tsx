@@ -8,6 +8,8 @@ interface ParticipationConditionsProps {
   onMaxChange: (value: number | null) => void;
   onMaxEnabledChange: (enabled: boolean) => void;
   disabled?: boolean;
+  pollMinParticipants?: number | null;
+  pollMaxParticipants?: number | null;
 }
 
 export default function ParticipationConditions({
@@ -18,7 +20,19 @@ export default function ParticipationConditions({
   onMaxChange,
   onMaxEnabledChange,
   disabled = false,
+  pollMinParticipants = null,
+  pollMaxParticipants = null,
 }: ParticipationConditionsProps) {
+  // Calculate enforced limits based on poll constraints
+  // Voter's min must be >= poll's min
+  const enforcedMinLimit = pollMinParticipants ?? 1;
+
+  // Voter's max must be <= poll's max (if poll has a max)
+  const enforcedMaxLimit = pollMaxParticipants ?? undefined;
+
+  // If poll requires a max, voter cannot disable it
+  const maxRequired = pollMaxParticipants !== null && pollMaxParticipants !== undefined;
+
   return (
     <div>
       <label className="block text-sm font-medium mb-2">
@@ -32,7 +46,9 @@ export default function ParticipationConditions({
         onMaxChange={onMaxChange}
         onMaxEnabledChange={onMaxEnabledChange}
         increment={1}
-        minLimit={1}
+        minLimit={enforcedMinLimit}
+        maxLimit={enforcedMaxLimit}
+        maxRequired={maxRequired}
         disabled={disabled}
       />
     </div>

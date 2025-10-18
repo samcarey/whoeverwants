@@ -11,6 +11,8 @@ interface MinMaxCounterProps {
   onMaxEnabledChange: (enabled: boolean) => void;
   increment?: number;
   minLimit: number;
+  maxLimit?: number;
+  maxRequired?: boolean;
   disabled?: boolean;
 }
 
@@ -23,6 +25,8 @@ export default function MinMaxCounter({
   onMaxEnabledChange,
   increment = 1,
   minLimit,
+  maxLimit,
+  maxRequired = false,
   disabled = false
 }: MinMaxCounterProps) {
   const handleMinChange = (newMin: number | null) => {
@@ -35,8 +39,12 @@ export default function MinMaxCounter({
 
   const handleMaxChange = (newMax: number | null) => {
     const minVal = minValue ?? minLimit;
-    // Ensure max is never less than min
+    // Ensure max is never less than min and never greater than maxLimit
     if (newMax !== null && newMax >= minVal) {
+      // Enforce maxLimit if it exists
+      if (maxLimit !== undefined && newMax > maxLimit) {
+        newMax = maxLimit;
+      }
       if (!maxEnabled) {
         onMaxEnabledChange(true);
       }
@@ -68,6 +76,7 @@ export default function MinMaxCounter({
           onChange={handleMinChange}
           increment={increment}
           min={minLimit}
+          max={maxLimit}
           disabled={disabled}
           arrowPosition="left"
         />
@@ -82,6 +91,7 @@ export default function MinMaxCounter({
             onChange={handleMaxChange}
             increment={increment}
             min={minValue ?? minLimit}
+            max={maxLimit}
             disabled={disabled || !maxEnabled}
             arrowPosition="right"
           />
@@ -93,7 +103,7 @@ export default function MinMaxCounter({
         type="checkbox"
         checked={maxEnabled}
         onChange={(e) => handleMaxEnabledChange(e.target.checked)}
-        disabled={disabled}
+        disabled={disabled || maxRequired}
         className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
       />
     </div>

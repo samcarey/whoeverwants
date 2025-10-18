@@ -105,10 +105,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [nominations, setNominations] = useState<string[]>([]);
   const [loadingNominations, setLoadingNominations] = useState(false);
 
-  // Participation poll voter conditions
-  const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(1);
-  const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(null);
-  const [voterMaxEnabled, setVoterMaxEnabled] = useState(false);
+  // Participation poll voter conditions - initialize with poll's constraints
+  const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(poll.min_participants ?? 1);
+  const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(poll.max_participants ?? null);
+  const [voterMaxEnabled, setVoterMaxEnabled] = useState(poll.max_participants !== null && poll.max_participants !== undefined);
 
   const isPollExpired = useMemo(() => {
     // Use server-safe check
@@ -1727,6 +1727,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onMaxChange={setVoterMaxParticipants}
                       onMaxEnabledChange={setVoterMaxEnabled}
                       disabled={isSubmitting}
+                      pollMinParticipants={poll.min_participants}
+                      pollMaxParticipants={poll.max_participants}
                     />
                   </div>
 
