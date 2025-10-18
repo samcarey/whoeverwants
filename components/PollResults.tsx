@@ -476,32 +476,73 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   if (isPollClosed) {
     // Scenario: Event IS happening, user voted YES and is in the participating list
     if (isHappening && userVotedYes && userIsInParticipantList) {
+      // Filter out current user from participant list
+      const otherParticipants = namedParticipants.filter(p => p.vote_id !== userVoteId);
+      const isAlone = participants.length === 1;
+
       return (
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
           <div className="text-center mb-4">
             <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
-              🎉 IT'S HAPPENING - You're Going!
+              🎉 You're participating!
             </div>
-            <div className="text-sm text-green-700 dark:text-green-300">
-              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
-            </div>
-          </div>
+            {isAlone ? (
+              <div className="text-lg text-green-700 dark:text-green-300">
+                😢 All alone
+              </div>
+            ) : (
+              <div>
+                <div className="text-sm text-green-700 dark:text-green-300 mb-3">
+                  along with
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {/* Other named participants */}
+                  {otherParticipants.map((participant, index) => (
+                    <span
+                      key={participant.id}
+                      className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                    >
+                      {participant.voter_name}
+                    </span>
+                  ))}
 
-          {/* Participant list */}
-          <div className="pt-4 border-t border-green-300 dark:border-green-700">
+                  {/* Anonymous participants */}
+                  {anonymousParticipantCount > 0 && (
+                    <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
+                      <span className="text-sm text-gray-600 dark:text-gray-300 italic">
+                        {anonymousParticipantCount} × Anonymous
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
+    if (isHappening && userVotedYes && !userIsInParticipantList) {
+      return (
+        <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 p-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-2 text-yellow-800 dark:text-yellow-200">
+              You're not participating
+            </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="text-sm text-yellow-700 dark:text-yellow-300">
+                but these are
+              </span>
               {/* Named participants */}
-              {namedParticipants.map((participant, index) => {
-                const isCurrentUser = participant.vote_id === userVoteId;
-                return (
-                  <span
-                    key={participant.id}
-                    className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, isCurrentUser)}`}
-                  >
-                    {isCurrentUser ? 'You' : participant.voter_name}
-                  </span>
-                );
-              })}
+              {namedParticipants.map((participant, index) => (
+                <span
+                  key={participant.id}
+                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                >
+                  {participant.voter_name}
+                </span>
+              ))}
 
               {/* Anonymous participants */}
               {anonymousParticipantCount > 0 && (
@@ -517,51 +558,37 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       );
     }
 
-    // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
-    if (isHappening && userVotedYes && !userIsInParticipantList) {
-      const userNeedsText = userMinParticipants && userMaxParticipants
-        ? `${userMinParticipants}-${userMaxParticipants}`
-        : userMinParticipants
-        ? `${userMinParticipants}+`
-        : userMaxParticipants
-        ? `up to ${userMaxParticipants}`
-        : null;
-
-      return (
-        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
-          <div className="text-center">
-            <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
-              ✗ Not happening for you
-            </div>
-            <div className="text-sm text-red-700 dark:text-red-300 mb-2">
-              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
-            </div>
-            {userNeedsText && (
-              <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
-                Your needs weren't met ({userNeedsText})
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
     // Scenario: Event IS happening, user voted NO or didn't vote
     if (isHappening && (userVotedNo || !userVoteData)) {
       return (
-        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 px-4 py-3">
+        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
           <div className="text-center">
-            <div className="text-xl font-bold mb-1 text-green-800 dark:text-green-200">
-              ✓ Event is happening
+            <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
+              You're not participating
             </div>
-            <div className="text-sm text-green-700 dark:text-green-300 mb-2">
-              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="text-sm text-green-700 dark:text-green-300">
+                but these are
+              </span>
+              {/* Named participants */}
+              {namedParticipants.map((participant, index) => (
+                <span
+                  key={participant.id}
+                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                >
+                  {participant.voter_name}
+                </span>
+              ))}
+
+              {/* Anonymous participants */}
+              {anonymousParticipantCount > 0 && (
+                <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
+                  <span className="text-sm text-gray-600 dark:text-gray-300 italic">
+                    {anonymousParticipantCount} × Anonymous
+                  </span>
+                </div>
+              )}
             </div>
-            {userVotedNo && (
-              <div className="text-sm text-green-700 dark:text-green-300 opacity-75">
-                You declined
-              </div>
-            )}
           </div>
         </div>
       );
@@ -569,6 +596,19 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event NOT happening, user voted YES
     if (!isHappening && userVotedYes) {
+      // If no one is participating at all, use simplified message
+      if (yesCount === 0) {
+        return (
+          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+            <div className="text-center">
+              <div className="text-xl font-bold text-red-800 dark:text-red-200">
+                No one is participating
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       const userNeedsText = userMinParticipants && userMaxParticipants
         ? `${userMinParticipants}-${userMaxParticipants}`
         : userMinParticipants
@@ -601,6 +641,19 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event NOT happening, user voted NO or didn't vote
     if (!isHappening) {
+      // Check if there are no participants at all
+      if (yesCount === 0) {
+        return (
+          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+            <div className="text-center">
+              <div className="text-xl font-bold text-red-800 dark:text-red-200">
+                No one is participating
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
           <div className="text-center">
