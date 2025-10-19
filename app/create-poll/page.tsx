@@ -94,11 +94,22 @@ function CreatePollContent() {
         deadlineOption,
         customDate,
         customTime,
-        creatorName
+        creatorName,
+        minParticipants,
+        maxParticipants,
+        maxEnabled,
+        durationMinValue,
+        durationMaxValue,
+        durationMinEnabled,
+        durationMaxEnabled,
+        timeMinValue,
+        timeMaxValue,
+        timeMinEnabled,
+        timeMaxEnabled
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -145,6 +156,19 @@ function CreatePollContent() {
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
+
+          // Restore participation poll conditions if they exist
+          if (formState.minParticipants !== undefined) setMinParticipants(formState.minParticipants);
+          if (formState.maxParticipants !== undefined) setMaxParticipants(formState.maxParticipants);
+          if (formState.maxEnabled !== undefined) setMaxEnabled(formState.maxEnabled);
+          if (formState.durationMinValue !== undefined) setDurationMinValue(formState.durationMinValue);
+          if (formState.durationMaxValue !== undefined) setDurationMaxValue(formState.durationMaxValue);
+          if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
+          if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
+          if (formState.timeMinValue !== undefined) setTimeMinValue(formState.timeMinValue);
+          if (formState.timeMaxValue !== undefined) setTimeMaxValue(formState.timeMaxValue);
+          if (formState.timeMinEnabled !== undefined) setTimeMinEnabled(formState.timeMinEnabled);
+          if (formState.timeMaxEnabled !== undefined) setTimeMaxEnabled(formState.timeMaxEnabled);
         } catch (error) {
           console.error('Failed to load form state:', error);
         }
