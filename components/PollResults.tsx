@@ -442,6 +442,10 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     (userMaxParticipants === null || userMaxParticipants === undefined || yesCount <= userMaxParticipants)
   );
 
+  // Check if current user is in the participant list (by vote ID)
+  const userVoteId = userVoteData?.id;
+  const userIsInParticipantList = participants.some(p => p.vote_id === userVoteId);
+
   // Get named participants and sort alphabetically
   const namedParticipants = participants
     .filter(p => p.voter_name && p.voter_name.trim() !== '')
@@ -451,11 +455,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       return nameA.localeCompare(nameB);
     });
 
+  // Count all anonymous participants
   const anonymousParticipantCount = participants.filter(p => !p.voter_name || p.voter_name.trim() === '').length;
-
-  // Check if current user is in the participant list (by vote ID)
-  const userVoteId = userVoteData?.id;
-  const userIsInParticipantList = participants.some(p => p.vote_id === userVoteId);
 
   // Generate consistent colors for participant bubbles based on vote_id
   // This matches the color assigned in VoterList by finding the voter's index in the sorted list
@@ -509,6 +510,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     if (isHappening && userVotedYes && userIsInParticipantList) {
       // Filter out current user from participant list
       const otherParticipants = namedParticipants.filter(p => p.vote_id !== userVoteId);
+      const otherAnonymousCount = participants.filter(p =>
+        (!p.voter_name || p.voter_name.trim() === '') && p.vote_id !== userVoteId
+      ).length;
       const isAlone = participants.length === 1;
 
       return (
@@ -537,11 +541,11 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                     </span>
                   ))}
 
-                  {/* Anonymous participants */}
-                  {anonymousParticipantCount > 0 && (
+                  {/* Anonymous participants (excluding current user) */}
+                  {otherAnonymousCount > 0 && (
                     <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
                       <span className="text-sm text-gray-600 dark:text-gray-300 italic">
-                        {anonymousParticipantCount} × Anonymous
+                        {otherAnonymousCount} × Anonymous
                       </span>
                     </div>
                   )}
