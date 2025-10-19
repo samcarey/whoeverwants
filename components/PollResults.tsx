@@ -58,7 +58,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} total vote{totalVotes !== 1 ? 's' : ''}
+          {totalVotes} total vote{totalVotes !== 1 ? &apos;s&apos; : &apos;&apos;}
         </p>
       </div>
 
@@ -95,7 +95,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
                 ? 'text-green-700 dark:text-green-300' 
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
-              {yesCount} vote{yesCount !== 1 ? 's' : ''}
+              {yesCount} vote{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
             </div>
             {userVotedYes && (
               <div className="mt-2">
@@ -139,7 +139,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
                 ? 'text-red-700 dark:text-red-300' 
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
-              {noCount} vote{noCount !== 1 ? 's' : ''}
+              {noCount} vote{noCount !== 1 ? &apos;s&apos; : &apos;&apos;}
             </div>
             {userVotedNo && (
               <div className="mt-2">
@@ -212,7 +212,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Ranked Choice Results</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          {results.total_votes} total vote{results.total_votes !== 1 ? 's' : ''} • {totalRounds} elimination round{totalRounds !== 1 ? 's' : ''}
+          {results.total_votes} total vote{results.total_votes !== 1 ? &apos;s&apos; : &apos;&apos;} • {totalRounds} elimination round{totalRounds !== 1 ? &apos;s&apos; : &apos;&apos;}
         </p>
         {winner && (
           <div className="mt-3 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg">
@@ -296,7 +296,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
                                 ? 'text-green-800 dark:text-green-200'
                                 : 'text-gray-900 dark:text-white'
                             }`}>
-                              {option.vote_count} vote{option.vote_count !== 1 ? 's' : ''}
+                              {option.vote_count} vote{option.vote_count !== 1 ? &apos;s&apos; : &apos;&apos;}
                             </div>
                           </div>
                         </div>
@@ -359,12 +359,35 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const maxParticipants = results.max_participants;
 
   const [participants, setParticipants] = useState<{id: string, voter_name: string | null, vote_id?: string}[]>([]);
+  const [allVoters, setAllVoters] = useState<{id: string, voter_name: string | null}[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Fetch participants who are actually participating (based on priority algorithm)
+  // AND all voters to establish color mapping
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
+        // Get all voters to establish consistent color mapping
+        const { data: votersData, error: votersError } = await supabase
+          .from('votes')
+          .select('id, voter_name')
+          .eq('poll_id', results.poll_id);
+
+        if (votersError) {
+          console.error('Error fetching all voters:', votersError);
+          setAllVoters([]);
+        } else {
+          // Sort voters alphabetically by name (same as VoterList)
+          const sortedVoters = (votersData || [])
+            .filter(v => v.voter_name && v.voter_name.trim() !== '')
+            .sort((a, b) => {
+              const nameA = (a.voter_name || '').toLowerCase();
+              const nameB = (b.voter_name || '').toLowerCase();
+              return nameA.localeCompare(nameB);
+            });
+          setAllVoters(sortedVoters);
+        }
+
         // Get the list of participating voters from the priority algorithm
         const { data, error } = await supabase
           .rpc('calculate_participating_voters', { poll_id_param: results.poll_id });
@@ -436,11 +459,13 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const userVoteId = userVoteData?.id;
   const userIsInParticipantList = participants.some(p => p.vote_id === userVoteId);
 
-  // Generate consistent colors for participant bubbles
-  const getParticipantColor = (index: number, isCurrentUser: boolean) => {
+  // Generate consistent colors for participant bubbles based on vote_id
+  // This matches the color assigned in VoterList by finding the voter's index in the sorted list
+  const getParticipantColor = (voteId: string, isCurrentUser: boolean) => {
     if (isCurrentUser) {
       return 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white font-bold ring-2 ring-blue-300 dark:ring-blue-400';
     }
+
     const colors = [
       'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -451,7 +476,15 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
       'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
     ];
-    return colors[index % colors.length];
+
+    // Find the index of this vote_id in the allVoters array (which matches VoterList sorting)
+    const voterIndex = allVoters.findIndex(v => v.id === voteId);
+    if (voterIndex === -1) {
+      // Fallback: if not found in allVoters, use first color
+      return colors[0];
+    }
+
+    return colors[voterIndex % colors.length];
   };
 
   // SCENARIO: No votes at all
@@ -484,7 +517,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
           <div className="text-center mb-4">
             <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
-              🎉 You're participating!
+              🎉 You&apos;re participating!
             </div>
             {isAlone ? (
               <div className="text-lg text-green-700 dark:text-green-300">
@@ -497,10 +530,10 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {/* Other named participants */}
-                  {otherParticipants.map((participant, index) => (
+                  {otherParticipants.map((participant) => (
                     <span
                       key={participant.id}
-                      className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                      className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(participant.vote_id!, false)}`}
                     >
                       {participant.voter_name}
                     </span>
@@ -528,17 +561,17 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
         <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 p-4">
           <div className="text-center">
             <div className="text-2xl font-bold mb-2 text-yellow-800 dark:text-yellow-200">
-              You're not participating
+              You&apos;re not participating
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <span className="text-sm text-yellow-700 dark:text-yellow-300">
                 but these are
               </span>
               {/* Named participants */}
-              {namedParticipants.map((participant, index) => (
+              {namedParticipants.map((participant) => (
                 <span
                   key={participant.id}
-                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(participant.vote_id!, false)}`}
                 >
                   {participant.voter_name}
                 </span>
@@ -564,17 +597,17 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
           <div className="text-center">
             <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
-              You're not participating
+              You&apos;re not participating
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <span className="text-sm text-green-700 dark:text-green-300">
                 but these are
               </span>
               {/* Named participants */}
-              {namedParticipants.map((participant, index) => (
+              {namedParticipants.map((participant) => (
                 <span
                   key={participant.id}
-                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(index, false)}`}
+                  className={`inline-block px-3 py-1 rounded-full text-sm ${getParticipantColor(participant.vote_id!, false)}`}
                 >
                   {participant.voter_name}
                 </span>
@@ -624,14 +657,14 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               ✗ Not happening
             </div>
             <div className="text-sm text-red-700 dark:text-red-300 mb-2">
-              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+              Final: {yesCount} participant{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
               {(minParticipants || maxParticipants) && (
                 <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
               )}
             </div>
             {userNeedsText && (
               <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
-                Your needs weren't met ({userNeedsText})
+                Your needs weren&apos;t met ({userNeedsText})
               </div>
             )}
           </div>
@@ -661,7 +694,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               ✗ Not happening
             </div>
             <div className="text-sm text-red-700 dark:text-red-300">
-              Final: {yesCount} participant{yesCount !== 1 ? 's' : ''}
+              Final: {yesCount} participant{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
               {(minParticipants || maxParticipants) && (
                 <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
               )}
