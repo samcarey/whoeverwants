@@ -489,15 +489,13 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   // SCENARIO: No votes at all
   if (totalVotes === 0) {
     return (
-      <div className="text-center">
-        <div className="mb-6 px-4 py-2 rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600">
-          <div className="text-center">
-            <div className="text-2xl font-bold mb-2 text-red-800 dark:text-red-200">
-              Not happening
-            </div>
-            <div className="text-sm text-red-700 dark:text-red-300">
-              No responses received
-            </div>
+      <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 p-6">
+        <div className="text-center">
+          <div className="text-2xl font-bold mb-2 text-red-800 dark:text-red-200">
+            Not happening
+          </div>
+          <div className="text-sm text-red-700 dark:text-red-300">
+            No responses received
           </div>
         </div>
       </div>
@@ -516,9 +514,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       const isAlone = participants.length === 1;
 
       return (
-        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
-          <div className="text-center mb-4">
-            <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
+        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-4 text-green-800 dark:text-green-200">
               🎉 You&apos;re participating!
             </div>
             {isAlone ? (
@@ -527,7 +525,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               </div>
             ) : (
               <div>
-                <div className="text-sm text-green-700 dark:text-green-300 mb-3">
+                <div className="text-sm text-green-700 dark:text-green-300 mb-2">
                   along with
                 </div>
                 <div className="flex flex-wrap items-center justify-center gap-2">
@@ -560,9 +558,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
     if (isHappening && userVotedYes && !userIsInParticipantList) {
       return (
-        <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 p-4">
+        <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 p-6">
           <div className="text-center">
-            <div className="text-2xl font-bold mb-2 text-yellow-800 dark:text-yellow-200">
+            <div className="text-2xl font-bold mb-4 text-yellow-800 dark:text-yellow-200">
               You&apos;re not participating
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -596,9 +594,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     // Scenario: Event IS happening, user voted NO or didn't vote
     if (isHappening && (userVotedNo || !userVoteData)) {
       return (
-        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-4">
+        <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 p-6">
           <div className="text-center">
-            <div className="text-2xl font-bold mb-2 text-green-800 dark:text-green-200">
+            <div className="text-2xl font-bold mb-4 text-green-800 dark:text-green-200">
               You&apos;re not participating
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -679,7 +677,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       // Check if there are no participants at all
       if (yesCount === 0) {
         return (
-          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 p-6">
             <div className="text-center">
               <div className="text-xl font-bold text-red-800 dark:text-red-200">
                 No one is participating
@@ -690,9 +688,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       }
 
       return (
-        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
+        <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 p-6">
           <div className="text-center">
-            <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
+            <div className="text-xl font-bold mb-2 text-red-800 dark:text-red-200">
               ✗ Not happening
             </div>
             <div className="text-sm text-red-700 dark:text-red-300">
