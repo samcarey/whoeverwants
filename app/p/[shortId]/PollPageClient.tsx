@@ -2019,7 +2019,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-bold mb-4 text-center text-gray-900 dark:text-white">Follow ups to this poll</h2>
               <PollList polls={followUpPolls} showSections={false} />
             </div>
@@ -2028,7 +2028,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
           {/* Poll Management Buttons - Close, Reopen, and Forget Poll */}
           {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && (isCreator || process.env.NODE_ENV === 'development'))) && (
-            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
                 showCloseButton={!isPollClosed && (isCreator || process.env.NODE_ENV === 'development')}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
