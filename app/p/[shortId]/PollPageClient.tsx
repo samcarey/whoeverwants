@@ -110,6 +110,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(poll.max_participants ?? null);
   const [voterMaxEnabled, setVoterMaxEnabled] = useState(poll.max_participants !== null && poll.max_participants !== undefined);
 
+  // Duration conditions for participation polls
+  const [durationMinValue, setDurationMinValue] = useState<number | null>(1);
+  const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
+  const [durationMinEnabled, setDurationMinEnabled] = useState(true);
+  const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
+
   const isPollExpired = useMemo(() => {
     // Use server-safe check
     const now = currentTime || new Date();
@@ -1725,6 +1731,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       disabled={isSubmitting}
                       pollMinParticipants={poll.min_participants}
                       pollMaxParticipants={poll.max_participants}
+                      durationMinValue={durationMinValue}
+                      durationMaxValue={durationMaxValue}
+                      durationMinEnabled={durationMinEnabled}
+                      durationMaxEnabled={durationMaxEnabled}
+                      onDurationMinChange={setDurationMinValue}
+                      onDurationMaxChange={setDurationMaxValue}
+                      onDurationMinEnabledChange={setDurationMinEnabled}
+                      onDurationMaxEnabledChange={setDurationMaxEnabled}
                     />
                   </div>
 
