@@ -1,4 +1,5 @@
 import MinMaxCounter from './MinMaxCounter';
+import TimeRangeInput from './TimeRangeInput';
 
 interface ParticipationConditionsProps {
   minValue: number | null;
@@ -19,6 +20,15 @@ interface ParticipationConditionsProps {
   onDurationMaxChange?: (value: number | null) => void;
   onDurationMinEnabledChange?: (enabled: boolean) => void;
   onDurationMaxEnabledChange?: (enabled: boolean) => void;
+  // Time props
+  timeMinValue?: string | null;
+  timeMaxValue?: string | null;
+  timeMinEnabled?: boolean;
+  timeMaxEnabled?: boolean;
+  onTimeMinChange?: (value: string | null) => void;
+  onTimeMaxChange?: (value: string | null) => void;
+  onTimeMinEnabledChange?: (enabled: boolean) => void;
+  onTimeMaxEnabledChange?: (enabled: boolean) => void;
 }
 
 export default function ParticipationConditions({
@@ -39,6 +49,14 @@ export default function ParticipationConditions({
   onDurationMaxChange,
   onDurationMinEnabledChange,
   onDurationMaxEnabledChange,
+  timeMinValue = null,
+  timeMaxValue = null,
+  timeMinEnabled = false,
+  timeMaxEnabled = false,
+  onTimeMinChange,
+  onTimeMaxChange,
+  onTimeMinEnabledChange,
+  onTimeMaxEnabledChange,
 }: ParticipationConditionsProps) {
   // Calculate enforced limits based on poll constraints
   // Voter's min must be >= poll's min
@@ -95,6 +113,25 @@ export default function ParticipationConditions({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={onDurationMinEnabledChange}
+          />
+        </div>
+      )}
+
+      {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Time
+          </label>
+          <TimeRangeInput
+            minValue={timeMinValue}
+            maxValue={timeMaxValue}
+            minEnabled={timeMinEnabled}
+            maxEnabled={timeMaxEnabled}
+            onMinChange={onTimeMinChange}
+            onMaxChange={onTimeMaxChange}
+            onMinEnabledChange={onTimeMinEnabledChange}
+            onMaxEnabledChange={onTimeMaxEnabledChange}
+            disabled={disabled}
           />
         </div>
       )}

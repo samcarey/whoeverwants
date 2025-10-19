@@ -45,6 +45,10 @@ function CreatePollContent() {
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
+  const [timeMinValue, setTimeMinValue] = useState<string | null>('09:00');
+  const [timeMaxValue, setTimeMaxValue] = useState<string | null>('17:00');
+  const [timeMinEnabled, setTimeMinEnabled] = useState(false);
+  const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -1067,6 +1071,14 @@ function CreatePollContent() {
               onDurationMaxChange={setDurationMaxValue}
               onDurationMinEnabledChange={setDurationMinEnabled}
               onDurationMaxEnabledChange={setDurationMaxEnabled}
+              timeMinValue={timeMinValue}
+              timeMaxValue={timeMaxValue}
+              timeMinEnabled={timeMinEnabled}
+              timeMaxEnabled={timeMaxEnabled}
+              onTimeMinChange={setTimeMinValue}
+              onTimeMaxChange={setTimeMaxValue}
+              onTimeMinEnabledChange={setTimeMinEnabled}
+              onTimeMaxEnabledChange={setTimeMaxEnabled}
             />
           )}
 
