@@ -58,7 +58,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} total vote{totalVotes !== 1 ? &apos;s&apos; : &apos;&apos;}
+          {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
         </p>
       </div>
 
@@ -95,7 +95,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
                 ? 'text-green-700 dark:text-green-300' 
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
-              {yesCount} vote{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
+              {yesCount} vote{yesCount !== 1 ? "s" : ""}
             </div>
             {userVotedYes && (
               <div className="mt-2">
@@ -139,7 +139,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
                 ? 'text-red-700 dark:text-red-300' 
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
-              {noCount} vote{noCount !== 1 ? &apos;s&apos; : &apos;&apos;}
+              {noCount} vote{noCount !== 1 ? "s" : ""}
             </div>
             {userVotedNo && (
               <div className="mt-2">
@@ -212,7 +212,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
       <div className="text-center mb-6">
         <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Ranked Choice Results</h3>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          {results.total_votes} total vote{results.total_votes !== 1 ? &apos;s&apos; : &apos;&apos;} • {totalRounds} elimination round{totalRounds !== 1 ? &apos;s&apos; : &apos;&apos;}
+          {results.total_votes} total vote{results.total_votes !== 1 ? "s" : ""} • {totalRounds} elimination round{totalRounds !== 1 ? "s" : ""}
         </p>
         {winner && (
           <div className="mt-3 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-600 rounded-lg">
@@ -296,7 +296,7 @@ function RankedChoiceResults({ results }: { results: PollResults }) {
                                 ? 'text-green-800 dark:text-green-200'
                                 : 'text-gray-900 dark:text-white'
                             }`}>
-                              {option.vote_count} vote{option.vote_count !== 1 ? &apos;s&apos; : &apos;&apos;}
+                              {option.vote_count} vote{option.vote_count !== 1 ? "s" : ""}
                             </div>
                           </div>
                         </div>
@@ -657,7 +657,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               ✗ Not happening
             </div>
             <div className="text-sm text-red-700 dark:text-red-300 mb-2">
-              Final: {yesCount} participant{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
+              Final: {yesCount} participant{yesCount !== 1 ? "s" : ""}
               {(minParticipants || maxParticipants) && (
                 <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
               )}
@@ -694,7 +694,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               ✗ Not happening
             </div>
             <div className="text-sm text-red-700 dark:text-red-300">
-              Final: {yesCount} participant{yesCount !== 1 ? &apos;s&apos; : &apos;&apos;}
+              Final: {yesCount} participant{yesCount !== 1 ? "s" : ""}
               {(minParticipants || maxParticipants) && (
                 <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
               )}
