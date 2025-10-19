@@ -74,6 +74,157 @@ export default function ParticipationConditions({
     return parseFloat(value.toFixed(2)).toString();
   };
 
+  // Helper: Parse time string to decimal hours
+  const timeToHours = (time: string): number => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours + minutes / 60;
+  };
+
+  // Helper: Convert decimal hours to time string
+  const hoursToTime = (hours: number): string => {
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  // Calculate time window span in hours (always positive, wraps to next day if needed)
+  const calculateTimeSpan = (minTime: string | null, maxTime: string | null): number | null => {
+    if (!minTime || !maxTime) return null;
+
+    const minHours = timeToHours(minTime);
+    const maxHours = timeToHours(maxTime);
+
+    // If max < min, it wraps to next day
+    if (maxHours >= minHours) {
+      return maxHours - minHours;
+    } else {
+      return (24 - minHours) + maxHours;
+    }
+  };
+
+  // Handle duration changes with time window validation
+  const handleDurationMinChange = (newDurationMin: number | null) => {
+    if (!onDurationMinChange || !onTimeMaxChange) return;
+
+    onDurationMinChange(newDurationMin);
+
+    // If both time bounds are enabled and duration exceeds window, expand time max
+    if (timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && newDurationMin) {
+      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (currentSpan !== null && newDurationMin > currentSpan) {
+        // Expand time max to accommodate duration min
+        const minHours = timeToHours(timeMinValue);
+        const newMaxHours = (minHours + newDurationMin) % 24;
+        onTimeMaxChange(hoursToTime(newMaxHours));
+      }
+    }
+  };
+
+  const handleDurationMaxChange = (newDurationMax: number | null) => {
+    if (!onDurationMaxChange || !onTimeMaxChange) return;
+
+    onDurationMaxChange(newDurationMax);
+
+    // If both time bounds are enabled and duration exceeds window, expand time max
+    if (timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && newDurationMax) {
+      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (currentSpan !== null && newDurationMax > currentSpan) {
+        // Expand time max to accommodate duration max
+        const minHours = timeToHours(timeMinValue);
+        const newMaxHours = (minHours + newDurationMax) % 24;
+        onTimeMaxChange(hoursToTime(newMaxHours));
+      }
+    }
+  };
+
+  // Handle time changes with duration validation
+  const handleTimeMinChange = (newTimeMin: string | null) => {
+    if (!onTimeMinChange) return;
+
+    onTimeMinChange(newTimeMin);
+
+    // If both time bounds are enabled, check if duration needs adjustment
+    if (timeMinEnabled && timeMaxEnabled && newTimeMin && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
+      const newSpan = calculateTimeSpan(newTimeMin, timeMaxValue);
+      if (newSpan !== null) {
+        // Reduce duration min if it exceeds new span
+        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
+          onDurationMinChange(newSpan);
+        }
+        // Reduce duration max if it exceeds new span
+        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
+          onDurationMaxChange(newSpan);
+        }
+      }
+    }
+  };
+
+  const handleTimeMaxChange = (newTimeMax: string | null) => {
+    if (!onTimeMaxChange) return;
+
+    onTimeMaxChange(newTimeMax);
+
+    // If both time bounds are enabled, check if duration needs adjustment
+    if (timeMinEnabled && timeMaxEnabled && timeMinValue && newTimeMax && onDurationMinChange && onDurationMaxChange) {
+      const newSpan = calculateTimeSpan(timeMinValue, newTimeMax);
+      if (newSpan !== null) {
+        // Reduce duration min if it exceeds new span
+        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
+          onDurationMinChange(newSpan);
+        }
+        // Reduce duration max if it exceeds new span
+        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
+          onDurationMaxChange(newSpan);
+        }
+      }
+    }
+  };
+
+  // Handle time checkbox changes with duration validation
+  const handleTimeMinEnabledChange = (enabled: boolean) => {
+    if (!onTimeMinEnabledChange) return;
+
+    onTimeMinEnabledChange(enabled);
+
+    // If both time bounds are now enabled, check if duration needs adjustment
+    if (enabled && timeMaxEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
+      const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (newSpan !== null) {
+        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
+          onDurationMinChange(newSpan);
+        }
+        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
+          onDurationMaxChange(newSpan);
+        }
+      }
+    }
+  };
+
+  const handleTimeMaxEnabledChange = (enabled: boolean) => {
+    if (!onTimeMaxEnabledChange) return;
+
+    onTimeMaxEnabledChange(enabled);
+
+    // If both time bounds are now enabled, check if duration needs adjustment
+    if (enabled && timeMinEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
+      const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (newSpan !== null) {
+        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
+          onDurationMinChange(newSpan);
+        }
+        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
+          onDurationMaxChange(newSpan);
+        }
+      }
+    }
+  };
+
+  // Calculate current time window for display
+  const timeWindow = timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue
+    ? calculateTimeSpan(timeMinValue, timeMaxValue)
+    : null;
+
   return (
     <div className="space-y-3">
       <div>
@@ -104,8 +255,8 @@ export default function ParticipationConditions({
             minValue={durationMinValue}
             maxValue={durationMaxValue}
             maxEnabled={durationMaxEnabled}
-            onMinChange={onDurationMinChange}
-            onMaxChange={onDurationMaxChange}
+            onMinChange={handleDurationMinChange}
+            onMaxChange={handleDurationMaxChange}
             onMaxEnabledChange={onDurationMaxEnabledChange}
             increment={0.25}
             minLimit={0.25}
@@ -119,18 +270,25 @@ export default function ParticipationConditions({
 
       {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
         <div>
-          <label className="block text-sm font-medium mb-2">
-            Time
-          </label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-sm font-medium">
+              Time
+            </label>
+            {timeWindow !== null && (
+              <span className="text-sm text-blue-600 dark:text-blue-400">
+                Window of {formatDurationValue(timeWindow)} hours
+              </span>
+            )}
+          </div>
           <TimeRangeInput
             minValue={timeMinValue}
             maxValue={timeMaxValue}
             minEnabled={timeMinEnabled}
             maxEnabled={timeMaxEnabled}
-            onMinChange={onTimeMinChange}
-            onMaxChange={onTimeMaxChange}
-            onMinEnabledChange={onTimeMinEnabledChange}
-            onMaxEnabledChange={onTimeMaxEnabledChange}
+            onMinChange={handleTimeMinChange}
+            onMaxChange={handleTimeMaxChange}
+            onMinEnabledChange={handleTimeMinEnabledChange}
+            onMaxEnabledChange={handleTimeMaxEnabledChange}
             disabled={disabled}
           />
         </div>
