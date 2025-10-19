@@ -36,7 +36,7 @@ export default function ParticipationConditions({
   return (
     <div>
       <label className="block text-sm font-medium mb-2">
-        How many participants?
+        Number of participants
       </label>
       <MinMaxCounter
         minValue={minValue}

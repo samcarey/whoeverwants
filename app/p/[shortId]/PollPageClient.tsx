@@ -1713,12 +1713,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
-                  <div className="mb-4 text-center">
-                    <h3 className="text-lg font-semibold mb-4">Are you in?</h3>
-                  </div>
-
                   <div className="mb-4">
-                    <h4 className="text-base font-medium mb-3">Your conditions</h4>
+                    <h3 className="text-lg font-semibold mb-4 text-center">Your Conditions</h3>
                     <ParticipationConditions
                       minValue={voterMinParticipants}
                       maxValue={voterMaxParticipants}
