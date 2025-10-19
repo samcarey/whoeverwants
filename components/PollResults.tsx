@@ -41,9 +41,8 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
   const totalVotes = results.total_votes;
   
   // Check if user voted and what they voted for (only show on closed polls in development)
-  const isDev = process.env.NODE_ENV === 'development';
-  const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
-  const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
+  const userVotedYes = userVoteData?.yes_no_choice === 'yes';
+  const userVotedNo = userVoteData?.yes_no_choice === 'no';
 
   if (totalVotes === 0) {
     return (
@@ -432,9 +431,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     }
   }
 
-  const isDev = process.env.NODE_ENV === 'development';
-  const userVotedYes = isDev && isPollClosed && userVoteData?.yes_no_choice === 'yes';
-  const userVotedNo = isDev && isPollClosed && userVoteData?.yes_no_choice === 'no';
+  const userVotedYes = userVoteData?.yes_no_choice === 'yes';
+  const userVotedNo = userVoteData?.yes_no_choice === 'no';
 
   // Check if user's personal conditions were met
   const userMinParticipants = userVoteData?.min_participants;
