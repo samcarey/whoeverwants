@@ -269,12 +269,16 @@ export default function Template({ children }: AppTemplateProps) {
     if (typeof window === 'undefined') return;
 
     let startY = 0;
+    let startX = 0;
     let currentY = 0;
+    let currentX = 0;
     let isAtTop = true;
     let isDragging = false;
+    let currentPullDistance = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
       startY = e.touches[0].clientY;
+      startX = e.touches[0].clientX;
       const scrollContainer = scrollContainerRef.current;
       isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
     };
@@ -283,27 +287,38 @@ export default function Template({ children }: AppTemplateProps) {
       if (!isAtTop) return;
 
       currentY = e.touches[0].clientY;
+      currentX = e.touches[0].clientX;
       const deltaY = currentY - startY;
+      const deltaX = Math.abs(currentX - startX);
 
-      if (deltaY > 10) {
-        // Pulling down from top
+      // Start dragging if vertical drag is significantly larger than horizontal drag
+      if (!isDragging && deltaY > 10 && deltaY > deltaX * 1.5) {
         isDragging = true;
-        setPullDistance(deltaY);
-        setIsPulling(deltaY > 60);
+      }
 
-        // Prevent default scrolling when pulling
-        e.preventDefault();
+      // Once dragging started, continuously update state based on current position
+      if (isDragging) {
+        // Update pull distance (use max of 0 to handle dragging back above start)
+        currentPullDistance = Math.max(0, deltaY);
+        setPullDistance(currentPullDistance);
+        setIsPulling(currentPullDistance > 60);
+
+        // Only prevent default when actually pulling down
+        if (deltaY > 0) {
+          e.preventDefault();
+        }
       }
     };
 
     const handleTouchEnd = () => {
-      if (isDragging && pullDistance > 60) {
+      if (isDragging && currentPullDistance > 60) {
         // Trigger page reload for all pages
         window.location.reload();
       }
 
       // Reset state
       isDragging = false;
+      currentPullDistance = 0;
       setIsPulling(false);
       setPullDistance(0);
     };
@@ -318,7 +333,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.body.removeEventListener('touchmove', handleTouchMove);
       document.body.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [pullDistance]);
+  }, []);
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
