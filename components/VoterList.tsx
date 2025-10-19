@@ -86,9 +86,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (loading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Respondents</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
           {/* Shimmer effect for loading voter bubbles */}
           {[1, 2, 3, 4, 5].map((i) => (
             <div
@@ -107,9 +107,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white">Respondents</h3>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
           <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
         </div>
       </div>
@@ -183,9 +183,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-2 shadow-sm ${className}`}>
+    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white w-full text-center">
+        <h3 className="text-lg font-bold text-gray-900 dark:text-white w-full text-center mb-3">
           Respondents ({voters.length})
         </h3>
 

@@ -27,7 +27,7 @@ export default function PollManagementButtons({
   }
 
   return (
-    <div className="mt-4 flex flex-wrap justify-center gap-2">
+    <div className="flex flex-wrap justify-center gap-3">
       {showCloseButton && (
         <button
           onClick={onCloseClick}
