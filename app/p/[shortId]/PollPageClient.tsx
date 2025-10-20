@@ -122,6 +122,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [timeMinEnabled, setTimeMinEnabled] = useState(false);
   const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
 
+  // Days for participation polls
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+
   const isPollExpired = useMemo(() => {
     // Use server-safe check
     const now = currentTime || new Date();
@@ -1753,6 +1756,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onTimeMaxChange={setTimeMaxValue}
                       onTimeMinEnabledChange={setTimeMinEnabled}
                       onTimeMaxEnabledChange={setTimeMaxEnabled}
+                      selectedDays={selectedDays}
+                      onDaysChange={setSelectedDays}
                     />
                   </div>
 

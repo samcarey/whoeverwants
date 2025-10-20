@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import MinMaxCounter from './MinMaxCounter';
 import TimeRangeInput from './TimeRangeInput';
+import DaysSelector from './DaysSelector';
 
 interface ParticipationConditionsProps {
   minValue: number | null;
@@ -29,6 +31,9 @@ interface ParticipationConditionsProps {
   onTimeMaxChange?: (value: string | null) => void;
   onTimeMinEnabledChange?: (enabled: boolean) => void;
   onTimeMaxEnabledChange?: (enabled: boolean) => void;
+  // Days props
+  selectedDays?: string[];
+  onDaysChange?: (days: string[]) => void;
 }
 
 export default function ParticipationConditions({
@@ -57,7 +62,10 @@ export default function ParticipationConditions({
   onTimeMaxChange,
   onTimeMinEnabledChange,
   onTimeMaxEnabledChange,
+  selectedDays = [],
+  onDaysChange,
 }: ParticipationConditionsProps) {
+  const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Calculate enforced limits based on poll constraints
   // Voter's min must be >= poll's min
   const enforcedMinLimit = pollMinParticipants ?? 1;
@@ -278,6 +286,31 @@ export default function ParticipationConditions({
           disabled={disabled}
         />
       </div>
+
+      {onDaysChange && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium">
+              Possible Days
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsDaysPickerOpen(true)}
+              disabled={disabled}
+              className="text-sm px-3 py-1 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+            >
+              Edit
+            </button>
+          </div>
+          <DaysSelector
+            selectedDays={selectedDays}
+            onChange={onDaysChange}
+            disabled={disabled}
+            isOpen={isDaysPickerOpen}
+            onOpenChange={setIsDaysPickerOpen}
+          />
+        </div>
+      )}
 
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>

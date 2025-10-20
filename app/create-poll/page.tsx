@@ -49,6 +49,7 @@ function CreatePollContent() {
   const [timeMaxValue, setTimeMaxValue] = useState<string | null>('17:00');
   const [timeMinEnabled, setTimeMinEnabled] = useState(false);
   const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -105,11 +106,12 @@ function CreatePollContent() {
         timeMinValue,
         timeMaxValue,
         timeMinEnabled,
-        timeMaxEnabled
+        timeMaxEnabled,
+        selectedDays
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled, selectedDays]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -169,6 +171,7 @@ function CreatePollContent() {
           if (formState.timeMaxValue !== undefined) setTimeMaxValue(formState.timeMaxValue);
           if (formState.timeMinEnabled !== undefined) setTimeMinEnabled(formState.timeMinEnabled);
           if (formState.timeMaxEnabled !== undefined) setTimeMaxEnabled(formState.timeMaxEnabled);
+          if (formState.selectedDays !== undefined) setSelectedDays(formState.selectedDays);
         } catch (error) {
           console.error('Failed to load form state:', error);
         }
@@ -1103,6 +1106,8 @@ function CreatePollContent() {
               onTimeMaxChange={setTimeMaxValue}
               onTimeMinEnabledChange={setTimeMinEnabled}
               onTimeMaxEnabledChange={setTimeMaxEnabled}
+              selectedDays={selectedDays}
+              onDaysChange={setSelectedDays}
             />
           )}
 
