@@ -181,6 +181,39 @@ export default function ParticipationConditions({
     }
   };
 
+  // Handle duration checkbox changes with time window validation
+  const handleDurationMinEnabledChange = (enabled: boolean) => {
+    if (!onDurationMinEnabledChange) return;
+
+    onDurationMinEnabledChange(enabled);
+
+    // If duration is now enabled and exceeds time window, expand time max
+    if (enabled && timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && durationMinValue && onTimeMaxChange) {
+      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (currentSpan !== null && durationMinValue > currentSpan) {
+        const minHours = timeToHours(timeMinValue);
+        const newMaxHours = (minHours + durationMinValue) % 24;
+        onTimeMaxChange(hoursToTime(newMaxHours));
+      }
+    }
+  };
+
+  const handleDurationMaxEnabledChange = (enabled: boolean) => {
+    if (!onDurationMaxEnabledChange) return;
+
+    onDurationMaxEnabledChange(enabled);
+
+    // If duration is now enabled and exceeds time window, expand time max
+    if (enabled && timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && durationMaxValue && onTimeMaxChange) {
+      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
+      if (currentSpan !== null && durationMaxValue > currentSpan) {
+        const minHours = timeToHours(timeMinValue);
+        const newMaxHours = (minHours + durationMaxValue) % 24;
+        onTimeMaxChange(hoursToTime(newMaxHours));
+      }
+    }
+  };
+
   // Handle time checkbox changes with duration validation
   const handleTimeMinEnabledChange = (enabled: boolean) => {
     if (!onTimeMinEnabledChange) return;
@@ -257,13 +290,13 @@ export default function ParticipationConditions({
             maxEnabled={durationMaxEnabled}
             onMinChange={handleDurationMinChange}
             onMaxChange={handleDurationMaxChange}
-            onMaxEnabledChange={onDurationMaxEnabledChange}
+            onMaxEnabledChange={handleDurationMaxEnabledChange}
             increment={0.25}
             minLimit={0.25}
             disabled={disabled}
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
-            onMinCheckboxChange={onDurationMinEnabledChange}
+            onMinCheckboxChange={handleDurationMinEnabledChange}
           />
         </div>
       )}
