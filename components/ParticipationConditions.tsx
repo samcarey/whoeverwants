@@ -327,6 +327,7 @@ export default function ParticipationConditions({
             disabled={disabled}
             isOpen={isDaysPickerOpen}
             onOpenChange={setIsDaysPickerOpen}
+            allowedDays={pollPossibleDays}
           />
         </div>
       )}

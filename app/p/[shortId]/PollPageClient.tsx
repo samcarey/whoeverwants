@@ -1178,6 +1178,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             }
           }
 
+          // Validate days: at least one day must be selected
+          if (selectedDays.length === 0) {
+            setVoteError('Please select at least one possible day');
+            setIsSubmitting(false);
+            return;
+          }
+
           // Validate days: voter days must be subset of poll days
           if (selectedDays.length > 0 && poll.possible_days) {
             const invalidDays = selectedDays.filter(day => !poll.possible_days?.includes(day));

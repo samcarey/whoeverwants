@@ -291,7 +291,12 @@ function CreatePollContent() {
     if (uniqueOptions.size !== filledOptions.length) {
       return "All poll options must be unique (no duplicates).";
     }
-    
+
+    // For participation polls, at least one day must be selected
+    if (pollType === 'participation' && selectedDays.length === 0) {
+      return "Please select at least one possible day.";
+    }
+
     return null;
   };
 
@@ -332,6 +337,16 @@ function CreatePollContent() {
     // (these special cases load their own data from URL params)
     if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
       loadFormState();
+    }
+
+    // Initialize selectedDays with today if empty and no saved form state
+    if (selectedDays.length === 0) {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+      setSelectedDays([todayStr]);
     }
 
     // Load saved user name
@@ -896,6 +911,34 @@ function CreatePollContent() {
         // Max is optional
         if (maxEnabled && maxParticipants !== null) {
           pollData.max_participants = maxParticipants;
+        }
+
+        // Store participation poll conditions (the universe of possible conditions)
+        // Voters can only select a subset of these conditions
+
+        // Store possible days if any are selected
+        if (selectedDays.length > 0) {
+          pollData.possible_days = selectedDays;
+        }
+
+        // Store duration window if either min or max is enabled
+        if (durationMinEnabled || durationMaxEnabled) {
+          pollData.duration_window = {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          };
+        }
+
+        // Store time window if either min or max is enabled
+        if (timeMinEnabled || timeMaxEnabled) {
+          pollData.time_window = {
+            minValue: timeMinValue,
+            maxValue: timeMaxValue,
+            minEnabled: timeMinEnabled,
+            maxEnabled: timeMaxEnabled
+          };
         }
       }
 
