@@ -34,6 +34,20 @@ interface ParticipationConditionsProps {
   // Days props
   selectedDays?: string[];
   onDaysChange?: (days: string[]) => void;
+  // Poll-level condition restrictions (for voting form)
+  pollPossibleDays?: string[];
+  pollDurationWindow?: {
+    minValue: number | null;
+    maxValue: number | null;
+    minEnabled: boolean;
+    maxEnabled: boolean;
+  };
+  pollTimeWindow?: {
+    minValue: string | null;
+    maxValue: string | null;
+    minEnabled: boolean;
+    maxEnabled: boolean;
+  };
 }
 
 export default function ParticipationConditions({
@@ -64,6 +78,9 @@ export default function ParticipationConditions({
   onTimeMaxEnabledChange,
   selectedDays = [],
   onDaysChange,
+  pollPossibleDays,
+  pollDurationWindow,
+  pollTimeWindow,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Calculate enforced limits based on poll constraints
@@ -156,13 +173,14 @@ export default function ParticipationConditions({
     if (timeMinEnabled && timeMaxEnabled && newTimeMin && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(newTimeMin, timeMaxValue);
       if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
+        const MINIMUM_DURATION = 0.25; // 15 minutes minimum
+        // Reduce duration min if it exceeds new span, but never below minimum
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
+          onDurationMinChange(Math.max(newSpan, MINIMUM_DURATION));
         }
-        // Reduce duration max if it exceeds new span
+        // Reduce duration max if it exceeds new span, but never below minimum
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
+          onDurationMaxChange(Math.max(newSpan, MINIMUM_DURATION));
         }
       }
     }
@@ -177,13 +195,14 @@ export default function ParticipationConditions({
     if (timeMinEnabled && timeMaxEnabled && timeMinValue && newTimeMax && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(timeMinValue, newTimeMax);
       if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
+        const MINIMUM_DURATION = 0.25; // 15 minutes minimum
+        // Reduce duration min if it exceeds new span, but never below minimum
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
+          onDurationMinChange(Math.max(newSpan, MINIMUM_DURATION));
         }
-        // Reduce duration max if it exceeds new span
+        // Reduce duration max if it exceeds new span, but never below minimum
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
+          onDurationMaxChange(Math.max(newSpan, MINIMUM_DURATION));
         }
       }
     }
@@ -325,7 +344,10 @@ export default function ParticipationConditions({
             onMaxChange={handleDurationMaxChange}
             onMaxEnabledChange={handleDurationMaxEnabledChange}
             increment={0.25}
-            minLimit={0.25}
+            minLimit={pollDurationWindow?.minEnabled ? pollDurationWindow.minValue ?? 0.25 : 0.25}
+            maxLimit={pollDurationWindow?.maxEnabled ? pollDurationWindow.maxValue : undefined}
+            minRequired={pollDurationWindow?.minEnabled ?? false}
+            maxRequired={pollDurationWindow?.maxEnabled ?? false}
             disabled={disabled}
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
@@ -349,6 +371,10 @@ export default function ParticipationConditions({
             onMinEnabledChange={handleTimeMinEnabledChange}
             onMaxEnabledChange={handleTimeMaxEnabledChange}
             disabled={disabled}
+            minLimit={pollTimeWindow?.minEnabled ? pollTimeWindow.minValue ?? undefined : undefined}
+            maxLimit={pollTimeWindow?.maxEnabled ? pollTimeWindow.maxValue ?? undefined : undefined}
+            minRequired={pollTimeWindow?.minEnabled ?? false}
+            maxRequired={pollTimeWindow?.maxEnabled ?? false}
           />
         </div>
       )}

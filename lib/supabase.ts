@@ -33,6 +33,20 @@ export interface Poll {
   fork_of?: string;
   min_participants?: number;
   max_participants?: number;
+  // Participation poll conditions (universe of possible conditions for voters)
+  possible_days?: string[];
+  duration_window?: {
+    minValue: number | null;
+    maxValue: number | null;
+    minEnabled: boolean;
+    maxEnabled: boolean;
+  };
+  time_window?: {
+    minValue: string | null;
+    maxValue: string | null;
+    minEnabled: boolean;
+    maxEnabled: boolean;
+  };
 }
 
 export interface Vote {
@@ -40,6 +54,18 @@ export interface Vote {
   poll_id: string;
   vote_data: any;
   created_at: string;
+}
+
+export interface TimeSlot {
+  slot_date: string;        // ISO date
+  slot_start_time: string;  // HH:MM
+  slot_end_time: string;    // HH:MM
+  duration_hours: number;
+  participant_count: number;
+  participant_vote_ids: string[];
+  participant_names: string[];
+  round_number: number;
+  is_winner: boolean;
 }
 
 export interface PollResults {
@@ -60,6 +86,8 @@ export interface PollResults {
   max_participants?: number;
   participants_in_count?: number;
   is_happening?: boolean;
+  winning_time_slot?: TimeSlot;
+  total_slot_rounds?: number;
 }
 
 export interface RankedChoiceRound {
@@ -152,6 +180,23 @@ export async function getRankedChoiceRounds(pollId: string): Promise<RankedChoic
 
   if (error) {
     throw new Error(`Failed to fetch ranked choice rounds: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getTimeSlotRounds(pollId: string): Promise<TimeSlot[]> {
+  const { data, error } = await supabase
+    .from('participation_time_slot_rounds')
+    .select('*')
+    .eq('poll_id', pollId)
+    .order('round_number', { ascending: true })
+    .order('participant_count', { ascending: false })
+    .order('slot_date', { ascending: true })
+    .order('slot_start_time', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch time slot rounds: ${error.message}`);
   }
 
   return data || [];

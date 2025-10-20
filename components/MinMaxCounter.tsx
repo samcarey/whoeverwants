@@ -12,6 +12,7 @@ interface MinMaxCounterProps {
   increment?: number;
   minLimit: number;
   maxLimit?: number;
+  minRequired?: boolean;
   maxRequired?: boolean;
   disabled?: boolean;
   formatValue?: (value: number) => string;
@@ -30,6 +31,7 @@ export default function MinMaxCounter({
   increment = 1,
   minLimit,
   maxLimit,
+  minRequired = false,
   maxRequired = false,
   disabled = false,
   formatValue,
@@ -84,7 +86,7 @@ export default function MinMaxCounter({
             type="checkbox"
             checked={minCheckboxEnabled}
             onChange={(e) => onMinCheckboxChange(e.target.checked)}
-            disabled={disabled}
+            disabled={disabled || minRequired}
             className="absolute left-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
           />
         )}

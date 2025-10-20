@@ -152,6 +152,62 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return pollClosed || isPollExpired;
   }, [pollClosed, isPollExpired, manuallyReopened]);
 
+  // Save draft participation poll form state to localStorage
+  const saveDraftFormState = useCallback((pollId: string) => {
+    if (typeof window === 'undefined' || poll.poll_type !== 'participation') return;
+
+    try {
+      const draftState = {
+        yesNoChoice,
+        isAbstaining,
+        voterMinParticipants,
+        voterMaxParticipants,
+        voterMaxEnabled,
+        selectedDays,
+        durationMinValue,
+        durationMaxValue,
+        durationMinEnabled,
+        durationMaxEnabled,
+        timeMinValue,
+        timeMaxValue,
+        timeMinEnabled,
+        timeMaxEnabled,
+        savedAt: new Date().toISOString()
+      };
+
+      localStorage.setItem(`draft-participation-${pollId}`, JSON.stringify(draftState));
+    } catch (error) {
+      console.error('Error saving draft form state:', error);
+    }
+  }, [poll.poll_type, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, selectedDays, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
+
+  // Load draft participation poll form state from localStorage
+  const loadDraftFormState = useCallback((pollId: string) => {
+    if (typeof window === 'undefined' || poll.poll_type !== 'participation') return null;
+
+    try {
+      const draftJson = localStorage.getItem(`draft-participation-${pollId}`);
+      if (!draftJson) return null;
+
+      const draft = JSON.parse(draftJson);
+      return draft;
+    } catch (error) {
+      console.error('Error loading draft form state:', error);
+      return null;
+    }
+  }, [poll.poll_type]);
+
+  // Clear draft participation poll form state from localStorage
+  const clearDraftFormState = useCallback((pollId: string) => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      localStorage.removeItem(`draft-participation-${pollId}`);
+    } catch (error) {
+      console.error('Error clearing draft form state:', error);
+    }
+  }, []);
+
   // Check if user has voted on this poll (stored in localStorage)
   const hasVotedOnPoll = useCallback((pollId: string): boolean => {
     if (typeof window === 'undefined') return false;
@@ -240,7 +296,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Fetch all votes by these IDs
       const { data: userVotes, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants, voter_days, voter_duration, voter_time')
         .in('id', voteIds)
         .eq('poll_id', pollId);
 
@@ -282,7 +338,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants, voter_days, voter_duration, voter_time')
         .eq('id', voteId)
         .single();
 
@@ -333,6 +389,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       fetchPollResults();
     }
   }, [poll.poll_type, fetchPollResults]);
+
+  // Initialize voter conditions from poll conditions (participation polls only)
+  useEffect(() => {
+    if (poll.poll_type === 'participation') {
+      // Initialize days from poll's possible_days
+      if (poll.possible_days && poll.possible_days.length > 0) {
+        // Start with all poll days selected (voter can narrow down)
+        setSelectedDays(poll.possible_days);
+      }
+
+      // Initialize duration from poll's duration_window
+      if (poll.duration_window) {
+        const { minValue, maxValue, minEnabled, maxEnabled } = poll.duration_window;
+        if (minValue !== null) setDurationMinValue(minValue);
+        if (maxValue !== null) setDurationMaxValue(maxValue);
+        setDurationMinEnabled(minEnabled);
+        setDurationMaxEnabled(maxEnabled);
+      }
+
+      // Initialize time from poll's time_window
+      if (poll.time_window) {
+        const { minValue, maxValue, minEnabled, maxEnabled } = poll.time_window;
+        if (minValue !== null) setTimeMinValue(minValue);
+        if (maxValue !== null) setTimeMaxValue(maxValue);
+        setTimeMinEnabled(minEnabled);
+        setTimeMaxEnabled(maxEnabled);
+      }
+    }
+  }, [poll.poll_type, poll.possible_days, poll.duration_window, poll.time_window]);
 
   // Load existing nominations from other votes
   const loadExistingNominations = async (excludeUserVote = false) => {
@@ -495,6 +580,29 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               } else {
                 setVoterMaxEnabled(false);
               }
+
+              // Load voter's days
+              if (voteData.voter_days && Array.isArray(voteData.voter_days)) {
+                setSelectedDays(voteData.voter_days);
+              }
+
+              // Load voter's duration conditions
+              if (voteData.voter_duration) {
+                const { minValue, maxValue, minEnabled, maxEnabled } = voteData.voter_duration;
+                if (minValue !== null && minValue !== undefined) setDurationMinValue(minValue);
+                if (maxValue !== null && maxValue !== undefined) setDurationMaxValue(maxValue);
+                if (minEnabled !== undefined) setDurationMinEnabled(minEnabled);
+                if (maxEnabled !== undefined) setDurationMaxEnabled(maxEnabled);
+              }
+
+              // Load voter's time window conditions
+              if (voteData.voter_time) {
+                const { minValue, maxValue, minEnabled, maxEnabled } = voteData.voter_time;
+                if (minValue !== null && minValue !== undefined) setTimeMinValue(minValue);
+                if (maxValue !== null && maxValue !== undefined) setTimeMaxValue(maxValue);
+                if (minEnabled !== undefined) setTimeMinEnabled(minEnabled);
+                if (maxEnabled !== undefined) setTimeMaxEnabled(maxEnabled);
+              }
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
             } else if (poll.poll_type === 'nomination' && voteData.nominations) {
@@ -509,6 +617,47 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
     }
   }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
+
+  // Load draft form state from localStorage if no vote submitted yet
+  useEffect(() => {
+    if (poll.poll_type !== 'participation' || hasVoted || isLoadingVoteData) return;
+
+    const draft = loadDraftFormState(poll.id);
+    if (draft) {
+      // Only load draft if fields haven't been touched yet
+      // Check if state is still at defaults
+      const isStillDefault = yesNoChoice === null && !isAbstaining;
+
+      if (isStillDefault) {
+        if (draft.yesNoChoice !== undefined) setYesNoChoice(draft.yesNoChoice);
+        if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
+        if (draft.voterMinParticipants !== undefined) setVoterMinParticipants(draft.voterMinParticipants);
+        if (draft.voterMaxParticipants !== undefined) setVoterMaxParticipants(draft.voterMaxParticipants);
+        if (draft.voterMaxEnabled !== undefined) setVoterMaxEnabled(draft.voterMaxEnabled);
+        if (draft.selectedDays !== undefined) setSelectedDays(draft.selectedDays);
+        if (draft.durationMinValue !== undefined) setDurationMinValue(draft.durationMinValue);
+        if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
+        if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
+        if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
+        if (draft.timeMinValue !== undefined) setTimeMinValue(draft.timeMinValue);
+        if (draft.timeMaxValue !== undefined) setTimeMaxValue(draft.timeMaxValue);
+        if (draft.timeMinEnabled !== undefined) setTimeMinEnabled(draft.timeMinEnabled);
+        if (draft.timeMaxEnabled !== undefined) setTimeMaxEnabled(draft.timeMaxEnabled);
+      }
+    }
+  }, [poll.id, poll.poll_type, hasVoted, isLoadingVoteData, loadDraftFormState]);
+
+  // Auto-save draft form state to localStorage whenever fields change
+  useEffect(() => {
+    if (poll.poll_type !== 'participation' || hasVoted) return;
+
+    // Debounce saves slightly to avoid excessive localStorage writes
+    const timeoutId = setTimeout(() => {
+      saveDraftFormState(poll.id);
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [poll.id, poll.poll_type, hasVoted, saveDraftFormState, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, selectedDays, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
 
   // Separate effect to fetch results when poll closes or for participation polls
   useEffect(() => {
@@ -999,6 +1148,83 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setIsSubmitting(false);
           return;
         }
+
+        // Validate voter conditions are within poll conditions
+        if (yesNoChoice === 'yes' && !isAbstaining) {
+          // Validate that required checkboxes are enabled
+          if (poll.duration_window) {
+            if (poll.duration_window.minEnabled && !durationMinEnabled) {
+              setVoteError('Minimum duration must be specified');
+              setIsSubmitting(false);
+              return;
+            }
+            if (poll.duration_window.maxEnabled && !durationMaxEnabled) {
+              setVoteError('Maximum duration must be specified');
+              setIsSubmitting(false);
+              return;
+            }
+          }
+
+          if (poll.time_window) {
+            if (poll.time_window.minEnabled && !timeMinEnabled) {
+              setVoteError('Start time must be specified');
+              setIsSubmitting(false);
+              return;
+            }
+            if (poll.time_window.maxEnabled && !timeMaxEnabled) {
+              setVoteError('End time must be specified');
+              setIsSubmitting(false);
+              return;
+            }
+          }
+
+          // Validate days: voter days must be subset of poll days
+          if (selectedDays.length > 0 && poll.possible_days) {
+            const invalidDays = selectedDays.filter(day => !poll.possible_days?.includes(day));
+            if (invalidDays.length > 0) {
+              setVoteError(`Invalid dates selected. Please choose from: ${poll.possible_days.join(', ')}`);
+              setIsSubmitting(false);
+              return;
+            }
+          }
+
+          // Validate duration: voter duration must be within poll duration range
+          if ((durationMinEnabled || durationMaxEnabled) && poll.duration_window) {
+            if (durationMinEnabled && poll.duration_window.minEnabled) {
+              if (durationMinValue < poll.duration_window.minValue) {
+                setVoteError(`Minimum duration must be at least ${poll.duration_window.minValue} hours`);
+                setIsSubmitting(false);
+                return;
+              }
+            }
+            if (durationMaxEnabled && poll.duration_window.maxEnabled) {
+              if (durationMaxValue > poll.duration_window.maxValue) {
+                setVoteError(`Maximum duration cannot exceed ${poll.duration_window.maxValue} hours`);
+                setIsSubmitting(false);
+                return;
+              }
+            }
+          }
+
+          // Validate time window: voter time must be within poll time window
+          if ((timeMinEnabled || timeMaxEnabled) && poll.time_window) {
+            if (timeMinEnabled && poll.time_window.minEnabled) {
+              if (timeMinValue < poll.time_window.minValue) {
+                setVoteError(`Start time must be at or after ${poll.time_window.minValue}`);
+                setIsSubmitting(false);
+                return;
+              }
+            }
+            if (timeMaxEnabled && poll.time_window.maxEnabled) {
+              if (timeMaxValue > poll.time_window.maxValue) {
+                setVoteError(`End time cannot be later than ${poll.time_window.maxValue}`);
+                setIsSubmitting(false);
+                return;
+              }
+            }
+          }
+        }
+
         voteData = {
           poll_id: poll.id,
           vote_type: 'participation' as const,
@@ -1006,7 +1232,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null,
           min_participants: voterMinParticipants,
-          max_participants: voterMaxEnabled ? voterMaxParticipants : null
+          max_participants: voterMaxEnabled ? voterMaxParticipants : null,
+          // Save voter's condition details
+          voter_days: selectedDays.length > 0 ? selectedDays : null,
+          voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          } : null,
+          voter_time: (timeMinEnabled || timeMaxEnabled) ? {
+            minValue: timeMinValue,
+            maxValue: timeMaxValue,
+            minEnabled: timeMinEnabled,
+            maxEnabled: timeMaxEnabled
+          } : null
         };
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
@@ -1220,6 +1460,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Save vote to localStorage so user can't vote again (only for new votes)
       if (!isEditingVote) {
         markPollAsVoted(poll.id, voteId, isAbstaining);
+        // Clear draft form state now that vote is submitted
+        clearDraftFormState(poll.id);
         // Update hasPollData state
         setHasPollDataState(true);
       }
@@ -1758,6 +2000,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onTimeMaxEnabledChange={setTimeMaxEnabled}
                       selectedDays={selectedDays}
                       onDaysChange={setSelectedDays}
+                      pollPossibleDays={poll.possible_days}
+                      pollDurationWindow={poll.duration_window}
+                      pollTimeWindow={poll.time_window}
                     />
                   </div>
 

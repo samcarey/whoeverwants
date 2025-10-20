@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
+import { PollResults, RankedChoiceRound, getRankedChoiceRounds, TimeSlot, getTimeSlotRounds, supabase } from "@/lib/supabase";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import NominationsList from "./NominationsList";
+import TimelineSlotDisplay from "./TimelineSlotDisplay";
+import TimeSlotRoundsDisplay from "./TimeSlotRoundsDisplay";
 
 interface PollResultsProps {
   results: PollResults;
@@ -361,6 +363,30 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const [allVoters, setAllVoters] = useState<{id: string, voter_name: string | null}[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Time slot optimization state
+  const [allRounds, setAllRounds] = useState<TimeSlot[]>([]);
+  const [showingRounds, setShowingRounds] = useState(false);
+  const [loadingRounds, setLoadingRounds] = useState(false);
+
+  // Check if time slot data exists
+  const hasTimeSlot = results.winning_time_slot && results.winning_time_slot.participant_count > 0;
+  const hasMultipleRounds = results.total_slot_rounds && results.total_slot_rounds > 1;
+
+  // Function to load all elimination rounds
+  const loadRounds = async () => {
+    if (!hasTimeSlot) return;
+    setLoadingRounds(true);
+    try {
+      const rounds = await getTimeSlotRounds(results.poll_id);
+      setAllRounds(rounds);
+      setShowingRounds(true);
+    } catch (error) {
+      console.error('Failed to load time slot rounds:', error);
+    } finally {
+      setLoadingRounds(false);
+    }
+  };
+
   // Fetch participants who are actually participating (based on priority algorithm)
   // AND all voters to establish color mapping
   useEffect(() => {
@@ -504,6 +530,60 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   // CLOSED POLL SCENARIOS
   if (isPollClosed) {
+    // NEW: If poll has time slot optimization, show timeline display
+    if (hasTimeSlot && results.winning_time_slot) {
+      return (
+        <div>
+          {!showingRounds ? (
+            // Default view: Show winner timeline
+            <>
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Event Scheduled
+                </h3>
+              </div>
+
+              <TimelineSlotDisplay
+                slot={results.winning_time_slot}
+                pollTitle={results.title}
+                showTitle={false}
+                isWinner={true}
+              />
+
+              {hasMultipleRounds && (
+                <div className="text-center mt-4">
+                  <button
+                    onClick={loadRounds}
+                    disabled={loadingRounds}
+                    className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    {loadingRounds ? 'Loading...' : `← View all ${results.total_slot_rounds} elimination rounds`}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            // Show elimination rounds
+            <>
+              <TimeSlotRoundsDisplay
+                allRounds={allRounds}
+                pollId={results.poll_id}
+              />
+
+              <div className="text-center mt-4">
+                <button
+                  onClick={() => setShowingRounds(false)}
+                  className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  → Back to winner
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
     // Scenario: Event IS happening, user voted YES and is in the participating list
     if (isHappening && userVotedYes && userIsInParticipantList) {
       // Filter out current user from participant list
