@@ -303,16 +303,9 @@ export default function ParticipationConditions({
 
       {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
         <div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-sm font-medium">
-              Time
-            </label>
-            {timeWindow !== null && (
-              <span className="text-sm text-blue-600 dark:text-blue-400">
-                Window of {formatDurationValue(timeWindow)} hours
-              </span>
-            )}
-          </div>
+          <label className="block text-sm font-medium mb-2">
+            Time Window{timeWindow !== null ? ` (${formatDurationValue(timeWindow)} hours)` : ''}
+          </label>
           <TimeRangeInput
             minValue={timeMinValue}
             maxValue={timeMaxValue}
