@@ -1518,7 +1518,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       <div className="poll-content">
         
         {/* Show creation info */}
-        <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4">
+        <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-1">
           {poll.creator_name ? (
             <>Created by <span className="text-blue-600 dark:text-blue-400">{poll.creator_name}</span> {createdDate}</>
           ) : (

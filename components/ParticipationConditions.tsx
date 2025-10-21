@@ -289,23 +289,25 @@ export default function ParticipationConditions({
 
   return (
     <div className="space-y-3">
-      <div>
-        <label className="block text-sm font-medium mb-2">
+      <div className="-mt-2 mb-1">
+        <label className="block text-sm font-medium mb-1">
           Participants
         </label>
-        <MinMaxCounter
-          minValue={minValue}
-          maxValue={maxValue}
-          maxEnabled={maxEnabled}
-          onMinChange={onMinChange}
-          onMaxChange={onMaxChange}
-          onMaxEnabledChange={onMaxEnabledChange}
-          increment={1}
-          minLimit={enforcedMinLimit}
-          maxLimit={enforcedMaxLimit}
-          maxRequired={maxRequired}
-          disabled={disabled}
-        />
+        <div className="-my-1">
+          <MinMaxCounter
+            minValue={minValue}
+            maxValue={maxValue}
+            maxEnabled={maxEnabled}
+            onMinChange={onMinChange}
+            onMaxChange={onMaxChange}
+            onMaxEnabledChange={onMaxEnabledChange}
+            increment={1}
+            minLimit={enforcedMinLimit}
+            maxLimit={enforcedMaxLimit}
+            maxRequired={maxRequired}
+            disabled={disabled}
+          />
+        </div>
       </div>
 
       {onDaysChange && (
@@ -320,6 +322,29 @@ export default function ParticipationConditions({
             isOpen={isDaysPickerOpen}
             onOpenChange={setIsDaysPickerOpen}
             allowedDays={pollPossibleDays}
+          />
+        </div>
+      )}
+
+      {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
+        <div>
+          <label className="block text-sm font-medium mb-2">
+            Time Window{timeWindow !== null ? ` (${formatDurationValue(timeWindow)} hours)` : ''}
+          </label>
+          <TimeRangeInput
+            minValue={timeMinValue}
+            maxValue={timeMaxValue}
+            minEnabled={timeMinEnabled}
+            maxEnabled={timeMaxEnabled}
+            onMinChange={handleTimeMinChange}
+            onMaxChange={handleTimeMaxChange}
+            onMinEnabledChange={handleTimeMinEnabledChange}
+            onMaxEnabledChange={handleTimeMaxEnabledChange}
+            disabled={disabled}
+            minLimit={pollTimeWindow?.minEnabled ? pollTimeWindow.minValue ?? undefined : undefined}
+            maxLimit={pollTimeWindow?.maxEnabled ? pollTimeWindow.maxValue ?? undefined : undefined}
+            minRequired={pollTimeWindow?.minEnabled ?? false}
+            maxRequired={pollTimeWindow?.maxEnabled ?? false}
           />
         </div>
       )}
@@ -345,29 +370,6 @@ export default function ParticipationConditions({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={handleDurationMinEnabledChange}
-          />
-        </div>
-      )}
-
-      {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Time Window{timeWindow !== null ? ` (${formatDurationValue(timeWindow)} hours)` : ''}
-          </label>
-          <TimeRangeInput
-            minValue={timeMinValue}
-            maxValue={timeMaxValue}
-            minEnabled={timeMinEnabled}
-            maxEnabled={timeMaxEnabled}
-            onMinChange={handleTimeMinChange}
-            onMaxChange={handleTimeMaxChange}
-            onMinEnabledChange={handleTimeMinEnabledChange}
-            onMaxEnabledChange={handleTimeMaxEnabledChange}
-            disabled={disabled}
-            minLimit={pollTimeWindow?.minEnabled ? pollTimeWindow.minValue ?? undefined : undefined}
-            maxLimit={pollTimeWindow?.maxEnabled ? pollTimeWindow.maxValue ?? undefined : undefined}
-            minRequired={pollTimeWindow?.minEnabled ?? false}
-            maxRequired={pollTimeWindow?.maxEnabled ?? false}
           />
         </div>
       )}

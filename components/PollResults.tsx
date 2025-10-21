@@ -537,17 +537,12 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
           {!showingRounds ? (
             // Default view: Show winner timeline
             <>
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Event Scheduled
-                </h3>
-              </div>
-
               <TimelineSlotDisplay
                 slot={results.winning_time_slot}
                 pollTitle={results.title}
                 showTitle={false}
                 isWinner={true}
+                pollId={results.poll_id}
               />
 
               {hasMultipleRounds && (

@@ -86,7 +86,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (loading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
           {/* Shimmer effect for loading voter bubbles */}
@@ -107,7 +107,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
+      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
           <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
@@ -183,7 +183,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
+    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3 shadow-sm ${className}`}>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white w-full text-center mb-3">
           Respondents ({voters.length})
@@ -200,7 +200,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
             <span
               key={voter.id}
               className={`inline-block px-3 py-1 rounded-full text-sm ${
-                isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+                isCurrentUser ? 'font-bold border-2 border-blue-500 dark:border-blue-400' : 'font-medium'
               } ${getVoterColor(index)}`}
             >
               {displayName}
