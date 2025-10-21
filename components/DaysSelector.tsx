@@ -68,7 +68,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
-  // Format selected days for display
+  // Format selected days for display - returns {label, dayNumber}
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + 'T00:00:00');
     const today = new Date();
@@ -84,29 +84,32 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
 
     const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayNumber = date.getDate();
+
+    let label = '';
 
     // Check if it's today
     if (dateStr === dateToString(today)) {
-      return 'Today';
+      label = 'Today';
     }
-
     // Check if it's tomorrow
-    if (dateStr === dateToString(tomorrow)) {
-      return `Tomorrow (${dayOfWeek})`;
+    else if (dateStr === dateToString(tomorrow)) {
+      label = 'Tomorrow';
     }
-
     // Check if it's within the next week (2-7 days away)
-    if (date <= oneWeekFromNow) {
-      return dayOfWeek;
+    else if (date <= oneWeekFromNow) {
+      label = dayOfWeek;
     }
-
     // Check if it's within the second week (8-14 days away)
-    if (date <= twoWeeksFromNow) {
-      return `Next ${dayOfWeek}`;
+    else if (date <= twoWeeksFromNow) {
+      label = `Next ${dayOfWeek}`;
+    }
+    // Beyond 2 weeks: use month abbreviation + day number
+    else {
+      label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
 
-    // Beyond 2 weeks: use month abbreviation + day number
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return { label, dayNumber };
   };
 
   // Get today's date in YYYY-MM-DD format
@@ -186,23 +189,35 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
   return (
     <div>
-      {/* Selected days list */}
-      {selectedDays.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {selectedDays.map(date => (
-            <div
-              key={date}
-              className="px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded-md text-sm"
-            >
-              {formatDate(date)}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          No days selected
-        </div>
-      )}
+      {/* Clickable selected days list */}
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        disabled={disabled}
+        className="w-full text-left p-2 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:bg-transparent"
+      >
+        {selectedDays.length > 0 ? (
+          <div className="flex flex-wrap gap-2 items-start">
+            {selectedDays.map(date => {
+              const { label, dayNumber } = formatDate(date);
+              return (
+                <div
+                  key={date}
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full text-sm border border-blue-200 dark:border-blue-800"
+                >
+                  <span className="text-gray-700 dark:text-gray-200">{label}</span>
+                  <span className="w-px h-3 bg-blue-300 dark:bg-blue-700"></span>
+                  <span className="font-semibold text-blue-700 dark:text-blue-300 min-w-[1.25rem] text-center">{dayNumber}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Click to select days
+          </div>
+        )}
+      </button>
 
       {isOpen && (
         <>
