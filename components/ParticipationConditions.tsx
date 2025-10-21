@@ -173,14 +173,13 @@ export default function ParticipationConditions({
     if (timeMinEnabled && timeMaxEnabled && newTimeMin && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(newTimeMin, timeMaxValue);
       if (newSpan !== null) {
-        const MINIMUM_DURATION = 0.25; // 15 minutes minimum
-        // Reduce duration min if it exceeds new span, but never below minimum
+        // Reduce duration min if it exceeds new span
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(Math.max(newSpan, MINIMUM_DURATION));
+          onDurationMinChange(newSpan);
         }
-        // Reduce duration max if it exceeds new span, but never below minimum
+        // Reduce duration max if it exceeds new span
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(Math.max(newSpan, MINIMUM_DURATION));
+          onDurationMaxChange(newSpan);
         }
       }
     }
@@ -195,14 +194,13 @@ export default function ParticipationConditions({
     if (timeMinEnabled && timeMaxEnabled && timeMinValue && newTimeMax && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(timeMinValue, newTimeMax);
       if (newSpan !== null) {
-        const MINIMUM_DURATION = 0.25; // 15 minutes minimum
-        // Reduce duration min if it exceeds new span, but never below minimum
+        // Reduce duration min if it exceeds new span
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(Math.max(newSpan, MINIMUM_DURATION));
+          onDurationMinChange(newSpan);
         }
-        // Reduce duration max if it exceeds new span, but never below minimum
+        // Reduce duration max if it exceeds new span
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(Math.max(newSpan, MINIMUM_DURATION));
+          onDurationMaxChange(newSpan);
         }
       }
     }
@@ -251,9 +249,11 @@ export default function ParticipationConditions({
     if (enabled && timeMaxEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
       if (newSpan !== null) {
+        // Reduce duration min if it exceeds new span
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
           onDurationMinChange(newSpan);
         }
+        // Reduce duration max if it exceeds new span
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
           onDurationMaxChange(newSpan);
         }
@@ -270,9 +270,11 @@ export default function ParticipationConditions({
     if (enabled && timeMinEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
       const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
       if (newSpan !== null) {
+        // Reduce duration min if it exceeds new span
         if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
           onDurationMinChange(newSpan);
         }
+        // Reduce duration max if it exceeds new span
         if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
           onDurationMaxChange(newSpan);
         }
@@ -289,7 +291,7 @@ export default function ParticipationConditions({
     <div className="space-y-3">
       <div>
         <label className="block text-sm font-medium mb-2">
-          Number of participants
+          Participants
         </label>
         <MinMaxCounter
           minValue={minValue}
