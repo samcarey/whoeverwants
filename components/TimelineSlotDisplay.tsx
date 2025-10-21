@@ -172,7 +172,7 @@ export default function TimelineSlotDisplay({
       {/* Header: participation status and date */}
       <div className="text-center mb-2">
         {userIsParticipating && (
-          <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+          <div className="text-xl font-bold text-green-700 dark:text-green-300 mb-2">
             🎉 You&apos;re Participating!
           </div>
         )}
