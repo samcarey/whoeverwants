@@ -25,6 +25,7 @@ import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
+import ParticipationConditionsCard from "@/components/ParticipationConditionsCard";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -117,8 +118,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
 
   // Time conditions for participation polls
-  const [timeMinValue, setTimeMinValue] = useState<string | null>('09:00');
-  const [timeMaxValue, setTimeMaxValue] = useState<string | null>('17:00');
+  const [timeMinValue, setTimeMinValue] = useState<string | null>(null);
+  const [timeMaxValue, setTimeMaxValue] = useState<string | null>(null);
   const [timeMinEnabled, setTimeMinEnabled] = useState(false);
   const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
 
@@ -418,6 +419,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
     }
   }, [poll.poll_type, poll.possible_days, poll.duration_window, poll.time_window]);
+
+  // Set hydration ready indicator for test automation
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // @ts-ignore - Adding test automation flag
+      window.__FORM_READY__ = true;
+    }
+  }, []);
 
   // Load existing nominations from other votes
   const loadExistingNominations = async (excludeUserVote = false) => {
@@ -1886,6 +1895,27 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </div>
                         </div>
                       )}
+
+                      {/* Show voter's conditions card when poll is closed */}
+                      {!userVoteData?.is_abstain && userVoteData && (
+                        <ParticipationConditionsCard
+                          voterChoice={userVoteData.yes_no_choice}
+                          isAbstaining={userVoteData.is_abstain || false}
+                          voterMinParticipants={userVoteData.min_participants}
+                          voterMaxParticipants={userVoteData.max_participants}
+                          voterDays={userVoteData.voter_days}
+                          voterDuration={userVoteData.voter_duration}
+                          voterTime={userVoteData.voter_time}
+                          pollMinParticipants={poll.min_participants}
+                          pollMaxParticipants={poll.max_participants}
+                          pollPossibleDays={poll.possible_days}
+                          pollDurationWindow={poll.duration_window}
+                          pollTimeWindow={poll.time_window}
+                          isPollClosed={true}
+                          isEventHappening={pollResults.is_happening}
+                          isUserParticipating={areVoterConditionsMet ?? false}
+                        />
+                      )}
                     </>
                   ) : (
                     <div className="text-center py-4">
@@ -1937,6 +1967,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? "I'm in!" : "Can't make it"}
                           </span>
                         </div>
+
+                        {/* Show voter's conditions card */}
+                        {!isLoadingVoteData && userVoteData && (
+                          <ParticipationConditionsCard
+                            voterChoice={userVoteData.yes_no_choice}
+                            isAbstaining={userVoteData.is_abstain || false}
+                            voterMinParticipants={userVoteData.min_participants}
+                            voterMaxParticipants={userVoteData.max_participants}
+                            voterDays={userVoteData.voter_days}
+                            voterDuration={userVoteData.voter_duration}
+                            voterTime={userVoteData.voter_time}
+                            pollMinParticipants={poll.min_participants}
+                            pollMaxParticipants={poll.max_participants}
+                            pollPossibleDays={poll.possible_days}
+                            pollDurationWindow={poll.duration_window}
+                            pollTimeWindow={poll.time_window}
+                            isPollClosed={false}
+                          />
+                        )}
                       </>
                     )}
                   </div>

@@ -48,6 +48,8 @@ interface ParticipationConditionsProps {
     minEnabled: boolean;
     maxEnabled: boolean;
   };
+  // Control flags
+  isCreationForm?: boolean;  // True when creating poll (hides time checkboxes)
 }
 
 export default function ParticipationConditions({
@@ -81,6 +83,7 @@ export default function ParticipationConditions({
   pollPossibleDays,
   pollDurationWindow,
   pollTimeWindow,
+  isCreationForm = false,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Calculate enforced limits based on poll constraints
@@ -288,7 +291,7 @@ export default function ParticipationConditions({
     : null;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="participation-conditions">
       <div className="-mt-2 mb-1">
         <label className="block text-sm font-medium mb-1">
           Participants
@@ -306,6 +309,8 @@ export default function ParticipationConditions({
             maxLimit={enforcedMaxLimit}
             maxRequired={maxRequired}
             disabled={disabled}
+            deferValidation={true}
+            testId="participants-counter"
           />
         </div>
       </div>
@@ -343,8 +348,10 @@ export default function ParticipationConditions({
             disabled={disabled}
             minLimit={pollTimeWindow?.minEnabled ? pollTimeWindow.minValue ?? undefined : undefined}
             maxLimit={pollTimeWindow?.maxEnabled ? pollTimeWindow.maxValue ?? undefined : undefined}
-            minRequired={pollTimeWindow?.minEnabled ?? false}
-            maxRequired={pollTimeWindow?.maxEnabled ?? false}
+            minRequired={pollTimeWindow?.minEnabled ?? isCreationForm}
+            maxRequired={pollTimeWindow?.maxEnabled ?? isCreationForm}
+            hideCheckboxes={isCreationForm}
+            testId="time-range-input"
           />
         </div>
       )}
@@ -370,6 +377,8 @@ export default function ParticipationConditions({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={handleDurationMinEnabledChange}
+            deferValidation={true}
+            testId="duration-counter"
           />
         </div>
       )}
