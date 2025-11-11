@@ -44,3 +44,5 @@ next-env.d.ts
 lib/last-compile-time.ts
 
 scratch
+__pycache__/
+*.pyc
