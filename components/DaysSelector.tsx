@@ -286,6 +286,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                           type="button"
                           onClick={() => !isDisabled && handleToggleDay(dateStr)}
                           disabled={isDisabled}
+                          data-date={dateStr}
+                          data-testid={`calendar-day-${dateStr}`}
                           className={`
                             aspect-square rounded-md text-sm flex items-center justify-center
                             ${isDisabled
