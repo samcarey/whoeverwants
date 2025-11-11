@@ -19,6 +19,8 @@ interface MinMaxCounterProps {
   unitLabel?: string;
   minCheckboxEnabled?: boolean;
   onMinCheckboxChange?: (enabled: boolean) => void;
+  deferValidation?: boolean; // Don't auto-correct during input, only on blur
+  testId?: string; // For test automation
 }
 
 export default function MinMaxCounter({
@@ -37,18 +39,29 @@ export default function MinMaxCounter({
   formatValue,
   unitLabel,
   minCheckboxEnabled = false,
-  onMinCheckboxChange
+  onMinCheckboxChange,
+  deferValidation = false,
+  testId
 }: MinMaxCounterProps) {
   const handleMinChange = (newMin: number | null) => {
     onMinChange(newMin);
-    // If max is enabled and new min is greater than max, update max
-    if (maxEnabled && maxValue !== null && newMin !== null && newMin > maxValue) {
+    // Only auto-correct max if not deferring validation
+    if (!deferValidation && maxEnabled && maxValue !== null && newMin !== null && newMin > maxValue) {
       onMaxChange(newMin);
     }
   };
 
   const handleMaxChange = (newMax: number | null) => {
     const minVal = minValue ?? minLimit;
+    // If deferring validation, accept any value during input
+    if (deferValidation) {
+      if (!maxEnabled && newMax !== null) {
+        onMaxEnabledChange(true);
+      }
+      onMaxChange(newMax);
+      return;
+    }
+    // Original validation behavior
     // Ensure max is never less than min and never greater than maxLimit
     if (newMax !== null && newMax >= minVal) {
       // Enforce maxLimit if it exists
@@ -78,7 +91,7 @@ export default function MinMaxCounter({
   };
 
   return (
-    <div>
+    <div data-testid={testId}>
       <div className="relative flex justify-center items-center">
         {/* Min checkbox - positioned absolutely on the left */}
         {onMinCheckboxChange && (

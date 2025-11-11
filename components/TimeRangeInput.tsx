@@ -14,6 +14,8 @@ interface TimeRangeInputProps {
   maxLimit?: string;  // Latest allowed time (e.g., "17:00")
   minRequired?: boolean;  // Force min checkbox to be enabled
   maxRequired?: boolean;  // Force max checkbox to be enabled
+  hideCheckboxes?: boolean;  // Hide checkboxes entirely (for mandatory fields)
+  testId?: string;  // For test automation
 }
 
 export default function TimeRangeInput({
@@ -29,7 +31,9 @@ export default function TimeRangeInput({
   minLimit,
   maxLimit,
   minRequired = false,
-  maxRequired = false
+  maxRequired = false,
+  hideCheckboxes = false,
+  testId
 }: TimeRangeInputProps) {
   // Helper: Add minutes to a time string
   const addMinutes = (timeStr: string, minutes: number): string => {
@@ -49,18 +53,43 @@ export default function TimeRangeInput({
 
   const MINIMUM_DURATION_MINUTES = 15; // Minimum time span of 15 minutes
 
+  // Helper: Validate and format time string (HH:MM)
+  const validateTimeFormat = (value: string): string | null => {
+    if (!value) return null;
+
+    // Remove any non-digit characters except colon
+    const cleaned = value.replace(/[^\d:]/g, '');
+
+    // Try to parse as HH:MM
+    const match = cleaned.match(/^(\d{1,2}):?(\d{0,2})$/);
+    if (!match) return null;
+
+    const hours = parseInt(match[1], 10);
+    const mins = match[2] ? parseInt(match[2], 10) : 0;
+
+    // Validate ranges
+    if (hours < 0 || hours > 23 || mins < 0 || mins > 59) return null;
+
+    // Format as HH:MM
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
   const handleMinChange = (value: string) => {
     if (!value) {
       onMinChange(null);
       return;
     }
 
+    // Validate format first
+    const formatted = validateTimeFormat(value);
+    if (!formatted) return; // Invalid format, ignore
+
     // Clamp to minLimit/maxLimit range (for iOS and other browsers that don't respect min/max)
-    let clampedValue = value;
-    if (minLimit && value < minLimit) {
+    let clampedValue = formatted;
+    if (minLimit && formatted < minLimit) {
       clampedValue = minLimit;
     }
-    if (maxLimit && value > maxLimit) {
+    if (maxLimit && formatted > maxLimit) {
       clampedValue = maxLimit;
     }
 
@@ -87,12 +116,16 @@ export default function TimeRangeInput({
       return;
     }
 
+    // Validate format first
+    const formatted = validateTimeFormat(value);
+    if (!formatted) return; // Invalid format, ignore
+
     // Clamp to minLimit/maxLimit range (for iOS and other browsers that don't respect min/max)
-    let clampedValue = value;
-    if (minLimit && value < minLimit) {
+    let clampedValue = formatted;
+    if (minLimit && formatted < minLimit) {
       clampedValue = minLimit;
     }
-    if (maxLimit && value > maxLimit) {
+    if (maxLimit && formatted > maxLimit) {
       clampedValue = maxLimit;
     }
 
@@ -112,27 +145,37 @@ export default function TimeRangeInput({
   };
 
   return (
-    <div>
-      <div className="relative flex justify-center items-center">
+    <div data-testid={testId}>
+      <div className={hideCheckboxes ? "flex justify-center items-center" : "relative flex justify-center items-center"}>
         {/* Min checkbox - positioned absolutely on the left */}
-        <input
-          type="checkbox"
-          checked={minEnabled}
-          onChange={(e) => onMinEnabledChange(e.target.checked)}
-          disabled={disabled || minRequired}
-          className="absolute left-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
-        />
+        {!hideCheckboxes && (
+          <input
+            type="checkbox"
+            checked={minEnabled}
+            onChange={(e) => onMinEnabledChange(e.target.checked)}
+            disabled={disabled || minRequired}
+            className="absolute left-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
+          />
+        )}
 
         <div className="flex items-center gap-3">
           {/* Min time input */}
           <div className={!minEnabled ? 'opacity-40' : ''}>
             <input
-              type="time"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{2}:[0-9]{2}"
+              placeholder="HH:MM"
               value={minEnabled ? (minValue || '') : ''}
               onChange={(e) => handleMinChange(e.target.value)}
+              onBlur={(e) => {
+                // Format on blur if valid
+                const formatted = validateTimeFormat(e.target.value);
+                if (formatted && minEnabled) {
+                  onMinChange(formatted);
+                }
+              }}
               disabled={disabled || !minEnabled}
-              min={minLimit}
-              max={maxLimit}
               className="w-28 px-2 py-2 text-center text-lg font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
           </div>
@@ -143,25 +186,35 @@ export default function TimeRangeInput({
           {/* Max time input */}
           <div className={!maxEnabled ? 'opacity-40' : ''}>
             <input
-              type="time"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{2}:[0-9]{2}"
+              placeholder="HH:MM"
               value={maxEnabled ? (maxValue || '') : ''}
               onChange={(e) => handleMaxChange(e.target.value)}
+              onBlur={(e) => {
+                // Format on blur if valid
+                const formatted = validateTimeFormat(e.target.value);
+                if (formatted && maxEnabled) {
+                  onMaxChange(formatted);
+                }
+              }}
               disabled={disabled || !maxEnabled}
-              min={minLimit}
-              max={maxLimit}
               className="w-28 px-2 py-2 text-center text-lg font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
           </div>
         </div>
 
         {/* Max checkbox - positioned absolutely on the right */}
-        <input
-          type="checkbox"
-          checked={maxEnabled}
-          onChange={(e) => onMaxEnabledChange(e.target.checked)}
-          disabled={disabled || maxRequired}
-          className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
-        />
+        {!hideCheckboxes && (
+          <input
+            type="checkbox"
+            checked={maxEnabled}
+            onChange={(e) => onMaxEnabledChange(e.target.checked)}
+            disabled={disabled || maxRequired}
+            className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
+          />
+        )}
       </div>
     </div>
   );
