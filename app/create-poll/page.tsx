@@ -47,8 +47,8 @@ function CreatePollContent() {
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [timeMinValue, setTimeMinValue] = useState<string | null>('09:00');
   const [timeMaxValue, setTimeMaxValue] = useState<string | null>('17:00');
-  const [timeMinEnabled, setTimeMinEnabled] = useState(false);
-  const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
+  const [timeMinEnabled, setTimeMinEnabled] = useState(true);
+  const [timeMaxEnabled, setTimeMaxEnabled] = useState(true);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
@@ -169,8 +169,9 @@ function CreatePollContent() {
           if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
           if (formState.timeMinValue !== undefined) setTimeMinValue(formState.timeMinValue);
           if (formState.timeMaxValue !== undefined) setTimeMaxValue(formState.timeMaxValue);
-          if (formState.timeMinEnabled !== undefined) setTimeMinEnabled(formState.timeMinEnabled);
-          if (formState.timeMaxEnabled !== undefined) setTimeMaxEnabled(formState.timeMaxEnabled);
+          // Don't restore time enabled states from localStorage - always true for participation polls
+          // if (formState.timeMinEnabled !== undefined) setTimeMinEnabled(formState.timeMinEnabled);
+          // if (formState.timeMaxEnabled !== undefined) setTimeMaxEnabled(formState.timeMaxEnabled);
           if (formState.selectedDays !== undefined) setSelectedDays(formState.selectedDays);
         } catch (error) {
           console.error('Failed to load form state:', error);
@@ -355,6 +356,14 @@ function CreatePollContent() {
       setCreatorName(savedName);
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
+
+  // Set hydration ready indicator for test automation
+  useEffect(() => {
+    if (isClient && typeof window !== 'undefined') {
+      // @ts-ignore - Adding test automation flag
+      window.__FORM_READY__ = true;
+    }
+  }, [isClient]);
 
   // Save poll type preference and emit poll type changes to update the header
   useEffect(() => {
@@ -942,8 +951,7 @@ function CreatePollContent() {
         }
       }
 
-
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from("polls")
         .insert([pollData])
         .select();
@@ -1151,6 +1159,7 @@ function CreatePollContent() {
               onTimeMaxEnabledChange={setTimeMaxEnabled}
               selectedDays={selectedDays}
               onDaysChange={setSelectedDays}
+              isCreationForm={true}
             />
           )}
 
