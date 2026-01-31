@@ -1,0 +1,12 @@
+{
+  "name": "multi-branch-deploy",
+  "version": "1.0.0",
+  "description": "Multi-branch deployment system: detects pushes, builds branches, serves each at its own path",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0"
+  }
+}
