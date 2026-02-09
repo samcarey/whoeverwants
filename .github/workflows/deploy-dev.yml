@@ -1,0 +1,80 @@
+name: Deploy Dev to GitHub Pages
+
+on:
+  push:
+    branches: ['**']
+
+permissions:
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; latest push wins
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare source for static export
+        run: |
+          # Remove API routes (server-only, not supported in static export)
+          rm -rf app/api
+
+          # Strip 'force-dynamic' exports from all page files
+          find app \( -name '*.tsx' -o -name '*.ts' \) | xargs sed -i "/export const dynamic = 'force-dynamic'/d"
+
+          # Add generateStaticParams to the dynamic [shortId] route so
+          # Next.js static export accepts it (returns [] — no pages are
+          # pre-rendered, but client-side routing still works via 404.html)
+          echo 'export function generateStaticParams() { return []; }' >> app/p/\[shortId\]/page.tsx
+
+      - name: Build static site
+        env:
+          GITHUB_PAGES: 'true'
+          PAGES_BASE_PATH: '/${{ github.event.repository.name }}'
+          NEXT_PUBLIC_SUPABASE_URL_TEST: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL_TEST }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST }}
+          # next build sets NODE_ENV=production, so the Supabase client reads
+          # the _PRODUCTION variants.  Point them at the test database so the
+          # dev deployment doesn't touch prod data.
+          NEXT_PUBLIC_SUPABASE_URL_PRODUCTION: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL_TEST }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST }}
+        run: npx next build
+
+      - name: Prepare deployment artifacts
+        run: |
+          # Bypass Jekyll processing
+          touch out/.nojekyll
+          # SPA fallback: GitHub Pages serves 404.html for unknown paths,
+          # which loads the full app so client-side routing takes over.
+          cp out/index.html out/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
