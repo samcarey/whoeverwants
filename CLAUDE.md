@@ -1,18 +1,237 @@
 # WhoeverWants Development Environment
 
-## ⚠️ CRITICAL: URL TESTING PROTOCOL
+## Project Overview
+
+**WhoeverWants** is an anonymous polling application for group decision-making. Users create and vote on polls without accounts or sign-ups, sharing via link.
+
+- **Live site**: https://whoeverwants.com
+- **Repository**: https://github.com/samcarey/whoeverwants
+- **License**: Dual MIT / Apache 2.0
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 15.3.3 (App Router, `force-dynamic` routes) |
+| UI | React 18.3.1, Tailwind CSS 4, Geist font |
+| Language | TypeScript 5 (strict mode, `@/*` path alias) |
+| Database | Supabase (PostgreSQL with RLS, PostgREST API) |
+| Unit tests | Vitest 3.2.4, Testing Library, jsdom |
+| E2E tests | Playwright 1.55.0 (Chromium, Firefox, WebKit) |
+| CI | GitHub Actions (Node 18/20 matrix, lint, coverage) |
+| PWA | Service workers, manifest.json, Apple web app support |
+
+## Codebase Structure
+
+```
+whoeverwants/
+├── app/                            # Next.js App Router
+│   ├── layout.tsx                  # Root layout (fonts, viewport, service worker)
+│   ├── template.tsx                # Page template wrapper
+│   ├── page.tsx                    # Home page (poll list, typing animation)
+│   ├── globals.css                 # Tailwind global styles
+│   ├── create-poll/page.tsx        # Poll creation form
+│   ├── p/[shortId]/                # Dynamic poll page (UUID-based routing)
+│   │   ├── page.tsx                # Poll loader with access control
+│   │   └── PollPageClient.tsx      # Full poll view (voting, results, management)
+│   ├── poll/page.tsx               # Alternate poll endpoint
+│   ├── profile/page.tsx            # User profile (name management)
+│   └── api/                        # Server-side API routes
+│       ├── log/route.ts            # Server-side logging endpoint
+│       ├── debug-logs/route.ts     # Debug log retrieval
+│       ├── last-compile/route.ts   # Build timestamp
+│       ├── polls/discover-related/ # Follow-up/fork poll discovery
+│       ├── fix-vote-policy/        # Vote policy fixes
+│       ├── admin/fix-rls/          # RLS admin fixes
+│       ├── test-pushover/          # Push notification testing
+│       └── notify-claude-input/    # Claude notification integration
+│
+├── components/                     # 34 React components
+│   ├── PollList.tsx                # Home page poll list with sections
+│   ├── PollResults.tsx             # Results display (all 4 poll types)
+│   ├── PollActionsCard.tsx         # Poll action buttons
+│   ├── PollManagementButtons.tsx   # Creator controls (close/reopen/duplicate)
+│   ├── YesNoAbstainButtons.tsx     # Yes/No/Abstain voting buttons
+│   ├── RankableOptions.tsx         # Drag-to-rank interface
+│   ├── NominationVotingInterface.tsx # Nomination poll voting
+│   ├── NominationsList.tsx         # Display nominations with vote counts
+│   ├── CompactRankedChoiceResults.tsx # Ranked choice round display
+│   ├── MinMaxCounter.tsx           # Participation min/max selectors
+│   ├── ParticipationConditions.tsx # Voter condition UI
+│   ├── OptionsInput.tsx            # Poll options/nominations input
+│   ├── Countdown.tsx               # Deadline countdown timer
+│   ├── ConfirmationModal.tsx       # Confirm destructive actions
+│   ├── FollowUpModal.tsx           # Create follow-up poll modal
+│   ├── FollowUpHeader.tsx          # Header showing parent poll link
+│   ├── ForkHeader.tsx              # Header showing forked-from link
+│   ├── FollowUpButton.tsx          # Create follow-up button
+│   ├── ForkButton.tsx              # Fork poll button
+│   ├── DuplicateButton.tsx         # Duplicate poll button
+│   ├── VoterList.tsx               # List of voters on a poll
+│   ├── FloatingCopyLinkButton.tsx  # Copy poll URL button
+│   ├── UrlCopy.tsx                 # URL copy utility
+│   ├── ProfileButton.tsx           # Profile access button
+│   ├── GradientBorderButton.tsx    # Styled gradient button
+│   ├── SuccessPopup.tsx            # Success notification popup
+│   ├── OptimizedLoader.tsx         # Loading spinner
+│   ├── ClientOnly.tsx              # Client-only render wrapper
+│   ├── ModalPortal.tsx             # Modal portal container
+│   ├── HeaderPortal.tsx            # Header portal container
+│   ├── PageLayout.tsx              # Page layout wrapper
+│   ├── ResponsiveScaling.tsx       # Mobile viewport scaling
+│   ├── BuildTimer.tsx              # Build timestamp display
+│   └── CounterInput.tsx            # Numeric counter input
+│
+├── lib/                            # 16 utility modules
+│   ├── supabase.ts                 # Supabase client, Poll/Vote/PollResults types,
+│   │                               # core queries (getPollResults, submitVote, etc.)
+│   ├── simplePollQueries.ts        # getAccessiblePolls, getPollWithAccess
+│   ├── pollCreator.ts              # Poll creation & creator secret management
+│   ├── browserPollAccess.ts        # localStorage-based poll access tracking
+│   ├── pollAccess.ts               # Database-backed poll access tracking
+│   ├── pollDiscovery.ts            # Discover follow-up/fork relationships
+│   ├── userProfile.ts              # User name get/save (localStorage)
+│   ├── forgetPoll.ts               # Remove poll from browser's access list
+│   ├── debugLogger.ts              # Server/client logging utility
+│   ├── base62.ts                   # Base62 encoding for short IDs
+│   ├── prefetch.ts                 # Next.js page prefetching
+│   ├── mobile-optimization.ts      # iOS viewport handling
+│   ├── instant-loading.ts          # Page load optimization
+│   ├── last-compile-time.ts        # Build timestamp tracking
+│   ├── usePageTitle.ts             # Dynamic page title hook
+│   └── pushoverNotifications.ts    # Push notification integration
+│
+├── database/migrations/            # 93 SQL migration files (001-063, up + down)
+│   ├── 001-015: Core schema (polls, votes, results, ranked choice, RLS)
+│   ├── 016-041: Short IDs, poll access, nomination fields, RLS policies
+│   ├── 042-050: Nomination poll type, vote constraints, editing
+│   ├── 051-056: Participation poll type, auto-close triggers
+│   └── 057-063: Voter conditions, participation priority algorithm
+│
+├── tests/
+│   ├── __tests__/                  # Vitest unit/integration tests
+│   │   ├── ranked-choice/          # IRV algorithm tests
+│   │   ├── ballot-logic/           # Ballot validation tests
+│   │   ├── voting-algorithms/      # Algorithm correctness tests
+│   │   ├── integration/            # API integration tests
+│   │   ├── components/             # Component tests
+│   │   └── edge-cases/             # Edge case tests
+│   ├── e2e/                        # Playwright E2E tests
+│   │   ├── specs/                  # 9+ test specs
+│   │   ├── pages/                  # Page objects (BasePage, HomePage, etc.)
+│   │   ├── fixtures/               # Test data
+│   │   └── config/                 # Playwright config
+│   ├── helpers/                    # Test utilities
+│   └── setup.js                    # Vitest setup (dotenv, mocks)
+│
+├── scripts/                        # 50+ utility scripts
+│   ├── apply-migrations.sh         # Additive migration runner (RECOMMENDED)
+│   ├── complete-migration.sh       # Full test DB rebuild (DESTRUCTIVE)
+│   ├── complete-migration-production.sh  # Full prod DB rebuild (DESTRUCTIVE)
+│   ├── direct-api-migration.sh     # DB clearing utility
+│   ├── publish.sh                  # Full deployment workflow
+│   ├── debug-console.cjs           # Playwright browser console capture
+│   └── debug-react-state.cjs       # React state debugging
+│
+├── public/                         # Static assets
+│   ├── manifest.json               # PWA manifest
+│   ├── sw.js, sw-mobile.js         # Service workers
+│   └── icon-*.svg                  # App icons (192-512px)
+│
+├── .github/workflows/              # CI pipelines
+│   ├── test.yml                    # Tests on push/PR (Node 18/20, lint, coverage)
+│   └── pr-checks.yml               # PR quality gates
+│
+└── Configuration
+    ├── next.config.ts               # Webpack, caching headers, trailing slash
+    ├── tsconfig.json                # ES2017, strict, @/* paths
+    ├── vitest.config.js             # jsdom, single-fork, 30s timeout
+    ├── postcss.config.mjs           # Tailwind CSS
+    └── .eslintrc.json               # next/core-web-vitals
+```
+
+## Key Concepts
+
+### Poll Types
+
+| Type | Description | Vote Data |
+|------|-------------|-----------|
+| `yes_no` | Simple binary vote | `{ vote: "yes" \| "no" }` |
+| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak | `{ rankings: string[] }` |
+| `nomination` | Nominate options, then vote on them | `{ nominations: string[] }` |
+| `participation` | RSVP with min/max constraints & voter conditions | `{ participating: boolean, conditions: {...} }` |
+
+### Access Control Model
+
+- **No user accounts** - fully anonymous
+- **Browser-based access** via localStorage (`browserPollAccess.ts`)
+- Poll URLs grant access: visiting `/p/[id]` registers access
+- Creator authentication via `creator_secret` (stored in localStorage)
+- Database-level RLS (Row Level Security) policies on all tables
+
+### Data Flow
+
+1. **Poll creation**: `create-poll/page.tsx` -> `pollCreator.ts` -> Supabase `polls` table
+2. **Voting**: `PollPageClient.tsx` -> `supabase.ts:submitVote()` -> Supabase `votes` table
+3. **Results**: `PollResults.tsx` -> `supabase.ts:getPollResults()` -> `poll_results` view
+4. **Access tracking**: `simplePollQueries.ts:getPollWithAccess()` -> localStorage + `poll_access` table
+
+### Environment Selection
+
+`lib/supabase.ts` selects database by `NODE_ENV`:
+- `production` -> `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION` / `NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION`
+- Everything else -> `NEXT_PUBLIC_SUPABASE_URL_TEST` / `NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST`
+
+## Commands Quick Reference
+
+```bash
+# Development
+npm run dev                    # Start dev server (port 3000, force-webpack)
+npm run build                  # Production build
+npm run lint                   # ESLint
+
+# Testing
+npm run test:run               # Run all unit tests once
+npm run test                   # Watch mode
+npm run test:coverage          # Coverage report
+npm run test:algorithms        # Ranking algorithm tests only
+npm run test:e2e               # Playwright E2E tests
+
+# Database
+npm run db:migrate             # Apply new migrations (test)
+npm run db:migrate:production  # Apply new migrations (production)
+npm run db:rebuild-test        # DESTRUCTIVE: full test DB rebuild
+npm run db:rebuild-production  # DESTRUCTIVE: full prod DB rebuild
+
+# Debugging
+npm run debug:console [url]    # Capture browser console via Playwright
+npm run debug:react [id] [act] # Debug React component state
+
+# Deployment
+npm run publish                # Full workflow: commit, merge, push, migrate
+```
+
+---
+
+## CRITICAL RULES FOR AI ASSISTANTS
+
+The sections below contain mandatory rules. Follow them exactly.
+
+- Never ask the user to look at the browser console. Instead, send logs to the server's `/api/log` endpoint and have them run the test manually, then analyze the resulting logs.
+- Never ask the user to check the browser console.
+
+## URL Testing Protocol
 
 **NEVER mention a URL as working without testing it first.**
 
 Before claiming any URL is accessible, ALWAYS run:
 ```bash
-# Test local dev server (check which port Next.js is actually using)
 curl -s -I http://localhost:3000 | head -3
 ```
 
 **Only mention URLs after confirming 200 OK responses.**
 
-## ⚠️ CRITICAL: DEV SERVER PORT MANAGEMENT
+## Dev Server Port Management
 
 **The development server MUST ALWAYS run on port 3000.** Never allow Next.js to auto-select alternative ports like 3001, 3002, etc.
 
@@ -46,47 +265,47 @@ curl -s -I http://localhost:3000 | head -3
 
 **NEVER proceed with development if the server is running on any port other than 3000.**
 
-## ⚠️ CRITICAL: HYDRATION ERROR PREVENTION
+## Hydration Error Prevention
 
 **React hydration errors occur when server-rendered HTML doesn't match client-rendered HTML.**
 
 ### Common Causes & Solutions
 
-#### ❌ **NEVER do this:**
+#### NEVER do this:
 ```typescript
 // Date/time calculations that differ between server/client
 const getTodayDate = () => {
-  const today = new Date(); // ← Different on server vs client!
+  const today = new Date(); // Different on server vs client!
   return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
 };
 
 // Conditional rendering based on client-side checks
-min={isClient ? getTodayDate() : undefined} // ← Hydration mismatch!
+min={isClient ? getTodayDate() : undefined} // Hydration mismatch!
 
 // Direct access to window/localStorage in render
-const value = localStorage.getItem('key') || 'default'; // ← Server doesn't have localStorage
+const value = localStorage.getItem('key') || 'default'; // Server doesn't have localStorage
 ```
 
-#### ✅ **DO this instead:**
+#### DO this instead:
 ```typescript
 // Guard date calculations with typeof window check
 const getTodayDate = () => {
   if (typeof window === 'undefined') {
-    return ''; // ← Same empty value on server
+    return ''; // Same empty value on server
   }
-  const today = new Date(); // ← Only runs on client
+  const today = new Date(); // Only runs on client
   return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
 };
 
 // Use useEffect for client-only operations
 useEffect(() => {
   if (isClient && !customDate) {
-    setCustomDate(getTodayDate()); // ← Set after hydration
+    setCustomDate(getTodayDate()); // Set after hydration
   }
 }, [isClient, customDate]);
 
 // Initialize with empty values, populate in useEffect
-const [customDate, setCustomDate] = useState(''); // ← Server/client both start empty
+const [customDate, setCustomDate] = useState(''); // Server/client both start empty
 ```
 
 ### Testing for Hydration Issues
@@ -124,79 +343,38 @@ useEffect(() => {
 
 ---
 
-## 🔍 BROWSER CONSOLE DEBUGGING
+## Browser Console Debugging
 
-**Claude can read browser console output using Playwright/Puppeteer to debug React applications.**
+**Claude can read browser console output using Playwright to debug React applications.**
 
-### When to Use Browser Console Debugging
+### When to Use
 
 - **React state issues** that don't appear in server logs
 - **Client-side JavaScript errors** and warnings
 - **Database fetch errors** visible only in browser
 - **localStorage/sessionStorage debugging**
-- **Component lifecycle debugging** with console.log statements
 
-### Quick Console Capture Method
+### Quick Console Capture
 
 ```bash
-# Use the permanent console debugging utility
+# Permanent console debugging utility
 node scripts/debug-console.cjs [poll-id-or-url]
 
-# Or use npm scripts:
+# npm scripts:
 npm run debug:console [poll-id-or-url]
 npm run debug:react [poll-id] [action]
 
 # Examples:
 node scripts/debug-console.cjs f1eb5036-fb77-4baa-9f23-a2774c576c5b
 node scripts/debug-console.cjs /create-poll
-node scripts/debug-console.cjs  # captures homepage
-
-# React-specific debugging:
 npm run debug:react poll-123 vote      # Debug voting process
 npm run debug:react poll-123 revisit   # Debug vote retrieval
-```
-
-### Manual Browser Console Debugging
-
-1. **Add console.log statements** to React components
-2. **Run the console capture script** to visit the page
-3. **Analyze captured output** for errors and state issues
-4. **Clean up debug statements** after fixing the issue
-
-### Debugging React Components
-
-Add temporary debugging to React components:
-```typescript
-// In React component
-useEffect(() => {
-  console.log('Component state:', { someState, anotherState });
-  console.log('Props received:', props);
-}, [someState, anotherState, props]);
-
-// For debugging API calls
-const fetchData = async () => {
-  console.log('Fetching data with params:', params);
-  try {
-    const result = await apiCall(params);
-    console.log('API result:', result);
-  } catch (error) {
-    console.error('API error:', error);
-  }
-};
 ```
 
 ### Browser Console vs Server Logs
 
 - **Server logs** (`sudo journalctl -u whoeverwants-dev -f`) - server-side errors, API routes
-- **Browser console** - client-side React state, component lifecycle, database fetch errors
-- **Use browser console for React debugging** - state management, component rendering, client-side API calls
-
-### Important Notes
-
-- **Playwright captures real browser console output** - works with actual React app
-- **React Testing Library uses jsdom** - simulated DOM, no real browser console
-- **Always clean up debug statements** after fixing issues
-- **Use sparingly** - too many console.logs can impact performance
+- **Browser console** (via Playwright capture) - client-side React state, component lifecycle, database fetch errors
 
 ---
 
@@ -231,10 +409,10 @@ We choose **Configuration 2** (Voter B) because:
 
 When selecting among competing voters, we rank by:
 
-1. **No max constraint** → Highest priority (infinite flexibility)
-2. **Higher max value** → Higher priority (more room for others)
-3. **Lower min value** → Higher priority (easier to satisfy)
-4. **Earlier timestamp** → Tiebreaker (first-come-first-served)
+1. **No max constraint** -> Highest priority (infinite flexibility)
+2. **Higher max value** -> Higher priority (more room for others)
+3. **Lower min value** -> Higher priority (easier to satisfy)
+4. **Earlier timestamp** -> Tiebreaker (first-come-first-served)
 
 ### Implementation Strategy
 
@@ -246,13 +424,6 @@ The algorithm uses a **greedy selection with priority ordering**:
    - Include voter if their constraints are satisfied by current count
    - Skip voter if including them would violate anyone's constraints
 4. Return the final stable set of participating voters
-
-### Benefits
-
-- **Scalable**: Works for any number of voters with diverse constraints
-- **Predictable**: Voters understand that flexibility increases their participation chances
-- **Optimal**: Maximizes the potential for future participation growth
-- **Fair**: Doesn't arbitrarily favor first voters; favors accommodating voters
 
 ### Edge Cases Handled
 
@@ -322,103 +493,73 @@ tail -f dev-server-error.log  # Error logs
 
 ### Important Notes
 - The service **always ensures port 3000 is available** before starting
-- If port 3000 is busy, follow the port conflict resolution steps below
+- If port 3000 is busy, follow the port conflict resolution steps above
 - The service runs with your user permissions (not as root)
 
-## 🔧 TROUBLESHOOTING: Development Server Issues
+## Troubleshooting: Development Server Issues
 
 ### Problem: Dev Server Not Rendering
 
-If the development server appears to be running but the site doesn't load properly, check these issues:
-
-#### **1. Port Conflicts**
+#### 1. Port Conflicts
 Next.js automatically switches ports when 3000 is busy. Always ensure it's running on port 3000.
 
-**Fix Process:**
-1. Check which port Next.js actually started on:
-   ```bash
-   lsof -i :3000
-   ```
+```bash
+# Check which port Next.js actually started on
+lsof -i :3000
 
-2. If port 3000 is busy, kill the process and restart the service:
-   ```bash
-   kill -9 [PID]
-   rm -rf .next
-   launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
-   ```
+# If port 3000 is busy, kill the process and restart the service
+kill -9 [PID]
+rm -rf .next
+launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
+```
 
-**Note:** The dev server runs as a background service. Use `launchctl` commands instead of manual `npm run dev`.
-
-#### **2. React Hydration Errors**
+#### 2. React Hydration Errors
 Hydration errors cause the app to show permanent loading spinners.
 
 **Common Cause:** Date/time calculations in render functions
 ```typescript
-// ❌ BAD - causes hydration mismatch
-const now = new Date(); // Different on server vs client
-const openPolls = polls.filter(poll => 
+// BAD - causes hydration mismatch
+const now = new Date();
+const openPolls = polls.filter(poll =>
   new Date(poll.response_deadline) > now
 );
 ```
 
 **Fix:** Move date logic to `useEffect`
 ```typescript
-// ✅ GOOD - avoids hydration issues  
+// GOOD - avoids hydration issues
 const [openPolls, setOpenPolls] = useState<Poll[]>([]);
 
 useEffect(() => {
   if (typeof window === 'undefined') return;
-  
-  const now = new Date(); // Only runs on client
-  const open = polls.filter(poll => 
+  const now = new Date();
+  const open = polls.filter(poll =>
     new Date(poll.response_deadline) > now
   );
   setOpenPolls(open);
 }, [polls]);
 ```
 
-#### **3. Missing JavaScript Build Assets**
+#### 3. Missing JavaScript Build Assets
 404 errors for `main-app.js`, `webpack.js` files indicate build corruption.
 
-**Fix:** Clear Next.js cache and restart
 ```bash
 rm -rf .next/
 npm run dev
 ```
 
-#### **4. Complete Recovery Steps**
-When dev server has multiple issues:
+#### 4. Complete Recovery Steps
 
-1. **Clear build cache:**
-   ```bash
-   rm -rf .next/
-   ```
+1. Clear build cache: `rm -rf .next/`
+2. Check for hydration errors in code (search for `new Date()` in render functions)
+3. Identify actual port: `lsof -i :3000`
+4. Restart dev server service: `launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist`
+5. Verify URL works: `curl -s -I http://localhost:3000 | head -3`
 
-2. **Check for hydration errors in code:**
-   - Search for `new Date()` in render functions
-   - Move to `useEffect` hooks with `typeof window` guards
-
-3. **Identify actual port:**
-   ```bash
-   lsof -i :3000
-   ```
-
-4. **Restart dev server service:**
-   ```bash
-   launchctl unload ~/Library/LaunchAgents/com.whoeverwants.dev.plist && launchctl load ~/Library/LaunchAgents/com.whoeverwants.dev.plist
-   ```
-
-5. **Verify URL works:**
-   ```bash
-   curl -s -I http://localhost:3000 | head -3
-   ```
-
-#### **5. Debug Browser Console**
-Use the included debug script to capture browser console logs:
+#### 5. Debug Browser Console
 ```bash
-node debug-console.cjs
+node scripts/debug-console.cjs
 ```
-This helps identify hydration errors and JavaScript loading issues.
 
 **Success Indicators:**
 - No hydration warnings in browser console
@@ -428,231 +569,102 @@ This helps identify hydration errors and JavaScript loading issues.
 
 ---
 
-# Database Migration System
+## Database Migration System
 
-This project uses an **additive migration system** that preserves existing data while applying schema changes.
+This project uses an **additive migration system** that preserves existing data while applying schema changes. There are currently **63 numbered migrations** (001-063) with both up and down files.
 
-## Quick Commands
+### Quick Commands
 
-### 🟢 Recommended: Additive Migrations (Preserves Data)
+#### Recommended: Additive Migrations (Preserves Data)
 ```bash
-# Apply only NEW migrations to TEST database (preserves existing data)
-npm run db:migrate
-
-# Apply only NEW migrations to PRODUCTION database (preserves existing data)
-npm run db:migrate:production
+npm run db:migrate             # Apply NEW migrations to TEST database
+npm run db:migrate:production  # Apply NEW migrations to PRODUCTION database
 ```
 
-### ⚠️ Destructive Operations (Use With Caution)
+#### Destructive Operations (Use With Caution)
 
-**WARNING**: The commands below will DELETE ALL DATA. Only use when absolutely necessary.
+**WARNING**: The commands below will DELETE ALL DATA.
 
 ```bash
-# DANGER: Tear down entire TEST database and rebuild with all migrations
-# This DELETES all test data!
-npm run db:rebuild-test
-
-# DANGER: Tear down entire PRODUCTION database and rebuild with all migrations
-# This PERMANENTLY DELETES all production data!
-npm run db:rebuild-production
-
-# Clear TEST database only (deletes all data)
-npm run db:clear-test
+npm run db:rebuild-test           # Full test DB rebuild
+npm run db:rebuild-production     # Full prod DB rebuild (requires confirmation)
+npm run db:clear-test             # Clear test schema only
 ```
 
-## How It Works
+### How It Works
 
 The migration system uses **Supabase Management API** to execute SQL directly, bypassing PostgreSQL connection issues in containerized environments like GitHub Codespaces.
 
-### Key Components
+#### Key Scripts
 
-#### 1. **`scripts/apply-migrations.sh`** - Additive migration system (RECOMMENDED)
-   - Tracks which migrations have been applied using a `_migrations` table
-   - Only applies NEW migrations, preserving all existing data
-   - Supports both test and production databases
-   - Safe to run multiple times - skips already-applied migrations
-   - Wraps each migration in a transaction for safety
+| Script | Purpose |
+|--------|---------|
+| `scripts/apply-migrations.sh` | Additive migration runner (RECOMMENDED) |
+| `scripts/complete-migration.sh` | Full test DB tear-down/rebuild (DESTRUCTIVE) |
+| `scripts/complete-migration-production.sh` | Full prod DB tear-down/rebuild (DESTRUCTIVE) |
+| `scripts/direct-api-migration.sh` | DB clearing utility (TEST only) |
 
-#### 2. **`scripts/complete-migration.sh`** - Full TEST database tear-down/rebuild (DESTRUCTIVE)
-   - ⚠️ **DELETES ALL DATA** in test database
-   - Clears all tables, views, functions, policies from test database
-   - Applies ALL migrations in `database/migrations/` in order
-   - Use only when you need a completely fresh database
-
-#### 3. **`scripts/complete-migration-production.sh`** - Full PRODUCTION database tear-down/rebuild (DESTRUCTIVE)
-   - ⚠️ **DANGER**: Permanently deletes ALL production data
-   - Requires manual confirmation: type `CONFIRM_PRODUCTION_REBUILD`
-   - Should almost NEVER be used in production
-
-#### 4. **`scripts/direct-api-migration.sh`** - Database clearing utility (DESTRUCTIVE)
-   - Clears database schema without running migrations
-   - TEST only - cannot be used on production
-
-#### 5. **Migration Files Location**: `database/migrations/`
-   - Format: `XXX_description_up.sql` (e.g., `001_create_polls_table_up.sql`)
-   - Migrations are applied in alphabetical order
-   - New fields should have sensible defaults or allow NULL for existing rows
+#### Migration File Format
+- Location: `database/migrations/`
+- Naming: `XXX_description_up.sql` / `XXX_description_down.sql`
+- Applied in alphabetical order
+- Tracked in `_migrations` table (additive mode only)
 
 ### Authentication & Configuration
 
-The system uses these environment variables from `.env`:
+**Environment variables from `.env`:**
 
-**For Test Database:**
-- `NEXT_PUBLIC_SUPABASE_URL_TEST` - Test database URL
-- `SUPABASE_TEST_SERVICE_KEY` - Service role key for API access
-- `SUPABASE_ACCESS_TOKEN` - Personal access token for Management API
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL_TEST` | Test database URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST` | Test anon key |
+| `SUPABASE_TEST_SERVICE_KEY` | Test service role key |
+| `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION` | Production database URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION` | Production anon key |
+| `SUPABASE_ACCESS_TOKEN_PRODUCTION` | Production service role key |
+| `SUPABASE_ACCESS_TOKEN` | Management API access token (shared) |
 
-**For Production Database:**
-- `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION` - Production database URL
-- `SUPABASE_ACCESS_TOKEN_PRODUCTION` - Production service role key
-- `SUPABASE_ACCESS_TOKEN` - Personal access token for Management API (same as test)
+### Writing New Migrations
 
-### API Approach Details
-
-Instead of direct PostgreSQL connections (which are blocked in many cloud environments), the system uses:
-
-1. **Supabase Management API** (`https://api.supabase.com/v1/projects/{ref}/database/query`)
-   - Executes arbitrary SQL with Management API access token
-   - Returns HTTP 200/201 for success
-   - Handles complex multi-statement SQL blocks
-
-2. **PostgREST API** (`https://{project}.supabase.co/rest/v1/`)
-   - Used for verification queries (checking table existence, etc.)
-   - Uses service role key for authentication
-
-### Migration Process
-
-#### Additive Migration Process (RECOMMENDED)
-
-1. **Check Migration Tracking Table**
-   - Creates `_migrations` table if it doesn't exist
-   - Queries for previously applied migrations
-
-2. **Identify New Migrations**
-   - Scans `database/migrations/` for all `*_up.sql` files
-   - Compares with applied migrations list
-   - Identifies which migrations are new
-
-3. **Apply New Migrations Only**
-   - Each migration is wrapped in a transaction
-   - Records successful migrations in tracking table
-   - Stops on first failure to maintain consistency
-   - Existing data is preserved
-
-4. **Verification**
-   - Reports number of migrations applied
-   - Shows current migration status
-
-#### Destructive Migration Process (USE WITH CAUTION)
-
-1. **PHASE 1: Clear Database** (⚠️ DELETES ALL DATA)
-   - Drops all tables, views, functions, policies in public schema
-   - Completely wipes the database
-
-2. **PHASE 2: Apply All Migrations**
-   - Applies every migration from scratch
-   - Creates a fresh database schema
-   - No data is preserved from before
-
-## Writing New Migrations
-
-When creating new migrations:
-
-1. **Use additive changes**: Add columns with DEFAULT values or NULL
+1. **Use additive changes**: Add columns with DEFAULT values or allow NULL
 2. **Avoid destructive changes**: Don't DROP columns or tables with data
 3. **Handle existing data**: Provide migration logic for existing rows
 4. **Test thoroughly**: Run migrations on test database first
 
-Example of a good migration:
 ```sql
--- Add new column with default value for existing rows
-ALTER TABLE polls ADD COLUMN IF NOT EXISTS 
+-- Example: good migration
+ALTER TABLE polls ADD COLUMN IF NOT EXISTS
   view_count INTEGER DEFAULT 0;
 
--- Update existing rows if needed
 UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
 ```
 
-## Current Migrations
+### Migration History (Key Milestones)
 
-The project has multiple migrations that build the schema incrementally:
-1. `001_create_polls_table_up.sql` - Basic polls table
-2. `002_add_response_deadline_up.sql` - Response deadlines
-3. `003_add_poll_type_and_options_up.sql` - Poll types/options
-4. `004_create_votes_table_up.sql` - Voting system
-5. `005_create_poll_results_view_up.sql` - Results view
-6. `006_create_ranked_choice_rounds_table_up.sql` - Ranked choice
-7. `007_add_creator_secret_up.sql` - Creator auth
-8. `008_create_ranked_choice_function_up.sql` - RC algorithm
-9. `009_update_poll_results_view_up.sql` - Updated results
-10. `010_fix_ranked_choice_rls_v2_up.sql` - RLS fixes
-11. `011_fix_array_handling_up.sql` - Array handling
-12. `012_fix_remaining_options_bug_up.sql` - Options bug fix
-13. `013_add_is_closed_field_up.sql` - Poll closing
-14. `014_fix_ranked_choice_bug_up.sql` - RC bug fix
-15. `015_add_polls_update_policy_up.sql` - Update policies
+| Range | Description |
+|-------|-------------|
+| 001-015 | Core schema: polls, votes, results view, ranked choice, RLS, creator auth |
+| 016-025 | Short IDs (base62), poll access tracking, nomination vote fields |
+| 026-041 | Vote editing, abstain support, voter names, follow-up/fork relationships |
+| 042-050 | Nomination poll type, vote type constraints, nomination editing |
+| 051-056 | Participation poll type, min/max participants, auto-close triggers |
+| 057-063 | Voter conditions, conditional participation counting, priority algorithm |
 
-## Troubleshooting
+### Database Status
 
-### Common Issues
-- **jq not found**: Install with `apt-get install jq` or similar
-- **Access token missing**: Ensure `SUPABASE_ACCESS_TOKEN` is set in `.env`
-- **HTTP 401/403**: Check that access token has project permissions
-- **Migration fails**: Check SQL syntax in individual migration files
+| Database | Ref ID | Status |
+|----------|--------|--------|
+| Test | kfngceqepnzlljkwedtd | All 63 migrations applied |
+| Production | kifnvombihyfwszuwqvy | All 63 migrations applied |
 
-### Network Issues
-This system specifically works around PostgreSQL connection issues in:
-- GitHub Codespaces
-- Docker containers  
-- Restricted network environments
-- IPv6 connectivity problems
+### Safety Guidelines
 
-The Management API approach bypasses these limitations entirely.
+- **Test DB**: Safe to rebuild anytime (`npm run db:rebuild-test`)
+- **Production DB**: EXTREME CAUTION. Must type `CONFIRM_PRODUCTION_REBUILD`. ALL DATA PERMANENTLY LOST.
 
-## Success Indicators
+---
 
-When complete migration succeeds, you'll see:
-```
-🎉 COMPLETE DATABASE MIGRATION SUCCESSFUL!
-✅ Database completely rebuilt from scratch
-✅ All 15 migrations applied successfully  
-✅ Database functionality verified
-📊 Database is ready for use
-```
-
-The database will be completely reset and rebuilt with the latest schema.
-
-## Database Status Summary
-
-### Test Database (kfngceqepnzlljkwedtd)
-- **URL**: https://kfngceqepnzlljkwedtd.supabase.co
-- **Status**: ✅ **READY** - All 15 migrations applied
-- **Last Updated**: Most recent migration run
-- **Data**: Test data only (safe to rebuild)
-
-### Production Database (kifnvombihyfwszuwqvy)  
-- **URL**: https://kifnvombihyfwszuwqvy.supabase.co
-- **Status**: ✅ **READY** - All 15 migrations applied
-- **Last Updated**: Most recent migration run
-- **Data**: ⚠️ **PRODUCTION** - Contains live user data when active
-
-## Safety Guidelines
-
-### Test Database
-- ✅ Safe to rebuild anytime with `./scripts/complete-migration.sh`
-- ✅ No confirmation required
-- ✅ Use for development and testing
-
-### Production Database
-- ⚠️ **EXTREME CAUTION** required
-- ⚠️ Must type `CONFIRM_PRODUCTION_REBUILD` to proceed
-- ⚠️ **ALL PRODUCTION DATA WILL BE PERMANENTLY LOST**
-- ⚠️ Only use for fresh deployments or complete resets
-- ⚠️ Consider data backup strategies before running
-- never ask me to look at the console for logs to debug. instead send logs to the server's log endpoint and then tell me to run my test manually and then analyze the resulting logs
-- never ask me to check the browser console
-
-## 🚨 CRITICAL: Database Constraint Debugging
+## Database Constraint Debugging
 
 ### When "Failed to submit vote" Errors Occur
 
@@ -663,11 +675,11 @@ The database will be completely reset and rebuilt with the latest schema.
 3. **Look for constraint violations** - they often "stack" (fixing one reveals another)
 
 ### Common Constraint Issues (in order of likelihood):
-1. `votes_vote_type_check` - Missing 'nomination' in allowed types (migration 048)
-2. `vote_yes_no_valid` - Outdated constraint blocking nominations (migration 047)
-3. `vote_structure_valid` - Structure validation for vote types (migration 043/044)
+1. `votes_vote_type_check` - Missing vote type in allowed types
+2. `vote_yes_no_valid` - Outdated constraint blocking new vote types
+3. `vote_structure_valid` - Structure validation for vote types
 
-### Key Lesson from Nomination Voting Debug:
+### Key Lesson:
 **PostgreSQL only reports the FIRST failing constraint.** After fixing one constraint, ALWAYS test again immediately - another constraint may be blocking. The nomination voting fix required fixing TWO separate constraints that were hiding behind each other.
 
 ### Quick Debug Commands:
