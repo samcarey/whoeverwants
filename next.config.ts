@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
+const isGitHubPages = process.env.GITHUB_PAGES === 'true';
+
 const nextConfig: NextConfig = {
-  // Removed 'output: export' to support dynamic routes
-  // Static export doesn't work with dynamic poll IDs
   trailingSlash: true,
   images: {
     unoptimized: true,
@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
     if (dev) {
       // Disable webpack caching completely in development
       config.cache = false;
-      
+
       // Force webpack to rebuild everything
       config.optimization = {
         ...config.optimization,
@@ -21,8 +21,8 @@ const nextConfig: NextConfig = {
         removeEmptyChunks: false,
         splitChunks: false,
       };
-      
-      
+
+
       // Inject timestamp via DefinePlugin
       const timestamp = Date.now().toString();
       config.plugins.push(
@@ -33,11 +33,18 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
+};
 
+// GitHub Pages: enable static export with configurable base path
+if (isGitHubPages) {
+  nextConfig.output = 'export';
+  nextConfig.basePath = process.env.PAGES_BASE_PATH || '';
+} else {
   // Headers for tunnel compatibility and environment-specific caching
-  async headers() {
+  // (not supported with static export)
+  nextConfig.headers = async () => {
     const isDev = process.env.NODE_ENV === 'development';
-    
+
     return [
       {
         source: '/(.*)',
@@ -53,7 +60,7 @@ const nextConfig: NextConfig = {
           // Cache control for pages
           {
             key: 'Cache-Control',
-            value: isDev 
+            value: isDev
               ? 'no-cache, no-store, must-revalidate, max-age=0'
               : 'public, max-age=3600, stale-while-revalidate=3600'
           },
@@ -87,7 +94,7 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
-  },
-};
+  };
+}
 
 export default nextConfig;
