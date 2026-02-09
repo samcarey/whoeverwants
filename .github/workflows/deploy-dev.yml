@@ -37,10 +37,16 @@ jobs:
           # Strip 'force-dynamic' exports from all page files
           find app \( -name '*.tsx' -o -name '*.ts' \) | xargs sed -i "/export const dynamic = 'force-dynamic'/d"
 
-          # Add generateStaticParams to the dynamic [shortId] route so
-          # Next.js static export accepts it (returns [] — no pages are
-          # pre-rendered, but client-side routing still works via 404.html)
-          echo 'export function generateStaticParams() { return []; }' >> app/p/\[shortId\]/page.tsx
+          # The dynamic [shortId] route needs generateStaticParams for static
+          # export, but that can't coexist with "use client" in the same file.
+          # Split it: move the client page to a separate file, then create a
+          # thin server-component page.tsx that re-exports it.
+          mv app/p/\[shortId\]/page.tsx app/p/\[shortId\]/PollPageLoader.tsx
+          cat > app/p/\[shortId\]/page.tsx << 'SPLIT'
+          import PollPage from "./PollPageLoader";
+          export function generateStaticParams() { return []; }
+          export default PollPage;
+          SPLIT
 
       - name: Build static site
         env:
