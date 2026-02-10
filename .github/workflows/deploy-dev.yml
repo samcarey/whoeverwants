@@ -42,11 +42,9 @@ jobs:
           # Split it: move the client page to a separate file, then create a
           # thin server-component page.tsx that re-exports it.
           mv app/p/\[shortId\]/page.tsx app/p/\[shortId\]/PollPageLoader.tsx
-          cat > app/p/\[shortId\]/page.tsx << 'SPLIT'
-          import PollPage from "./PollPageLoader";
-          export function generateStaticParams() { return []; }
-          export default PollPage;
-          SPLIT
+          echo 'import PollPage from "./PollPageLoader";' > app/p/\[shortId\]/page.tsx
+          echo 'export function generateStaticParams() { return []; }' >> app/p/\[shortId\]/page.tsx
+          echo 'export default PollPage;' >> app/p/\[shortId\]/page.tsx
 
       - name: Build static site
         env:
