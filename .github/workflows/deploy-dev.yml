@@ -41,10 +41,14 @@ jobs:
           # export, but that can't coexist with "use client" in the same file.
           # Split it: move the client page to a separate file, then create a
           # thin server-component page.tsx that re-exports it.
-          mv app/p/\[shortId\]/page.tsx app/p/\[shortId\]/PollPageLoader.tsx
-          echo 'import PollPage from "./PollPageLoader";' > app/p/\[shortId\]/page.tsx
-          echo 'export function generateStaticParams() { return []; }' >> app/p/\[shortId\]/page.tsx
-          echo 'export default PollPage;' >> app/p/\[shortId\]/page.tsx
+          mv "app/p/[shortId]/page.tsx" "app/p/[shortId]/PollPageLoader.tsx"
+          printf '%s\n' 'import PollPage from "./PollPageLoader";' 'export function generateStaticParams() { return []; }' 'export default PollPage;' > "app/p/[shortId]/page.tsx"
+
+          # Debug: verify the generated file
+          echo "=== Generated page.tsx ==="
+          cat "app/p/[shortId]/page.tsx"
+          echo "=== Files in [shortId] dir ==="
+          ls -la "app/p/[shortId]/"
 
       - name: Build static site
         env:
