@@ -40,9 +40,11 @@ jobs:
           # The dynamic [shortId] route needs generateStaticParams for static
           # export, but that can't coexist with "use client" in the same file.
           # Split it: move the client page to a separate file, then create a
-          # thin server-component page.tsx that re-exports it.
+          # server-component page.tsx that wraps it.  Must use a real function
+          # component (not a bare re-export) so Next.js sees it as a server page
+          # and picks up generateStaticParams.
           mv "app/p/[shortId]/page.tsx" "app/p/[shortId]/PollPageLoader.tsx"
-          printf '%s\n' 'import PollPage from "./PollPageLoader";' 'export function generateStaticParams() { return []; }' 'export default PollPage;' > "app/p/[shortId]/page.tsx"
+          printf 'import PollPageLoader from "./PollPageLoader";\n\nexport function generateStaticParams() {\n  return [];\n}\n\nexport default function Page() {\n  return <PollPageLoader />;\n}\n' > "app/p/[shortId]/page.tsx"
 
           # Debug: verify the generated file
           echo "=== Generated page.tsx ==="
