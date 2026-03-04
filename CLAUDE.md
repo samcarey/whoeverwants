@@ -8,6 +8,10 @@
 - **Repository**: https://github.com/samcarey/whoeverwants
 - **License**: Dual MIT / Apache 2.0
 
+## Active Migration
+
+This project is undergoing an incremental migration from Supabase-only to a Python server + local Postgres architecture. See **[MIGRATION_PLAN.md](./MIGRATION_PLAN.md)** for full details, current phase, and lessons learned. Always consult that document at the start of a session to understand current state.
+
 ## Tech Stack
 
 | Layer | Technology |
