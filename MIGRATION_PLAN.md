@@ -12,23 +12,42 @@
 
 ### Current (Supabase-only)
 ```
-Browser (Next.js) <---> Supabase (PostgreSQL + PostgREST API)
-                        - poll_results VIEW
-                        - calculate_ranked_choice_winner() stored proc
-                        - calculate_participating_voters() stored proc
-                        - auto_close trigger
-                        - vote structure constraints
+Browser (Next.js) ──► @supabase/supabase-js ──► Supabase Cloud
+                                                  ├── PostgREST (REST API)
+                                                  ├── PostgreSQL
+                                                  │   ├── poll_results VIEW
+                                                  │   ├── calculate_ranked_choice_winner()
+                                                  │   ├── calculate_participating_voters()
+                                                  │   ├── auto_close trigger
+                                                  │   └── vote structure constraints
+                                                  └── RLS policies
 ```
 
-### Target (Python server + Postgres)
+### Intermediate (local Postgres + PostgREST, no code changes)
 ```
-Browser (Next.js) <---> Python API Server <---> PostgreSQL
-                        - Poll result calculations
-                        - IRV/ranked choice algorithm
-                        - Participation priority algorithm
-                        - Vote validation
-                        - Auto-close logic
+Browser (Next.js) ──► @supabase/supabase-js ──► Our Server (Docker)
+                      (unchanged!)                ├── PostgREST (drop-in Supabase API)
+                                                  ├── PostgreSQL (local)
+                                                  │   └── same schema, views, functions
+                                                  └── JWT auth (anon role)
 ```
+
+### Target (Python server replaces PostgREST)
+```
+Browser (Next.js) ──► Python API (FastAPI) ──► PostgreSQL (local)
+                      ├── Poll result calculations     (data storage only,
+                      ├── IRV/ranked choice algorithm    no business logic
+                      ├── Participation priority          in SQL)
+                      ├── Vote validation
+                      └── Auto-close logic
+```
+
+### Frontend Supabase Usage (only 2 files)
+The `@supabase/supabase-js` client is used in exactly 2 files:
+- **`lib/supabase.ts`** — all CRUD + 2 RPC calls (`calculate_ranked_choice_winner`, `calculate_participating_voters`)
+- **`app/api/polls/discover-related/route.ts`** — 1 RPC call (`get_all_related_poll_ids`)
+
+The client talks to PostgREST (REST over Postgres), not raw Postgres. So swapping Supabase Cloud for local PostgREST + Postgres requires **zero frontend code changes** — just new env vars.
 
 ---
 
@@ -43,19 +62,42 @@ Browser (Next.js) <---> Python API Server <---> PostgreSQL
 - [ ] Document any issues found
 
 ### Phase 1: Server Infrastructure
-**Goal**: Stand up a cheap cloud server with Python, Postgres, and git-based deployment.
+**Goal**: Stand up a cheap cloud server with Docker, Postgres, PostgREST, and git-based deployment.
 
-- [ ] **Choose hosting**: Cheapest option for a low-traffic Docker container with persistent state (candidates: Hetzner VPS ~$4/mo, Oracle Cloud free tier, DigitalOcean $4/mo droplet, Railway/Render free tier)
-- [ ] **User action required**: Sign up and provide credentials/API keys to Claude
-- [ ] **Provision server**: Docker + Docker Compose setup with:
-  - Python API service (FastAPI or Flask)
-  - PostgreSQL instance (local to the server)
-  - Reverse proxy (Caddy or nginx) if needed
+- [ ] **Choose hosting**: Cheapest option for a low-traffic Docker setup with persistent state (candidates: Hetzner VPS ~$4/mo, Oracle Cloud free tier, DigitalOcean $4/mo droplet, Railway/Render free tier)
+- [ ] **User action required**: Sign up for hosting provider and provide credentials/API keys to Claude
+- [ ] **Provision server**: Docker Compose setup with:
+  - **PostgreSQL** (local instance)
+  - **PostgREST** (provides the same REST API that `@supabase/supabase-js` expects)
+  - **JWT secret** for anon role auth (so supabase-js client works unchanged)
+  - Reverse proxy (Caddy) for HTTPS + routing
+  - Python service placeholder (FastAPI, wired up but no logic yet)
 - [ ] **Git-based deployment**: Set up auto-pull from GitHub on the server, or a webhook that triggers redeploy
 - [ ] **Store credentials**: All server access credentials stored in dev environment for Claude
-- [ ] **Verify**: Server is reachable, Python service responds to health check
+- [ ] **Verify**: Server is reachable, PostgREST responds to health check
 
-### Phase 2: Replicate Core Algorithms in Python
+### Phase 2: Point Frontend at Local Postgres (Zero Code Changes)
+**Goal**: Migrate the database and switch the frontend from Supabase Cloud to our server's PostgREST + Postgres — with no frontend code changes.
+
+#### Why this works with zero code changes:
+`@supabase/supabase-js` is just a REST client that talks to PostgREST. It needs:
+1. A URL (the PostgREST endpoint)
+2. An anon key (a JWT with `role: anon`)
+
+By running PostgREST locally with the same schema, views, functions, and RLS policies, the existing frontend code works identically.
+
+#### Steps:
+- [ ] **Apply all 63 migrations** to local Postgres (reuse existing `database/migrations/` files)
+- [ ] **Replicate stored functions**: `calculate_ranked_choice_winner()`, `calculate_participating_voters()`, `get_all_related_poll_ids()`, `calculate_valid_participation_votes()`
+- [ ] **Replicate RLS policies**: Same row-level security as Supabase
+- [ ] **Replicate the `poll_results` view** and all triggers
+- [ ] **Configure JWT auth**: Generate anon key JWT matching PostgREST's expected format
+- [ ] **Seed data**: Export existing polls/votes from Supabase, import to local Postgres
+- [ ] **Update env vars**: Set `NEXT_PUBLIC_SUPABASE_URL_TEST` to point at our PostgREST, update anon key
+- [ ] **Verify end-to-end**: Create poll, vote, view results, close poll — all working against local DB
+- [ ] **Keep Supabase as fallback**: Can revert env vars to restore Supabase connectivity instantly
+
+### Phase 3: Replicate Core Algorithms in Python
 **Goal**: Port all SQL business logic to Python, with tests proving equivalence.
 
 #### SQL logic to migrate (by complexity):
@@ -80,7 +122,7 @@ Browser (Next.js) <---> Python API Server <---> PostgreSQL
 - [ ] Participation: Port priority-based greedy selection algorithm
 - [ ] Each algorithm gets its own Python module + test file
 
-### Phase 3: API Layer
+### Phase 4: API Layer
 **Goal**: Expose Python calculations via HTTP API that the Next.js frontend can call.
 
 - [ ] Design API endpoints:
@@ -89,11 +131,15 @@ Browser (Next.js) <---> Python API Server <---> PostgreSQL
   - `GET /api/polls/{id}/participants` — participation priority calculation
   - `POST /api/votes` — validate + submit vote (with structure validation)
   - `GET /api/polls/{id}/related` — related poll discovery
-- [ ] API reads/writes to local Postgres (initially synced from Supabase, later as primary)
+- [ ] API reads/writes to local Postgres
 - [ ] Add API integration tests
 
-### Phase 4: Incremental Frontend Migration
-**Goal**: Switch the Next.js frontend to call the Python API instead of Supabase, one feature at a time.
+### Phase 5: Incremental Frontend Migration
+**Goal**: Switch the Next.js frontend from `@supabase/supabase-js` + PostgREST to calling the Python API directly.
+
+This is where we replace the supabase-js client. Only 2 files need changes:
+- `lib/supabase.ts` (all CRUD + 2 RPCs)
+- `app/api/polls/discover-related/route.ts` (1 RPC)
 
 Migration order (least risk first):
 1. [ ] Poll results calculation (read-only, easy to verify)
@@ -105,18 +151,19 @@ Migration order (least risk first):
 7. [ ] Poll creation
 
 At each step:
-- [ ] Deploy change
+- [ ] Deploy change to frontend
 - [ ] Verify functionality manually
-- [ ] Compare results with Supabase-computed values
-- [ ] Keep Supabase as fallback until confident
+- [ ] Compare results with PostgREST-computed values (still available as fallback)
 
-### Phase 5: Data Migration
-**Goal**: Move from Supabase as primary database to local Postgres.
+### Phase 6: Cleanup & Decommission
+**Goal**: Remove Supabase dependencies entirely.
 
-- [ ] Set up data sync from Supabase to local Postgres
-- [ ] Migrate writes to go through Python server -> local Postgres
-- [ ] Keep Supabase as read replica/backup during transition
-- [ ] Eventually decommission Supabase dependency
+- [ ] Remove `@supabase/supabase-js` from package.json
+- [ ] Remove PostgREST container (no longer needed once Python API handles everything)
+- [ ] Remove SQL stored procedures (logic now lives in Python)
+- [ ] Simplify DB to pure data storage (tables + indexes, no views/functions/triggers)
+- [ ] Remove Supabase env vars and migration scripts
+- [ ] Decommission Supabase free-tier instances
 
 ---
 
