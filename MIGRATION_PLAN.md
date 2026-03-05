@@ -184,7 +184,9 @@ At each step:
 
 > Record important discoveries and gotchas here across sessions.
 
-*(None yet — will be populated as work progresses)*
+1. **No `.env` file in repo** — All Supabase credentials must be provided out-of-band. Tests are integration tests that require real Supabase connectivity; there are no mocked/offline unit tests.
+2. **Container egress restrictions** — Claude Code's sandboxed environment blocks outbound connections to `supabase.co` (DNS blocked by egress proxy). Supabase connectivity checks and integration tests must be run locally or in CI.
+3. **All tests are integration tests** — Every test suite in `tests/` talks to the real Supabase database. There are no pure unit tests that can run offline. This is worth addressing in Phase 3 when algorithms move to Python.
 
 ---
 
@@ -193,6 +195,7 @@ At each step:
 | Date | Session | Work Done |
 |------|---------|-----------|
 | 2026-03-04 | Initial planning | Created migration plan, analyzed SQL logic inventory |
+| 2026-03-05 | Phase 0 assessment | Checked Supabase connectivity (blocked by sandbox), verified live site loads, confirmed all tests need .env credentials, installed dependencies |
 
 ---
 
