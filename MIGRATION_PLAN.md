@@ -4,7 +4,7 @@
 
 **Status**: Active — Phase 1
 **Last updated**: 2026-03-18
-**Current phase**: Phase 1 (Server Infrastructure)
+**Current phase**: Phase 2 (Port Core Algorithms to Python)
 
 ---
 
@@ -45,23 +45,20 @@ No data to migrate. No fallback to maintain. Clean break.
 ### ~~Phase 0: Restore & Baseline~~ — SKIPPED
 Supabase projects permanently deleted. No baseline to restore. Moving directly to server setup.
 
-### Phase 1: Server Infrastructure ← CURRENT
+### Phase 1: Server Infrastructure ✓ COMPLETE
 **Goal**: Stand up a cheap cloud server with Docker, Postgres, and Python API.
 
 - [x] **Choose hosting**: DigitalOcean $6/mo droplet (1GB RAM, 24GB disk, Ubuntu 24.04)
 - [x] **User action required**: Droplet provisioned, remote execution API running
 - [x] **Remote access**: Claude has full remote command execution via `scripts/remote.sh` (HTTPS API with bearer token auth, credentials in `.env`)
 - [x] **Store credentials**: `DROPLET_API_URL` and `DROPLET_API_TOKEN` in `.env`, documented in `CLAUDE.md`
-- [ ] **Clone repo on droplet**: Set up `/root/whoeverwants` with git pull workflow
-- [ ] **Provision server**: Docker Compose setup with:
-  - **PostgreSQL** (local instance)
-  - **Python API** (FastAPI)
-  - Reverse proxy (Caddy) for HTTPS + routing
-- [ ] **Apply database schema**: Run all 63 migrations against local Postgres
-- [ ] **Git-based deployment**: `git pull` + `docker compose up -d --build` via `scripts/remote.sh`
-- [ ] **Verify**: Server is reachable, API responds to health check
+- [x] **Clone repo on droplet**: `/root/whoeverwants` cloned, git pull workflow ready
+- [x] **Provision server**: Docker Compose with Postgres 16, FastAPI, Caddy (HTTPS reverse proxy for `whoeverwants.com`)
+- [x] **Apply database schema**: All 74 up-migrations applied (some Supabase-specific role errors are non-fatal)
+- [x] **Git-based deployment**: `git pull` + `docker compose up -d --build` via `scripts/remote.sh`
+- [x] **Verify**: API health check returns `{"status":"ok","database":"connected"}`
 
-### Phase 2: Port Core Algorithms to Python
+### Phase 2: Port Core Algorithms to Python ← CURRENT
 **Goal**: Implement all SQL business logic in Python, with tests proving correctness.
 
 #### SQL logic to port (by complexity):
@@ -148,7 +145,9 @@ Migration order (least risk first):
 1. **No `.env` file in repo** — All Supabase credentials were provided out-of-band. DigitalOcean droplet credentials (`DROPLET_API_URL`, `DROPLET_API_TOKEN`) are pre-set as environment variables in the Claude Code web environment (not in a `.env` file). The `scripts/remote.sh` script checks env vars first, then falls back to `.env`.
 2. **Container egress restrictions** — Claude Code's sandboxed environment blocks outbound connections to `supabase.co` (DNS blocked by egress proxy). Supabase connectivity checks and integration tests must be run locally or in CI.
 3. **All tests are integration tests** — Every test suite in `tests/` talks to the real Supabase database. There are no pure unit tests that can run offline. Must be rewritten in Phase 5.
-4. **Supabase projects permanently deleted** — Both test and production Supabase instances were deleted (March 2026). No data recovery possible. This simplifies migration: no compatibility layer needed, go direct to target architecture.
+4. **Droplet env vars pre-set** — `DROPLET_API_URL` and `DROPLET_API_TOKEN` are pre-set as environment variables in the Claude Code web environment (not in a `.env` file). `scripts/remote.sh` checks env vars first, falls back to `.env`.
+5. **Supabase-specific migration errors are non-fatal** — Migrations referencing Supabase roles (`anon`, `supabase_realtime_replication_role`) or publications (`supabase_realtime`) fail harmlessly on local Postgres. The core schema applies correctly.
+6. **Supabase projects permanently deleted** — Both test and production Supabase instances were deleted (March 2026). No data recovery possible. This simplifies migration: no compatibility layer needed, go direct to target architecture.
 
 ---
 
@@ -160,6 +159,7 @@ Migration order (least risk first):
 | 2026-03-05 | Phase 0 assessment | Checked Supabase connectivity (blocked by sandbox), verified live site loads, confirmed all tests need .env credentials, installed dependencies |
 | 2026-03-18 | Plan revision | Supabase permanently deleted — revised plan to skip Phase 0, remove PostgREST compatibility layer, go direct to Python API |
 | 2026-03-18 | Droplet setup | DO droplet provisioned (157.245.129.162), remote execution API running, `scripts/remote.sh` created, credentials stored in `.env`, CLAUDE.md updated with droplet management docs |
+| 2026-03-18 | Phase 1 complete | Docker installed, `docker-compose.yml` created (Postgres 16 + FastAPI), repo cloned to droplet, all 74 migrations applied, Caddy configured to proxy `whoeverwants.com` → FastAPI, health check verified |
 
 ---
 
