@@ -90,8 +90,11 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 | Framework | Next.js 15.3.3 (App Router, `force-dynamic` routes) |
 | UI | React 18.3.1, Tailwind CSS 4, Geist font |
 | Language | TypeScript 5 (strict mode, `@/*` path alias) |
-| Database | Supabase (PostgreSQL with RLS, PostgREST API) |
+| Backend | Python (FastAPI), managed by **uv** |
+| Database | PostgreSQL 16 (local, via Docker) |
+| Python tooling | **uv** — package management, virtual environments, Python version management |
 | Unit tests | Vitest 3.2.4, Testing Library, jsdom |
+| Python tests | pytest (managed via uv) |
 | E2E tests | Playwright 1.55.0 (Chromium, Firefox, WebKit) |
 | CI | GitHub Actions (Node 18/20 matrix, lint, coverage) |
 | PWA | Service workers, manifest.json, Apple web app support |
@@ -284,6 +287,14 @@ npm run debug:react [id] [act] # Debug React component state
 
 # Deployment
 npm run publish                # Full workflow: commit, merge, push, migrate
+
+# Python Server (run from server/ directory)
+uv run pytest                  # Run Python tests
+uv run uvicorn main:app        # Run API server locally
+uv add <package>               # Add a dependency (always use latest version)
+uv add --dev <package>         # Add a dev dependency
+uv sync                        # Install all deps from lock file
+uv lock                        # Regenerate lock file
 ```
 
 ---
@@ -295,6 +306,27 @@ The sections below contain mandatory rules. Follow them exactly.
 - Never ask the user to look at the browser console. Instead, send logs to the server's `/api/log` endpoint and have them run the test manually, then analyze the resulting logs.
 - Never ask the user to check the browser console.
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
+
+### Python Tooling: uv (Mandatory)
+
+**All Python package management and environment management MUST use [uv](https://docs.astral.sh/uv/).** Never use `pip`, `pip-compile`, `poetry`, `conda`, `pipenv`, or `venv` directly.
+
+- **Package management**: Use `pyproject.toml` (not `requirements.txt`). Manage deps with `uv add`, `uv remove`.
+- **Running commands**: Use `uv run` to execute Python scripts and tools (e.g., `uv run pytest`, `uv run uvicorn`).
+- **Lock file**: `uv.lock` is the lock file. Commit it to version control.
+- **Docker**: The Dockerfile installs uv and uses it to sync dependencies. Never use `pip install` in Dockerfiles.
+- **Version policy**: Before adding any new Python dependency, **always look up the latest version** (via web search or PyPI) and use that version. Do not guess or use outdated versions from memory.
+- **Local development**: Use `uv run` for all local Python commands. uv manages the virtual environment automatically.
+
+```bash
+# Examples
+uv add fastapi                  # Add a dependency (latest version)
+uv add --dev pytest             # Add a dev dependency
+uv remove somepackage           # Remove a dependency
+uv run pytest                   # Run tests
+uv run uvicorn main:app         # Run the server locally
+uv sync                         # Install all deps from lock file
+```
 
 ## URL Testing Protocol
 

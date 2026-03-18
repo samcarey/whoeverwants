@@ -151,6 +151,8 @@ systemctl restart caddy
 
 #### 2e. Clone Repo and Start Services
 
+The Python API uses **uv** for dependency management inside its Docker container. No manual uv installation is needed on the droplet — it's installed automatically in the Dockerfile. Dependencies are defined in `server/pyproject.toml` and locked in `server/uv.lock`.
+
 ```bash
 git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
 cd /root/whoeverwants
@@ -236,7 +238,7 @@ Internet
 | `/etc/caddy/Caddyfile` | Caddy reverse proxy config |
 | `/root/whoeverwants/` | Repository clone |
 | `/root/whoeverwants/docker-compose.yml` | Docker Compose config |
-| `/root/whoeverwants/server/` | FastAPI application source |
+| `/root/whoeverwants/server/` | FastAPI application source (uses uv for dependency management) |
 | `/root/whoeverwants/database/migrations/` | SQL migration files |
 
 ---

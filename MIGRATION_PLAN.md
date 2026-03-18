@@ -88,7 +88,7 @@ Supabase projects permanently deleted. No baseline to restore. Moving directly t
 9. [ ] **Participation priority** — `server/algorithms/participation.py` + tests. Greedy priority-based voter selection. Reference: migration 063 + CLAUDE.md philosophy section.
 10. [ ] **`calculate_valid_participation_votes()`** — wrapper around participation priority. Reference: migration 061.
 
-Each algorithm gets its own Python module in `server/algorithms/` with a corresponding test file in `server/tests/`.
+Each algorithm gets its own Python module in `server/algorithms/` with a corresponding test file in `server/tests/`. Dependencies are managed with **uv** (`pyproject.toml` + `uv.lock`). Run tests with `uv run pytest`.
 
 ### Phase 3: API Layer
 **Goal**: Expose Python calculations via HTTP API that the Next.js frontend can call.
@@ -136,7 +136,8 @@ Migration order (least risk first):
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Server language | Python | Avoid compile times, AI-friendly, rapid iteration |
-| Web framework | TBD (FastAPI likely) | Async, good typing, auto-docs |
+| Web framework | FastAPI | Async, good typing, auto-docs |
+| Python tooling | **uv** | Fast package management, lockfile, replaces pip/venv/poetry |
 | Hosting | DigitalOcean $6/mo (1GB/24GB, Ubuntu 24.04) | Simple, cheap, full root access |
 | Database | PostgreSQL (local) | Same dialect as Supabase, easy migration |
 | Deployment | Git-based auto-deploy | Claude manages everything remotely |

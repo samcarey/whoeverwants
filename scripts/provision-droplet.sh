@@ -122,6 +122,10 @@ EOF
 systemctl restart caddy
 
 # ── 6. Clone repo and start services ─────────────────────────────────
+# Note: The FastAPI container uses uv for Python dependency management.
+# uv is installed inside the Docker image (see server/Dockerfile).
+# Dependencies are defined in server/pyproject.toml and locked in server/uv.lock.
+# No manual Python package installation is needed on the host.
 echo "=== 6/7 Cloning repo and starting Docker services ==="
 if [ ! -d /root/whoeverwants ]; then
   git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
