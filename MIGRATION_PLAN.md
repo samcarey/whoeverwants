@@ -76,12 +76,19 @@ Supabase projects permanently deleted. No baseline to restore. Moving directly t
 | `calculate_ranked_choice_winner()` | Migration 046 | **High** | IRV + Borda tiebreak |
 | `calculate_participating_voters()` | Migration 063 | **High** | Recursive greedy priority |
 
-#### Approach:
-- [ ] Port each algorithm to Python with comprehensive unit tests
-- [ ] Test against known inputs/outputs from the existing Vitest test suite
-- [ ] Ranked choice: Port IRV with Borda tiebreaker, validate against `tests/__tests__/ranked-choice/` and `tests/__tests__/voting-algorithms/`
-- [ ] Participation: Port priority-based greedy selection algorithm
-- [ ] Each algorithm gets its own Python module + test file
+#### Approach (work through in this order):
+1. [ ] **Yes/No vote counting** — `server/algorithms/yes_no.py` + tests. Simple aggregation: count yes/no/abstain votes for a poll. Reference: `poll_results` view in migration 005/009.
+2. [ ] **Nomination vote counting** — `server/algorithms/nomination.py` + tests. Already exists in TypeScript (`lib/supabase.ts`). Count nominations and votes per option.
+3. [ ] **Vote structure validation** — `server/algorithms/vote_validation.py` + tests. Enforce which fields are required/forbidden per poll type. Reference: migration 053 constraints.
+4. [ ] **`update_updated_at` trigger** — Handle in app layer (set `updated_at = NOW()` on update). No separate module needed.
+5. [ ] **`get_all_related_poll_ids()`** — `server/algorithms/related_polls.py` + tests. Recursive tree walk for follow-up/fork chains. Reference: migration 017.
+6. [ ] **`poll_results` view (full)** — `server/algorithms/poll_results.py` + tests. Combines yes/no, nomination, ranked choice, and participation results. Reference: migration 058.
+7. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close poll when yes votes >= max_participants. Reference: migration 056.
+8. [ ] **Ranked choice (IRV)** — `server/algorithms/ranked_choice.py` + tests. IRV with Borda tiebreak + exhausted ballot handling. Validate against `tests/__tests__/ranked-choice/` and `tests/__tests__/voting-algorithms/`. Reference: migration 046.
+9. [ ] **Participation priority** — `server/algorithms/participation.py` + tests. Greedy priority-based voter selection. Reference: migration 063 + CLAUDE.md philosophy section.
+10. [ ] **`calculate_valid_participation_votes()`** — wrapper around participation priority. Reference: migration 061.
+
+Each algorithm gets its own Python module in `server/algorithms/` with a corresponding test file in `server/tests/`.
 
 ### Phase 3: API Layer
 **Goal**: Expose Python calculations via HTTP API that the Next.js frontend can call.
