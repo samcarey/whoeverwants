@@ -52,7 +52,7 @@ These must be in `.env` (gitignored) for droplet access to work:
 
 ```
 DROPLET_API_URL=https://157-245-129-162.sslip.io
-DROPLET_API_TOKEN=dWmMZ_L0XiWOwBGtOy0vkFHVk2ePJdwnPMxBufbhDbA
+DROPLET_API_TOKEN=<token from .env>
 ```
 
 The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bearer token authenticates requests.
