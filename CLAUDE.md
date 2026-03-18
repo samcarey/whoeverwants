@@ -67,6 +67,16 @@ The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bear
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
+### Droplet Setup & Provisioning
+
+Full setup documentation is in **[docs/droplet-setup.md](./docs/droplet-setup.md)**. To provision a new droplet from scratch:
+
+```bash
+ssh root@<DROPLET_IP> 'bash -s' < scripts/provision-droplet.sh <API_TOKEN>
+```
+
+This installs Docker, Caddy, the command execution API, clones the repo, starts all services, and applies database migrations.
+
 ### Important Notes
 - The droplet has its own clone of this repo at `/root/whoeverwants`
 - Never transfer files manually — commit here, pull there
@@ -284,6 +294,7 @@ The sections below contain mandatory rules. Follow them exactly.
 
 - Never ask the user to look at the browser console. Instead, send logs to the server's `/api/log` endpoint and have them run the test manually, then analyze the resulting logs.
 - Never ask the user to check the browser console.
+- **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
 
 ## URL Testing Protocol
 
