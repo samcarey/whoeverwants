@@ -12,6 +12,67 @@
 
 This project is undergoing an incremental migration from Supabase-only to a Python server + local Postgres architecture. See **[MIGRATION_PLAN.md](./MIGRATION_PLAN.md)** for full details, current phase, and lessons learned. Always consult that document at the start of a session to understand current state.
 
+## DigitalOcean Droplet (Production Server)
+
+The production server is a DigitalOcean droplet that Claude manages remotely. **You have full control of this server.**
+
+### Server Specs
+| Property | Value |
+|----------|-------|
+| Hostname | `whoeverwants` |
+| IP | `157.245.129.162` |
+| OS | Ubuntu 24.04 LTS |
+| RAM | 1 GB |
+| Disk | 24 GB |
+| User | `root` |
+| Purpose | Hosts the Python API server, PostgreSQL, and serves the public app |
+
+### Remote Command Execution
+
+Run commands on the droplet from this environment using `scripts/remote.sh`:
+
+```bash
+# Basic usage
+bash scripts/remote.sh "command" [working_dir] [timeout_seconds]
+
+# Examples
+bash scripts/remote.sh "hostname && uptime"
+bash scripts/remote.sh "git pull" /root/whoeverwants
+bash scripts/remote.sh "docker compose up -d" /root/whoeverwants 180
+bash scripts/remote.sh "docker compose logs --tail 50" /root/whoeverwants
+bash scripts/remote.sh "systemctl status nginx"
+bash scripts/remote.sh "psql -U postgres -c 'SELECT 1'"
+```
+
+The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from `.env` automatically.
+
+### Required Environment Variables
+
+These must be in `.env` (gitignored) for droplet access to work:
+
+```
+DROPLET_API_URL=https://157-245-129-162.sslip.io
+DROPLET_API_TOKEN=<bearer token for the remote execution API>
+```
+
+The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bearer token authenticates requests.
+
+### Development Workflow
+
+1. **Write code** in this environment (Claude Code sandbox)
+2. **Commit and push** to GitHub
+3. **Pull on droplet**: `bash scripts/remote.sh "git pull" /root/whoeverwants`
+4. **Build/restart services**: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
+5. **Check logs/debug**: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
+
+You do NOT need SSH — all server management goes through `scripts/remote.sh`.
+
+### Important Notes
+- The droplet has its own clone of this repo at `/root/whoeverwants`
+- Never transfer files manually — commit here, pull there
+- The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
+- The API returns stdout, stderr, and exit code for every command
+
 ## Tech Stack
 
 | Layer | Technology |

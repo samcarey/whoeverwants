@@ -48,15 +48,17 @@ Supabase projects permanently deleted. No baseline to restore. Moving directly t
 ### Phase 1: Server Infrastructure ← CURRENT
 **Goal**: Stand up a cheap cloud server with Docker, Postgres, and Python API.
 
-- [ ] **Choose hosting**: Cheapest option for a low-traffic Docker setup with persistent state (candidates: Hetzner VPS ~$4/mo, Oracle Cloud free tier, DigitalOcean $4/mo droplet, Railway/Render free tier)
-- [ ] **User action required**: Sign up for hosting provider and provide credentials/API keys to Claude
+- [x] **Choose hosting**: DigitalOcean $6/mo droplet (1GB RAM, 24GB disk, Ubuntu 24.04)
+- [x] **User action required**: Droplet provisioned, remote execution API running
+- [x] **Remote access**: Claude has full remote command execution via `scripts/remote.sh` (HTTPS API with bearer token auth, credentials in `.env`)
+- [x] **Store credentials**: `DROPLET_API_URL` and `DROPLET_API_TOKEN` in `.env`, documented in `CLAUDE.md`
+- [ ] **Clone repo on droplet**: Set up `/root/whoeverwants` with git pull workflow
 - [ ] **Provision server**: Docker Compose setup with:
   - **PostgreSQL** (local instance)
   - **Python API** (FastAPI)
   - Reverse proxy (Caddy) for HTTPS + routing
 - [ ] **Apply database schema**: Run all 63 migrations against local Postgres
-- [ ] **Git-based deployment**: Set up auto-pull from GitHub on the server, or a webhook that triggers redeploy
-- [ ] **Store credentials**: All server access credentials stored in dev environment for Claude
+- [ ] **Git-based deployment**: `git pull` + `docker compose up -d --build` via `scripts/remote.sh`
 - [ ] **Verify**: Server is reachable, API responds to health check
 
 ### Phase 2: Port Core Algorithms to Python
@@ -131,7 +133,7 @@ Migration order (least risk first):
 |----------|--------|-----------|
 | Server language | Python | Avoid compile times, AI-friendly, rapid iteration |
 | Web framework | TBD (FastAPI likely) | Async, good typing, auto-docs |
-| Hosting | TBD | Cheapest option with persistent state |
+| Hosting | DigitalOcean $6/mo (1GB/24GB, Ubuntu 24.04) | Simple, cheap, full root access |
 | Database | PostgreSQL (local) | Same dialect as Supabase, easy migration |
 | Deployment | Git-based auto-deploy | Claude manages everything remotely |
 | Development flow | Claude Code iOS app | No manual SSH — Claude has full control |
@@ -157,6 +159,7 @@ Migration order (least risk first):
 | 2026-03-04 | Initial planning | Created migration plan, analyzed SQL logic inventory |
 | 2026-03-05 | Phase 0 assessment | Checked Supabase connectivity (blocked by sandbox), verified live site loads, confirmed all tests need .env credentials, installed dependencies |
 | 2026-03-18 | Plan revision | Supabase permanently deleted — revised plan to skip Phase 0, remove PostgREST compatibility layer, go direct to Python API |
+| 2026-03-18 | Droplet setup | DO droplet provisioned (157.245.129.162), remote execution API running, `scripts/remote.sh` created, credentials stored in `.env`, CLAUDE.md updated with droplet management docs |
 
 ---
 
