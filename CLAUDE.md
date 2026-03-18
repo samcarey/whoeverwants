@@ -44,15 +44,15 @@ bash scripts/remote.sh "systemctl status nginx"
 bash scripts/remote.sh "psql -U postgres -c 'SELECT 1'"
 ```
 
-The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from `.env` automatically.
+The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from environment variables (preferred) or falls back to `.env`.
 
 ### Required Environment Variables
 
-These must be in `.env` (gitignored) for droplet access to work:
+`DROPLET_API_URL` and `DROPLET_API_TOKEN` must be available for droplet access. In the Claude Code web environment, these are pre-set as environment variables (not in a `.env` file). The script checks env vars first, then falls back to `.env` if needed.
 
 ```
 DROPLET_API_URL=https://157-245-129-162.sslip.io
-DROPLET_API_TOKEN=<token from .env>
+DROPLET_API_TOKEN=<bearer token>
 ```
 
 The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bearer token authenticates requests.

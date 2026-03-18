@@ -145,7 +145,7 @@ Migration order (least risk first):
 
 > Record important discoveries and gotchas here across sessions.
 
-1. **No `.env` file in repo** — All Supabase credentials must be provided out-of-band. Tests are integration tests that require real Supabase connectivity; there are no mocked/offline unit tests.
+1. **No `.env` file in repo** — All Supabase credentials were provided out-of-band. DigitalOcean droplet credentials (`DROPLET_API_URL`, `DROPLET_API_TOKEN`) are pre-set as environment variables in the Claude Code web environment (not in a `.env` file). The `scripts/remote.sh` script checks env vars first, then falls back to `.env`.
 2. **Container egress restrictions** — Claude Code's sandboxed environment blocks outbound connections to `supabase.co` (DNS blocked by egress proxy). Supabase connectivity checks and integration tests must be run locally or in CI.
 3. **All tests are integration tests** — Every test suite in `tests/` talks to the real Supabase database. There are no pure unit tests that can run offline. Must be rewritten in Phase 5.
 4. **Supabase projects permanently deleted** — Both test and production Supabase instances were deleted (March 2026). No data recovery possible. This simplifies migration: no compatibility layer needed, go direct to target architecture.
