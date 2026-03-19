@@ -179,7 +179,7 @@ whoeverwants/
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
 │
-├── database/migrations/            # 93 SQL migration files (001-063, up + down)
+├── database/migrations/            # SQL migration files (001-064, up + down)
 │   ├── 001-015: Core schema (polls, votes, results, ranked choice, RLS)
 │   ├── 016-041: Short IDs, poll access, nomination fields, RLS policies
 │   ├── 042-050: Nomination poll type, vote constraints, editing
@@ -757,13 +757,13 @@ UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
 | 042-050 | Nomination poll type, vote type constraints, nomination editing |
 | 051-056 | Participation poll type, min/max participants, auto-close triggers |
 | 057-063 | Voter conditions, conditional participation counting, priority algorithm |
+| 064 | Drop unused Supabase objects: poll_results view, 10 functions, trigger, RLS policies |
 
 ### Database Status
 
-| Database | Ref ID | Status |
-|----------|--------|--------|
-| Test | kfngceqepnzlljkwedtd | All 63 migrations applied |
-| Production | kifnvombihyfwszuwqvy | All 63 migrations applied |
+| Database | Status |
+|----------|--------|
+| DigitalOcean droplet (production) | All 64 migrations applied |
 
 ### Safety Guidelines
 

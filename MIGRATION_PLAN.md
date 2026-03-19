@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 4 complete
+**Status**: Active — Phase 5 complete
 **Last updated**: 2026-03-19
-**Current phase**: Phase 5 (Simplify Database Schema) — next up
+**Current phase**: Phase 6 (Production Hardening) — next up
 
 ---
 
@@ -195,13 +195,17 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 5: Simplify Database Schema
+### Phase 5: Simplify Database Schema ✓ COMPLETE
 **Goal**: Remove Supabase-specific views, functions, and triggers that are now handled in Python.
 
-- [ ] Audit DB for unused views, functions, triggers, and RLS policies
-- [ ] Create migration to drop unused DB objects
-- [ ] Verify all poll types still work E2E after simplification
-- [ ] Update migration docs
+- [x] Audit DB for unused views, functions, triggers, and RLS policies
+- [x] Create migration 064 to drop unused DB objects
+- [x] Verify all poll types still work E2E after simplification
+- [x] Update migration docs
+
+**Dropped**: `poll_results` view, 10 functions (`auto_close_participation_poll`, `calculate_borda_count_winner`, `calculate_participating_voters`, `calculate_ranked_choice_winner`, `calculate_valid_participation_votes`, `cleanup_old_poll_access`, `get_all_related_poll_ids`, `has_poll_access`, `is_valid_client_fingerprint`, `log_suspicious_poll_access`), `check_participation_capacity` trigger, all 8 RLS policies, RLS on `votes` and `ranked_choice_rounds` tables.
+
+**Kept**: `generate_short_id` + `encode_base62` + `decode_base62` (trigger auto-generates short_id on poll INSERT), `update_updated_at_column` + its triggers (safety net).
 
 ---
 
@@ -269,6 +273,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2E complete | Related polls: bidirectional tree walk algorithm (18 tests), `POST /api/polls/related` endpoint, `pollDiscovery.ts` calls Python API directly. Removed last Supabase RPC call (`discover-related/route.ts`). Fixed `getParticipatingVoters` → `apiGetParticipants`. Verified E2E: parent + follow-up + fork chain discovered bidirectionally via public URL. Only type-only Supabase imports remain. |
 | 2026-03-19 | Phase 3 start | Removed `@supabase/supabase-js` dependency. Extracted types to `lib/types.ts`, deleted `lib/supabase.ts`, deleted Supabase-only API routes and debug page. Updated all 12 component/page imports. Cleaned up CI workflows (removed Supabase env vars and broken migration steps). Deleted legacy migration scripts and `supabase/` config directory. |
 | 2026-03-19 | Phase 4 complete | Rewrote JavaScript test suite to remove Supabase dependency. Deleted redundant `voting-algorithms/` tests (IRV incomplete ballots + Borda compensation — covered by 120+ Python tests). Rewrote `poll-builder.js` and `database.js` helpers to use Python API via fetch. All 14 test files pass: 87 tests pass, 59 skip gracefully (API-dependent tests need running server). Pure JS tests (validation, filtering, components, localStorage) run standalone. API integration tests auto-skip in CI. |
+| 2026-03-19 | Phase 5 complete | Migration 064: dropped `poll_results` view, 10 unused functions (algorithm + RLS helpers), `check_participation_capacity` trigger, all 8 RLS policies, disabled RLS on `votes` and `ranked_choice_rounds`. Kept `generate_short_id`/`encode_base62`/`decode_base62` (short_id trigger) and `update_updated_at_column` (safety net). All 4 poll types verified E2E on droplet after migration. |
 
 ---
 
