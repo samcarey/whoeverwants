@@ -141,7 +141,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 2. [x] **Extend API: results** — `get_results()` now handles `participation` poll type explicitly: counts yes/no/abstain votes, runs priority algorithm, returns `yes_count` = number of valid participants. Previously fell through to catch-all returning `yes_count=None`.
 3. [x] **Extend API: participants endpoint** — `GET /api/polls/{id}/participants` returns list of `{vote_id, voter_name}` for voters selected by the priority algorithm.
 4. [x] **Frontend: fetch participants** — `PollResults.tsx` calls `apiGetParticipants()` instead of the TODO stub that always set `participants=[]`. `lib/api.ts` has new `apiGetParticipants()` function.
-5. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close when yes votes >= max_participants. Not yet implemented.
+5. [x] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + 11 tests. `should_auto_close()` checks if yes votes >= max_participants. Integrated into both vote submission and edit endpoints via `_check_auto_close()` helper in `server/routers/polls.py`.
 6. [ ] **Deploy & test with conditions** — Test participation polls with voter conditions (min/max per voter), verify priority algorithm selects correct participants. Basic case (single voter, min=1) works. Multi-voter conditional scenarios not yet tested.
 7. [ ] **Edge cases** — Test: multiple voters with conflicting constraints, voters whose conditions can't be met, all-abstain scenario, auto-close trigger.
 

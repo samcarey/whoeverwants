@@ -22,9 +22,34 @@ from algorithms.nomination import count_nomination_votes
 from algorithms.ranked_choice import calculate_ranked_choice_winner
 from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.participation import calculate_participating_voters
+from algorithms.auto_close import should_auto_close
 from algorithms.yes_no import count_yes_no_votes
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
+
+
+def _check_auto_close(conn, poll_id: str) -> None:
+    """Auto-close a participation poll if yes votes >= max_participants."""
+    poll = conn.execute(
+        "SELECT poll_type, is_closed, max_participants FROM polls WHERE id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()
+    if not poll:
+        return
+    yes_count = conn.execute(
+        """SELECT COUNT(*) as cnt FROM votes
+           WHERE poll_id = %(poll_id)s
+             AND vote_type = 'participation'
+             AND yes_no_choice = 'yes'""",
+        {"poll_id": poll_id},
+    ).fetchone()["cnt"]
+    if should_auto_close(
+        poll["poll_type"], poll["is_closed"], poll["max_participants"], yes_count
+    ):
+        conn.execute(
+            "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+            {"poll_id": poll_id},
+        )
 
 
 def _row_to_poll(row: dict) -> PollResponse:
@@ -186,6 +211,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "now": now,
             },
         ).fetchone()
+        _check_auto_close(conn, poll_id)
     return _row_to_vote(row)
 
 
@@ -256,6 +282,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 "poll_id": poll_id,
             },
         ).fetchone()
+        _check_auto_close(conn, poll_id)
     return _row_to_vote(row)
 
 
