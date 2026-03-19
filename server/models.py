@@ -69,6 +69,16 @@ class AccessiblePollsRequest(BaseModel):
     poll_ids: list[str]
 
 
+class RelatedPollsRequest(BaseModel):
+    poll_ids: list[str] = Field(..., max_length=100)
+
+
+class RelatedPollsResponse(BaseModel):
+    all_related_ids: list[str]
+    original_count: int
+    discovered_count: int
+
+
 # -- Response models --
 
 

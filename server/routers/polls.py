@@ -14,6 +14,8 @@ from models import (
     PollResponse,
     PollResultsResponse,
     RankedChoiceRoundResponse,
+    RelatedPollsRequest,
+    RelatedPollsResponse,
     ReopenPollRequest,
     SubmitVoteRequest,
     VoteResponse,
@@ -23,6 +25,7 @@ from algorithms.ranked_choice import calculate_ranked_choice_winner
 from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.participation import calculate_participating_voters
 from algorithms.auto_close import should_auto_close
+from algorithms.related_polls import PollRelation, get_all_related_poll_ids
 from algorithms.yes_no import count_yes_no_votes
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
@@ -529,6 +532,39 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             {"poll_ids": req.poll_ids},
         ).fetchall()
     return [_row_to_poll(r) for r in rows]
+
+
+@router.post("/related", response_model=RelatedPollsResponse)
+def get_related_polls(req: RelatedPollsRequest):
+    """Discover all polls related to the input IDs via follow-up/fork chains."""
+    if not req.poll_ids:
+        return RelatedPollsResponse(
+            all_related_ids=[], original_count=0, discovered_count=0
+        )
+    with get_db() as conn:
+        # Fetch all polls that have any relationship (or are in the input set)
+        rows = conn.execute(
+            """SELECT id, follow_up_to, fork_of FROM polls
+               WHERE follow_up_to IS NOT NULL
+                  OR fork_of IS NOT NULL
+                  OR id = ANY(%(poll_ids)s)""",
+            {"poll_ids": req.poll_ids},
+        ).fetchall()
+
+    all_polls = [
+        PollRelation(
+            id=str(r["id"]),
+            follow_up_to=str(r["follow_up_to"]) if r["follow_up_to"] else None,
+            fork_of=str(r["fork_of"]) if r["fork_of"] else None,
+        )
+        for r in rows
+    ]
+    related_ids = get_all_related_poll_ids(req.poll_ids, all_polls)
+    return RelatedPollsResponse(
+        all_related_ids=related_ids,
+        original_count=len(req.poll_ids),
+        discovered_count=len(related_ids),
+    )
 
 
 # --- Helpers ---

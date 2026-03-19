@@ -216,6 +216,25 @@ export async function apiReopenPoll(pollId: string, creatorSecret: string): Prom
   return toPoll(data);
 }
 
+// --- Related polls ---
+
+export async function apiGetRelatedPolls(pollIds: string[]): Promise<{
+  allRelatedIds: string[];
+  originalCount: number;
+  discoveredCount: number;
+}> {
+  if (pollIds.length === 0) return { allRelatedIds: [], originalCount: 0, discoveredCount: 0 };
+  const data = await apiFetch<{ all_related_ids: string[]; original_count: number; discovered_count: number }>('/related', {
+    method: 'POST',
+    body: JSON.stringify({ poll_ids: pollIds }),
+  });
+  return {
+    allRelatedIds: data.all_related_ids,
+    originalCount: data.original_count,
+    discoveredCount: data.discovered_count,
+  };
+}
+
 // --- Accessible polls ---
 
 export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> {

@@ -1,5 +1,6 @@
 // Poll discovery utilities for follow-up functionality
 import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
+import { apiGetRelatedPolls } from '@/lib/api';
 
 export interface DiscoveryResult {
   newPollIds: string[];
@@ -15,7 +16,7 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
   try {
     // Get currently accessible poll IDs from localStorage
     const currentPollIds = getAccessiblePollIds();
-    
+
     if (currentPollIds.length === 0) {
       return {
         newPollIds: [],
@@ -26,38 +27,8 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
 
     console.log(`🔍 Starting poll discovery for ${currentPollIds.length} accessible polls`);
 
-    // Call the discovery API
-    const response = await fetch('/api/polls/discover-related', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ pollIds: currentPollIds }),
-    });
-
-    if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (parseError) {
-        errorData = { error: 'Failed to parse error response' };
-      }
-      
-      console.warn('Poll discovery API failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorData
-      });
-      
-      // Don't throw - just return empty results to gracefully degrade
-      return {
-        newPollIds: [],
-        totalDiscovered: currentPollIds.length, // At least count the polls we already have
-        originalCount: currentPollIds.length
-      };
-    }
-
-    const result = await response.json();
+    // Call the Python API directly
+    const result = await apiGetRelatedPolls(currentPollIds);
     const { allRelatedIds, originalCount, discoveredCount } = result;
 
     if (!Array.isArray(allRelatedIds)) {
@@ -91,7 +62,7 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
 
   } catch (error) {
     console.warn('Poll discovery encountered an error but continuing gracefully:', error);
-    
+
     // Always return a valid result even if discovery fails
     const currentPollIds = getAccessiblePollIds();
     return {

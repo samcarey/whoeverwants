@@ -19,7 +19,7 @@ import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
-import { Poll, PollResults, getParticipatingVoters } from "@/lib/supabase";
+import { Poll, PollResults } from "@/lib/supabase";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, ApiVote } from "@/lib/api";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
