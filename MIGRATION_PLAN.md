@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2C complete, starting Phase 2D
+**Status**: Active — Phase 2D in progress
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2C complete (Ranked choice polls live on whoeverwants.com)
+**Current phase**: Phase 2D in progress (Participation polls partially working)
 
 ---
 
@@ -134,15 +134,16 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 2D: Participation Polls
+### Phase 2D: Participation Polls ← IN PROGRESS
 **Goal**: Get participation polls fully working through the Python API.
 
-1. [ ] **Participation priority algorithm** — `server/algorithms/participation.py` + tests. Greedy priority-based voter selection. Reference: migration 063 + CLAUDE.md philosophy section.
-2. [ ] **`calculate_valid_participation_votes()`** — Wrapper around participation priority. Reference: migration 061.
-3. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close when yes votes >= max_participants.
-4. [ ] **Extend API** — Participation results, `getParticipatingVoters()`, auto-close logic.
-5. [ ] **Frontend swap** — Participation results and voter list via Python API.
-6. [ ] **Deploy & test** — Create participation poll with conditions, vote, verify priority algorithm.
+1. [x] **Participation priority algorithm** — `server/algorithms/participation.py` already existed with full greedy priority-based voter selection (ported from migration 063).
+2. [x] **Extend API: results** — `get_results()` now handles `participation` poll type explicitly: counts yes/no/abstain votes, runs priority algorithm, returns `yes_count` = number of valid participants. Previously fell through to catch-all returning `yes_count=None`.
+3. [x] **Extend API: participants endpoint** — `GET /api/polls/{id}/participants` returns list of `{vote_id, voter_name}` for voters selected by the priority algorithm.
+4. [x] **Frontend: fetch participants** — `PollResults.tsx` calls `apiGetParticipants()` instead of the TODO stub that always set `participants=[]`. `lib/api.ts` has new `apiGetParticipants()` function.
+5. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close when yes votes >= max_participants. Not yet implemented.
+6. [ ] **Deploy & test with conditions** — Test participation polls with voter conditions (min/max per voter), verify priority algorithm selects correct participants. Basic case (single voter, min=1) works. Multi-voter conditional scenarios not yet tested.
+7. [ ] **Edge cases** — Test: multiple voters with conflicting constraints, voters whose conditions can't be met, all-abstain scenario, auto-close trigger.
 
 ---
 
@@ -193,6 +194,9 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 4. **Droplet env vars pre-set** — `DROPLET_API_URL` and `DROPLET_API_TOKEN` are pre-set as environment variables in the Claude Code web environment (not in a `.env` file). `scripts/remote.sh` checks env vars first, falls back to `.env`.
 5. **Supabase-specific migration errors are non-fatal** — Migrations referencing Supabase roles (`anon`, `supabase_realtime_replication_role`) or publications (`supabase_realtime`) fail harmlessly on local Postgres. The core schema applies correctly.
 6. **Supabase projects permanently deleted** — Both test and production Supabase instances were deleted (March 2026). No data recovery possible. This simplifies migration: no compatibility layer needed, go direct to target architecture.
+7. **Catch-all fallthrough bugs in `get_results()`** — When adding new poll types, the `get_results()` endpoint in `server/routers/polls.py` has a catch-all return at the bottom that returns `yes_count=None`. Any poll type without an explicit handler silently falls through, and the frontend interprets `None` as `0`. Always add an explicit handler for each poll type.
+8. **Frontend TODO stubs cause silent failures** — `PollResults.tsx` had a `setParticipants([])` TODO stub. The frontend logic branched on `participants` being empty vs populated, so the stub caused incorrect UI ("You're not participating but these are" with empty list) without any errors. When adding backend endpoints, always check if the frontend has TODO stubs that need to be connected.
+9. **Next.js restart on droplet** — The Next.js server runs as a bare `next-server` process (not pm2 or systemd). After `npm run build`, restart by killing the old process and running `NODE_ENV=production npx next start -p 3000` in the background. Verify with `curl -s -o /dev/null -w '%{http_code}' http://localhost:3000`.
 
 ---
 
@@ -212,6 +216,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2A Deploy | Deployed full stack to droplet: Python API in Docker, Next.js as systemd service (standalone build avoids OOM on 1GB). Added 2GB swap, installed Node.js 20. Caddy routes `/api/polls/*` to Python API, everything else to Next.js. Fixed TypeScript build errors, FastAPI redirect_slashes issue. E2E test: created poll, voted, verified results. DNS still points to Vercel — needs A record update to 157.245.129.162. |
 | 2026-03-19 | Phase 2B complete | Nomination polls: algorithm (16 tests), vote validation for all types (28 tests), server-side results with `nomination_counts`, frontend uses server data instead of client-side aggregation. Deployed and verified E2E: created nomination poll, 3 votes, correct counts. |
 | 2026-03-19 | Phase 2C complete | Ranked choice IRV algorithm (27 tests), API returns `ranked_choice_rounds` + `ranked_choice_winner` in results. Frontend reads rounds from API instead of Supabase `getRankedChoiceRounds()`. Borda tiebreak data embedded in round entries. Deployed and verified E2E on whoeverwants.com. |
+| 2026-03-19 | Phase 2D start | Fixed participation poll results: added explicit `participation` handler in `get_results()` (was falling through to catch-all returning `yes_count=None`). Added `GET /api/polls/{id}/participants` endpoint using existing `calculate_participating_voters()` algorithm. Connected frontend `PollResults.tsx` to call `apiGetParticipants()` instead of TODO stub. Basic single-voter participation poll now works E2E. Remaining: auto-close trigger, multi-voter conditional testing. |
 
 ---
 
