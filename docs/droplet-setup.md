@@ -15,7 +15,7 @@ Create a DigitalOcean droplet with these specs:
 | Image | Ubuntu 24.04 LTS |
 | Plan | Basic $6/mo (1 vCPU, 1GB RAM, 24GB SSD) |
 | Region | Any (current: NYC) |
-| Auth | SSH key or password |
+| Auth | **SSH key only** (no password auth) |
 | Hostname | `whoeverwants` |
 
 Note the IP address (e.g., `157.245.129.162`).
@@ -50,13 +50,31 @@ export DROPLET_API_TOKEN="$NEW_API_TOKEN"
 
 If you prefer to set up manually, SSH into the droplet and follow these steps:
 
-#### 2a. Install Docker
+#### 2a. Firewall and SSH Hardening
+
+```bash
+# Enable UFW firewall — only allow SSH, HTTP, HTTPS
+apt-get install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp    # SSH
+ufw allow 80/tcp    # HTTP (Caddy)
+ufw allow 443/tcp   # HTTPS (Caddy)
+ufw --force enable
+
+# Harden SSH — disable password auth, require key-based login
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl restart sshd
+```
+
+#### 2b. Install Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sh
 ```
 
-#### 2b. Install Caddy
+#### 2c. Install Caddy
 
 ```bash
 apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
@@ -66,29 +84,56 @@ apt-get update
 apt-get install -y caddy
 ```
 
-#### 2c. Set Up Command Execution API
+#### 2d. Set Up Command Execution API
 
-Create `/opt/cmd-api.py`:
+Create `/opt/cmd-api.py` (includes request logging and rate limiting):
 
 ```python
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import json, subprocess, os
+from collections import defaultdict
+import json, subprocess, os, datetime, time, sys
 
 SECRET = os.environ.get("API_SECRET", "")
 
+# Rate limiting: max 60 requests/minute per IP
+REQUEST_LOG = defaultdict(list)
+MAX_REQUESTS_PER_MINUTE = 60
+
+def _check_rate_limit(ip):
+    now = time.time()
+    REQUEST_LOG[ip] = [t for t in REQUEST_LOG[ip] if now - t < 60]
+    if len(REQUEST_LOG[ip]) >= MAX_REQUESTS_PER_MINUTE:
+        return True
+    REQUEST_LOG[ip].append(now)
+    return False
+
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        timestamp = datetime.datetime.now().isoformat()
+        client_ip = self.client_address[0]
+
+        if _check_rate_limit(client_ip):
+            print(f"[{timestamp}] RATE LIMITED {client_ip}", flush=True)
+            self.send_response(429)
+            self.send_header("Retry-After", "60")
+            self.end_headers()
+            self.wfile.write(b"rate limited")
+            return
+
         auth = self.headers.get("Authorization", "")
         if auth != f"Bearer {SECRET}":
+            print(f"[{timestamp}] AUTH FAILURE from {client_ip}", flush=True)
             self.send_response(403)
             self.end_headers()
             self.wfile.write(b"forbidden")
             return
+
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length))
         cmd = body.get("cmd", "echo no command")
         cwd = body.get("cwd", "/root")
         timeout = body.get("timeout", 120)
+        print(f"[{timestamp}] {client_ip} CMD: {cmd[:200]}", flush=True)
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=cwd)
             resp = {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
@@ -100,8 +145,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(resp).encode())
+
     def log_message(self, format, *args):
-        pass
+        timestamp = datetime.datetime.now().isoformat()
+        client_ip = self.client_address[0]
+        print(f"[{timestamp}] {client_ip} {format % args}", flush=True)
 
 HTTPServer(("127.0.0.1", 9090), Handler).serve_forever()
 ```
@@ -129,7 +177,7 @@ systemctl daemon-reload
 systemctl enable --now cmd-api
 ```
 
-#### 2d. Add Swap (Required for 1GB droplets)
+#### 2e. Add Swap (Required for 1GB droplets)
 
 ```bash
 fallocate -l 2G /swapfile
@@ -139,7 +187,7 @@ swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
 
-#### 2e. Install Node.js
+#### 2f. Install Node.js
 
 Next.js runs natively (not in Docker) to avoid OOM during build on 1GB droplets.
 
@@ -148,7 +196,7 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 ```
 
-#### 2f. Configure Caddy
+#### 2g. Configure Caddy
 
 Write `/etc/caddy/Caddyfile` (replace `DROPLET_IP` with actual IP, dots replaced by dashes):
 
@@ -179,7 +227,7 @@ Restart Caddy:
 systemctl restart caddy
 ```
 
-#### 2g. Clone Repo and Start Backend Services
+#### 2h. Clone Repo and Start Backend Services
 
 The Python API uses **uv** for dependency management inside its Docker container. No manual uv installation is needed on the droplet — it's installed automatically in the Dockerfile. Dependencies are defined in `server/pyproject.toml` and locked in `server/uv.lock`.
 
@@ -189,7 +237,7 @@ cd /root/whoeverwants
 docker compose up -d --build
 ```
 
-#### 2h. Build and Start Next.js Frontend
+#### 2i. Build and Start Next.js Frontend
 
 ```bash
 cd /root/whoeverwants
@@ -230,7 +278,7 @@ systemctl daemon-reload
 systemctl enable --now whoeverwants-web
 ```
 
-#### 2i. Apply Database Migrations
+#### 2j. Apply Database Migrations
 
 ```bash
 cd /root/whoeverwants
@@ -258,7 +306,7 @@ for f in database/migrations/*_up.sql; do
 done
 ```
 
-#### 2j. Production Hardening
+#### 2k. Production Hardening
 
 **Log rotation** — Create `/etc/logrotate.d/whoeverwants`:
 
@@ -328,6 +376,12 @@ bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c
 
 bash scripts/remote.sh "crontab -l"
 # Expected: backup-db.sh (daily 3AM) and health-check.sh (every 5min)
+
+bash scripts/remote.sh "ufw status"
+# Expected: 22, 80, 443 allowed — everything else denied
+
+bash scripts/remote.sh "grep -E '^(PermitRootLogin|PasswordAuthentication)' /etc/ssh/sshd_config"
+# Expected: PermitRootLogin prohibit-password, PasswordAuthentication no
 ```
 
 ---
@@ -402,7 +456,10 @@ For `whoeverwants.com` to work, the domain's DNS must have an A record pointing 
 
 ## Security Notes
 
-- The command API runs as root with `shell=True` — full system access. Protected by bearer token + TLS only.
+- **Firewall**: UFW enabled — only ports 22 (SSH), 80 (HTTP), 443 (HTTPS) are open. All other incoming traffic is denied.
+- **SSH**: Password authentication disabled, root login only via SSH key (`PermitRootLogin prohibit-password`).
+- **cmd-api**: Runs as root with `shell=True` — full system access. Protected by bearer token + TLS + rate limiting (60 req/min per IP). All requests are logged with timestamp, client IP, and command (truncated to 200 chars). Auth failures are logged explicitly.
+- **Token handling**: The API token must NEVER be committed to git. Store only in environment variables and the systemd service file on the droplet.
 - All services except Caddy (ports 80/443) and SSH (port 22) bind to localhost only.
 - The API token should be a strong random string (32+ bytes, URL-safe base64).
 - Caddy handles TLS certificate provisioning and renewal automatically via Let's Encrypt.
@@ -412,6 +469,8 @@ For `whoeverwants.com` to work, the domain's DNS must have an A record pointing 
 
 ## Rate Limiting
 
+### FastAPI (Application API)
+
 The FastAPI server includes built-in rate limiting (`server/middleware.py`):
 
 | Operation | Limit | Window |
@@ -420,6 +479,16 @@ The FastAPI server includes built-in rate limiting (`server/middleware.py`):
 | POST/PUT/DELETE requests | 30/IP | 1 minute |
 
 Rate-limited requests receive HTTP 429 with a `Retry-After: 60` header. The `/health` endpoint is exempt.
+
+### cmd-api (Command Execution API)
+
+The command execution API has its own rate limiter:
+
+| Operation | Limit | Window |
+|-----------|-------|--------|
+| All POST requests | 60/IP | 1 minute |
+
+Rate-limited requests receive HTTP 429. This protects against abuse even if the bearer token is compromised.
 
 ---
 

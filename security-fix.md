@@ -264,9 +264,9 @@ The old token is in git history (commit `fa805e7`). Since it's already been used
 - [ ] Destroy old droplet (157.245.129.162)
 - [ ] Create new droplet (SSH key auth only)
 - [ ] Generate new API token
-- [ ] Update provision script with security hardening (firewall, SSH, logging, rate limiting)
-- [ ] Update droplet-setup.md
-- [ ] Update CLAUDE.md with new IP (NOT the token)
+- [x] Update provision script with security hardening (firewall, SSH, logging, rate limiting)
+- [x] Update droplet-setup.md
+- [x] Update CLAUDE.md with new IP (NOT the token)
 - [ ] Provision new droplet
 - [ ] Update DNS A record for whoeverwants.com
 - [ ] Restore database (if backup is clean)

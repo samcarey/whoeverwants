@@ -57,6 +57,18 @@ DROPLET_API_TOKEN=<bearer token>
 
 The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bearer token authenticates requests.
 
+> **SECURITY**: The API token must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store it only in environment variables. The token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
+
+### Security Hardening
+
+The droplet is hardened with:
+- **UFW firewall**: Only ports 22 (SSH), 80 (HTTP), 443 (HTTPS) are open
+- **SSH**: Password auth disabled, key-only login (`PermitRootLogin prohibit-password`)
+- **cmd-api**: Request logging (timestamp, IP, command) and rate limiting (60 req/min per IP)
+- **FastAPI**: Rate limiting (120 GET/min, 30 POST/min per IP)
+- **Automated backups**: Daily pg_dump at 3 AM, 14-day retention
+- **Health checks**: Every 5 minutes with auto-recovery
+
 ### Development Workflow
 
 1. **Write code** in this environment (Claude Code sandbox)
