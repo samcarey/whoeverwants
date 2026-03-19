@@ -138,13 +138,13 @@ export async function apiGetPollById(pollId: string): Promise<Poll> {
 
 export async function apiSubmitVote(pollId: string, params: {
   vote_type: string;
-  yes_no_choice?: string;
-  ranked_choices?: string[];
-  nominations?: string[];
+  yes_no_choice?: string | null;
+  ranked_choices?: string[] | null;
+  nominations?: string[] | null;
   is_abstain?: boolean;
-  voter_name?: string;
-  min_participants?: number;
-  max_participants?: number;
+  voter_name?: string | null;
+  min_participants?: number | null;
+  max_participants?: number | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
     method: 'POST',
@@ -157,13 +157,13 @@ export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
 }
 
 export async function apiEditVote(pollId: string, voteId: string, params: {
-  yes_no_choice?: string;
-  ranked_choices?: string[];
-  nominations?: string[];
+  yes_no_choice?: string | null;
+  ranked_choices?: string[] | null;
+  nominations?: string[] | null;
   is_abstain?: boolean;
-  voter_name?: string;
-  min_participants?: number;
-  max_participants?: number;
+  voter_name?: string | null;
+  min_participants?: number | null;
+  max_participants?: number | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`, {
     method: 'PUT',
