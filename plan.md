@@ -236,14 +236,28 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ### ~~Phase 7~~ ✅ COMPLETE
 
-### Phase 8 (next)
-1. Add `*.api.whoeverwants.com` wildcard DNS
-2. Write `preview-manager.sh` (create/list/destroy)
-3. Update `lib/api.ts` to derive API URL from branch name in Vercel previews
-4. Write `deploy-preview.sh` convenience wrapper
-5. Test E2E: create preview from test branch
-6. Add auto-cleanup cron
-7. Update CLAUDE.md and provision script
+### Phase 8 (in progress)
+1. **Add `*.api.whoeverwants.com` wildcard DNS** — ⏳ NEEDS USER ACTION (AWS Route 53)
+   - Add wildcard A record: `*.api.whoeverwants.com` → `142.93.60.29`
+2. ~~Write `preview-manager.sh` (create/list/destroy)~~ ✅ DONE
+   - `scripts/preview-manager.sh` with create/list/destroy/destroy-all/cleanup commands
+   - Tested on droplet: full create → list → destroy round-trip working
+3. ~~Update `lib/api.ts` to derive API URL from branch name in Vercel previews~~ ✅ DONE
+   - Uses `VERCEL_GIT_COMMIT_REF` (exposed via `next.config.ts`) to derive slug
+   - Convention: `claude/foo-bar-xyz` → `https://foo-bar-xyz.api.whoeverwants.com/api/polls`
+4. ~~Write `deploy-preview.sh` convenience wrapper~~ ✅ DONE
+   - Pushes branch + creates preview API on droplet in one command
+5. ~~Test E2E: create preview from test branch~~ ✅ DONE
+   - Created preview for `claude/continue-plan-D3M5v`
+   - Preview API healthy on port 8001, isolated database created
+   - Destroy verified: container removed, database dropped, Caddy cleaned
+6. ~~Add auto-cleanup cron~~ ✅ DONE
+   - Daily at 4 AM: destroys previews older than 7 days
+   - Cron installed on droplet
+7. ~~Update CLAUDE.md and provision script~~ ✅ DONE
+   - CLAUDE.md: added preview environments section to development workflow
+   - `docs/droplet-setup.md`: updated architecture diagram, DNS, cron jobs, preview docs
+   - `scripts/provision-droplet.sh`: added preview directory setup, Caddy import, cleanup cron
 
 ---
 

@@ -228,7 +228,9 @@ cmd_list() {
     printf "%-30s %-40s %-5s %-20s %s\n" "$slug" "$branch" "$port" "$created" "$api_url"
   done
 
-  [ "$found" -eq 0 ] && echo "(no previews)"
+  if [ "$found" -eq 0 ]; then
+    echo "(no previews)"
+  fi
 }
 
 cmd_destroy() {
