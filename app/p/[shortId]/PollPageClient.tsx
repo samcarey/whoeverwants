@@ -940,7 +940,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       let voteId: string | undefined;
-      let error: unknown;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let error: any;
 
 
       if (isEditingVote && userVoteId) {
