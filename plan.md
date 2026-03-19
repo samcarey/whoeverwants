@@ -47,22 +47,24 @@ Droplet (142.93.60.29):
    - `scripts/provision-droplet.sh` updated (removed Node.js/Next.js steps, now 11 steps)
    - `scripts/health-check.sh` updated (removed Next.js check)
 
-6. **Set up Vercel project** ⬅️ NEXT
-   - `VERCEL_API_TOKEN` is available as an environment variable
-   - Use Vercel REST API to create project linked to `samcarey/whoeverwants` GitHub repo
-   - Configure build: `npm run build`, framework: Next.js
-   - Add `whoeverwants.com` as production domain on the Vercel project
+6. ~~**Set up Vercel project**~~ ✅ DONE
+   - Project `whoeverwants` exists (`prj_07PAXGI2wG74cGRKREB0BiIDUWSn`)
+   - Domains configured: `whoeverwants.com`, `www.whoeverwants.com` (redirect), `whoeverwants.vercel.app` (redirect)
+   - Environment vars set: `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION`, `NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION`
+   - Next.js updated from 15.3.3 → 15.5.14 to fix security CVEs blocking builds
+   - Preview builds now succeed (branch `claude/continue-plan-Stbwu` deployed successfully)
 
-7. **Update DNS**
-   - `api.whoeverwants.com` → A record → `142.93.60.29` (droplet)
-   - `whoeverwants.com` → Vercel (CNAME to `cname.vercel-dns.com` or configure via Vercel)
-   - User may need to do this manually depending on DNS provider
+7. **Update DNS** ⬅️ NEXT
+   - ✅ `api.whoeverwants.com` → A record → `142.93.60.29` (droplet) — already correct
+   - ❌ `whoeverwants.com` → still points to droplet (`142.93.60.29`), needs to point to Vercel
+   - **Action needed**: In AWS Route 53, change `whoeverwants.com` A record from `142.93.60.29` to `76.76.21.21` (Vercel's IP)
+   - DNS is managed via AWS Route 53 (nameservers: `ns-*.awsdns-*.{net,com,co.uk,org}`)
 
 8. **Verify end-to-end**
+   - Merge branch to `main` to trigger production Vercel deploy
    - Vercel serves frontend at `whoeverwants.com`
    - API calls from frontend reach `api.whoeverwants.com` → droplet → FastAPI → Postgres
    - All 4 poll types work (create, vote, results)
-   - Merge branch to `main` to trigger production Vercel deploy
 
 ### Vercel CLI Access for Claude
 
