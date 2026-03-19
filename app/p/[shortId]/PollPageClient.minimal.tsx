@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Poll } from "@/lib/supabase";
+import { Poll } from "@/lib/types";
 
 interface PollPageClientProps {
   poll: Poll;

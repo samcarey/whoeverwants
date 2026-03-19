@@ -3,7 +3,7 @@
  * Replaces direct Supabase client calls with fetch()-based requests to the FastAPI server.
  */
 
-import type { Poll, PollResults } from './supabase';
+import type { Poll, PollResults } from './types';
 
 // In production, the API is served from the same origin via Caddy.
 // In development, point to the local Docker API on port 8000.

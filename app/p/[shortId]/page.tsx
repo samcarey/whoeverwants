@@ -1,6 +1,6 @@
 "use client";
 
-import { Poll } from "@/lib/supabase";
+import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { useEffect, useState, Suspense } from "react";

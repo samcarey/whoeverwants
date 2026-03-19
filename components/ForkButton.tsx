@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Poll } from "@/lib/supabase";
+import { Poll } from "@/lib/types";
 import { debugLog } from "@/lib/debugLogger";
 
 interface ForkButtonProps {

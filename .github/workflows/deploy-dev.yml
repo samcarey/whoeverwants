@@ -46,13 +46,6 @@ jobs:
         env:
           GITHUB_PAGES: 'true'
           PAGES_BASE_PATH: '/${{ github.event.repository.name }}'
-          NEXT_PUBLIC_SUPABASE_URL_TEST: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL_TEST }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST }}
-          # next build sets NODE_ENV=production, so the Supabase client reads
-          # the _PRODUCTION variants.  Point them at the test database so the
-          # dev deployment doesn't touch prod data.
-          NEXT_PUBLIC_SUPABASE_URL_PRODUCTION: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL_TEST }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST }}
         run: npx next build
 
       - name: Prepare deployment artifacts

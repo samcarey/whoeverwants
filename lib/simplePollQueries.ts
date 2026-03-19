@@ -1,7 +1,7 @@
 // Simple poll queries using browser storage for access control
 // No fingerprinting, no complex RLS - just localStorage poll lists
 
-import { Poll } from '@/lib/supabase';
+import { Poll } from '@/lib/types';
 import { apiGetAccessiblePolls, apiGetPollById } from '@/lib/api';
 import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
 

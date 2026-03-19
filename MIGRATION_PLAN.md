@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2E in progress
+**Status**: Active — Phase 3 in progress
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2E (Shared features) — items 1-5 complete
+**Current phase**: Phase 3 (Cleanup) — removing Supabase dependencies
 
 ---
 
@@ -163,14 +163,23 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 3: Cleanup
+### Phase 3: Cleanup — IN PROGRESS
 **Goal**: Remove all Supabase dependencies.
 
-- [ ] Remove `@supabase/supabase-js` from package.json
-- [ ] Remove SQL stored procedures from migrations (logic lives in Python now)
-- [ ] Simplify DB to pure data storage (tables + indexes, no views/functions/triggers)
-- [ ] Remove Supabase env vars and legacy migration scripts
-- [ ] Update tests to use Python API (pure unit tests, no Supabase dependency)
+- [x] Remove `@supabase/supabase-js` from package.json
+- [x] Extract types (`Poll`, `PollResults`, `RankedChoiceRound`, etc.) into standalone `lib/types.ts`
+- [x] Delete `lib/supabase.ts` (Supabase client + query functions)
+- [x] Update all imports across 12 components/pages to use `lib/types.ts`
+- [x] Delete Supabase-only API routes (`app/api/admin/fix-rls/`, `app/api/fix-vote-policy/`)
+- [x] Delete dead `app/page-debug.tsx` (used Supabase client directly)
+- [x] Remove Supabase env vars from GitHub workflows (`test.yml`, `pr-checks.yml`, `deploy-dev.yml`)
+- [x] Remove broken `apply_fix_migration.js` step from CI
+- [x] Delete legacy migration scripts (`apply-migrations.sh`, `complete-migration.sh`, etc.)
+- [x] Delete `supabase/` config directory (`config.toml` + local migrations)
+- [x] Delete `update-sql-reverse-alpha.js` utility script
+- [x] Update test setup to remove Supabase env var requirements
+- [ ] Simplify DB to pure data storage (tables + indexes, no views/functions/triggers) — deferred
+- [ ] Rewrite unit tests to not depend on Supabase — deferred (tests already broken since Supabase deleted)
 
 ---
 
@@ -224,6 +233,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2D start | Fixed participation poll results: added explicit `participation` handler in `get_results()` (was falling through to catch-all returning `yes_count=None`). Added `GET /api/polls/{id}/participants` endpoint using existing `calculate_participating_voters()` algorithm. Connected frontend `PollResults.tsx` to call `apiGetParticipants()` instead of TODO stub. Basic single-voter participation poll now works E2E. Remaining: auto-close trigger, multi-voter conditional testing. |
 | 2026-03-19 | Phase 2D complete | Deployed auto-close logic to droplet. Comprehensive E2E testing of all participation poll scenarios: basic 3-voter compatible constraints (all selected), conflicting constraints with priority algorithm (Bob+Charlie selected, Alice excluded for max=1), unsatisfiable conditions (yes_count=0), all-abstain (correct counts), auto-close trigger (poll closes at max_capacity, rejects subsequent votes). All 4 poll types now fully working through Python API. |
 | 2026-03-19 | Phase 2E complete | Related polls: bidirectional tree walk algorithm (18 tests), `POST /api/polls/related` endpoint, `pollDiscovery.ts` calls Python API directly. Removed last Supabase RPC call (`discover-related/route.ts`). Fixed `getParticipatingVoters` → `apiGetParticipants`. Verified E2E: parent + follow-up + fork chain discovered bidirectionally via public URL. Only type-only Supabase imports remain. |
+| 2026-03-19 | Phase 3 start | Removed `@supabase/supabase-js` dependency. Extracted types to `lib/types.ts`, deleted `lib/supabase.ts`, deleted Supabase-only API routes and debug page. Updated all 12 component/page imports. Cleaned up CI workflows (removed Supabase env vars and broken migration steps). Deleted legacy migration scripts and `supabase/` config directory. |
 
 ---
 
