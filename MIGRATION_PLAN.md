@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 1
-**Last updated**: 2026-03-18
-**Current phase**: Phase 2 (Port Core Algorithms to Python)
+**Status**: Active — Phase 2A
+**Last updated**: 2026-03-19
+**Current phase**: Phase 2A (Yes/No polls — full vertical slice)
 
 ---
 
@@ -58,10 +58,11 @@ Supabase projects permanently deleted. No baseline to restore. Moving directly t
 - [x] **Git-based deployment**: `git pull` + `docker compose up -d --build` via `scripts/remote.sh`
 - [x] **Verify**: API health check returns `{"status":"ok","database":"connected"}`
 
-### Phase 2: Port Core Algorithms to Python ← CURRENT
-**Goal**: Implement all SQL business logic in Python, with tests proving correctness.
+### Phase 2: Vertical Slices (Algorithm + API + Frontend per feature)
 
-#### SQL logic to port (by complexity):
+**Strategy change**: Instead of porting all algorithms first, then building the API, then migrating the frontend — we work in **vertical slices**. Each poll type gets its algorithm, API endpoints, and frontend wiring done together so it can be tested end-to-end before moving on to the next feature. This catches integration issues early.
+
+#### SQL logic reference (by complexity):
 
 | Component | SQL Location | Complexity | Strategy |
 |-----------|-------------|------------|----------|
@@ -76,51 +77,86 @@ Supabase projects permanently deleted. No baseline to restore. Moving directly t
 | `calculate_ranked_choice_winner()` | Migration 046 | **High** | IRV + Borda tiebreak |
 | `calculate_participating_voters()` | Migration 063 | **High** | Recursive greedy priority |
 
-#### Approach (work through in this order):
-1. [ ] **Yes/No vote counting** — `server/algorithms/yes_no.py` + tests. Simple aggregation: count yes/no/abstain votes for a poll. Reference: `poll_results` view in migration 005/009.
-2. [ ] **Nomination vote counting** — `server/algorithms/nomination.py` + tests. Already exists in TypeScript (`lib/supabase.ts`). Count nominations and votes per option.
-3. [ ] **Vote structure validation** — `server/algorithms/vote_validation.py` + tests. Enforce which fields are required/forbidden per poll type. Reference: migration 053 constraints.
-4. [ ] **`update_updated_at` trigger** — Handle in app layer (set `updated_at = NOW()` on update). No separate module needed.
-5. [ ] **`get_all_related_poll_ids()`** — `server/algorithms/related_polls.py` + tests. Recursive tree walk for follow-up/fork chains. Reference: migration 017.
-6. [ ] **`poll_results` view (full)** — `server/algorithms/poll_results.py` + tests. Combines yes/no, nomination, ranked choice, and participation results. Reference: migration 058.
-7. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close poll when yes votes >= max_participants. Reference: migration 056.
-8. [ ] **Ranked choice (IRV)** — `server/algorithms/ranked_choice.py` + tests. IRV with Borda tiebreak + exhausted ballot handling. Validate against `tests/__tests__/ranked-choice/` and `tests/__tests__/voting-algorithms/`. Reference: migration 046.
-9. [ ] **Participation priority** — `server/algorithms/participation.py` + tests. Greedy priority-based voter selection. Reference: migration 063 + CLAUDE.md philosophy section.
-10. [ ] **`calculate_valid_participation_votes()`** — wrapper around participation priority. Reference: migration 061.
-
 Each algorithm gets its own Python module in `server/algorithms/` with a corresponding test file in `server/tests/`. Dependencies are managed with **uv** (`pyproject.toml` + `uv.lock`). Run tests with `uv run pytest`.
 
-### Phase 3: API Layer
-**Goal**: Expose Python calculations via HTTP API that the Next.js frontend can call.
+---
 
-- [ ] Design API endpoints:
-  - `GET /api/polls/{id}/results` — compute and return poll results
-  - `POST /api/polls` — create poll
-  - `POST /api/polls/{id}/close` — close poll + run ranked choice calculation
-  - `GET /api/polls/{id}/participants` — participation priority calculation
-  - `POST /api/votes` — validate + submit vote (with structure validation)
-  - `GET /api/polls/{id}/related` — related poll discovery
-  - CRUD for all poll/vote operations currently done via supabase-js
-- [ ] API reads/writes to local Postgres
-- [ ] Add API integration tests
+### Phase 2A: Yes/No Polls — Full Vertical Slice ← CURRENT
+**Goal**: Get yes/no polls fully working through the new Python API, testable in the browser.
 
-### Phase 4: Frontend Migration
-**Goal**: Replace `@supabase/supabase-js` with direct calls to our Python API.
+#### Algorithm
+1. [x] **Yes/No vote counting** — `server/algorithms/yes_no.py` + tests. Counts yes/no/abstain, calculates percentages, determines winner. 12 tests passing.
 
-Only 2 files need changes:
-- `lib/supabase.ts` (all CRUD + 2 RPCs)
-- `app/api/polls/discover-related/route.ts` (1 RPC)
+#### API Endpoints
+2. [ ] **`POST /api/polls`** — Create a poll (all types, not just yes/no). Inserts into `polls` table, returns poll with `id` and `short_id`.
+3. [ ] **`GET /api/polls/{short_id}`** — Get poll by short ID. Returns poll data needed by `PollPageClient`.
+4. [ ] **`POST /api/polls/{id}/votes`** — Submit a vote. For yes/no: validates `yes_no_choice` ∈ {"yes", "no"} or `is_abstain=true`. Inserts into `votes` table.
+5. [ ] **`GET /api/polls/{id}/votes`** — Get votes for a poll (needed to check if current user already voted, and for voter list).
+6. [ ] **`PUT /api/polls/{id}/votes/{vote_id}`** — Edit an existing vote.
+7. [ ] **`GET /api/polls/{id}/results`** — Compute poll results using `count_yes_no_votes()`. Returns shape matching `PollResults` TypeScript interface.
+8. [ ] **`POST /api/polls/{id}/close`** — Close a poll (creator auth via `creator_secret`).
+9. [ ] **`POST /api/polls/{id}/reopen`** — Reopen a poll.
+10. [ ] **`GET /api/polls/accessible`** — List polls the user has access to (by poll IDs sent from client).
 
-Migration order (least risk first):
-1. [ ] Poll results calculation (read-only, easy to verify)
-2. [ ] Related poll discovery (read-only)
-3. [ ] Vote validation
-4. [ ] Ranked choice winner calculation (triggered on poll close)
-5. [ ] Participation priority algorithm
-6. [ ] Vote submission (write path)
-7. [ ] Poll creation
+#### Frontend Migration
+11. [ ] **Add API client** — `lib/api.ts` with `fetch()`-based client pointing to Python API (replaces `supabase` client for migrated operations).
+12. [ ] **Swap `getPollResults()`** — For yes/no polls, call Python API instead of Supabase `poll_results` view.
+13. [ ] **Swap `submitVote()`** — For yes/no polls, POST to Python API instead of Supabase.
+14. [ ] **Swap `createPoll()`** — POST to Python API.
+15. [ ] **Swap poll fetch** — `getPollById()` / `getPollByShortId()` via Python API.
+16. [ ] **Swap `closePoll()` / `reopenPoll()`** — via Python API.
 
-### Phase 5: Cleanup
+#### Deploy & Test
+17. [ ] **Deploy to droplet** — `git pull` + `docker compose up -d --build` on droplet.
+18. [ ] **End-to-end test** — Create a yes/no poll on `whoeverwants.com`, vote on it, verify results render correctly.
+
+---
+
+### Phase 2B: Nomination Polls
+**Goal**: Get nomination polls fully working through the Python API.
+
+1. [ ] **Nomination vote counting algorithm** — `server/algorithms/nomination.py` + tests. Port from `getNominationVoteCounts()` in `lib/supabase.ts`.
+2. [ ] **Vote structure validation** — `server/algorithms/vote_validation.py` + tests. Enforce required/forbidden fields per poll type. Reference: migration 053.
+3. [ ] **Extend API endpoints** — Add nomination-specific handling to vote submission/results endpoints.
+4. [ ] **Frontend swap** — `getNominationVoteCounts()` calls Python API.
+5. [ ] **Deploy & test** — Create nomination poll, nominate options, vote, verify.
+
+---
+
+### Phase 2C: Ranked Choice Polls
+**Goal**: Get ranked choice (IRV) polls fully working through the Python API.
+
+1. [ ] **IRV algorithm** — `server/algorithms/ranked_choice.py` + tests. IRV with Borda tiebreak + exhausted ballot handling. Validate against existing `tests/__tests__/ranked-choice/` and `tests/__tests__/voting-algorithms/`. Reference: migration 046.
+2. [ ] **Extend API** — Ranked choice results endpoint, `calculate_ranked_choice_winner()` on poll close.
+3. [ ] **Frontend swap** — `getRankedChoiceRounds()` and ranked-choice results via Python API.
+4. [ ] **Deploy & test** — Create ranked choice poll, submit rankings, close poll, verify IRV rounds.
+
+---
+
+### Phase 2D: Participation Polls
+**Goal**: Get participation polls fully working through the Python API.
+
+1. [ ] **Participation priority algorithm** — `server/algorithms/participation.py` + tests. Greedy priority-based voter selection. Reference: migration 063 + CLAUDE.md philosophy section.
+2. [ ] **`calculate_valid_participation_votes()`** — Wrapper around participation priority. Reference: migration 061.
+3. [ ] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + tests. Close when yes votes >= max_participants.
+4. [ ] **Extend API** — Participation results, `getParticipatingVoters()`, auto-close logic.
+5. [ ] **Frontend swap** — Participation results and voter list via Python API.
+6. [ ] **Deploy & test** — Create participation poll with conditions, vote, verify priority algorithm.
+
+---
+
+### Phase 2E: Shared Features
+**Goal**: Migrate remaining cross-cutting features.
+
+1. [ ] **`update_updated_at`** — Handle in app layer (set `updated_at = NOW()` on update). No separate module needed.
+2. [ ] **`get_all_related_poll_ids()`** — `server/algorithms/related_polls.py` + tests. Recursive tree walk for follow-up/fork chains. Reference: migration 017.
+3. [ ] **Poll access tracking** — `GET /api/polls/accessible` using client-sent poll IDs.
+4. [ ] **Frontend swap** — Related poll discovery, poll access, remaining Supabase calls.
+5. [ ] **Deploy & test** — Follow-up/fork chains, poll list on homepage.
+
+---
+
+### Phase 3: Cleanup
 **Goal**: Remove all Supabase dependencies.
 
 - [ ] Remove `@supabase/supabase-js` from package.json
@@ -168,6 +204,8 @@ Migration order (least risk first):
 | 2026-03-18 | Plan revision | Supabase permanently deleted — revised plan to skip Phase 0, remove PostgREST compatibility layer, go direct to Python API |
 | 2026-03-18 | Droplet setup | DO droplet provisioned (157.245.129.162), remote execution API running, `scripts/remote.sh` created, credentials stored in `.env`, CLAUDE.md updated with droplet management docs |
 | 2026-03-18 | Phase 1 complete | Docker installed, `docker-compose.yml` created (Postgres 16 + FastAPI), repo cloned to droplet, all 74 migrations applied, Caddy configured to proxy `whoeverwants.com` → FastAPI, health check verified |
+| 2026-03-19 | Phase 2A start | Yes/No vote counting algorithm ported to Python (`server/algorithms/yes_no.py`, 12 tests passing). Fixed hatchling build config. Added Python `.gitignore` entries. |
+| 2026-03-19 | Plan revision | Restructured plan from horizontal layers (all algorithms → all API → all frontend) to **vertical slices** per poll type. Each feature gets algorithm + API + frontend done together so it can be tested end-to-end before moving on. |
 
 ---
 
