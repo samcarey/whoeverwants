@@ -236,9 +236,10 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ### ~~Phase 7~~ ✅ COMPLETE
 
-### Phase 8 (in progress)
-1. **Add `*.api.whoeverwants.com` wildcard DNS** — ⏳ NEEDS USER ACTION (AWS Route 53)
-   - Add wildcard A record: `*.api.whoeverwants.com` → `142.93.60.29`
+### Phase 8 ✅ COMPLETE
+1. ~~Add `*.api.whoeverwants.com` wildcard DNS~~ ✅ DONE
+   - Wildcard A record added in AWS Route 53: `*.api.whoeverwants.com` → `142.93.60.29`
+   - Verified: `test-preview.api.whoeverwants.com` resolves correctly
 2. ~~Write `preview-manager.sh` (create/list/destroy)~~ ✅ DONE
    - `scripts/preview-manager.sh` with create/list/destroy/destroy-all/cleanup commands
    - Tested on droplet: full create → list → destroy round-trip working
@@ -250,6 +251,7 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 5. ~~Test E2E: create preview from test branch~~ ✅ DONE
    - Created preview for `claude/continue-plan-D3M5v`
    - Preview API healthy on port 8001, isolated database created
+   - Public URL verified: `https://continue-plan-d3m5v.api.whoeverwants.com/health` → OK
    - Destroy verified: container removed, database dropped, Caddy cleaned
 6. ~~Add auto-cleanup cron~~ ✅ DONE
    - Daily at 4 AM: destroys previews older than 7 days
