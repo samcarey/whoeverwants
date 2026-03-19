@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2D complete
+**Status**: Active — Phase 2E in progress
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2E next (Shared features)
+**Current phase**: Phase 2E (Shared features) — items 1-5 complete
 
 ---
 
@@ -152,14 +152,14 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 2E: Shared Features
+### Phase 2E: Shared Features ✓ COMPLETE
 **Goal**: Migrate remaining cross-cutting features.
 
-1. [ ] **`update_updated_at`** — Handle in app layer (set `updated_at = NOW()` on update). No separate module needed.
-2. [ ] **`get_all_related_poll_ids()`** — `server/algorithms/related_polls.py` + tests. Recursive tree walk for follow-up/fork chains. Reference: migration 017.
-3. [ ] **Poll access tracking** — `GET /api/polls/accessible` using client-sent poll IDs.
-4. [ ] **Frontend swap** — Related poll discovery, poll access, remaining Supabase calls.
-5. [ ] **Deploy & test** — Follow-up/fork chains, poll list on homepage.
+1. [x] **`update_updated_at`** — Already handled in app layer (set `updated_at = NOW()` on INSERT/UPDATE in `server/routers/polls.py`). No separate module needed.
+2. [x] **`get_all_related_poll_ids()`** — `server/algorithms/related_polls.py` + 18 tests. Bidirectional tree walk for follow-up/fork chains (improves on SQL migration 017 which only searched descendants). Reference: migration 017.
+3. [x] **Poll access tracking** — `POST /api/polls/accessible` already implemented (Phase 2A). Frontend uses `apiGetAccessiblePolls()` via `lib/simplePollQueries.ts`.
+4. [x] **Frontend swap** — `lib/pollDiscovery.ts` now calls Python API directly via `apiGetRelatedPolls()`. Removed dead `app/api/polls/discover-related/route.ts` (was last Supabase RPC call). Replaced `getParticipatingVoters` Supabase call with `apiGetParticipants` in `PollPageClient.tsx`. Remaining Supabase imports are type-only (`Poll`, `PollResults`).
+5. [x] **Deploy & test** — Created follow-up chain (parent + follow-up + fork), verified bidirectional discovery finds all 3 from any starting point. Tested via public URL `https://whoeverwants.com/api/polls/related`.
 
 ---
 
@@ -223,6 +223,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2C complete | Ranked choice IRV algorithm (27 tests), API returns `ranked_choice_rounds` + `ranked_choice_winner` in results. Frontend reads rounds from API instead of Supabase `getRankedChoiceRounds()`. Borda tiebreak data embedded in round entries. Deployed and verified E2E on whoeverwants.com. |
 | 2026-03-19 | Phase 2D start | Fixed participation poll results: added explicit `participation` handler in `get_results()` (was falling through to catch-all returning `yes_count=None`). Added `GET /api/polls/{id}/participants` endpoint using existing `calculate_participating_voters()` algorithm. Connected frontend `PollResults.tsx` to call `apiGetParticipants()` instead of TODO stub. Basic single-voter participation poll now works E2E. Remaining: auto-close trigger, multi-voter conditional testing. |
 | 2026-03-19 | Phase 2D complete | Deployed auto-close logic to droplet. Comprehensive E2E testing of all participation poll scenarios: basic 3-voter compatible constraints (all selected), conflicting constraints with priority algorithm (Bob+Charlie selected, Alice excluded for max=1), unsatisfiable conditions (yes_count=0), all-abstain (correct counts), auto-close trigger (poll closes at max_capacity, rejects subsequent votes). All 4 poll types now fully working through Python API. |
+| 2026-03-19 | Phase 2E complete | Related polls: bidirectional tree walk algorithm (18 tests), `POST /api/polls/related` endpoint, `pollDiscovery.ts` calls Python API directly. Removed last Supabase RPC call (`discover-related/route.ts`). Fixed `getParticipatingVoters` → `apiGetParticipants`. Verified E2E: parent + follow-up + fork chain discovered bidirectionally via public URL. Only type-only Supabase imports remain. |
 
 ---
 
