@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2A complete, starting Phase 2B
+**Status**: Active — Phase 2B complete, starting Phase 2C
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2A complete (Yes/No polls live on whoeverwants.com)
+**Current phase**: Phase 2B complete (Nomination polls live on whoeverwants.com)
 
 ---
 
@@ -113,14 +113,14 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 2B: Nomination Polls
+### Phase 2B: Nomination Polls ✓ COMPLETE
 **Goal**: Get nomination polls fully working through the Python API.
 
-1. [ ] **Nomination vote counting algorithm** — `server/algorithms/nomination.py` + tests. Port from `getNominationVoteCounts()` in `lib/supabase.ts`.
-2. [ ] **Vote structure validation** — `server/algorithms/vote_validation.py` + tests. Enforce required/forbidden fields per poll type. Reference: migration 053.
-3. [ ] **Extend API endpoints** — Add nomination-specific handling to vote submission/results endpoints.
-4. [ ] **Frontend swap** — `getNominationVoteCounts()` calls Python API.
-5. [ ] **Deploy & test** — Create nomination poll, nominate options, vote, verify.
+1. [x] **Nomination vote counting algorithm** — `server/algorithms/nomination.py` + 16 tests. Counts nominations across all non-abstaining voters, includes poll options with 0 votes, sorts by count desc then alphabetical.
+2. [x] **Vote structure validation** — `server/algorithms/vote_validation.py` + 28 tests. Enforces required/forbidden fields per poll type (yes_no, nomination, ranked_choice, participation). Rejects malformed votes before DB insert.
+3. [x] **Extend API endpoints** — Results endpoint returns `nomination_counts` array. Vote submission validates structure against poll type.
+4. [x] **Frontend swap** — `PollResults.tsx` uses server-side `nomination_counts` instead of client-side aggregation. `NominationVotingInterface.tsx` reads from `pollResults.nomination_counts`.
+5. [x] **Deploy & test** — Created nomination poll with 3 starting options, submitted 3 votes (2 nominations + 1 abstain), verified correct counts via API. Vote validation rejects wrong vote types and empty nominations.
 
 ---
 
@@ -210,6 +210,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2A APIs | All 9 API endpoints implemented (`server/routers/polls.py`), with database module, Pydantic models, CORS middleware, and 32 integration tests. Deployed to droplet and verified all endpoints working. Fixed missing `short_id` column (migration 021 had failed silently). |
 | 2026-03-19 | Phase 2A Frontend | Created `lib/api.ts` fetch-based API client. Replaced ALL supabase calls in critical paths: `PollPageClient.tsx`, `create-poll/page.tsx`, `simplePollQueries.ts`, `VoterList.tsx`, `PollResults.tsx`, `FollowUpHeader.tsx`, `ForkHeader.tsx`, `CompactRankedChoiceResults.tsx`, `p/page.tsx`. Added Next.js rewrite proxy for dev. Real-time subscriptions replaced with polling. |
 | 2026-03-19 | Phase 2A Deploy | Deployed full stack to droplet: Python API in Docker, Next.js as systemd service (standalone build avoids OOM on 1GB). Added 2GB swap, installed Node.js 20. Caddy routes `/api/polls/*` to Python API, everything else to Next.js. Fixed TypeScript build errors, FastAPI redirect_slashes issue. E2E test: created poll, voted, verified results. DNS still points to Vercel — needs A record update to 157.245.129.162. |
+| 2026-03-19 | Phase 2B complete | Nomination polls: algorithm (16 tests), vote validation for all types (28 tests), server-side results with `nomination_counts`, frontend uses server data instead of client-side aggregation. Deployed and verified E2E: created nomination poll, 3 votes, correct counts. |
 
 ---
 
