@@ -20,6 +20,7 @@ from models import (
 from algorithms.nomination import count_nomination_votes
 from algorithms.ranked_choice import calculate_ranked_choice_winner
 from algorithms.vote_validation import VoteValidationError, validate_vote
+from algorithms.participation import calculate_participating_voters
 from algorithms.yes_no import count_yes_no_votes
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
@@ -359,6 +360,39 @@ def get_results(poll_id: str):
             winner=result.winner,
             ranked_choice_winner=result.winner,
             ranked_choice_rounds=rc_rounds,
+        )
+
+    if poll_type == "participation":
+        # Count yes/no/abstain votes
+        yes_count = 0
+        no_count = 0
+        abstain_count = 0
+        for v in votes:
+            if v.get("is_abstain"):
+                abstain_count += 1
+            elif v.get("yes_no_choice") == "yes":
+                yes_count += 1
+            elif v.get("yes_no_choice") == "no":
+                no_count += 1
+
+        # Run the participation priority algorithm to get actual participants
+        vote_dicts = [dict(v) for v in votes]
+        participating = calculate_participating_voters(vote_dicts)
+        participating_count = len(participating)
+
+        return PollResultsResponse(
+            poll_id=str(poll["id"]),
+            title=poll["title"],
+            poll_type=poll_type,
+            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
+            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
+            options=poll.get("options"),
+            yes_count=participating_count,
+            no_count=no_count,
+            abstain_count=abstain_count,
+            total_votes=len(votes),
+            min_participants=poll.get("min_participants"),
+            max_participants=poll.get("max_participants"),
         )
 
     # For other poll types, return basic structure (to be extended in later phases)
