@@ -2,9 +2,11 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 6 complete
+**Status**: Active — Phase 7 in progress
 **Last updated**: 2026-03-19
-**Current phase**: Complete — all phases done
+**Current phase**: Phase 7 (Move Frontend to Vercel) — see **[plan.md](./plan.md)**
+
+> **Next steps**: The server migration (Phases 1-6) is complete. Ongoing infrastructure improvements are tracked in **[plan.md](./plan.md)**, which is now the active plan document. Always consult `plan.md` for current work.
 
 ---
 

@@ -1,6 +1,6 @@
 # Droplet Setup Guide
 
-This document describes how to provision a new DigitalOcean droplet for WhoeverWants from scratch. Following these steps produces an identical server to the current production droplet.
+This document describes how to provision a new DigitalOcean droplet for WhoeverWants from scratch. The droplet serves only the **API** (Python/FastAPI + PostgreSQL). The **frontend** is hosted on Vercel.
 
 **Last verified**: 2026-03-19
 
@@ -22,9 +22,18 @@ Note the IP address (e.g., `142.93.60.29`).
 
 ---
 
-## 2. Provision the Server
+## 2. DNS Requirements
 
-You can either run the automated script or follow the manual steps below.
+| Record | Type | Value |
+|--------|------|-------|
+| `api.whoeverwants.com` | A | `<droplet IP>` |
+| `whoeverwants.com` | CNAME | `cname.vercel-dns.com` (or Vercel IP) |
+
+The sslip.io subdomain (`<ip-dashed>.sslip.io`) works automatically with no DNS configuration.
+
+---
+
+## 3. Provision the Server
 
 ### Automated Setup
 
@@ -32,7 +41,7 @@ From the development environment (where you have this repo checked out):
 
 ```bash
 # Set the droplet IP and desired API token
-export DROPLET_IP="157.245.129.162"
+export DROPLET_IP="142.93.60.29"
 export NEW_API_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 
 # SSH into the droplet and run the provisioning script
@@ -48,341 +57,7 @@ export DROPLET_API_TOKEN="$NEW_API_TOKEN"
 
 ### Manual Steps
 
-If you prefer to set up manually, SSH into the droplet and follow these steps:
-
-#### 2a. Firewall and SSH Hardening
-
-```bash
-# Enable UFW firewall — only allow SSH, HTTP, HTTPS
-apt-get install -y ufw
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp    # SSH
-ufw allow 80/tcp    # HTTP (Caddy)
-ufw allow 443/tcp   # HTTPS (Caddy)
-ufw --force enable
-
-# Harden SSH — disable password auth, require key-based login
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-systemctl restart ssh
-```
-
-#### 2b. Install Docker
-
-```bash
-curl -fsSL https://get.docker.com | sh
-```
-
-#### 2c. Install Caddy
-
-```bash
-apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt-get update
-apt-get install -y caddy
-```
-
-#### 2d. Set Up Command Execution API
-
-Create `/opt/cmd-api.py` (includes request logging and rate limiting):
-
-```python
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from collections import defaultdict
-import json, subprocess, os, datetime, time, sys
-
-SECRET = os.environ.get("API_SECRET", "")
-
-# Rate limiting: max 60 requests/minute per IP
-REQUEST_LOG = defaultdict(list)
-MAX_REQUESTS_PER_MINUTE = 60
-
-def _check_rate_limit(ip):
-    now = time.time()
-    REQUEST_LOG[ip] = [t for t in REQUEST_LOG[ip] if now - t < 60]
-    if len(REQUEST_LOG[ip]) >= MAX_REQUESTS_PER_MINUTE:
-        return True
-    REQUEST_LOG[ip].append(now)
-    return False
-
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        timestamp = datetime.datetime.now().isoformat()
-        client_ip = self.client_address[0]
-
-        if _check_rate_limit(client_ip):
-            print(f"[{timestamp}] RATE LIMITED {client_ip}", flush=True)
-            self.send_response(429)
-            self.send_header("Retry-After", "60")
-            self.end_headers()
-            self.wfile.write(b"rate limited")
-            return
-
-        auth = self.headers.get("Authorization", "")
-        if auth != f"Bearer {SECRET}":
-            print(f"[{timestamp}] AUTH FAILURE from {client_ip}", flush=True)
-            self.send_response(403)
-            self.end_headers()
-            self.wfile.write(b"forbidden")
-            return
-
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length))
-        cmd = body.get("cmd", "echo no command")
-        cwd = body.get("cwd", "/root")
-        timeout = body.get("timeout", 120)
-        print(f"[{timestamp}] {client_ip} CMD: {cmd[:200]}", flush=True)
-        try:
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=cwd)
-            resp = {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
-        except subprocess.TimeoutExpired:
-            resp = {"exit_code": -1, "stdout": "", "stderr": "timeout"}
-        except Exception as e:
-            resp = {"exit_code": -1, "stdout": "", "stderr": str(e)}
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(resp).encode())
-
-    def log_message(self, format, *args):
-        timestamp = datetime.datetime.now().isoformat()
-        client_ip = self.client_address[0]
-        print(f"[{timestamp}] {client_ip} {format % args}", flush=True)
-
-HTTPServer(("127.0.0.1", 9090), Handler).serve_forever()
-```
-
-Create `/etc/systemd/system/cmd-api.service`:
-
-```ini
-[Unit]
-Description=Command Runner API
-After=network.target
-[Service]
-Type=simple
-Environment=API_SECRET=<YOUR_TOKEN_HERE>
-ExecStart=/usr/bin/python3 /opt/cmd-api.py
-Restart=always
-RestartSec=2
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-systemctl daemon-reload
-systemctl enable --now cmd-api
-```
-
-#### 2e. Add Swap (Required for 1GB droplets)
-
-```bash
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
-```
-
-#### 2f. Install Node.js
-
-Next.js runs natively (not in Docker) to avoid OOM during build on 1GB droplets.
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
-```
-
-#### 2g. Configure Caddy
-
-Write `/etc/caddy/Caddyfile` (replace `DROPLET_IP` with actual IP, dots replaced by dashes):
-
-```
-<DROPLET_IP_DASHED>.sslip.io {
-	reverse_proxy 127.0.0.1:9090
-}
-
-whoeverwants.com {
-	handle /api/polls {
-		reverse_proxy 127.0.0.1:8000
-	}
-	handle /api/polls/* {
-		reverse_proxy 127.0.0.1:8000
-	}
-	handle /health {
-		reverse_proxy 127.0.0.1:8000
-	}
-	handle {
-		reverse_proxy 127.0.0.1:3000
-	}
-}
-```
-
-Restart Caddy:
-
-```bash
-systemctl restart caddy
-```
-
-#### 2h. Clone Repo and Start Backend Services
-
-The Python API uses **uv** for dependency management inside its Docker container. No manual uv installation is needed on the droplet — it's installed automatically in the Dockerfile. Dependencies are defined in `server/pyproject.toml` and locked in `server/uv.lock`.
-
-```bash
-git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
-cd /root/whoeverwants
-docker compose up -d --build
-```
-
-#### 2i. Build and Start Next.js Frontend
-
-```bash
-cd /root/whoeverwants
-npm ci
-NEXT_OUTPUT=standalone NODE_ENV=production npm run build
-cp -r public .next/standalone/public
-cp -r .next/static .next/standalone/.next/static
-```
-
-Create `/etc/systemd/system/whoeverwants-web.service`:
-
-```ini
-[Unit]
-Description=WhoeverWants Next.js Frontend
-After=network.target docker.service
-
-[Service]
-Type=simple
-WorkingDirectory=/root/whoeverwants/.next/standalone
-ExecStart=/usr/bin/node server.js
-Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=HOSTNAME=0.0.0.0
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=whoeverwants-web
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-systemctl daemon-reload
-systemctl enable --now whoeverwants-web
-```
-
-#### 2j. Apply Database Migrations
-
-```bash
-cd /root/whoeverwants
-
-# Create tracking table
-docker exec -i whoeverwants-db-1 psql -U whoeverwants -c "
-CREATE TABLE IF NOT EXISTS _migrations (
-  id SERIAL PRIMARY KEY,
-  filename TEXT UNIQUE NOT NULL,
-  applied_at TIMESTAMPTZ DEFAULT NOW()
-);
-"
-
-# Apply all migrations
-for f in database/migrations/*_up.sql; do
-  filename=$(basename "$f")
-  [ "$filename" = "000_populate_tracking_table_up.sql" ] && continue
-  already=$(docker exec -i whoeverwants-db-1 psql -U whoeverwants -Atq \
-    -c "SELECT COUNT(*) FROM _migrations WHERE filename = '$filename'")
-  [ "$already" -gt 0 ] && continue
-  echo "Applying: $filename"
-  docker exec -i whoeverwants-db-1 psql -U whoeverwants -q < "$f"
-  docker exec -i whoeverwants-db-1 psql -U whoeverwants -q \
-    -c "INSERT INTO _migrations (filename) VALUES ('$filename')"
-done
-```
-
-#### 2k. Production Hardening
-
-**Log rotation** — Create `/etc/logrotate.d/whoeverwants`:
-
-```
-/var/log/whoeverwants-*.log {
-    daily
-    missingok
-    rotate 14
-    compress
-    delaycompress
-    notifempty
-    create 0640 root root
-}
-```
-
-**Journald limits** — Create `/etc/systemd/journald.conf.d/whoeverwants.conf`:
-
-```ini
-[Journal]
-SystemMaxUse=500M
-MaxRetentionSec=30day
-```
-
-```bash
-systemctl restart systemd-journald
-```
-
-**Database backups** — Daily at 3 AM, 14-day retention:
-
-```bash
-chmod +x /root/whoeverwants/scripts/backup-db.sh
-mkdir -p /var/backups/whoeverwants
-(crontab -l 2>/dev/null | grep -v 'backup-db.sh'; \
- echo "0 3 * * * /root/whoeverwants/scripts/backup-db.sh >> /var/log/whoeverwants-backup.log 2>&1") | crontab -
-```
-
-**Health checks** — Every 5 minutes with auto-recovery:
-
-```bash
-chmod +x /root/whoeverwants/scripts/health-check.sh
-(crontab -l 2>/dev/null | grep -v 'health-check.sh'; \
- echo "*/5 * * * * /root/whoeverwants/scripts/health-check.sh >> /var/log/whoeverwants-health.log 2>&1") | crontab -
-```
-
-Optional: Set `PUSHOVER_USER_KEY` and `PUSHOVER_API_TOKEN` environment variables in the cron entries for push notification alerts when services go down.
-
----
-
-## 3. Verify
-
-```bash
-# From local environment, using scripts/remote.sh:
-bash scripts/remote.sh "curl -s http://localhost:8000/health"
-# Expected: {"status":"ok","database":"connected"}
-
-bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/"
-# Expected: 200
-
-bash scripts/remote.sh "docker compose ps" /root/whoeverwants
-# Expected: db and api containers running
-
-bash scripts/remote.sh "systemctl status whoeverwants-web --no-pager"
-# Expected: active (running)
-
-bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'"
-# Expected: _migrations, polls, ranked_choice_rounds, votes tables
-
-bash scripts/remote.sh "crontab -l"
-# Expected: backup-db.sh (daily 3AM) and health-check.sh (every 5min)
-
-bash scripts/remote.sh "ufw status"
-# Expected: 22, 80, 443 allowed — everything else denied
-
-bash scripts/remote.sh "grep -E '^(PermitRootLogin|PasswordAuthentication)' /etc/ssh/sshd_config"
-# Expected: PermitRootLogin prohibit-password, PasswordAuthentication no
-```
+If you prefer to set up manually, SSH into the droplet and follow the steps in `scripts/provision-droplet.sh` (11 steps).
 
 ---
 
@@ -391,16 +66,19 @@ bash scripts/remote.sh "grep -E '^(PermitRootLogin|PasswordAuthentication)' /etc
 ```
 Internet
   │
-  ├── whoeverwants.com:443 ──► Caddy ──┬── /api/polls* ──► localhost:8000 ──► FastAPI (Docker: api)
-  │                                     │                       │ rate limiting
-  │                                     └── /* ──────────► localhost:3000 ──► Next.js (systemd)
+  ├── whoeverwants.com ──────────► Vercel (Next.js frontend, CDN, auto-TLS)
+  │                                   │
+  │                                   └── /api/polls* calls ──► api.whoeverwants.com
   │
-  ├── <ip>.sslip.io:443 ────► Caddy ──► localhost:9090 ──► cmd-api.py (systemd)
+  ├── api.whoeverwants.com:443 ──► Caddy ──► localhost:8000 ──► FastAPI (Docker: api)
+  │                                              │ rate limiting (120 GET, 30 POST per IP/min)
   │
-  │                                   PostgreSQL (Docker: db)
-  │                                   localhost:5432
-  │                                     │
-  │                                   pg_dump backup ──► /var/backups/whoeverwants/ (14-day retention)
+  ├── <ip>.sslip.io:443 ────────► Caddy ──► localhost:9090 ──► cmd-api.py (systemd)
+  │
+  │                              PostgreSQL (Docker: db)
+  │                              localhost:5432
+  │                                │
+  │                              pg_dump backup ──► /var/backups/whoeverwants/ (14-day retention)
   │
   └── :22 ──► SSH (backup access)
 
@@ -415,7 +93,6 @@ Cron jobs:
 |---------|------------|------|---------|
 | Caddy | systemd (`caddy.service`) | 80, 443 | HTTPS reverse proxy, auto-TLS via Let's Encrypt |
 | cmd-api.py | systemd (`cmd-api.service`) | 9090 (localhost) | Remote command execution for Claude Code |
-| Next.js | systemd (`whoeverwants-web.service`) | 3000 (localhost) | Frontend (standalone build) |
 | FastAPI | Docker Compose (`api`) | 8000 (localhost) | Application API (with rate limiting) |
 | PostgreSQL | Docker Compose (`db`) | 5432 (localhost) | Database |
 
@@ -432,38 +109,52 @@ Cron jobs:
 |------|-------------|
 | `/opt/cmd-api.py` | Remote command execution API (stdlib Python) |
 | `/etc/systemd/system/cmd-api.service` | Systemd unit for cmd-api |
-| `/etc/systemd/system/whoeverwants-web.service` | Systemd unit for Next.js frontend |
 | `/etc/caddy/Caddyfile` | Caddy reverse proxy config |
 | `/etc/logrotate.d/whoeverwants` | Log rotation config (14-day retention) |
 | `/etc/systemd/journald.conf.d/whoeverwants.conf` | Journald size limits (500MB max) |
-| `/swapfile` | 2GB swap file (required for Node.js builds on 1GB droplet) |
+| `/swapfile` | 2GB swap file |
 | `/var/backups/whoeverwants/` | Database backup directory |
 | `/var/log/whoeverwants-backup.log` | Backup script log |
 | `/var/log/whoeverwants-health.log` | Health check log |
 | `/root/whoeverwants/` | Repository clone |
-| `/root/whoeverwants/.next/standalone/` | Next.js production build |
 | `/root/whoeverwants/docker-compose.yml` | Docker Compose config (db + api only) |
 | `/root/whoeverwants/server/` | FastAPI application source (uses uv for dependency management) |
 | `/root/whoeverwants/database/migrations/` | SQL migration files |
 
 ---
 
-## DNS Requirements
+## 4. Verify
 
-For `whoeverwants.com` to work, the domain's DNS must have an A record pointing to the droplet's IP address. The sslip.io subdomain (`<ip-dashed>.sslip.io`) works automatically with no DNS configuration.
+```bash
+# From local environment, using scripts/remote.sh:
+bash scripts/remote.sh "curl -s http://localhost:8000/health"
+# Expected: {"status":"ok","database":"connected"}
+
+bash scripts/remote.sh "docker compose ps" /root/whoeverwants
+# Expected: db and api containers running
+
+bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'"
+# Expected: _migrations, polls, ranked_choice_rounds, votes tables
+
+bash scripts/remote.sh "crontab -l"
+# Expected: backup-db.sh (daily 3AM) and health-check.sh (every 5min)
+
+bash scripts/remote.sh "ufw status"
+# Expected: 22, 80, 443 allowed — everything else denied
+```
 
 ---
 
 ## Security Notes
 
-- **Firewall**: UFW enabled — only ports 22 (SSH), 80 (HTTP), 443 (HTTPS) are open. All other incoming traffic is denied.
-- **SSH**: Password authentication disabled, root login only via SSH key (`PermitRootLogin prohibit-password`).
-- **cmd-api**: Runs as root with `shell=True` — full system access. Protected by bearer token + TLS + rate limiting (60 req/min per IP). All requests are logged with timestamp, client IP, and command (truncated to 200 chars). Auth failures are logged explicitly.
-- **Token handling**: The API token must NEVER be committed to git. Store only in environment variables and the systemd service file on the droplet.
+- **Firewall**: UFW enabled — only ports 22 (SSH), 80 (HTTP), 443 (HTTPS) are open.
+- **SSH**: Password authentication disabled, root login only via SSH key.
+- **cmd-api**: Protected by bearer token + TLS + rate limiting (60 req/min per IP). All requests logged.
+- **Token handling**: The API token must NEVER be committed to git. Store only in environment variables.
 - All services except Caddy (ports 80/443) and SSH (port 22) bind to localhost only.
-- The API token should be a strong random string (32+ bytes, URL-safe base64).
-- Caddy handles TLS certificate provisioning and renewal automatically via Let's Encrypt.
+- Caddy handles TLS provisioning and renewal via Let's Encrypt.
 - FastAPI includes rate limiting: 120 reads/min and 30 writes/min per IP.
+- CORS restricted to `https://whoeverwants.com` and `http://localhost:3000`.
 
 ---
 
@@ -471,24 +162,16 @@ For `whoeverwants.com` to work, the domain's DNS must have an A record pointing 
 
 ### FastAPI (Application API)
 
-The FastAPI server includes built-in rate limiting (`server/middleware.py`):
-
 | Operation | Limit | Window |
 |-----------|-------|--------|
 | GET requests | 120/IP | 1 minute |
 | POST/PUT/DELETE requests | 30/IP | 1 minute |
 
-Rate-limited requests receive HTTP 429 with a `Retry-After: 60` header. The `/health` endpoint is exempt.
-
 ### cmd-api (Command Execution API)
-
-The command execution API has its own rate limiter:
 
 | Operation | Limit | Window |
 |-----------|-------|--------|
 | All POST requests | 60/IP | 1 minute |
-
-Rate-limited requests receive HTTP 429. This protects against abuse even if the bearer token is compromised.
 
 ---
 
@@ -496,13 +179,10 @@ Rate-limited requests receive HTTP 429. This protects against abuse even if the 
 
 ```bash
 # Check all services
-bash scripts/remote.sh "systemctl status cmd-api caddy docker whoeverwants-web"
+bash scripts/remote.sh "systemctl status cmd-api caddy docker"
 
 # View API logs
 bash scripts/remote.sh "docker compose logs --tail 50 api" /root/whoeverwants
-
-# View Next.js logs
-bash scripts/remote.sh "journalctl -u whoeverwants-web --no-pager -n 50"
 
 # View database logs
 bash scripts/remote.sh "docker compose logs --tail 50 db" /root/whoeverwants
@@ -517,17 +197,8 @@ bash scripts/remote.sh "tail -20 /var/log/whoeverwants-backup.log"
 bash scripts/remote.sh "ls -lh /var/backups/whoeverwants/"
 
 # Restart everything
-bash scripts/remote.sh "systemctl restart caddy cmd-api whoeverwants-web && docker compose restart" /root/whoeverwants
+bash scripts/remote.sh "systemctl restart caddy cmd-api && docker compose restart" /root/whoeverwants
 
-# Check disk space
-bash scripts/remote.sh "df -h /"
-
-# Check memory
-bash scripts/remote.sh "free -h"
-
-# Manual backup
-bash scripts/remote.sh "/root/whoeverwants/scripts/backup-db.sh" /root/whoeverwants
-
-# Manual health check
-bash scripts/remote.sh "/root/whoeverwants/scripts/health-check.sh" /root/whoeverwants
+# Check disk/memory
+bash scripts/remote.sh "df -h / && free -h"
 ```

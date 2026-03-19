@@ -27,9 +27,6 @@ check_service() {
 # Check FastAPI (via health endpoint)
 check_service "FastAPI" "curl -sf --max-time 5 http://localhost:8000/health | grep -q '\"ok\"'"
 
-# Check Next.js
-check_service "Next.js" "curl -sf --max-time 5 -o /dev/null http://localhost:3000/"
-
 # Check PostgreSQL (via Docker)
 check_service "PostgreSQL" "docker exec whoeverwants-db-1 pg_isready -U whoeverwants"
 
@@ -67,10 +64,6 @@ touch "$ALERT_FILE"
 # Try to auto-recover common issues
 for svc in "${FAILURES[@]}"; do
   case "$svc" in
-    "Next.js")
-      echo "[$(date -Iseconds)] Attempting Next.js restart..."
-      systemctl restart whoeverwants-web 2>/dev/null || true
-      ;;
     "FastAPI"|"PostgreSQL")
       echo "[$(date -Iseconds)] Attempting Docker Compose restart..."
       cd /root/whoeverwants && docker compose up -d 2>/dev/null || true

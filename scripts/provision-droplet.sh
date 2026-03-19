@@ -157,8 +157,8 @@ EOF
 systemctl daemon-reload
 systemctl enable --now cmd-api
 
-# ── 5. Add swap (required for Node.js builds on 1GB droplets) ────────
-echo "=== 5/13 Configuring swap ==="
+# ── 5. Add swap ──────────────────────────────────────────────────────
+echo "=== 5/11 Configuring swap ==="
 if [ ! -f /swapfile ]; then
   fallocate -l 2G /swapfile
   chmod 600 /swapfile
@@ -170,46 +170,36 @@ else
   echo "Swap already configured"
 fi
 
-# ── 6. Install Node.js ───────────────────────────────────────────────
-echo "=== 6/13 Installing Node.js ==="
-if ! command -v node &>/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y nodejs
-else
-  echo "Node.js already installed: $(node --version)"
-fi
-
-# ── 7. Configure Caddy ───────────────────────────────────────────────
-echo "=== 7/13 Configuring Caddy ==="
+# ── 6. Configure Caddy ───────────────────────────────────────────────
+# Frontend is hosted on Vercel. Droplet only serves the API.
+echo "=== 6/11 Configuring Caddy ==="
 cat > /etc/caddy/Caddyfile <<EOF
 ${DROPLET_IP_DASHED}.sslip.io {
 	reverse_proxy 127.0.0.1:9090
 }
 
-whoeverwants.com {
-	handle /api/polls {
-		reverse_proxy 127.0.0.1:8000
+api.whoeverwants.com {
+	header Access-Control-Allow-Origin *
+	header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type, Authorization"
+
+	@options method OPTIONS
+	handle @options {
+		respond 204
 	}
-	handle /api/polls/* {
-		reverse_proxy 127.0.0.1:8000
-	}
-	handle /health {
-		reverse_proxy 127.0.0.1:8000
-	}
-	handle {
-		reverse_proxy 127.0.0.1:3000
-	}
+
+	reverse_proxy 127.0.0.1:8000
 }
 EOF
 
 systemctl restart caddy
 
-# ── 8. Clone repo and start Docker services ──────────────────────────
+# ── 7. Clone repo and start Docker services ──────────────────────────
 # Note: The FastAPI container uses uv for Python dependency management.
 # uv is installed inside the Docker image (see server/Dockerfile).
 # Dependencies are defined in server/pyproject.toml and locked in server/uv.lock.
 # No manual Python package installation is needed on the host.
-echo "=== 8/13 Cloning repo and starting Docker services ==="
+echo "=== 7/11 Cloning repo and starting Docker services ==="
 if [ ! -d /root/whoeverwants ]; then
   git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
 else
@@ -230,8 +220,8 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# ── 9. Apply database migrations ─────────────────────────────────────
-echo "=== 9/13 Applying database migrations ==="
+# ── 8. Apply database migrations ─────────────────────────────────────
+echo "=== 8/11 Applying database migrations ==="
 
 docker exec -i whoeverwants-db-1 psql -U whoeverwants -q <<'SQL'
 CREATE TABLE IF NOT EXISTS _migrations (
@@ -256,41 +246,8 @@ for f in database/migrations/*_up.sql; do
 done
 echo "Applied $applied migrations"
 
-# ── 10. Build and start Next.js frontend ─────────────────────────────
-echo "=== 10/13 Building Next.js frontend ==="
-cd /root/whoeverwants
-npm ci
-NEXT_OUTPUT=standalone NODE_ENV=production npx next build
-cp -r public .next/standalone/public
-cp -r .next/static .next/standalone/.next/static
-
-cat > /etc/systemd/system/whoeverwants-web.service <<'EOF'
-[Unit]
-Description=WhoeverWants Next.js Frontend
-After=network.target docker.service
-
-[Service]
-Type=simple
-WorkingDirectory=/root/whoeverwants/.next/standalone
-ExecStart=/usr/bin/node server.js
-Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=HOSTNAME=0.0.0.0
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=whoeverwants-web
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now whoeverwants-web
-
-# ── 11. Production hardening ─────────────────────────────────────────
-echo "=== 11/13 Production hardening (logs, backups, health checks) ==="
+# ── 9. Production hardening ──────────────────────────────────────────
+echo "=== 9/11 Production hardening (logs, backups, health checks) ==="
 
 # --- Log rotation ---
 cat > /etc/logrotate.d/whoeverwants <<'EOF'
@@ -328,24 +285,20 @@ chmod +x /root/whoeverwants/scripts/health-check.sh
 echo "Cron jobs installed:"
 crontab -l
 
-# ── 12. Verify services ──────────────────────────────────────────────
+# ── 10. Verify services ─────────────────────────────────────────────
 echo ""
-echo "=== 12/13 Verifying services ==="
+echo "=== 10/11 Verifying services ==="
 
 echo "Health check:"
 curl -s http://localhost:8000/health
 echo ""
 
-echo "Frontend:"
-curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost:3000/
-echo ""
-
 echo "Tables:"
 docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'
 
-# ── 13. Verify security hardening ────────────────────────────────────
+# ── 11. Verify security hardening ───────────────────────────────────
 echo ""
-echo "=== 13/13 Verifying security hardening ==="
+echo "=== 11/11 Verifying security hardening ==="
 
 echo "Firewall status:"
 ufw status

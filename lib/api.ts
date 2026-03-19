@@ -5,11 +5,27 @@
 
 import type { Poll, PollResults } from './types';
 
-// In production, the API is served from the same origin via Caddy.
-// In development, point to the local Docker API on port 8000.
-const API_BASE = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_API_URL || '/api/polls')
-  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/polls');
+// API URL resolution:
+// 1. NEXT_PUBLIC_API_URL env var overrides everything (for preview environments, etc.)
+// 2. In production (Vercel), call the API subdomain directly
+// 3. In development, use relative path (Next.js rewrites proxy to localhost:8000)
+function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  // Server-side in dev: call Docker API directly
+  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
+    return 'http://localhost:8000/api/polls';
+  }
+  // Production (Vercel): call API subdomain directly
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://api.whoeverwants.com/api/polls';
+  }
+  // Client-side in dev: relative path, proxied by Next.js rewrites
+  return '/api/polls';
+}
+
+const API_BASE = getApiBase();
 
 // --- Vote types matching the Python VoteResponse model ---
 
