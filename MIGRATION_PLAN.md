@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2D in progress
+**Status**: Active — Phase 2D complete
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2D in progress (Participation polls partially working)
+**Current phase**: Phase 2E next (Shared features)
 
 ---
 
@@ -134,7 +134,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 2D: Participation Polls ← IN PROGRESS
+### Phase 2D: Participation Polls ✓ COMPLETE
 **Goal**: Get participation polls fully working through the Python API.
 
 1. [x] **Participation priority algorithm** — `server/algorithms/participation.py` already existed with full greedy priority-based voter selection (ported from migration 063).
@@ -142,8 +142,13 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 3. [x] **Extend API: participants endpoint** — `GET /api/polls/{id}/participants` returns list of `{vote_id, voter_name}` for voters selected by the priority algorithm.
 4. [x] **Frontend: fetch participants** — `PollResults.tsx` calls `apiGetParticipants()` instead of the TODO stub that always set `participants=[]`. `lib/api.ts` has new `apiGetParticipants()` function.
 5. [x] **`auto_close_participation_poll()` trigger** — `server/algorithms/auto_close.py` + 11 tests. `should_auto_close()` checks if yes votes >= max_participants. Integrated into both vote submission and edit endpoints via `_check_auto_close()` helper in `server/routers/polls.py`.
-6. [ ] **Deploy & test with conditions** — Test participation polls with voter conditions (min/max per voter), verify priority algorithm selects correct participants. Basic case (single voter, min=1) works. Multi-voter conditional scenarios not yet tested.
-7. [ ] **Edge cases** — Test: multiple voters with conflicting constraints, voters whose conditions can't be met, all-abstain scenario, auto-close trigger.
+6. [x] **Deploy & test with conditions** — All scenarios verified E2E on droplet:
+   - Basic: 3 yes voters with compatible conditions → all 3 selected as participants
+   - Conflicting: Alice (max=1), Bob (no max), Charlie (max=3) → priority algorithm correctly excludes Alice (too restrictive), selects Bob + Charlie
+   - Unsatisfiable: 2 voters each wanting exactly 5 → `yes_count=0`, empty participants
+   - All-abstain/no: 2 abstains + 1 no → `yes_count=0`, correct counts
+   - Auto-close: poll with `max_participants=3` auto-closed after 3 yes votes (`close_reason="max_capacity"`), 4th vote rejected
+7. [x] **Edge cases** — All edge cases verified: conflicting constraints, unsatisfiable conditions, all-abstain, auto-close trigger.
 
 ---
 
@@ -217,6 +222,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2B complete | Nomination polls: algorithm (16 tests), vote validation for all types (28 tests), server-side results with `nomination_counts`, frontend uses server data instead of client-side aggregation. Deployed and verified E2E: created nomination poll, 3 votes, correct counts. |
 | 2026-03-19 | Phase 2C complete | Ranked choice IRV algorithm (27 tests), API returns `ranked_choice_rounds` + `ranked_choice_winner` in results. Frontend reads rounds from API instead of Supabase `getRankedChoiceRounds()`. Borda tiebreak data embedded in round entries. Deployed and verified E2E on whoeverwants.com. |
 | 2026-03-19 | Phase 2D start | Fixed participation poll results: added explicit `participation` handler in `get_results()` (was falling through to catch-all returning `yes_count=None`). Added `GET /api/polls/{id}/participants` endpoint using existing `calculate_participating_voters()` algorithm. Connected frontend `PollResults.tsx` to call `apiGetParticipants()` instead of TODO stub. Basic single-voter participation poll now works E2E. Remaining: auto-close trigger, multi-voter conditional testing. |
+| 2026-03-19 | Phase 2D complete | Deployed auto-close logic to droplet. Comprehensive E2E testing of all participation poll scenarios: basic 3-voter compatible constraints (all selected), conflicting constraints with priority algorithm (Bob+Charlie selected, Alice excluded for max=1), unsatisfiable conditions (yes_count=0), all-abstain (correct counts), auto-close trigger (poll closes at max_capacity, rejects subsequent votes). All 4 poll types now fully working through Python API. |
 
 ---
 
