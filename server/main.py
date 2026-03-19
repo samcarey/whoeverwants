@@ -6,7 +6,7 @@ import psycopg
 
 from routers.polls import router as polls_router
 
-app = FastAPI(title="WhoeverWants API")
+app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
 
 # CORS: allow Next.js frontend
 app.add_middleware(
