@@ -48,16 +48,18 @@ The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from environment vari
 
 ### Required Environment Variables
 
-`DROPLET_API_URL` and `DROPLET_API_TOKEN` must be available for droplet access. In the Claude Code web environment, these are pre-set as environment variables (not in a `.env` file). The script checks env vars first, then falls back to `.env` if needed.
+The following environment variables must be available. In the Claude Code web environment, these are pre-set as environment variables (not in a `.env` file).
 
 ```
 DROPLET_API_URL=https://142-93-60-29.sslip.io
 DROPLET_API_TOKEN=<bearer token>
+VERCEL_API_TOKEN=<vercel api token>
 ```
 
-The droplet runs an HTTPS command execution API (via sslip.io for TLS). The bearer token authenticates requests.
+- `DROPLET_API_URL` / `DROPLET_API_TOKEN` — Authenticate requests to the droplet's command execution API (via sslip.io for TLS). Used by `scripts/remote.sh`.
+- `VERCEL_API_TOKEN` — Authenticate requests to the [Vercel REST API](https://vercel.com/docs/rest-api) for managing frontend deployments.
 
-> **SECURITY**: The API token must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store it only in environment variables. The token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
+> **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
 
 ### Security Hardening
 
