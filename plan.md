@@ -23,48 +23,46 @@ Droplet (142.93.60.29):
 
 ### Steps
 
-1. **Set up Vercel project**
-   - Connect GitHub repo to Vercel
-   - Configure build: `npm run build`, output directory auto-detected
-   - Vercel will need an API token (or use the Vercel CLI) for Claude to trigger deploys
-   - May need a Vercel token stored as env var (like `VERCEL_TOKEN`) for CLI access
+1. ~~**Expose API on a public subdomain**~~ ✅ DONE
+   - Caddy on droplet configured for `api.whoeverwants.com` with CORS headers and OPTIONS handling
+   - Old `whoeverwants.com` Caddy block removed
 
-2. **Expose API on a public subdomain**
-   - Currently Caddy routes `/api/polls*` to FastAPI only when requests hit `whoeverwants.com` on the droplet
-   - Add `api.whoeverwants.com` DNS A record → droplet IP
-   - Configure Caddy to serve `api.whoeverwants.com` with HTTPS, proxying to FastAPI
-   - This gives the API a stable public endpoint Vercel can reach
+2. ~~**Update frontend API client**~~ ✅ DONE
+   - `lib/api.ts` calls `https://api.whoeverwants.com/api/polls` directly in production
+   - Dev mode still uses relative path (proxied by Next.js rewrites)
+   - `vercel.json` added for Vercel build config
 
-3. **Configure Vercel rewrites**
-   - Add `vercel.json` (or use `next.config.ts` rewrites) to proxy `/api/polls*` → `https://api.whoeverwants.com/api/polls*`
-   - This keeps the frontend's API calls unchanged (still `/api/polls/...`)
-   - Alternative: update `lib/api.ts` to call `api.whoeverwants.com` directly (simpler, avoids Vercel rewrite latency)
+3. ~~**Remove Next.js from droplet**~~ ✅ DONE
+   - `whoeverwants-web.service` stopped and disabled
+   - Caddy now only serves `api.whoeverwants.com` (no more localhost:3000 proxy)
+   - Health check script updated (removed Next.js check)
 
-4. **Update DNS**
-   - `whoeverwants.com` → Vercel (CNAME to `cname.vercel-dns.com` or Vercel's IP)
-   - `api.whoeverwants.com` → droplet IP (A record)
-   - Remove the Next.js reverse proxy from the droplet's Caddy config
+4. ~~**Update CORS**~~ ✅ DONE
+   - FastAPI CORS tightened to `https://whoeverwants.com` + `http://localhost:3000`
+   - Configurable via `CORS_ORIGINS` env var
 
-5. **Remove Next.js from droplet**
-   - Stop and disable `whoeverwants-web.service`
-   - Remove Node.js from droplet (or keep for preview environments later)
-   - Update Caddy to only serve `api.whoeverwants.com`
-   - Update health check script to remove Next.js check
+5. ~~**Update docs**~~ ✅ DONE
+   - CLAUDE.md updated (development workflow, droplet purpose, env vars including `VERCEL_API_TOKEN`)
+   - `docs/droplet-setup.md` rewritten for API-only architecture
+   - `scripts/provision-droplet.sh` updated (removed Node.js/Next.js steps, now 11 steps)
+   - `scripts/health-check.sh` updated (removed Next.js check)
 
-6. **Update CORS**
-   - FastAPI currently allows all origins (`allow_origins=["*"]`) — this already works
-   - Optionally tighten to `["https://whoeverwants.com"]` for production
+6. **Set up Vercel project** ⬅️ NEXT
+   - `VERCEL_API_TOKEN` is available as an environment variable
+   - Use Vercel REST API to create project linked to `samcarey/whoeverwants` GitHub repo
+   - Configure build: `npm run build`, framework: Next.js
+   - Add `whoeverwants.com` as production domain on the Vercel project
 
-7. **Verify end-to-end**
+7. **Update DNS**
+   - `api.whoeverwants.com` → A record → `142.93.60.29` (droplet)
+   - `whoeverwants.com` → Vercel (CNAME to `cname.vercel-dns.com` or configure via Vercel)
+   - User may need to do this manually depending on DNS provider
+
+8. **Verify end-to-end**
    - Vercel serves frontend at `whoeverwants.com`
    - API calls from frontend reach `api.whoeverwants.com` → droplet → FastAPI → Postgres
    - All 4 poll types work (create, vote, results)
-
-8. **Update docs**
-   - Update CLAUDE.md deployment workflow (no more `npm run build` on droplet)
-   - Update `docs/droplet-setup.md` (droplet is API-only)
-   - Update `scripts/provision-droplet.sh` (remove Node.js, Next.js service)
-   - Update `scripts/health-check.sh` (remove Next.js check)
+   - Merge branch to `main` to trigger production Vercel deploy
 
 ### Vercel CLI Access for Claude
 
