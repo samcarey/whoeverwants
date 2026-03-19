@@ -32,8 +32,8 @@ def validate_vote(
     """
     # vote_type must match poll_type
     if vote_type != poll_type:
-        # participation polls use yes_no vote type
-        if not (poll_type == "participation" and vote_type == "yes_no"):
+        # participation polls accept both 'participation' and 'yes_no' vote types
+        if not (poll_type == "participation" and vote_type in ("yes_no", "participation")):
             raise VoteValidationError(
                 f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
             )
