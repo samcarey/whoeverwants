@@ -47,7 +47,7 @@ ufw status
 echo "=== 1c/13 Hardening SSH ==="
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-systemctl restart sshd
+systemctl restart ssh
 
 # ── 2. Install Docker ────────────────────────────────────────────────
 echo "=== 2/13 Installing Docker ==="
