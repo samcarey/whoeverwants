@@ -86,6 +86,21 @@ The droplet is hardened with:
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
+**Preview Environments** (per-branch testing):
+1. **Push branch** to GitHub (triggers Vercel preview frontend)
+2. **Create preview API**: `bash scripts/deploy-preview.sh` (or manually via `scripts/remote.sh`)
+3. The Vercel preview frontend automatically connects to the branch's preview API
+4. Preview APIs are auto-cleaned after 7 days
+
+```bash
+# Quick deploy preview for current branch
+bash scripts/deploy-preview.sh
+
+# Or manually manage previews on the droplet
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh list"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh destroy <slug>"
+```
+
 ### Droplet Setup & Provisioning
 
 Full setup documentation is in **[docs/droplet-setup.md](./docs/droplet-setup.md)**. To provision a new droplet from scratch:
