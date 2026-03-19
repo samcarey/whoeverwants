@@ -259,17 +259,17 @@ The old token is in git history (commit `fa805e7`). Since it's already been used
 
 ## Checklist
 
-- [ ] Back up database from compromised droplet
-- [ ] Review backup for integrity/tampering
-- [ ] Destroy old droplet (157.245.129.162)
-- [ ] Create new droplet (SSH key auth only)
-- [ ] Generate new API token
+- [x] Back up database from compromised droplet
+- [x] Review backup for integrity/tampering
+- [x] Destroy old droplet (157.245.129.162)
+- [x] Create new droplet (SSH key auth only) — new IP: 142.93.60.29
+- [x] Generate new API token
 - [x] Update provision script with security hardening (firewall, SSH, logging, rate limiting)
 - [x] Update droplet-setup.md
 - [x] Update CLAUDE.md with new IP (NOT the token)
-- [ ] Provision new droplet
+- [x] Provision new droplet
 - [ ] Update DNS A record for whoeverwants.com
-- [ ] Restore database (if backup is clean)
+- [x] Restore database (if backup is clean) — 29 polls, 51 votes restored
 - [ ] Set new env vars in Claude Code
-- [ ] Run full verification suite
+- [x] Run full verification suite
 - [ ] Confirm whoeverwants.com is live

@@ -20,7 +20,7 @@ The production server is a DigitalOcean droplet that Claude manages remotely. **
 | Property | Value |
 |----------|-------|
 | Hostname | `whoeverwants` |
-| IP | `157.245.129.162` |
+| IP | `142.93.60.29` |
 | OS | Ubuntu 24.04 LTS |
 | RAM | 1 GB |
 | Disk | 24 GB |
@@ -51,7 +51,7 @@ The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from environment vari
 `DROPLET_API_URL` and `DROPLET_API_TOKEN` must be available for droplet access. In the Claude Code web environment, these are pre-set as environment variables (not in a `.env` file). The script checks env vars first, then falls back to `.env` if needed.
 
 ```
-DROPLET_API_URL=https://157-245-129-162.sslip.io
+DROPLET_API_URL=https://142-93-60-29.sslip.io
 DROPLET_API_TOKEN=<bearer token>
 ```
 

@@ -18,7 +18,7 @@ Create a DigitalOcean droplet with these specs:
 | Auth | **SSH key only** (no password auth) |
 | Hostname | `whoeverwants` |
 
-Note the IP address (e.g., `157.245.129.162`).
+Note the IP address (e.g., `142.93.60.29`).
 
 ---
 
