@@ -74,10 +74,9 @@ export default function NominationVotingInterface({
 
   // Helper function to convert existingNominations to format expected by NominationsList
   const getNominationsWithCounts = () => {
-    if (pollResults?.options && pollResults.poll_type === 'nomination') {
-      // Use pollResults data when available (shows vote counts)
-      // pollResults.options is already in the correct format
-      return pollResults.options;
+    if (pollResults?.nomination_counts && pollResults.nomination_counts.length > 0) {
+      // Use server-side nomination counts when available
+      return pollResults.nomination_counts;
     } else {
       // Fallback to existingNominations without counts
       return existingNominations.map(nomination => ({

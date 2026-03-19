@@ -100,6 +100,7 @@ function toPollResults(data: any): PollResults {
     winner: data.winner ?? undefined,
     min_participants: data.min_participants ?? undefined,
     max_participants: data.max_participants ?? undefined,
+    nomination_counts: data.nomination_counts ?? undefined,
   };
 }
 

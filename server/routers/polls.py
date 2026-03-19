@@ -16,6 +16,8 @@ from models import (
     SubmitVoteRequest,
     VoteResponse,
 )
+from algorithms.nomination import count_nomination_votes
+from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.yes_no import count_yes_no_votes
 
 router = APIRouter(prefix="/api/polls", tags=["polls"])
@@ -134,13 +136,26 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
     with get_db() as conn:
         # Verify poll exists and is open
         poll = conn.execute(
-            "SELECT id, is_closed FROM polls WHERE id = %(poll_id)s",
+            "SELECT id, is_closed, poll_type FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
         if poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
+
+        # Validate vote structure
+        try:
+            validate_vote(
+                poll_type=poll["poll_type"],
+                vote_type=req.vote_type,
+                yes_no_choice=req.yes_no_choice,
+                ranked_choices=req.ranked_choices,
+                nominations=req.nominations,
+                is_abstain=req.is_abstain,
+            )
+        except VoteValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
         row = conn.execute(
             """
@@ -279,6 +294,32 @@ def get_results(poll_id: str):
             winner=result.winner,
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),
+        )
+
+    if poll_type == "nomination":
+        # Parse poll options from JSONB
+        import json
+        raw_options = poll.get("options")
+        poll_options = None
+        if raw_options:
+            poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        result = count_nomination_votes(votes, poll_options=poll_options)
+        return PollResultsResponse(
+            poll_id=str(poll["id"]),
+            title=poll["title"],
+            poll_type=poll_type,
+            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
+            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
+            options=poll_options,
+            total_votes=result.total_votes,
+            abstain_count=result.abstain_count,
+            min_participants=poll.get("min_participants"),
+            max_participants=poll.get("max_participants"),
+            nomination_counts=[
+                {"option": nc.option, "count": nc.count}
+                for nc in result.nomination_counts
+            ],
         )
 
     # For other poll types, return basic structure (to be extended in later phases)

@@ -43,6 +43,11 @@ export interface Vote {
   created_at: string;
 }
 
+export interface NominationCount {
+  option: string;
+  count: number;
+}
+
 export interface PollResults {
   poll_id: string;
   title: string;
@@ -61,6 +66,7 @@ export interface PollResults {
   max_participants?: number;
   participants_in_count?: number;
   is_happening?: boolean;
+  nomination_counts?: NominationCount[];
 }
 
 export interface RankedChoiceRound {

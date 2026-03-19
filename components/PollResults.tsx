@@ -700,65 +700,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 }
 
 function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
-  const [nominations, setNominations] = useState<{option: string, count: number}[]>([]);
-  const [loading, setLoading] = useState(true);
-  
-  useEffect(() => {
-    const loadNominations = async () => {
-      try {
-        // Fetch all votes and filter for nomination votes
-        const allVotes = await apiGetVotes(results.poll_id);
-        const votes = allVotes
-          .filter(v => v.vote_type === 'nomination' && !v.is_abstain && v.nominations && v.nominations.length > 0)
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-        // Count each nomination
-        const nominationMap = new Map<string, number>();
-        
-        // Add starting options from poll (initialize with 0 votes, not 1)
-        const pollOptions = typeof results.options === 'string' ? JSON.parse(results.options) : results.options || [];
-        pollOptions.forEach((option: any) => {
-          // Handle both string options and object options
-          const optionString = typeof option === 'string' ? option : option?.option || option?.toString() || '';
-          if (optionString) {
-            nominationMap.set(optionString, 0);  // Initialize with 0, not 1
-          }
-        });
-        
-        // Count actual nominations from votes
-        console.log('[PollResults] Processing votes for counting:', votes);
-        votes?.forEach(vote => {
-          console.log('[PollResults] Processing vote:', vote.id, 'nominations:', vote.nominations, 'is_abstain:', vote.is_abstain);
-          if (vote.nominations && Array.isArray(vote.nominations)) {
-            vote.nominations.forEach((nom: any) => {
-              // Handle both string nominations and object nominations
-              const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
-              if (nomString) {
-                console.log('[PollResults] Adding nomination to count:', nomString);
-                nominationMap.set(nomString, (nominationMap.get(nomString) || 0) + 1);
-              }
-            });
-          }
-        });
-
-        console.log('[PollResults] Final nomination counts:', Array.from(nominationMap.entries()));
-
-        // Convert to sorted array
-        const nominationCounts = Array.from(nominationMap.entries())
-          .map(([option, count]) => ({ option, count }))
-          .sort((a, b) => b.count - a.count);
-        
-        setNominations(nominationCounts);
-      } catch (error) {
-        console.error('Error loading nominations:', error);
-        setNominations([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadNominations();
-  }, [results]);
+  // Use server-side nomination counts from the results endpoint
+  const nominations = results.nomination_counts || [];
 
   const totalVoters = results.total_votes;
   
@@ -769,17 +712,6 @@ function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClic
     return (
       <div className="text-center">
         <p className="text-gray-600 dark:text-gray-400">No Voters</p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center py-8">
-        <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
       </div>
     );
   }

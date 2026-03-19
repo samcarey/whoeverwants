@@ -106,6 +106,11 @@ class VoteResponse(BaseModel):
     updated_at: str
 
 
+class NominationCountResponse(BaseModel):
+    option: str
+    count: int
+
+
 class PollResultsResponse(BaseModel):
     poll_id: str
     title: str
@@ -122,3 +127,4 @@ class PollResultsResponse(BaseModel):
     winner: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
+    nomination_counts: list[NominationCountResponse] | None = None
