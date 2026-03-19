@@ -27,8 +27,8 @@ branch_to_slug() {
   local branch="$1"
   # Strip claude/ prefix if present
   local slug="${branch#claude/}"
-  # Replace non-alphanumeric chars (except hyphens) with hyphens
-  slug=$(echo "$slug" | sed 's/[^a-zA-Z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+  # Lowercase, replace non-alphanumeric chars (except hyphens) with hyphens
+  slug=$(echo "$slug" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
   # Truncate to 50 chars for DNS label safety
   echo "${slug:0:50}"
 }

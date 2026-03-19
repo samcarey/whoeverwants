@@ -8,8 +8,8 @@ import type { Poll, PollResults } from './types';
 // Derive a preview API slug from a git branch name.
 // e.g., "claude/fix-voting-bug-abc123" -> "fix-voting-bug-abc123"
 function branchToSlug(branch: string): string {
-  let slug = branch.replace(/^claude\//, '');
-  slug = slug.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  let slug = branch.replace(/^claude\//, '').toLowerCase();
+  slug = slug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   return slug.slice(0, 50);
 }
 

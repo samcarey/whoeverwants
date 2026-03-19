@@ -25,7 +25,7 @@ if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
 fi
 
 # Derive slug (same logic as preview-manager.sh)
-SLUG=$(echo "${BRANCH#claude/}" | sed 's/[^a-zA-Z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//' | cut -c1-50)
+SLUG=$(echo "${BRANCH#claude/}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//' | cut -c1-50)
 
 echo "=== Deploying preview ==="
 echo "Branch: $BRANCH"
