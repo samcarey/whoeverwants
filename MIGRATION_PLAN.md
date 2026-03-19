@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2A
+**Status**: Active — Phase 2A (deploy complete, DNS pending)
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2A (Yes/No polls — full vertical slice)
+**Current phase**: Phase 2A (Yes/No polls — deployed & tested, awaiting DNS cutover)
 
 ---
 
@@ -107,8 +107,9 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 16. [x] **Swap `closePoll()` / `reopenPoll()`** — `PollPageClient.tsx` now uses `apiClosePoll()` / `apiReopenPoll()`.
 
 #### Deploy & Test
-17. [ ] **Deploy to droplet** — `git pull` + `docker compose up -d --build` on droplet.
-18. [ ] **End-to-end test** — Create a yes/no poll on `whoeverwants.com`, vote on it, verify results render correctly.
+17. [x] **Deploy to droplet** — Python API in Docker, Next.js as systemd service (standalone build). Caddy routes `/api/polls` to Python, everything else to Next.js.
+18. [x] **End-to-end test** — Created yes/no poll via API, submitted 3 votes, verified results (67% yes, 33% no, winner: "yes"). Frontend serves poll page at `/p/{short_id}/`.
+19. [ ] **DNS cutover** — Update `whoeverwants.com` DNS A record to point to `157.245.129.162` (currently still pointing to Vercel).
 
 ---
 
@@ -208,6 +209,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Plan revision | Restructured plan from horizontal layers (all algorithms → all API → all frontend) to **vertical slices** per poll type. Each feature gets algorithm + API + frontend done together so it can be tested end-to-end before moving on. |
 | 2026-03-19 | Phase 2A APIs | All 9 API endpoints implemented (`server/routers/polls.py`), with database module, Pydantic models, CORS middleware, and 32 integration tests. Deployed to droplet and verified all endpoints working. Fixed missing `short_id` column (migration 021 had failed silently). |
 | 2026-03-19 | Phase 2A Frontend | Created `lib/api.ts` fetch-based API client. Replaced ALL supabase calls in critical paths: `PollPageClient.tsx`, `create-poll/page.tsx`, `simplePollQueries.ts`, `VoterList.tsx`, `PollResults.tsx`, `FollowUpHeader.tsx`, `ForkHeader.tsx`, `CompactRankedChoiceResults.tsx`, `p/page.tsx`. Added Next.js rewrite proxy for dev. Real-time subscriptions replaced with polling. |
+| 2026-03-19 | Phase 2A Deploy | Deployed full stack to droplet: Python API in Docker, Next.js as systemd service (standalone build avoids OOM on 1GB). Added 2GB swap, installed Node.js 20. Caddy routes `/api/polls/*` to Python API, everything else to Next.js. Fixed TypeScript build errors, FastAPI redirect_slashes issue. E2E test: created poll, voted, verified results. DNS still points to Vercel — needs A record update to 157.245.129.162. |
 
 ---
 

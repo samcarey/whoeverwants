@@ -2,7 +2,7 @@
 
 This document describes how to provision a new DigitalOcean droplet for WhoeverWants from scratch. Following these steps produces an identical server to the current production droplet.
 
-**Last verified**: 2026-03-18
+**Last verified**: 2026-03-19
 
 ---
 
@@ -129,17 +129,47 @@ systemctl daemon-reload
 systemctl enable --now cmd-api
 ```
 
-#### 2d. Configure Caddy
+#### 2d. Add Swap (Required for 1GB droplets)
+
+```bash
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```
+
+#### 2e. Install Node.js
+
+Next.js runs natively (not in Docker) to avoid OOM during build on 1GB droplets.
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+```
+
+#### 2f. Configure Caddy
 
 Write `/etc/caddy/Caddyfile` (replace `DROPLET_IP` with actual IP, dots replaced by dashes):
 
 ```
 <DROPLET_IP_DASHED>.sslip.io {
-    reverse_proxy 127.0.0.1:9090
+	reverse_proxy 127.0.0.1:9090
 }
 
 whoeverwants.com {
-    reverse_proxy 127.0.0.1:8000
+	handle /api/polls {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /api/polls/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }
 ```
 
@@ -149,7 +179,7 @@ Restart Caddy:
 systemctl restart caddy
 ```
 
-#### 2e. Clone Repo and Start Services
+#### 2g. Clone Repo and Start Backend Services
 
 The Python API uses **uv** for dependency management inside its Docker container. No manual uv installation is needed on the droplet — it's installed automatically in the Dockerfile. Dependencies are defined in `server/pyproject.toml` and locked in `server/uv.lock`.
 
@@ -157,6 +187,44 @@ The Python API uses **uv** for dependency management inside its Docker container
 git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
 cd /root/whoeverwants
 docker compose up -d --build
+```
+
+#### 2h. Build and Start Next.js Frontend
+
+```bash
+cd /root/whoeverwants
+npm ci
+NEXT_OUTPUT=standalone NODE_ENV=production npm run build
+cp -r public .next/standalone/public
+cp -r .next/static .next/standalone/.next/static
+```
+
+Create `/etc/systemd/system/whoeverwants-web.service`:
+
+```ini
+[Unit]
+Description=WhoeverWants Next.js Frontend
+After=network.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/whoeverwants/.next/standalone
+ExecStart=/usr/bin/node server.js
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now whoeverwants-web
 ```
 
 #### 2f. Apply Database Migrations
@@ -196,8 +264,14 @@ done
 bash scripts/remote.sh "curl -s http://localhost:8000/health"
 # Expected: {"status":"ok","database":"connected"}
 
+bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/"
+# Expected: 200
+
 bash scripts/remote.sh "docker compose ps" /root/whoeverwants
 # Expected: db and api containers running
+
+bash scripts/remote.sh "systemctl status whoeverwants-web --no-pager"
+# Expected: active (running)
 
 bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'"
 # Expected: _migrations, polls, ranked_choice_rounds, votes tables
@@ -210,9 +284,10 @@ bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c
 ```
 Internet
   │
-  ├── whoeverwants.com:443 ──► Caddy ──► localhost:8000 ──► FastAPI (Docker: api)
-  │                              │                              │
-  │                              │                              ▼
+  ├── whoeverwants.com:443 ──► Caddy ──┬── /api/polls* ──► localhost:8000 ──► FastAPI (Docker: api)
+  │                                     │                                        │
+  │                                     └── /* ──────────► localhost:3000 ──► Next.js (systemd)
+  │                                                                              │
   ├── <ip>.sslip.io:443 ────► Caddy ──► localhost:9090 ──► cmd-api.py (systemd)
   │                                                            │
   │                                                     PostgreSQL (Docker: db)
@@ -226,6 +301,7 @@ Internet
 |---------|------------|------|---------|
 | Caddy | systemd (`caddy.service`) | 80, 443 | HTTPS reverse proxy, auto-TLS via Let's Encrypt |
 | cmd-api.py | systemd (`cmd-api.service`) | 9090 (localhost) | Remote command execution for Claude Code |
+| Next.js | systemd (`whoeverwants-web.service`) | 3000 (localhost) | Frontend (standalone build) |
 | FastAPI | Docker Compose (`api`) | 8000 (localhost) | Application API |
 | PostgreSQL | Docker Compose (`db`) | 5432 (localhost) | Database |
 
@@ -235,9 +311,12 @@ Internet
 |------|-------------|
 | `/opt/cmd-api.py` | Remote command execution API (stdlib Python) |
 | `/etc/systemd/system/cmd-api.service` | Systemd unit for cmd-api |
+| `/etc/systemd/system/whoeverwants-web.service` | Systemd unit for Next.js frontend |
 | `/etc/caddy/Caddyfile` | Caddy reverse proxy config |
+| `/swapfile` | 2GB swap file (required for Node.js builds on 1GB droplet) |
 | `/root/whoeverwants/` | Repository clone |
-| `/root/whoeverwants/docker-compose.yml` | Docker Compose config |
+| `/root/whoeverwants/.next/standalone/` | Next.js production build |
+| `/root/whoeverwants/docker-compose.yml` | Docker Compose config (db + api only) |
 | `/root/whoeverwants/server/` | FastAPI application source (uses uv for dependency management) |
 | `/root/whoeverwants/database/migrations/` | SQL migration files |
 
