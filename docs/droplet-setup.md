@@ -215,6 +215,9 @@ Environment=PORT=3000
 Environment=HOSTNAME=0.0.0.0
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=whoeverwants-web
 
 [Install]
 WantedBy=multi-user.target
@@ -227,7 +230,7 @@ systemctl daemon-reload
 systemctl enable --now whoeverwants-web
 ```
 
-#### 2f. Apply Database Migrations
+#### 2i. Apply Database Migrations
 
 ```bash
 cd /root/whoeverwants
@@ -255,6 +258,53 @@ for f in database/migrations/*_up.sql; do
 done
 ```
 
+#### 2j. Production Hardening
+
+**Log rotation** — Create `/etc/logrotate.d/whoeverwants`:
+
+```
+/var/log/whoeverwants-*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 root root
+}
+```
+
+**Journald limits** — Create `/etc/systemd/journald.conf.d/whoeverwants.conf`:
+
+```ini
+[Journal]
+SystemMaxUse=500M
+MaxRetentionSec=30day
+```
+
+```bash
+systemctl restart systemd-journald
+```
+
+**Database backups** — Daily at 3 AM, 14-day retention:
+
+```bash
+chmod +x /root/whoeverwants/scripts/backup-db.sh
+mkdir -p /var/backups/whoeverwants
+(crontab -l 2>/dev/null | grep -v 'backup-db.sh'; \
+ echo "0 3 * * * /root/whoeverwants/scripts/backup-db.sh >> /var/log/whoeverwants-backup.log 2>&1") | crontab -
+```
+
+**Health checks** — Every 5 minutes with auto-recovery:
+
+```bash
+chmod +x /root/whoeverwants/scripts/health-check.sh
+(crontab -l 2>/dev/null | grep -v 'health-check.sh'; \
+ echo "*/5 * * * * /root/whoeverwants/scripts/health-check.sh >> /var/log/whoeverwants-health.log 2>&1") | crontab -
+```
+
+Optional: Set `PUSHOVER_USER_KEY` and `PUSHOVER_API_TOKEN` environment variables in the cron entries for push notification alerts when services go down.
+
 ---
 
 ## 3. Verify
@@ -275,6 +325,9 @@ bash scripts/remote.sh "systemctl status whoeverwants-web --no-pager"
 
 bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'"
 # Expected: _migrations, polls, ranked_choice_rounds, votes tables
+
+bash scripts/remote.sh "crontab -l"
+# Expected: backup-db.sh (daily 3AM) and health-check.sh (every 5min)
 ```
 
 ---
@@ -285,14 +338,21 @@ bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c
 Internet
   │
   ├── whoeverwants.com:443 ──► Caddy ──┬── /api/polls* ──► localhost:8000 ──► FastAPI (Docker: api)
-  │                                     │                                        │
+  │                                     │                       │ rate limiting
   │                                     └── /* ──────────► localhost:3000 ──► Next.js (systemd)
-  │                                                                              │
+  │
   ├── <ip>.sslip.io:443 ────► Caddy ──► localhost:9090 ──► cmd-api.py (systemd)
-  │                                                            │
-  │                                                     PostgreSQL (Docker: db)
-  │                                                     localhost:5432
+  │
+  │                                   PostgreSQL (Docker: db)
+  │                                   localhost:5432
+  │                                     │
+  │                                   pg_dump backup ──► /var/backups/whoeverwants/ (14-day retention)
+  │
   └── :22 ──► SSH (backup access)
+
+Cron jobs:
+  - 3:00 AM daily  ──► backup-db.sh (pg_dump + rotate)
+  - Every 5 min    ──► health-check.sh (service checks + auto-recovery)
 ```
 
 ### Services Summary
@@ -302,8 +362,15 @@ Internet
 | Caddy | systemd (`caddy.service`) | 80, 443 | HTTPS reverse proxy, auto-TLS via Let's Encrypt |
 | cmd-api.py | systemd (`cmd-api.service`) | 9090 (localhost) | Remote command execution for Claude Code |
 | Next.js | systemd (`whoeverwants-web.service`) | 3000 (localhost) | Frontend (standalone build) |
-| FastAPI | Docker Compose (`api`) | 8000 (localhost) | Application API |
+| FastAPI | Docker Compose (`api`) | 8000 (localhost) | Application API (with rate limiting) |
 | PostgreSQL | Docker Compose (`db`) | 5432 (localhost) | Database |
+
+### Cron Jobs
+
+| Schedule | Script | Purpose |
+|----------|--------|---------|
+| `0 3 * * *` | `scripts/backup-db.sh` | Daily DB backup (pg_dump, gzip, 14-day retention) |
+| `*/5 * * * *` | `scripts/health-check.sh` | Service health checks with auto-recovery |
 
 ### Key Files on Droplet
 
@@ -313,7 +380,12 @@ Internet
 | `/etc/systemd/system/cmd-api.service` | Systemd unit for cmd-api |
 | `/etc/systemd/system/whoeverwants-web.service` | Systemd unit for Next.js frontend |
 | `/etc/caddy/Caddyfile` | Caddy reverse proxy config |
+| `/etc/logrotate.d/whoeverwants` | Log rotation config (14-day retention) |
+| `/etc/systemd/journald.conf.d/whoeverwants.conf` | Journald size limits (500MB max) |
 | `/swapfile` | 2GB swap file (required for Node.js builds on 1GB droplet) |
+| `/var/backups/whoeverwants/` | Database backup directory |
+| `/var/log/whoeverwants-backup.log` | Backup script log |
+| `/var/log/whoeverwants-health.log` | Health check log |
 | `/root/whoeverwants/` | Repository clone |
 | `/root/whoeverwants/.next/standalone/` | Next.js production build |
 | `/root/whoeverwants/docker-compose.yml` | Docker Compose config (db + api only) |
@@ -334,6 +406,20 @@ For `whoeverwants.com` to work, the domain's DNS must have an A record pointing 
 - All services except Caddy (ports 80/443) and SSH (port 22) bind to localhost only.
 - The API token should be a strong random string (32+ bytes, URL-safe base64).
 - Caddy handles TLS certificate provisioning and renewal automatically via Let's Encrypt.
+- FastAPI includes rate limiting: 120 reads/min and 30 writes/min per IP.
+
+---
+
+## Rate Limiting
+
+The FastAPI server includes built-in rate limiting (`server/middleware.py`):
+
+| Operation | Limit | Window |
+|-----------|-------|--------|
+| GET requests | 120/IP | 1 minute |
+| POST/PUT/DELETE requests | 30/IP | 1 minute |
+
+Rate-limited requests receive HTTP 429 with a `Retry-After: 60` header. The `/health` endpoint is exempt.
 
 ---
 
@@ -341,20 +427,38 @@ For `whoeverwants.com` to work, the domain's DNS must have an A record pointing 
 
 ```bash
 # Check all services
-bash scripts/remote.sh "systemctl status cmd-api caddy docker"
+bash scripts/remote.sh "systemctl status cmd-api caddy docker whoeverwants-web"
 
 # View API logs
 bash scripts/remote.sh "docker compose logs --tail 50 api" /root/whoeverwants
 
+# View Next.js logs
+bash scripts/remote.sh "journalctl -u whoeverwants-web --no-pager -n 50"
+
 # View database logs
 bash scripts/remote.sh "docker compose logs --tail 50 db" /root/whoeverwants
 
+# View health check log
+bash scripts/remote.sh "tail -20 /var/log/whoeverwants-health.log"
+
+# View backup log
+bash scripts/remote.sh "tail -20 /var/log/whoeverwants-backup.log"
+
+# List backups
+bash scripts/remote.sh "ls -lh /var/backups/whoeverwants/"
+
 # Restart everything
-bash scripts/remote.sh "systemctl restart caddy cmd-api && docker compose restart" /root/whoeverwants
+bash scripts/remote.sh "systemctl restart caddy cmd-api whoeverwants-web && docker compose restart" /root/whoeverwants
 
 # Check disk space
 bash scripts/remote.sh "df -h /"
 
 # Check memory
 bash scripts/remote.sh "free -h"
+
+# Manual backup
+bash scripts/remote.sh "/root/whoeverwants/scripts/backup-db.sh" /root/whoeverwants
+
+# Manual health check
+bash scripts/remote.sh "/root/whoeverwants/scripts/health-check.sh" /root/whoeverwants
 ```

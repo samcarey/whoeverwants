@@ -4,9 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
+from middleware import RateLimitMiddleware
 from routers.polls import router as polls_router
 
 app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
+
+# Rate limiting (must be added before CORS so it runs first)
+app.add_middleware(RateLimitMiddleware, read_rpm=120, write_rpm=30)
 
 # CORS: allow Next.js frontend
 app.add_middleware(

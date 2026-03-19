@@ -3,7 +3,8 @@
 #
 # This script is designed to run ON the droplet itself (e.g., via SSH or paste).
 # It installs all dependencies, sets up the command API, Caddy, Docker,
-# clones the repo, starts services, and applies database migrations.
+# clones the repo, starts services, applies database migrations, and configures
+# production hardening (log rotation, DB backups, health checks).
 #
 # Usage:
 #   ssh root@<DROPLET_IP> 'bash -s' < scripts/provision-droplet.sh <API_TOKEN>
@@ -26,12 +27,12 @@ echo "sslip.io domain: ${DROPLET_IP_DASHED}.sslip.io"
 echo ""
 
 # ── 1. System updates ────────────────────────────────────────────────
-echo "=== 1/7 System updates ==="
+echo "=== 1/11 System updates ==="
 apt-get update -qq
 apt-get upgrade -y -qq
 
 # ── 2. Install Docker ────────────────────────────────────────────────
-echo "=== 2/7 Installing Docker ==="
+echo "=== 2/11 Installing Docker ==="
 if ! command -v docker &>/dev/null; then
   curl -fsSL https://get.docker.com | sh
 else
@@ -39,7 +40,7 @@ else
 fi
 
 # ── 3. Install Caddy ─────────────────────────────────────────────────
-echo "=== 3/7 Installing Caddy ==="
+echo "=== 3/11 Installing Caddy ==="
 if ! command -v caddy &>/dev/null; then
   apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
@@ -53,7 +54,7 @@ else
 fi
 
 # ── 4. Command execution API ─────────────────────────────────────────
-echo "=== 4/7 Setting up command execution API ==="
+echo "=== 4/11 Setting up command execution API ==="
 cat > /opt/cmd-api.py <<'PYEOF'
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json, subprocess, os
@@ -107,26 +108,59 @@ EOF
 systemctl daemon-reload
 systemctl enable --now cmd-api
 
-# ── 5. Configure Caddy ───────────────────────────────────────────────
-echo "=== 5/7 Configuring Caddy ==="
+# ── 5. Add swap (required for Node.js builds on 1GB droplets) ────────
+echo "=== 5/11 Configuring swap ==="
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "2GB swap created"
+else
+  echo "Swap already configured"
+fi
+
+# ── 6. Install Node.js ───────────────────────────────────────────────
+echo "=== 6/11 Installing Node.js ==="
+if ! command -v node &>/dev/null; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y nodejs
+else
+  echo "Node.js already installed: $(node --version)"
+fi
+
+# ── 7. Configure Caddy ───────────────────────────────────────────────
+echo "=== 7/11 Configuring Caddy ==="
 cat > /etc/caddy/Caddyfile <<EOF
 ${DROPLET_IP_DASHED}.sslip.io {
-    reverse_proxy 127.0.0.1:9090
+	reverse_proxy 127.0.0.1:9090
 }
 
 whoeverwants.com {
-    reverse_proxy 127.0.0.1:8000
+	handle /api/polls {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /api/polls/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }
 EOF
 
 systemctl restart caddy
 
-# ── 6. Clone repo and start services ─────────────────────────────────
+# ── 8. Clone repo and start Docker services ──────────────────────────
 # Note: The FastAPI container uses uv for Python dependency management.
 # uv is installed inside the Docker image (see server/Dockerfile).
 # Dependencies are defined in server/pyproject.toml and locked in server/uv.lock.
 # No manual Python package installation is needed on the host.
-echo "=== 6/7 Cloning repo and starting Docker services ==="
+echo "=== 8/11 Cloning repo and starting Docker services ==="
 if [ ! -d /root/whoeverwants ]; then
   git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
 else
@@ -147,8 +181,8 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# ── 7. Apply database migrations ─────────────────────────────────────
-echo "=== 7/7 Applying database migrations ==="
+# ── 9. Apply database migrations ─────────────────────────────────────
+echo "=== 9/11 Applying database migrations ==="
 
 docker exec -i whoeverwants-db-1 psql -U whoeverwants -q <<'SQL'
 CREATE TABLE IF NOT EXISTS _migrations (
@@ -173,12 +207,88 @@ for f in database/migrations/*_up.sql; do
 done
 echo "Applied $applied migrations"
 
+# ── 10. Build and start Next.js frontend ─────────────────────────────
+echo "=== 10/11 Building Next.js frontend ==="
+cd /root/whoeverwants
+npm ci
+NEXT_OUTPUT=standalone NODE_ENV=production npx next build
+cp -r public .next/standalone/public
+cp -r .next/static .next/standalone/.next/static
+
+cat > /etc/systemd/system/whoeverwants-web.service <<'EOF'
+[Unit]
+Description=WhoeverWants Next.js Frontend
+After=network.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/whoeverwants/.next/standalone
+ExecStart=/usr/bin/node server.js
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=whoeverwants-web
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now whoeverwants-web
+
+# ── 11. Production hardening ─────────────────────────────────────────
+echo "=== 11/11 Production hardening (logs, backups, health checks) ==="
+
+# --- Log rotation ---
+cat > /etc/logrotate.d/whoeverwants <<'EOF'
+/var/log/whoeverwants-*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 root root
+}
+EOF
+
+# Also configure journald max size for systemd service logs
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/whoeverwants.conf <<'EOF'
+[Journal]
+SystemMaxUse=500M
+MaxRetentionSec=30day
+EOF
+systemctl restart systemd-journald 2>/dev/null || true
+
+# --- Database backups (daily at 3 AM) ---
+chmod +x /root/whoeverwants/scripts/backup-db.sh
+mkdir -p /var/backups/whoeverwants
+(crontab -l 2>/dev/null | grep -v 'backup-db.sh' || true; \
+ echo "0 3 * * * /root/whoeverwants/scripts/backup-db.sh >> /var/log/whoeverwants-backup.log 2>&1") | crontab -
+
+# --- Health checks (every 5 minutes) ---
+chmod +x /root/whoeverwants/scripts/health-check.sh
+(crontab -l 2>/dev/null | grep -v 'health-check.sh' || true; \
+ echo "*/5 * * * * /root/whoeverwants/scripts/health-check.sh >> /var/log/whoeverwants-health.log 2>&1") | crontab -
+
+echo "Cron jobs installed:"
+crontab -l
+
 # ── Verify ────────────────────────────────────────────────────────────
 echo ""
 echo "=== Provisioning complete ==="
 echo ""
 echo "Health check:"
 curl -s http://localhost:8000/health
+echo ""
+echo ""
+echo "Frontend:"
+curl -s -o /dev/null -w "HTTP %{http_code}" http://localhost:3000/
 echo ""
 echo ""
 echo "Tables:"

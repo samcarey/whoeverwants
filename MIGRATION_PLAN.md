@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 5 complete
+**Status**: Active — Phase 6 complete
 **Last updated**: 2026-03-19
-**Current phase**: Phase 6 (Production Hardening) — next up
+**Current phase**: Complete — all phases done
 
 ---
 
@@ -209,15 +209,16 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 6: Production Hardening
+### Phase 6: Production Hardening ✓ COMPLETE
 **Goal**: Make the production deployment robust and maintainable.
 
-- [ ] Process management: systemd service for Next.js (replace bare process)
-- [ ] Log rotation for application logs
-- [ ] Automated database backups (pg_dump cron)
-- [ ] Health check monitoring / uptime alerts
-- [ ] Rate limiting on API endpoints
-- [ ] Update droplet-setup docs and provision script
+- [x] **Process management**: Next.js runs as systemd service (`whoeverwants-web.service`) with proper logging to journald, auto-restart on crash. Fixed crash-looping service (standalone build dir was missing).
+- [x] **Log rotation**: Logrotate config for `/var/log/whoeverwants-*.log` (daily, 14-day retention, compressed). Journald limited to 500MB / 30 days.
+- [x] **Automated database backups**: `scripts/backup-db.sh` runs daily at 3 AM via cron. Creates compressed pg_dump backups in `/var/backups/whoeverwants/` with 14-day rotation.
+- [x] **Health check monitoring**: `scripts/health-check.sh` runs every 5 minutes via cron. Checks FastAPI, Next.js, PostgreSQL, Caddy, Docker, and disk space. Auto-recovers failed services. Supports Pushover push notifications for alerting.
+- [x] **Rate limiting**: Custom in-memory token bucket middleware (`server/middleware.py`, 8 tests). 120 GET/min and 30 POST/min per IP. No external dependencies.
+- [x] **Security cleanup**: Removed malicious crontab entry and bot binary from compromised droplet.
+- [x] **Updated docs**: `docs/droplet-setup.md` and `scripts/provision-droplet.sh` updated with all Phase 6 additions (11-step provisioning).
 
 ---
 
@@ -274,6 +275,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 3 start | Removed `@supabase/supabase-js` dependency. Extracted types to `lib/types.ts`, deleted `lib/supabase.ts`, deleted Supabase-only API routes and debug page. Updated all 12 component/page imports. Cleaned up CI workflows (removed Supabase env vars and broken migration steps). Deleted legacy migration scripts and `supabase/` config directory. |
 | 2026-03-19 | Phase 4 complete | Rewrote JavaScript test suite to remove Supabase dependency. Deleted redundant `voting-algorithms/` tests (IRV incomplete ballots + Borda compensation — covered by 120+ Python tests). Rewrote `poll-builder.js` and `database.js` helpers to use Python API via fetch. All 14 test files pass: 87 tests pass, 59 skip gracefully (API-dependent tests need running server). Pure JS tests (validation, filtering, components, localStorage) run standalone. API integration tests auto-skip in CI. |
 | 2026-03-19 | Phase 5 complete | Migration 064: dropped `poll_results` view, 10 unused functions (algorithm + RLS helpers), `check_participation_capacity` trigger, all 8 RLS policies, disabled RLS on `votes` and `ranked_choice_rounds`. Kept `generate_short_id`/`encode_base62`/`decode_base62` (short_id trigger) and `update_updated_at_column` (safety net). All 4 poll types verified E2E on droplet after migration. |
+| 2026-03-19 | Phase 6 complete | Production hardening: Fixed crash-looping Next.js systemd service (rebuilt standalone, copied static assets). Added rate limiting middleware (120 read/30 write per IP/min, 8 tests). Created backup script (daily pg_dump cron, 14-day retention). Created health check script (5-min cron, auto-recovery, Pushover alerts). Configured log rotation (logrotate + journald limits). Cleaned up server compromise (malicious crontab + bot binary). Updated provision script (11 steps) and droplet-setup docs. |
 
 ---
 
