@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2C in progress (Ranked choice algorithm + API + frontend done, needs deploy)
+**Status**: Active — Phase 2C complete, starting Phase 2D
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2C (Ranked choice polls — algorithm, API, and frontend complete)
+**Current phase**: Phase 2C complete (Ranked choice polls live on whoeverwants.com)
 
 ---
 
@@ -130,7 +130,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 1. [x] **IRV algorithm** — `server/algorithms/ranked_choice.py` + 27 tests. IRV with Borda tiebreak + exhausted ballot handling. Ported from SQL migration 046. Covers: immediate winners, sequential elimination, vote transfer, Borda tie-breaking, incomplete ballots, edge cases.
 2. [x] **Extend API** — Results endpoint computes ranked choice rounds server-side and returns `ranked_choice_rounds` + `ranked_choice_winner` in `PollResultsResponse`. Added `RankedChoiceRoundResponse` model with Borda score data.
 3. [x] **Frontend swap** — `CompactRankedChoiceResults.tsx` reads rounds from API results object instead of `getRankedChoiceRounds()` (Supabase). `BordaCountExplanation` uses embedded Borda scores. Removed dead `RankedChoiceResults` function from `PollResults.tsx`.
-4. [ ] **Deploy & test** — Create ranked choice poll, submit rankings, verify IRV rounds display correctly.
+4. [x] **Deploy & test** — Deployed to droplet. Created ranked choice poll, submitted 3 votes (3-way tie), verified IRV rounds: Charlie eliminated by alphabetical tiebreak, Alice wins with 2/3 majority in round 2. Also verified immediate majority win (3/5 in round 1). Frontend serves at `https://whoeverwants.com/p/{short_id}/`.
 
 ---
 
@@ -211,7 +211,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2A Frontend | Created `lib/api.ts` fetch-based API client. Replaced ALL supabase calls in critical paths: `PollPageClient.tsx`, `create-poll/page.tsx`, `simplePollQueries.ts`, `VoterList.tsx`, `PollResults.tsx`, `FollowUpHeader.tsx`, `ForkHeader.tsx`, `CompactRankedChoiceResults.tsx`, `p/page.tsx`. Added Next.js rewrite proxy for dev. Real-time subscriptions replaced with polling. |
 | 2026-03-19 | Phase 2A Deploy | Deployed full stack to droplet: Python API in Docker, Next.js as systemd service (standalone build avoids OOM on 1GB). Added 2GB swap, installed Node.js 20. Caddy routes `/api/polls/*` to Python API, everything else to Next.js. Fixed TypeScript build errors, FastAPI redirect_slashes issue. E2E test: created poll, voted, verified results. DNS still points to Vercel — needs A record update to 157.245.129.162. |
 | 2026-03-19 | Phase 2B complete | Nomination polls: algorithm (16 tests), vote validation for all types (28 tests), server-side results with `nomination_counts`, frontend uses server data instead of client-side aggregation. Deployed and verified E2E: created nomination poll, 3 votes, correct counts. |
-| 2026-03-19 | Phase 2C algorithm + API + frontend | Ranked choice IRV algorithm (27 tests), API returns `ranked_choice_rounds` + `ranked_choice_winner` in results. Frontend reads rounds from API instead of Supabase `getRankedChoiceRounds()`. Borda tiebreak data embedded in round entries. |
+| 2026-03-19 | Phase 2C complete | Ranked choice IRV algorithm (27 tests), API returns `ranked_choice_rounds` + `ranked_choice_winner` in results. Frontend reads rounds from API instead of Supabase `getRankedChoiceRounds()`. Borda tiebreak data embedded in round entries. Deployed and verified E2E on whoeverwants.com. |
 
 ---
 
