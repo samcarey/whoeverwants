@@ -3,7 +3,7 @@
 import FollowUpButton from "./FollowUpButton";
 import DuplicateButton from "./DuplicateButton";
 import ForkButton from "./ForkButton";
-import { Poll } from "@/lib/supabase";
+import { Poll } from "@/lib/types";
 
 interface PollActionsCardProps {
   poll: Poll;

@@ -1,0 +1,37 @@
+import os
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import psycopg
+
+from middleware import RateLimitMiddleware
+from routers.polls import router as polls_router
+
+app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
+
+# Rate limiting (must be added before CORS so it runs first)
+app.add_middleware(RateLimitMiddleware, read_rpm=120, write_rpm=30)
+
+# CORS: allow Vercel-hosted frontend and local development
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "https://whoeverwants.com,http://localhost:3000").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+app.include_router(polls_router)
+
+
+@app.get("/health")
+async def health():
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            conn.execute("SELECT 1")
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        return {"status": "degraded", "database": str(e)}

@@ -1,81 +1,85 @@
 import { describe, it, beforeAll } from 'vitest'
 import { createPoll } from '../../helpers/poll-builder.js'
-import { ensureMigrationsApplied, cleanupTestPolls } from '../../helpers/database.js'
+import { isApiAvailable } from '../../helpers/database.js'
+
+let apiUp = false
+
+beforeAll(async () => {
+  apiUp = await isApiAvailable()
+})
 
 describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
-  beforeAll(async () => {
-    await ensureMigrationsApplied()
-    await cleanupTestPolls()
-  })
-
   describe('Borda Count vs Old Batch Elimination', () => {
-    it('uses Borda count to eliminate single candidate instead of all tied candidates', async () => {
+    it('uses Borda count to eliminate single candidate instead of all tied candidates', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C'])
         .withVotes([
-          ['A', 'B', 'C'],  // A=1, B gets 2 pts, C gets 1 pt  
-          ['B', 'A', 'C'],  // B=1, A gets 2 pts, C gets 1 pt
-          ['C', 'A', 'B']   // C=1, A gets 2 pts, B gets 1 pt
+          ['A', 'B', 'C'],
+          ['B', 'A', 'C'],
+          ['C', 'A', 'B']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, 4 Borda points, survives
-            ['B', 1, false],  // B: 1 vote, 3 Borda points, survives  
-            ['C', 1, true]    // C: 1 vote, 2 Borda points, eliminated by Borda count
+            ['A', 1, false],
+            ['B', 1, false],
+            ['C', 1, true]
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: gets C's transfer, wins
-            ['B', 1, false]   
+            ['A', 2, false],
+            ['B', 1, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('eliminates candidate with lowest Borda score from tied group', async () => {
+    it('eliminates candidate with lowest Borda score from tied group', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'C', 'D', 'B'],  // A=1, C=3pts, D=2pts, B=1pt
-          ['B', 'C', 'A', 'D'],  // B=1, C=3pts, A=2pts, D=1pt  
-          ['C', 'A', 'B', 'D'],  // C=1, A=3pts, B=2pts, D=1pt
-          ['D', 'A', 'C', 'B']   // D=1, A=3pts, C=2pts, B=1pt
+          ['A', 'C', 'D', 'B'],
+          ['B', 'C', 'A', 'D'],
+          ['C', 'A', 'B', 'D'],
+          ['D', 'A', 'C', 'B']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, 12 Borda points, survives
-            ['B', 1, false],  // B: 1 vote, 8 Borda points, survives
-            ['C', 1, false],  // C: 1 vote, 12 Borda points, survives
-            ['D', 1, true]    // D: 1 vote, 8 Borda points, eliminated (tied with B, alphabetically last)
+            ['A', 1, false],
+            ['B', 1, false],
+            ['C', 1, false],
+            ['D', 1, true]
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: gets D's transfer
-            ['B', 1, true],   // B: eliminated next (lowest Borda)
-            ['C', 1, false]   
+            ['A', 2, false],
+            ['B', 1, true],
+            ['C', 1, false]
           ]},
           { round: 3, results: [
-            ['A', 2, false],  // A: 2 votes, survives
-            ['C', 2, true]    // C: gets B's transfer, eliminated (alphabetical when tied)
+            ['A', 2, false],
+            ['C', 2, true]
           ]},
           { round: 4, results: [
-            ['A', 4, false]   // A: gets C's transfer, wins
+            ['A', 4, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('handles perfect Borda score ties with alphabetical elimination', async () => {
+    it('handles perfect Borda score ties with alphabetical elimination', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B'])
         .withVotes([
-          ['A', 'B'],  // A=1, B gets 1 Borda point
-          ['B', 'A']   // B=1, A gets 1 Borda point  
+          ['A', 'B'],
+          ['B', 'A']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['B', 1, true]    // B: 1 vote, eliminated (alphabetically last when Borda tied)
+            ['A', 1, false],
+            ['B', 1, true]
           ]},
           { round: 2, results: [
-            ['A', 2, false]   // A: gets B's transfer, wins
+            ['A', 2, false]
           ]}
         ])
         .expectWinner('A')
@@ -84,65 +88,67 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
   })
 
   describe('Complex Multi-Round Borda Scenarios', () => {
-    it('applies Borda count in each round separately', async () => {
+    it('applies Borda count in each round separately', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
-          ['A', 'B', 'C', 'D', 'E'],  // A=2
-          ['A', 'C', 'B', 'D', 'E'],  
-          ['B', 'A', 'C', 'D', 'E'],  // B=1
-          ['C', 'A', 'B', 'D', 'E'],  // C=1
-          ['D', 'A', 'B', 'C', 'E']   // D=1, E=0
+          ['A', 'B', 'C', 'D', 'E'],
+          ['A', 'C', 'B', 'D', 'E'],
+          ['B', 'A', 'C', 'D', 'E'],
+          ['C', 'A', 'B', 'D', 'E'],
+          ['D', 'A', 'B', 'C', 'E']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 2, false],  // A: 2 votes, survives
-            ['B', 1, false],  // B: 1 vote, survives (higher Borda than E)
-            ['C', 1, false],  // C: 1 vote, survives (higher Borda than E)  
-            ['D', 1, false],  // D: 1 vote, survives (higher Borda than E)
-            ['E', 0, true]    // E: 0 votes, eliminated (lowest Borda)
+            ['A', 2, false],
+            ['B', 1, false],
+            ['C', 1, false],
+            ['D', 1, false],
+            ['E', 0, true]
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes, no majority yet (need 3/5)
-            ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives 
-            ['D', 1, true]    // D: eliminated by Borda count (lowest score)
+            ['A', 2, false],
+            ['B', 1, false],
+            ['C', 1, false],
+            ['D', 1, true]
           ]},
           { round: 3, results: [
-            ['A', 3, false],  // A: gets D's transfer, wins majority
-            ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, false]   // C: 1 vote, survives
+            ['A', 3, false],
+            ['B', 1, false],
+            ['C', 1, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('continues eliminating until clear winner emerges', async () => {
+    it('continues eliminating until clear winner emerges', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'C', 'D', 'B'],  // A=1
-          ['B', 'D', 'A', 'C'],  // B=1
-          ['C', 'A', 'B', 'D'],  // C=1
-          ['D', 'B', 'C', 'A']   // D=1 - all tied at 1 vote
+          ['A', 'C', 'D', 'B'],
+          ['B', 'D', 'A', 'C'],
+          ['C', 'A', 'B', 'D'],
+          ['D', 'B', 'C', 'A']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, true]    // D: 1 vote, eliminated (alphabetically last when Borda tied)
+            ['A', 1, false],
+            ['B', 1, false],
+            ['C', 1, false],
+            ['D', 1, true]
           ]},
           { round: 2, results: [
-            ['B', 2, false],  // B: gets D's transfer, survives
-            ['A', 1, false],  // A: 1 vote, survives
-            ['C', 1, true]    // C: eliminated next
+            ['B', 2, false],
+            ['A', 1, false],
+            ['C', 1, true]
           ]},
           { round: 3, results: [
-            ['A', 2, false],  // A: gets C's transfer, survives
-            ['B', 2, true]    // B: eliminated (alphabetically last when tied)
+            ['A', 2, false],
+            ['B', 2, true]
           ]},
           { round: 4, results: [
-            ['A', 4, false]   // A: gets B's transfer, wins
+            ['A', 4, false]
           ]}
         ])
         .expectWinner('A')
@@ -151,46 +157,48 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
   })
 
   describe('Zero Vote Candidate Scenarios', () => {
-    it('uses Borda count even among zero-vote candidates', async () => {
+    it('uses Borda count even among zero-vote candidates', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'B', 'C', 'D'],  // A=2, others get various Borda scores
-          ['A', 'C', 'D', 'B']   
+          ['A', 'B', 'C', 'D'],
+          ['A', 'C', 'D', 'B']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 2, false],  // A: 2 votes, wins majority (100%)
-            ['B', 0, false],  // B: 0 votes (would be eliminated if no majority)
-            ['C', 0, false],  // C: 0 votes (would be eliminated if no majority)
-            ['D', 0, false]   // D: 0 votes (would be eliminated if no majority)
+            ['A', 2, false],
+            ['B', 0, false],
+            ['C', 0, false],
+            ['D', 0, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('eliminates zero-vote candidate with lowest Borda score', async () => {
+    it('eliminates zero-vote candidate with lowest Borda score', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'B', 'C', 'D'],  // A=1
-          ['B', 'C', 'A', 'D'],  // B=1, C=0, D=0
-          ['C', 'A', 'B', 'D']   // C=1, D=0
+          ['A', 'B', 'C', 'D'],
+          ['B', 'C', 'A', 'D'],
+          ['C', 'A', 'B', 'D']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['B', 1, false],  // B: 1 vote, survives  
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 0, true]    // D: 0 votes, eliminated (lowest Borda score)
+            ['A', 1, false],
+            ['B', 1, false],
+            ['C', 1, false],
+            ['D', 0, true]
           ]},
           { round: 2, results: [
-            ['A', 1, false],  // A: 1 vote, survives (early alphabet advantage)
-            ['B', 1, false],  // B: 1 vote, survives
-            ['C', 1, true]    // C: 1 vote, eliminated (alphabetically last among tied)
+            ['A', 1, false],
+            ['B', 1, false],
+            ['C', 1, true]
           ]},
           { round: 3, results: [
-            ['A', 2, false],  // A: gets C's transfer, wins
-            ['B', 1, false]   // B: 1 vote, survives
+            ['A', 2, false],
+            ['B', 1, false]
           ]}
         ])
         .expectWinner('A')

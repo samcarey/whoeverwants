@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { apiCreatePoll } from "@/lib/api";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -865,38 +865,12 @@ function CreatePollContent() {
       }
 
 
-      const { data, error } = await supabase
-        .from("polls")
-        .insert([pollData])
-        .select();
-
-      if (error) {
-        console.error("Error creating poll:", error);
-        console.error("Error details:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        console.error("Poll data that failed:", pollData);
-        
-        // Provide more specific error message based on error type
-        let errorMessage = "Failed to create poll. Please try again.";
-        if (error.message) {
-          if (error.message.includes('duplicate key')) {
-            errorMessage = "A poll with this data already exists.";
-          } else if (error.message.includes('not-null violation')) {
-            errorMessage = "Missing required information. Please check all fields.";
-          } else if (error.message.includes('foreign key')) {
-            errorMessage = "Invalid reference in poll data.";
-          } else if (error.message.includes('permission')) {
-            errorMessage = "Permission denied. Please try again.";
-          } else {
-            errorMessage = `Database error: ${error.message}`;
-          }
-        }
-        
-        setError(errorMessage);
+      let createdPoll;
+      try {
+        createdPoll = await apiCreatePoll(pollData);
+      } catch (apiError: any) {
+        console.error("Error creating poll:", apiError);
+        setError(apiError.message || "Failed to create poll. Please try again.");
         setIsLoading(false);
         isSubmittingRef.current = false;
         reEnableForm(form);
@@ -904,7 +878,7 @@ function CreatePollContent() {
       }
 
       // Record poll creation in browser storage
-      recordPollCreation(data[0].id, creatorSecret);
+      recordPollCreation(createdPoll.id, creatorSecret);
 
       // For nomination polls, creators vote after creation like any other participant
       // No initial vote is created
@@ -929,8 +903,8 @@ function CreatePollContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Use UUID for now (short_id not available due to incomplete migration)
-      const redirectId = data[0].id;
+      // Use short_id if available, fall back to UUID
+      const redirectId = createdPoll.short_id || createdPoll.id;
       router.push(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);

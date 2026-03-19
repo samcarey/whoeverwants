@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
-import { Poll } from "@/lib/supabase";
+import { Poll } from "@/lib/types";
 
 interface FollowUpModalProps {
   isOpen: boolean;

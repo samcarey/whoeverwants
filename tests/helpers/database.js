@@ -1,44 +1,121 @@
-import { createClient } from '@supabase/supabase-js'
+// Database/API helpers for tests
+// Tests that need a running Python API server use these helpers.
+// Tests are skipped gracefully when no server is available.
 
-let supabaseClient = null
+const TEST_API_BASE = process.env.TEST_API_URL || 'http://localhost:8000/api/polls'
 
-export function getTestDatabase() {
-  if (!supabaseClient) {
-    supabaseClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL_TEST,
-      process.env.SUPABASE_TEST_SERVICE_KEY
-    )
+let _apiAvailable = null
+
+/**
+ * Check if the Python API server is reachable.
+ * Caches result for the test run.
+ */
+export async function isApiAvailable() {
+  if (_apiAvailable !== null) return _apiAvailable
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2000)
+    const res = await fetch(TEST_API_BASE.replace('/api/polls', '/health'), {
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+    _apiAvailable = res.ok
+  } catch {
+    _apiAvailable = false
   }
-  return supabaseClient
+
+  return _apiAvailable
+}
+
+/**
+ * Get the test API base URL.
+ */
+export function getApiBase() {
+  return TEST_API_BASE
+}
+
+/**
+ * Helper: create a poll via the Python API.
+ */
+export async function apiCreateTestPoll(params) {
+  const res = await fetch(TEST_API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to create poll: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+/**
+ * Helper: submit a vote via the Python API.
+ */
+export async function apiSubmitTestVote(pollId, params) {
+  const res = await fetch(`${TEST_API_BASE}/${pollId}/votes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to submit vote: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+/**
+ * Helper: close a poll via the Python API (triggers IRV calculation).
+ */
+export async function apiClosePoll(pollId, creatorSecret) {
+  const res = await fetch(`${TEST_API_BASE}/${pollId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creator_secret: creatorSecret, close_reason: 'manual' }),
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to close poll: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+/**
+ * Helper: get poll results via the Python API.
+ */
+export async function apiGetResults(pollId) {
+  const res = await fetch(`${TEST_API_BASE}/${pollId}/results`)
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to get results: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+/**
+ * Helper: get votes for a poll via the Python API.
+ */
+export async function apiGetVotes(pollId) {
+  const res = await fetch(`${TEST_API_BASE}/${pollId}/votes`)
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to get votes: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
+// Legacy stubs — no longer needed
+export function getTestDatabase() {
+  throw new Error('Supabase removed. Use API helpers from this module.')
 }
 
 export async function cleanupTestPolls() {
-  const db = getTestDatabase()
-  
-  // Clean up any test polls that might be left over
-  const { error } = await db
-    .from('polls')
-    .delete()
-    .like('title', '%Test%')
-  
-  if (error && !error.message.includes('No rows found')) {
-    console.warn('Cleanup warning:', error.message)
-  }
+  // No-op: test polls are cleaned up by the server or left as test data
 }
 
 export async function ensureMigrationsApplied() {
-  const db = getTestDatabase()
-  
-  // Check if our latest migration is applied by testing the fixed function
-  try {
-    const { data, error } = await db.rpc('calculate_ranked_choice_winner', {
-      target_poll_id: '00000000-0000-0000-0000-000000000000'
-    })
-    
-    if (error && !error.message.includes('null')) {
-      throw new Error(`Database not ready: ${error.message}`)
-    }
-  } catch (err) {
-    throw new Error(`Test database not properly migrated: ${err.message}`)
-  }
+  // No-op: migrations managed on droplet
 }

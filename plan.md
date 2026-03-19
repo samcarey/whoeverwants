@@ -1,184 +1,238 @@
-# Follow-Up Poll Feature Implementation Plan
+# Infrastructure Improvement Plan
 
-## Overview
-Implement a comprehensive follow-up poll system that allows users to create polls that reference previous polls, with recursive discovery of all related polls to automatically expand the user's poll list.
+## Phase 7: Move Production Frontend to Vercel
 
-## Phase 1: Database Schema Changes
+**Goal**: Use Vercel's free tier to host the Next.js frontend. Vercel handles builds, CDN edge serving, TLS, and zero-downtime deploys. The droplet becomes API-only (Python + Postgres), freeing RAM and simplifying ops.
 
-### 1.1 Add follow_up_to Column to Polls Table
-```sql
-ALTER TABLE polls ADD COLUMN follow_up_to UUID REFERENCES polls(id);
-CREATE INDEX idx_polls_follow_up_to ON polls(follow_up_to);
+**Why**: Vercel is Next.js's native platform — free tier includes builds, edge CDN, preview deploys, and auto-TLS. This was previously configured for this project before the Supabase migration moved everything to the droplet.
+
+### Architecture After Migration
+
+```
+Browser ──► Vercel (Next.js frontend, CDN, TLS)
+              │
+              ├── Static pages / SSR served from Vercel edge
+              └── /api/polls* ──► (Vercel rewrite) ──► droplet:8000 (FastAPI)
+
+Droplet (142.93.60.29):
+  ├── Caddy (TLS for API subdomain)
+  ├── FastAPI (Docker, port 8000)
+  ├── PostgreSQL (Docker, port 5432)
+  └── cmd-api (port 9090, management)
 ```
 
-### 1.2 Create Recursive Follow-Up Discovery Function
-```sql
-CREATE OR REPLACE FUNCTION get_all_related_poll_ids(input_poll_ids UUID[])
-RETURNS TABLE(poll_id UUID) AS $$
-WITH RECURSIVE poll_tree AS (
-    -- Base case: Start with input poll IDs
-    SELECT id as poll_id, 0 as level
-    FROM polls 
-    WHERE id = ANY(input_poll_ids)
-    
-    UNION ALL
-    
-    -- Recursive case: Find follow-ups to current level
-    SELECT p.id as poll_id, pt.level + 1
-    FROM polls p
-    INNER JOIN poll_tree pt ON p.follow_up_to = pt.poll_id
-    WHERE pt.level < 10  -- Prevent infinite loops
-)
-SELECT DISTINCT poll_tree.poll_id FROM poll_tree;
-$$ LANGUAGE SQL;
+### Steps
+
+1. ~~**Expose API on a public subdomain**~~ ✅ DONE
+   - Caddy on droplet configured for `api.whoeverwants.com` with CORS headers and OPTIONS handling
+   - Old `whoeverwants.com` Caddy block removed
+
+2. ~~**Update frontend API client**~~ ✅ DONE
+   - `lib/api.ts` calls `https://api.whoeverwants.com/api/polls` directly in production
+   - Dev mode still uses relative path (proxied by Next.js rewrites)
+   - `vercel.json` added for Vercel build config
+
+3. ~~**Remove Next.js from droplet**~~ ✅ DONE
+   - `whoeverwants-web.service` stopped and disabled
+   - Caddy now only serves `api.whoeverwants.com` (no more localhost:3000 proxy)
+   - Health check script updated (removed Next.js check)
+
+4. ~~**Update CORS**~~ ✅ DONE
+   - FastAPI CORS tightened to `https://whoeverwants.com` + `http://localhost:3000`
+   - Configurable via `CORS_ORIGINS` env var
+
+5. ~~**Update docs**~~ ✅ DONE
+   - CLAUDE.md updated (development workflow, droplet purpose, env vars including `VERCEL_API_TOKEN`)
+   - `docs/droplet-setup.md` rewritten for API-only architecture
+   - `scripts/provision-droplet.sh` updated (removed Node.js/Next.js steps, now 11 steps)
+   - `scripts/health-check.sh` updated (removed Next.js check)
+
+6. ~~**Set up Vercel project**~~ ✅ DONE
+   - Project `whoeverwants` exists (`prj_07PAXGI2wG74cGRKREB0BiIDUWSn`)
+   - Domains configured: `whoeverwants.com`, `www.whoeverwants.com` (redirect), `whoeverwants.vercel.app` (redirect)
+   - Environment vars set: `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION`, `NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION`
+   - Next.js updated from 15.3.3 → 15.5.14 to fix security CVEs blocking builds
+   - Preview builds now succeed (branch `claude/continue-plan-Stbwu` deployed successfully)
+
+7. **Update DNS** ⬅️ NEXT
+   - ✅ `api.whoeverwants.com` → A record → `142.93.60.29` (droplet) — already correct
+   - ❌ `whoeverwants.com` → still points to droplet (`142.93.60.29`), needs to point to Vercel
+   - **Action needed**: In AWS Route 53, change `whoeverwants.com` A record from `142.93.60.29` to `76.76.21.21` (Vercel's IP)
+   - DNS is managed via AWS Route 53 (nameservers: `ns-*.awsdns-*.{net,com,co.uk,org}`)
+
+8. **Verify end-to-end**
+   - Merge branch to `main` to trigger production Vercel deploy
+   - Vercel serves frontend at `whoeverwants.com`
+   - API calls from frontend reach `api.whoeverwants.com` → droplet → FastAPI → Postgres
+   - All 4 poll types work (create, vote, results)
+
+### Vercel CLI Access for Claude
+
+To let Claude Code sessions trigger deploys or check status:
+- Generate a Vercel API token at https://vercel.com/account/tokens
+- Store as `VERCEL_TOKEN` environment variable (same pattern as `DROPLET_API_TOKEN`)
+- Use `npx vercel --token $VERCEL_TOKEN` or the Vercel REST API for deploy management
+- Vercel also auto-deploys on push to `main` (no manual trigger needed for production)
+
+### Benefits
+
+| Before (droplet-only) | After (Vercel + droplet) |
+|----------------------|------------------------|
+| Next.js builds on 1GB droplet (needs 2GB swap) | Vercel builds for free |
+| Self-managed TLS via Caddy | Vercel auto-TLS + CDN edge |
+| Single-server SPOF for frontend | Vercel global CDN, highly available |
+| Manual deploy: git pull + build + restart | Auto-deploy on push to main |
+| ~400MB RAM for full stack | ~200MB RAM (API + DB only) |
+
+---
+
+## Phase 8: Preview Environments for Development
+
+**Goal**: On-demand per-branch preview environments. Claude Code web sessions push to a branch, trigger a build, and get a public URL to test.
+
+**Prerequisite**: Phase 7 complete (Vercel handles production frontend). The droplet has more headroom for preview API instances.
+
+### Architecture
+
+- **Production frontend**: Vercel auto-deploys from `main` → `whoeverwants.com`
+- **Preview frontends**: Vercel auto-deploys from any branch → `*.vercel.app` preview URLs (free!)
+- **Preview APIs**: Droplet runs per-branch FastAPI + separate Postgres databases
+- **Preview API routing**: `<slug>.api.whoeverwants.com` → Caddy → per-branch FastAPI container
+
+### Key Insight: Vercel Already Does Preview Deploys
+
+Vercel automatically creates preview deployments for every push to a non-main branch. Each gets a unique URL like `whoeverwants-<hash>.vercel.app`. The missing piece is the **backend** — each preview frontend needs its own API instance with its own database.
+
+### Per-Preview Stack (API-only on droplet)
+
+| Component | Implementation | Resource Cost |
+|-----------|---------------|---------------|
+| Frontend | **Vercel preview deploy** (free, automatic) | $0, no droplet RAM |
+| Database | Separate Postgres database in shared container | ~5-10MB |
+| FastAPI | Separate Docker container, unique port | ~50-80MB RAM |
+
+This is much lighter than the original plan since there's no Next.js process per preview on the droplet.
+
+### Preview Manager
+
+`scripts/preview-manager.sh` on the droplet:
+
+#### `preview create <branch-name>`
+
+1. `git fetch origin <branch>`
+2. `git worktree add /root/previews/<slug> origin/<branch>`
+3. `createdb preview_<slug>` in shared Postgres
+4. `pg_dump whoeverwants | psql preview_<slug>` (copy prod data)
+5. Apply new migrations from the branch
+6. Build & start FastAPI container on unique port
+7. Add `<slug>.api.whoeverwants.com` to Caddy, reload
+8. Write `.preview-meta.json` with metadata
+
+#### `preview list`
+
+```
+SLUG                    BRANCH                           CREATED              FRONTEND                                              API
+fix-voting-abc123       claude/fix-voting-bug-abc123     2026-03-19 14:00     (Vercel preview URL)                                  https://fix-voting-abc123.api.whoeverwants.com
 ```
 
-## Phase 2: API Endpoints
+#### `preview destroy <slug>` / `preview destroy-all`
 
-### 2.1 Follow-Up Discovery Endpoint
-```typescript
-// GET /api/polls/discover-related
-// Input: { pollIds: string[] }
-// Output: { allRelatedIds: string[] }
+Stop container, drop database, remove Caddy block, clean up worktree.
+
+### Developer Attribution via `GIT_AUTHOR_EMAIL`
+
+Each developer sets `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` as environment variables in their Claude Code session config. These are standard git env vars that override `git config` per-session.
+
+- Commits show the developer as **author** and Claude as **committer** — proper attribution for who directed vs. executed the work
+- If `GIT_AUTHOR_EMAIL` is unset or is `noreply@anthropic.com` (Claude's default), skip dev site deployment — there's no developer to associate it with
+- The dev preview URL is derived from the email: replace `@` with `-` → e.g. `sam-example.com.whoeverwants.com`
+
+### Connecting Vercel Preview to Branch API
+
+The frontend needs to know which API to call. Options:
+
+**Option A: Environment variable per Vercel preview**
+- Set `NEXT_PUBLIC_API_URL` in Vercel's preview environment settings
+- Problem: different per branch, hard to automate
+
+**Option B: Convention-based URL derivation**
+- Frontend derives API URL from the branch name: if branch is `claude/foo-bar-abc123`, API is at `https://foo-bar-abc123.api.whoeverwants.com`
+- `lib/api.ts` checks `process.env.VERCEL_GIT_COMMIT_REF` (available in Vercel builds) to derive the API URL
+- Falls back to `api.whoeverwants.com` for production
+
+**Option C: Query parameter override**
+- Allow `?api=foo-bar-abc123` in the URL to override the API endpoint
+- Most flexible, no build-time coupling
+
+**Recommended**: Option B (convention-based). Clean, automatic, no manual config per branch.
+
+### DNS Setup
+
+- `*.api.whoeverwants.com` → wildcard A record → droplet IP
+- Caddy auto-provisions per-subdomain TLS certs
+
+### Claude Code Web Session Workflow
+
+Developers must set these env vars in their Claude Code session config:
+- `GIT_AUTHOR_NAME` — e.g. `Sam Carey`
+- `GIT_AUTHOR_EMAIL` — e.g. `sam@example.com`
+
+```bash
+# 1. Push branch
+git push -u origin claude/my-feature-xyz
+
+# 2. Create preview API on droplet (only if GIT_AUTHOR_EMAIL is set and not Claude's default)
+#    Skip if GIT_AUTHOR_EMAIL is unset or "noreply@anthropic.com"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh create claude/my-feature-xyz" /root 300
+
+# 3. Vercel auto-deploys frontend preview (triggered by push)
+#    Dev site URL derived from GIT_AUTHOR_EMAIL: sam-example.com.whoeverwants.com
+# Output:
+#   API ready: https://my-feature-xyz.api.whoeverwants.com
+#   Frontend: https://sam-example.com.whoeverwants.com (or Vercel preview URL)
 ```
 
-### 2.2 Enhanced Poll Creation
-- Modify existing poll creation endpoint to accept `follow_up_to` parameter
-- Validate that the referenced poll exists and user has access
+### Auto-Cleanup
 
-## Phase 3: Frontend Components
+- Cron job: destroy API previews older than 7 days
+- Vercel auto-cleans preview deploys (configurable retention)
 
-### 3.1 Follow-Up Button Component
-```typescript
-// components/FollowUpButton.tsx
-// Shows on closed poll results pages
-// Links to create-poll with followUpTo query parameter
-```
+### Droplet Sizing
 
-### 3.2 Follow-Up Header Component
-```typescript
-// components/FollowUpHeader.tsx
-// Shows on create-poll page when followUpTo is present
-// Displays "Follow up to 'Original Poll Title'"
-// Fetches and displays original poll title
-```
+With Vercel handling all frontends, the droplet only needs RAM for:
+- Production: Postgres (~100MB) + FastAPI (~60MB) + Caddy + cmd-api ≈ ~200MB
+- Each preview: FastAPI container (~60MB) + DB overhead (~10MB) ≈ ~70MB
 
-### 3.3 Enhanced Poll List Discovery
-```typescript
-// lib/pollDiscovery.ts
-// Automatic discovery and storage expansion
-// Called on home page load and after poll creation
-```
+**On current 1GB**: production + 4-5 previews easily. No upgrade needed.
 
-## Phase 4: Create Poll Page Enhancements
+---
 
-### 4.1 URL Parameter Handling
-- Accept `followUpTo` query parameter
-- Fetch original poll title for display
-- Pass follow-up reference to submission handler
+## Implementation Order
 
-### 4.2 Form Submission Updates
-- Include `follow_up_to` in poll creation payload
-- After successful creation, trigger poll discovery refresh
+### Phase 7 (do first)
+1. Connect GitHub repo to Vercel, configure build
+2. Add `api.whoeverwants.com` DNS + Caddy config
+3. Add `vercel.json` rewrites or update `lib/api.ts` to call API subdomain
+4. Update DNS: `whoeverwants.com` → Vercel
+5. Remove Next.js from droplet, update health checks and docs
+6. Verify all poll types work E2E
 
-## Phase 5: Home Page Poll Discovery
+### Phase 8 (do second)
+1. Add `*.api.whoeverwants.com` wildcard DNS
+2. Write `preview-manager.sh` (create/list/destroy)
+3. Update `lib/api.ts` to derive API URL from branch name in Vercel previews
+4. Write `deploy-preview.sh` convenience wrapper
+5. Test E2E: create preview from test branch
+6. Add auto-cleanup cron
+7. Update CLAUDE.md and provision script
 
-### 5.1 Enhanced Poll Loading Logic
-1. Get stored poll IDs from localStorage
-2. Call follow-up discovery API to get all related IDs
-3. Compare with stored IDs, add any new ones to localStorage
-4. If new IDs found, re-fetch poll list with expanded ID set
-5. Display all polls with visual indicators for follow-ups
+---
 
-### 5.2 Follow-Up Visual Indicators
-- Show chain/link icons for polls that are follow-ups
-- Display relationship hints in poll cards
-- Group related polls together optionally
+## Cost Summary
 
-## Phase 6: Implementation Steps
-
-### Step 1: Database Changes
-1. Add migration for `follow_up_to` column
-2. Create recursive discovery function
-3. Add database indexes for performance
-
-### Step 2: Backend API
-1. Create `/api/polls/discover-related` endpoint
-2. Implement recursive poll ID discovery
-3. Update poll creation endpoint to handle follow-ups
-4. Add validation for follow-up references
-
-### Step 3: Frontend Components
-1. Create `FollowUpButton` component for results pages
-2. Create `FollowUpHeader` component for create page
-3. Implement poll discovery utilities
-4. Add follow-up indicators to poll cards
-
-### Step 4: Page Integration
-1. Add follow-up button to poll results pages (closed polls only)
-2. Enhance create-poll page with follow-up header
-3. Update home page poll loading with discovery
-4. Handle URL parameters and navigation
-
-### Step 5: Testing & Polish
-1. Test recursive discovery with various poll chains
-2. Handle edge cases (deleted polls, circular references)
-3. Performance testing with large poll networks
-4. UI/UX refinements
-
-## Technical Considerations
-
-### Performance
-- Limit recursion depth to prevent infinite loops
-- Index follow_up_to column for fast queries
-- Cache discovery results on frontend
-- Batch poll fetching to minimize API calls
-
-### Security
-- Validate user access to referenced polls
-- Prevent creation of circular follow-up chains
-- Sanitize poll titles in follow-up headers
-
-### User Experience
-- Clear visual indication of poll relationships
-- Intuitive follow-up creation flow
-- Automatic poll list expansion without user action
-- Graceful handling of missing/deleted referenced polls
-
-### Error Handling
-- Handle cases where follow-up target is deleted
-- Graceful degradation if discovery API fails
-- Clear error messages for invalid follow-up attempts
-
-## Database Migration File Structure
-```
-database/migrations/
-├── 016_add_follow_up_to_polls_up.sql
-├── 017_create_poll_discovery_function_up.sql
-└── 018_add_poll_indexes_up.sql
-```
-
-## File Structure for Implementation
-```
-lib/
-├── pollDiscovery.ts          # Recursive poll discovery logic
-├── followUpHelpers.ts        # Follow-up utility functions
-└── followUpValidation.ts     # Validation for follow-up references
-
-components/
-├── FollowUpButton.tsx        # Button for results pages
-├── FollowUpHeader.tsx        # Header for create page
-└── PollCard.tsx              # Enhanced with follow-up indicators
-
-app/
-├── api/polls/discover-related/route.ts  # Discovery API endpoint
-├── create-poll/page.tsx      # Enhanced with follow-up support
-└── page.tsx                  # Enhanced poll loading with discovery
-```
-
-## Success Metrics
-- Users can create follow-up polls with one click
-- Poll discovery automatically expands user's poll list
-- Follow-up relationships are clearly visible
-- No performance degradation with large poll networks
-- Recursive discovery works reliably up to reasonable depths
+| Item | Cost |
+|------|------|
+| Vercel free tier | $0 (100GB bandwidth, unlimited preview deploys) |
+| Droplet (stays at 1GB) | $6/mo (no upgrade needed!) |
+| DNS records | Free |
+| TLS certs | Free (Vercel + Caddy/Let's Encrypt) |

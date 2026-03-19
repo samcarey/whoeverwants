@@ -44,3 +44,8 @@ next-env.d.ts
 lib/last-compile-time.ts
 
 scratch
+
+# python
+__pycache__/
+*.pyc
+.venv/

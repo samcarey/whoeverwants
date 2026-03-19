@@ -1,7 +1,8 @@
 "use client";
 
-import { supabase, Poll } from "@/lib/supabase";
-import { getPollWithAccess } from "@/lib/simplePollQueries";
+import { Poll } from "@/lib/types";
+import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
+import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
@@ -34,8 +35,27 @@ function PollContent() {
 
     async function fetchPoll() {
       try {
-        // Get poll and grant access to this browser
-        const pollData = await getPollWithAccess(pollId);
+        // Try to fetch poll by UUID first, fall back to short_id
+        let pollData: Poll | null = null;
+        try {
+          // UUID format check (simple heuristic)
+          if (pollId.length > 10 && pollId.includes('-')) {
+            pollData = await apiGetPollById(pollId);
+          } else {
+            pollData = await apiGetPollByShortId(pollId);
+          }
+        } catch {
+          // If UUID lookup fails, try short_id
+          try {
+            pollData = await apiGetPollByShortId(pollId);
+          } catch {
+            pollData = null;
+          }
+        }
+        // Grant access to this poll
+        if (pollData) {
+          addAccessiblePollId(pollData.id);
+        }
         
         if (!pollData) {
           setError(true);

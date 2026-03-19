@@ -1,67 +1,70 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll, votePatterns } from '../../helpers/poll-builder.js'
-import { ensureMigrationsApplied, cleanupTestPolls } from '../../helpers/database.js'
+import { createPoll } from '../../helpers/poll-builder.js'
+import { isApiAvailable } from '../../helpers/database.js'
+
+let apiUp = false
+
+beforeAll(async () => {
+  apiUp = await isApiAvailable()
+})
 
 describe('Zero Vote Elimination Bug Fix', () => {
-  beforeAll(async () => {
-    await ensureMigrationsApplied()
-    await cleanupTestPolls()
-  })
-
   describe('Original Production Bug Scenario', () => {
-    it('eliminates B and C with 0 first-place votes before A, D, E with 1 vote each', async () => {
+    it('eliminates candidates with 0 votes before those with 1 vote', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
-          ['A', 'D', 'B', 'C', 'E'],  // A first
-          ['E', 'A', 'B', 'C', 'D'],  // E first  
-          ['D', 'E', 'A', 'B', 'C']   // D first
+          ['A', 'D', 'B', 'C', 'E'],
+          ['E', 'A', 'B', 'C', 'D'],
+          ['D', 'E', 'A', 'B', 'C']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['D', 1, false],  // D: 1 vote, survives
-            ['E', 1, false],  // E: 1 vote, survives
-            ['A', 1, false],  // A: 1 vote, survives
-            ['C', 0, true],   // C: 0 votes, eliminated (lowest Borda score)
-            ['B', 0, false]   // B: 0 votes, survives (higher Borda than C)
+            ['D', 1, false],
+            ['E', 1, false],
+            ['A', 1, false],
+            ['C', 0, true],
+            ['B', 0, false]
           ]},
           { round: 2, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['E', 1, false],  // E: 1 vote, survives
-            ['D', 1, false],  // D: 1 vote, survives
-            ['B', 0, true]    // B: 0 votes, eliminated (lowest Borda score)
+            ['A', 1, false],
+            ['E', 1, false],
+            ['D', 1, false],
+            ['B', 0, true]
           ]},
           { round: 3, results: [
-            ['E', 1, true],   // E: 1 vote, eliminated (alphabetically last among tied)
-            ['D', 1, false],  // D: 1 vote, survives  
-            ['A', 1, false]   // A: 1 vote, survives
+            ['E', 1, true],
+            ['D', 1, false],
+            ['A', 1, false]
           ]},
           { round: 4, results: [
-            ['A', 2, false],  // A: gets E's transfer, wins
-            ['D', 1, false]   // D: 1 vote, survives
+            ['A', 2, false],
+            ['D', 1, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('eliminates single candidate with 0 votes when others are tied with 1', async () => {
+    it('eliminates single candidate with 0 votes when others are tied', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C'])
         .withVotes([
-          ['A', 'C', 'B'],  // A first
-          ['C', 'A', 'B']   // C first, B has 0 votes
+          ['A', 'C', 'B'],
+          ['C', 'A', 'B']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives  
-            ['B', 0, true]    // B: 0 votes, eliminated first
+            ['A', 1, false],
+            ['C', 1, false],
+            ['B', 0, true]
           ]},
           { round: 2, results: [
-            ['C', 1, true],   // C: 1 vote, eliminated (alphabetically last)
-            ['A', 1, false]   // A: survives (alphabetical tiebreaker)
+            ['C', 1, true],
+            ['A', 1, false]
           ]},
           { round: 3, results: [
-            ['A', 2, false]   // A: gets C's transfer, wins
+            ['A', 2, false]
           ]}
         ])
         .expectWinner('A')
@@ -70,58 +73,60 @@ describe('Zero Vote Elimination Bug Fix', () => {
   })
 
   describe('Multiple Zero Vote Scenarios', () => {
-    it('eliminates all candidates with 0 votes when clear winner exists', async () => {
+    it('declares winner immediately when one candidate has all votes', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'B', 'C', 'D'],  // A first
-          ['A', 'C', 'D', 'B'],  // A first
-          ['A', 'D', 'B', 'C']   // A first - A has majority
+          ['A', 'B', 'C', 'D'],
+          ['A', 'C', 'D', 'B'],
+          ['A', 'D', 'B', 'C']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 3, false],  // A: 3 votes, wins immediately
-            ['B', 0, false],  // B: 0 votes but winner declared
-            ['C', 0, false],  // C: 0 votes but winner declared
-            ['D', 0, false]   // D: 0 votes but winner declared
+            ['A', 3, false],
+            ['B', 0, false],
+            ['C', 0, false],
+            ['D', 0, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('eliminates candidates with 0 votes in correct order when multiple rounds needed', async () => {
+    it('eliminates zero-vote candidates in correct order over multiple rounds', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
-          ['A', 'B', 'C', 'D', 'E'],  // A=1
-          ['C', 'A', 'B', 'D', 'E'],  // C=1  
-          ['D', 'A', 'C', 'B', 'E'],  // D=1
-          ['E', 'C', 'A', 'B', 'D']   // E=1, B=0 first place
+          ['A', 'B', 'C', 'D', 'E'],
+          ['C', 'A', 'B', 'D', 'E'],
+          ['D', 'A', 'C', 'B', 'E'],
+          ['E', 'C', 'A', 'B', 'D']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, false],  // D: 1 vote, survives
-            ['A', 1, false],  // A: 1 vote, survives
-            ['E', 1, false],  // E: 1 vote, survives
-            ['B', 0, true]    // B: 0 votes, eliminated first (lowest Borda)
+            ['C', 1, false],
+            ['D', 1, false],
+            ['A', 1, false],
+            ['E', 1, false],
+            ['B', 0, true]
           ]},
           { round: 2, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, false],  // D: 1 vote, survives
-            ['E', 1, true]    // E: eliminated (alphabetically last when tied)
+            ['A', 1, false],
+            ['C', 1, false],
+            ['D', 1, false],
+            ['E', 1, true]
           ]},
           { round: 3, results: [
-            ['A', 1, false],  // A: 1 vote, survives
-            ['C', 2, false],  // C: gets E's transfer, survives
-            ['D', 1, true]    // D: eliminated (alphabetically last when tied with A)
+            ['A', 1, false],
+            ['C', 2, false],
+            ['D', 1, true]
           ]},
           { round: 4, results: [
-            ['C', 2, true],   // C: eliminated (alphabetically last when tied)
-            ['A', 2, false]   // A: survives
+            ['C', 2, true],
+            ['A', 2, false]
           ]},
           { round: 5, results: [
-            ['A', 4, false]   // A: gets C's transfer, wins
+            ['A', 4, false]
           ]}
         ])
         .expectWinner('A')
@@ -130,45 +135,47 @@ describe('Zero Vote Elimination Bug Fix', () => {
   })
 
   describe('Edge Cases', () => {
-    it('handles single voter with some candidates getting 0 votes', async () => {
+    it('handles single voter with some candidates getting 0 votes', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C'])
         .withVotes([
-          ['A', 'B', 'C']  // Only A gets a vote
+          ['A', 'B', 'C']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 1, false],  // A: 1 vote, wins majority
-            ['B', 0, false],  // B: 0 votes
-            ['C', 0, false]   // C: 0 votes
+            ['A', 1, false],
+            ['B', 0, false],
+            ['C', 0, false]
           ]}
         ])
         .expectWinner('A')
         .run()
     })
 
-    it('eliminates candidates with partial rankings and 0 first-place votes', async () => {
+    it('handles partial rankings with zero first-place votes', async ({ skip }) => {
+      if (!apiUp) skip()
       await createPoll(['A', 'B', 'C', 'D'])
         .withVotes([
-          ['A', 'B'],        // A=1, B second, C and D unranked
-          ['C', 'D', 'A'],   // C=1, D second, A third, B unranked
-          ['D', 'A', 'C'],   // D=1, A second, C third, B unranked  
-          ['A', 'C', 'D']    // A=2, C second, D third, B unranked
+          ['A', 'B'],
+          ['C', 'D', 'A'],
+          ['D', 'A', 'C'],
+          ['A', 'C', 'D']
         ])
         .expectRounds([
           { round: 1, results: [
-            ['A', 2, false],  // A: 2 votes, survives (no majority with 4 votes)
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, false],  // D: 1 vote, survives
-            ['B', 0, true]    // B: 0 votes, eliminated (never ranked first)
+            ['A', 2, false],
+            ['C', 1, false],
+            ['D', 1, false],
+            ['B', 0, true]
           ]},
           { round: 2, results: [
-            ['A', 2, false],  // A: 2 votes, survives 
-            ['C', 1, false],  // C: 1 vote, survives
-            ['D', 1, true]    // D: 1 vote, eliminated (alphabetically last when tied with C)
+            ['A', 2, false],
+            ['C', 1, false],
+            ['D', 1, true]
           ]},
           { round: 3, results: [
-            ['A', 3, false],  // A: 3 votes, gets D's transfer (ballot 3: [D,A,C])
-            ['C', 1, false]   // C: 1 vote, survives
+            ['A', 3, false],
+            ['C', 1, false]
           ]}
         ])
         .expectWinner('A')

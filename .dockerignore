@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+server
+tests
+database
+scripts
+docs
+*.md
+.env*
+dev-server*.log

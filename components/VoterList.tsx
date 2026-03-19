@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { apiGetVotes } from '@/lib/api';
 
 interface Voter {
   id: string;
@@ -23,23 +23,13 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   const fetchVoters = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      const { data, error: fetchError } = await supabase
-        .from('votes')
-        .select('id, voter_name')
-        .eq('poll_id', pollId);
-
-      if (fetchError) {
-        throw fetchError;
-      }
-
-      if (data) {
-        setVoters(data);
-        // Count votes without names
-        const anonymousVotes = data.filter(vote => !vote.voter_name || vote.voter_name.trim() === '');
-        setAnonymousCount(anonymousVotes.length);
-      }
+      const votes = await apiGetVotes(pollId);
+      const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
+      setVoters(voterData);
+      const anonymousVotes = voterData.filter(vote => !vote.voter_name || vote.voter_name.trim() === '');
+      setAnonymousCount(anonymousVotes.length);
     } catch (err) {
       console.error('Error fetching voters:', err);
       setError('Failed to load voter list');
@@ -51,28 +41,12 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   useEffect(() => {
     if (pollId) {
       fetchVoters();
-      
-      // Set up real-time subscription for new votes
-      const channel = supabase
-        .channel(`votes:${pollId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
-            schema: 'public',
-            table: 'votes',
-            filter: `poll_id=eq.${pollId}`
-          },
-          (payload) => {
-            // Refetch voters when any vote changes
-            fetchVoters();
-          }
-        )
-        .subscribe();
-      
-      // Cleanup subscription on unmount
+
+      // Poll for changes every 10 seconds (no real-time subscription without Supabase)
+      const interval = setInterval(fetchVoters, 10000);
+
       return () => {
-        supabase.removeChannel(channel);
+        clearInterval(interval);
       };
     }
   }, [pollId]);

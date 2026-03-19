@@ -8,6 +8,100 @@
 - **Repository**: https://github.com/samcarey/whoeverwants
 - **License**: Dual MIT / Apache 2.0
 
+## Active Plan
+
+The Supabase-to-Python migration (Phases 1-6) is complete. The active plan for infrastructure improvements is in **[plan.md](./plan.md)**. Always consult that document at the start of a session to understand current work. See **[MIGRATION_PLAN.md](./MIGRATION_PLAN.md)** for migration history and lessons learned.
+
+## DigitalOcean Droplet (Production Server)
+
+The production server is a DigitalOcean droplet that Claude manages remotely. **You have full control of this server.**
+
+### Server Specs
+| Property | Value |
+|----------|-------|
+| Hostname | `whoeverwants` |
+| IP | `142.93.60.29` |
+| OS | Ubuntu 24.04 LTS |
+| RAM | 1 GB |
+| Disk | 24 GB |
+| User | `root` |
+| Purpose | Hosts the Python API server and PostgreSQL (API-only; frontend on Vercel) |
+
+### Remote Command Execution
+
+Run commands on the droplet from this environment using `scripts/remote.sh`:
+
+```bash
+# Basic usage
+bash scripts/remote.sh "command" [working_dir] [timeout_seconds]
+
+# Examples
+bash scripts/remote.sh "hostname && uptime"
+bash scripts/remote.sh "git pull" /root/whoeverwants
+bash scripts/remote.sh "docker compose up -d" /root/whoeverwants 180
+bash scripts/remote.sh "docker compose logs --tail 50" /root/whoeverwants
+bash scripts/remote.sh "systemctl status nginx"
+bash scripts/remote.sh "psql -U postgres -c 'SELECT 1'"
+```
+
+The script reads `DROPLET_API_URL` and `DROPLET_API_TOKEN` from environment variables (preferred) or falls back to `.env`.
+
+### Required Environment Variables
+
+The following environment variables must be available. In the Claude Code web environment, these are pre-set as environment variables (not in a `.env` file).
+
+```
+DROPLET_API_URL=https://142-93-60-29.sslip.io
+DROPLET_API_TOKEN=<bearer token>
+VERCEL_API_TOKEN=<vercel api token>
+```
+
+- `DROPLET_API_URL` / `DROPLET_API_TOKEN` — Authenticate requests to the droplet's command execution API (via sslip.io for TLS). Used by `scripts/remote.sh`.
+- `VERCEL_API_TOKEN` — Authenticate requests to the [Vercel REST API](https://vercel.com/docs/rest-api) for managing frontend deployments.
+
+> **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
+
+### Security Hardening
+
+The droplet is hardened with:
+- **UFW firewall**: Only ports 22 (SSH), 80 (HTTP), 443 (HTTPS) are open
+- **SSH**: Password auth disabled, key-only login (`PermitRootLogin prohibit-password`)
+- **cmd-api**: Request logging (timestamp, IP, command) and rate limiting (60 req/min per IP)
+- **FastAPI**: Rate limiting (120 GET/min, 30 POST/min per IP)
+- **Automated backups**: Daily pg_dump at 3 AM, 14-day retention
+- **Health checks**: Every 5 minutes with auto-recovery
+
+### Development Workflow
+
+**Frontend** (Next.js on Vercel):
+1. **Write code** in this environment (Claude Code sandbox)
+2. **Commit and push** to GitHub
+3. Vercel auto-deploys on push to `main`
+
+**Backend** (Python API on droplet):
+1. **Commit and push** to GitHub
+2. **Pull on droplet**: `bash scripts/remote.sh "git pull" /root/whoeverwants`
+3. **Build/restart services**: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
+4. **Check logs/debug**: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
+
+You do NOT need SSH — all server management goes through `scripts/remote.sh`.
+
+### Droplet Setup & Provisioning
+
+Full setup documentation is in **[docs/droplet-setup.md](./docs/droplet-setup.md)**. To provision a new droplet from scratch:
+
+```bash
+ssh root@<DROPLET_IP> 'bash -s' < scripts/provision-droplet.sh <API_TOKEN>
+```
+
+This installs Docker, Caddy, the command execution API, clones the repo, starts all services, and applies database migrations.
+
+### Important Notes
+- The droplet has its own clone of this repo at `/root/whoeverwants`
+- Never transfer files manually — commit here, pull there
+- The remote execution API has a configurable timeout (default 120s, max via 3rd arg)
+- The API returns stdout, stderr, and exit code for every command
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -15,8 +109,11 @@
 | Framework | Next.js 15.3.3 (App Router, `force-dynamic` routes) |
 | UI | React 18.3.1, Tailwind CSS 4, Geist font |
 | Language | TypeScript 5 (strict mode, `@/*` path alias) |
-| Database | Supabase (PostgreSQL with RLS, PostgREST API) |
+| Backend | Python (FastAPI), managed by **uv** |
+| Database | PostgreSQL 16 (local, via Docker) |
+| Python tooling | **uv** — package management, virtual environments, Python version management |
 | Unit tests | Vitest 3.2.4, Testing Library, jsdom |
+| Python tests | pytest (managed via uv) |
 | E2E tests | Playwright 1.55.0 (Chromium, Firefox, WebKit) |
 | CI | GitHub Actions (Node 18/20 matrix, lint, coverage) |
 | PWA | Service workers, manifest.json, Apple web app support |
@@ -101,7 +198,7 @@ whoeverwants/
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
 │
-├── database/migrations/            # 93 SQL migration files (001-063, up + down)
+├── database/migrations/            # SQL migration files (001-064, up + down)
 │   ├── 001-015: Core schema (polls, votes, results, ranked choice, RLS)
 │   ├── 016-041: Short IDs, poll access, nomination fields, RLS policies
 │   ├── 042-050: Nomination poll type, vote constraints, editing
@@ -209,6 +306,14 @@ npm run debug:react [id] [act] # Debug React component state
 
 # Deployment
 npm run publish                # Full workflow: commit, merge, push, migrate
+
+# Python Server (run from server/ directory)
+uv run pytest                  # Run Python tests
+uv run uvicorn main:app        # Run API server locally
+uv add <package>               # Add a dependency (always use latest version)
+uv add --dev <package>         # Add a dev dependency
+uv sync                        # Install all deps from lock file
+uv lock                        # Regenerate lock file
 ```
 
 ---
@@ -219,6 +324,28 @@ The sections below contain mandatory rules. Follow them exactly.
 
 - Never ask the user to look at the browser console. Instead, send logs to the server's `/api/log` endpoint and have them run the test manually, then analyze the resulting logs.
 - Never ask the user to check the browser console.
+- **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
+
+### Python Tooling: uv (Mandatory)
+
+**All Python package management and environment management MUST use [uv](https://docs.astral.sh/uv/).** Never use `pip`, `pip-compile`, `poetry`, `conda`, `pipenv`, or `venv` directly.
+
+- **Package management**: Use `pyproject.toml` (not `requirements.txt`). Manage deps with `uv add`, `uv remove`.
+- **Running commands**: Use `uv run` to execute Python scripts and tools (e.g., `uv run pytest`, `uv run uvicorn`).
+- **Lock file**: `uv.lock` is the lock file. Commit it to version control.
+- **Docker**: The Dockerfile installs uv and uses it to sync dependencies. Never use `pip install` in Dockerfiles.
+- **Version policy**: Before adding any new Python dependency, **always look up the latest version** (via web search or PyPI) and use that version. Do not guess or use outdated versions from memory.
+- **Local development**: Use `uv run` for all local Python commands. uv manages the virtual environment automatically.
+
+```bash
+# Examples
+uv add fastapi                  # Add a dependency (latest version)
+uv add --dev pytest             # Add a dev dependency
+uv remove somepackage           # Remove a dependency
+uv run pytest                   # Run tests
+uv run uvicorn main:app         # Run the server locally
+uv sync                         # Install all deps from lock file
+```
 
 ## URL Testing Protocol
 
@@ -649,13 +776,13 @@ UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
 | 042-050 | Nomination poll type, vote type constraints, nomination editing |
 | 051-056 | Participation poll type, min/max participants, auto-close triggers |
 | 057-063 | Voter conditions, conditional participation counting, priority algorithm |
+| 064 | Drop unused Supabase objects: poll_results view, 10 functions, trigger, RLS policies |
 
 ### Database Status
 
-| Database | Ref ID | Status |
-|----------|--------|--------|
-| Test | kfngceqepnzlljkwedtd | All 63 migrations applied |
-| Production | kifnvombihyfwszuwqvy | All 63 migrations applied |
+| Database | Status |
+|----------|--------|
+| DigitalOcean droplet (production) | All 64 migrations applied |
 
 ### Safety Guidelines
 
