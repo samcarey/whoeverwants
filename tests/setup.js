@@ -1,9 +1,5 @@
-import { config } from 'dotenv'
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
-
-// Load environment variables for tests
-config()
 
 // Set test environment
 process.env.NODE_ENV = 'test'

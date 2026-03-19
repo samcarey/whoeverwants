@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 3 in progress
+**Status**: Active — Phase 4 complete
 **Last updated**: 2026-03-19
-**Current phase**: Phase 3 (Cleanup) — removing Supabase dependencies
+**Current phase**: Phase 5 (Simplify Database Schema) — next up
 
 ---
 
@@ -163,7 +163,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 
 ---
 
-### Phase 3: Cleanup — IN PROGRESS
+### Phase 3: Cleanup ✓ COMPLETE
 **Goal**: Remove all Supabase dependencies.
 
 - [x] Remove `@supabase/supabase-js` from package.json
@@ -179,7 +179,41 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 - [x] Delete `update-sql-reverse-alpha.js` utility script
 - [x] Update test setup to remove Supabase env var requirements
 - [ ] Simplify DB to pure data storage (tables + indexes, no views/functions/triggers) — deferred
-- [ ] Rewrite unit tests to not depend on Supabase — deferred (tests already broken since Supabase deleted)
+- [x] Rewrite unit tests to not depend on Supabase
+
+---
+
+### Phase 4: Fix Test Suite
+**Goal**: Restore a working JavaScript test suite after removing Supabase.
+
+- [x] **Delete redundant algorithm tests** — `voting-algorithms/irv-incomplete-ballots.test.js` and `borda-count-compensation.test.js` tested Supabase SQL RPCs that no longer exist. Algorithm correctness is now covered by 120+ Python tests in `server/tests/`.
+- [x] **Rewrite test helpers** — `tests/helpers/database.js` provides API availability check + helpers. `tests/helpers/poll-builder.js` rewritten to use Python API via fetch instead of Supabase client.
+- [x] **Fix ranked-choice tests** — 5 test files updated to use API-based poll-builder. Tests skip gracefully when no API server is available (CI), run fully against a real server.
+- [x] **Fix ballot-logic tests** — Removed `supabase` imports. Pure JS validation tests work standalone. DB integration tests converted to use Python API with skip guard.
+- [x] **Fix integration tests** — `vote-retrieval.test.js` updated to mock API module instead of Supabase.
+- [x] **All pure JS tests pass** — `npm run test:run` succeeds in CI without requiring an API server.
+
+---
+
+### Phase 5: Simplify Database Schema
+**Goal**: Remove Supabase-specific views, functions, and triggers that are now handled in Python.
+
+- [ ] Audit DB for unused views, functions, triggers, and RLS policies
+- [ ] Create migration to drop unused DB objects
+- [ ] Verify all poll types still work E2E after simplification
+- [ ] Update migration docs
+
+---
+
+### Phase 6: Production Hardening
+**Goal**: Make the production deployment robust and maintainable.
+
+- [ ] Process management: systemd service for Next.js (replace bare process)
+- [ ] Log rotation for application logs
+- [ ] Automated database backups (pg_dump cron)
+- [ ] Health check monitoring / uptime alerts
+- [ ] Rate limiting on API endpoints
+- [ ] Update droplet-setup docs and provision script
 
 ---
 
@@ -234,6 +268,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2D complete | Deployed auto-close logic to droplet. Comprehensive E2E testing of all participation poll scenarios: basic 3-voter compatible constraints (all selected), conflicting constraints with priority algorithm (Bob+Charlie selected, Alice excluded for max=1), unsatisfiable conditions (yes_count=0), all-abstain (correct counts), auto-close trigger (poll closes at max_capacity, rejects subsequent votes). All 4 poll types now fully working through Python API. |
 | 2026-03-19 | Phase 2E complete | Related polls: bidirectional tree walk algorithm (18 tests), `POST /api/polls/related` endpoint, `pollDiscovery.ts` calls Python API directly. Removed last Supabase RPC call (`discover-related/route.ts`). Fixed `getParticipatingVoters` → `apiGetParticipants`. Verified E2E: parent + follow-up + fork chain discovered bidirectionally via public URL. Only type-only Supabase imports remain. |
 | 2026-03-19 | Phase 3 start | Removed `@supabase/supabase-js` dependency. Extracted types to `lib/types.ts`, deleted `lib/supabase.ts`, deleted Supabase-only API routes and debug page. Updated all 12 component/page imports. Cleaned up CI workflows (removed Supabase env vars and broken migration steps). Deleted legacy migration scripts and `supabase/` config directory. |
+| 2026-03-19 | Phase 4 complete | Rewrote JavaScript test suite to remove Supabase dependency. Deleted redundant `voting-algorithms/` tests (IRV incomplete ballots + Borda compensation — covered by 120+ Python tests). Rewrote `poll-builder.js` and `database.js` helpers to use Python API via fetch. All 14 test files pass: 87 tests pass, 59 skip gracefully (API-dependent tests need running server). Pure JS tests (validation, filtering, components, localStorage) run standalone. API integration tests auto-skip in CI. |
 
 ---
 
