@@ -2,9 +2,9 @@
 
 > This document tracks the migration from a Supabase-only architecture to a Python server + Postgres backend. It is automatically discovered by Claude sessions via the project root.
 
-**Status**: Active — Phase 2A (deploy complete, DNS pending)
+**Status**: Active — Phase 2A complete, starting Phase 2B
 **Last updated**: 2026-03-19
-**Current phase**: Phase 2A (Yes/No polls — deployed & tested, awaiting DNS cutover)
+**Current phase**: Phase 2A complete (Yes/No polls live on whoeverwants.com)
 
 ---
 
@@ -109,7 +109,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 #### Deploy & Test
 17. [x] **Deploy to droplet** — Python API in Docker, Next.js as systemd service (standalone build). Caddy routes `/api/polls` to Python, everything else to Next.js.
 18. [x] **End-to-end test** — Created yes/no poll via API, submitted 3 votes, verified results (67% yes, 33% no, winner: "yes"). Frontend serves poll page at `/p/{short_id}/`.
-19. [ ] **DNS cutover** — Update `whoeverwants.com` DNS A record to point to `157.245.129.162` (currently still pointing to Vercel).
+19. [x] **DNS cutover** — A record updated to `157.245.129.162`. Caddy auto-provisioned Let's Encrypt TLS cert. Site live at `https://whoeverwants.com`.
 
 ---
 
