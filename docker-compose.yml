@@ -27,16 +27,8 @@ services:
       db:
         condition: service_healthy
 
-  web:
-    build: .
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
-      PYTHON_API_URL: http://api:8000
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      - api
+  # Next.js frontend runs as a systemd service (not Docker) to avoid OOM on 1GB droplet
+  # See /etc/systemd/system/whoeverwants-web.service
 
 volumes:
   pgdata:

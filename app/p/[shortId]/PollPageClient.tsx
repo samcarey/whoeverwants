@@ -204,7 +204,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
       
-      const voteIds = [];
+      const voteIds: string[] = [];
       
       // Get vote ID from votedPolls format
       if (votedPolls[pollId]?.voteId) {
