@@ -20,7 +20,7 @@ import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import { Poll, PollResults } from "@/lib/supabase";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -287,8 +287,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       // For participation polls, also fetch the list of participating voters
       if (poll.poll_type === 'participation') {
-        const participatingIds = await getParticipatingVoters(poll.id);
-        setParticipatingVoterIds(participatingIds);
+        const participants = await apiGetParticipants(poll.id);
+        setParticipatingVoterIds(participants.map(p => p.vote_id));
       }
     } catch (error) {
       console.error('Error fetching poll results:', error);
