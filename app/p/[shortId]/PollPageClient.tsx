@@ -939,8 +939,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         await logToServer('nomination-vote', 'info', 'Nomination voteData created', voteData);
       }
 
-      let voteId;
-      let error;
+      let voteId: string | undefined;
+      let error: unknown;
 
 
       if (isEditingVote && userVoteId) {
@@ -1009,7 +1009,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       });
 
       setHasVoted(true);
-      setUserVoteId(voteId);
+      setUserVoteId(voteId ?? null);
       
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
