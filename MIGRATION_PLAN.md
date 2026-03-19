@@ -88,15 +88,15 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 1. [x] **Yes/No vote counting** — `server/algorithms/yes_no.py` + tests. Counts yes/no/abstain, calculates percentages, determines winner. 12 tests passing.
 
 #### API Endpoints
-2. [ ] **`POST /api/polls`** — Create a poll (all types, not just yes/no). Inserts into `polls` table, returns poll with `id` and `short_id`.
-3. [ ] **`GET /api/polls/{short_id}`** — Get poll by short ID. Returns poll data needed by `PollPageClient`.
-4. [ ] **`POST /api/polls/{id}/votes`** — Submit a vote. For yes/no: validates `yes_no_choice` ∈ {"yes", "no"} or `is_abstain=true`. Inserts into `votes` table.
-5. [ ] **`GET /api/polls/{id}/votes`** — Get votes for a poll (needed to check if current user already voted, and for voter list).
-6. [ ] **`PUT /api/polls/{id}/votes/{vote_id}`** — Edit an existing vote.
-7. [ ] **`GET /api/polls/{id}/results`** — Compute poll results using `count_yes_no_votes()`. Returns shape matching `PollResults` TypeScript interface.
-8. [ ] **`POST /api/polls/{id}/close`** — Close a poll (creator auth via `creator_secret`).
-9. [ ] **`POST /api/polls/{id}/reopen`** — Reopen a poll.
-10. [ ] **`GET /api/polls/accessible`** — List polls the user has access to (by poll IDs sent from client).
+2. [x] **`POST /api/polls`** — Create a poll (all types, not just yes/no). Inserts into `polls` table, returns poll with `id` and `short_id`.
+3. [x] **`GET /api/polls/by-short-id/{short_id}`** — Get poll by short ID. Returns poll data needed by `PollPageClient`.
+4. [x] **`POST /api/polls/{id}/votes`** — Submit a vote. For yes/no: validates `yes_no_choice` ∈ {"yes", "no"} or `is_abstain=true`. Inserts into `votes` table.
+5. [x] **`GET /api/polls/{id}/votes`** — Get votes for a poll (needed to check if current user already voted, and for voter list).
+6. [x] **`PUT /api/polls/{id}/votes/{vote_id}`** — Edit an existing vote.
+7. [x] **`GET /api/polls/{id}/results`** — Compute poll results using `count_yes_no_votes()`. Returns shape matching `PollResults` TypeScript interface.
+8. [x] **`POST /api/polls/{id}/close`** — Close a poll (creator auth via `creator_secret`).
+9. [x] **`POST /api/polls/{id}/reopen`** — Reopen a poll.
+10. [x] **`POST /api/polls/accessible`** — List polls the user has access to (by poll IDs sent from client).
 
 #### Frontend Migration
 11. [ ] **Add API client** — `lib/api.ts` with `fetch()`-based client pointing to Python API (replaces `supabase` client for migrated operations).
@@ -206,6 +206,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-18 | Phase 1 complete | Docker installed, `docker-compose.yml` created (Postgres 16 + FastAPI), repo cloned to droplet, all 74 migrations applied, Caddy configured to proxy `whoeverwants.com` → FastAPI, health check verified |
 | 2026-03-19 | Phase 2A start | Yes/No vote counting algorithm ported to Python (`server/algorithms/yes_no.py`, 12 tests passing). Fixed hatchling build config. Added Python `.gitignore` entries. |
 | 2026-03-19 | Plan revision | Restructured plan from horizontal layers (all algorithms → all API → all frontend) to **vertical slices** per poll type. Each feature gets algorithm + API + frontend done together so it can be tested end-to-end before moving on. |
+| 2026-03-19 | Phase 2A APIs | All 9 API endpoints implemented (`server/routers/polls.py`), with database module, Pydantic models, CORS middleware, and 32 integration tests. Deployed to droplet and verified all endpoints working. Fixed missing `short_id` column (migration 021 had failed silently). |
 
 ---
 
