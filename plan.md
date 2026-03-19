@@ -68,6 +68,29 @@ Droplet (142.93.60.29):
 
 ### Phase 7 Complete ✅
 
+### Session Notes (2026-03-19)
+
+**What was done this session:**
+1. Diagnosed Vercel deployment failures — all builds were ERROR due to "Vulnerable version of Next.js detected"
+2. Updated Next.js from 15.3.3 → 15.5.14 (latest 15.x patch) to fix multiple CVEs
+3. Verified Vercel preview build succeeded from feature branch
+4. User merged to `main` — production Vercel deploy now READY
+5. User updated DNS in AWS Route 53: `whoeverwants.com` A record → `76.76.21.21` (Vercel)
+6. Verified end-to-end: Vercel serving frontend, droplet serving API, CORS working
+
+**Current production architecture:**
+- `whoeverwants.com` → Vercel (76.76.21.21) — Next.js frontend, CDN, auto-TLS
+- `api.whoeverwants.com` → Droplet (142.93.60.29) — Caddy → FastAPI → PostgreSQL
+- Auto-deploy: push to `main` triggers Vercel production build
+- Vercel project ID: `prj_07PAXGI2wG74cGRKREB0BiIDUWSn`
+
+**Known issues / things to watch:**
+- Vercel preview deployments are behind SSO protection (can't test previews without auth)
+- `CORS allow-origin` is currently `*` (broad) — should be tightened to specific origins if needed
+- Next.js 16.x is available but would be a major version upgrade — staying on 15.x for stability
+
+**Next up:** Phase 8 — Preview Environments for Development
+
 ### Vercel CLI Access for Claude
 
 To let Claude Code sessions trigger deploys or check status:
@@ -211,15 +234,9 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ## Implementation Order
 
-### Phase 7 (do first)
-1. Connect GitHub repo to Vercel, configure build
-2. Add `api.whoeverwants.com` DNS + Caddy config
-3. Add `vercel.json` rewrites or update `lib/api.ts` to call API subdomain
-4. Update DNS: `whoeverwants.com` → Vercel
-5. Remove Next.js from droplet, update health checks and docs
-6. Verify all poll types work E2E
+### ~~Phase 7~~ ✅ COMPLETE
 
-### Phase 8 (do second)
+### Phase 8 (next)
 1. Add `*.api.whoeverwants.com` wildcard DNS
 2. Write `preview-manager.sh` (create/list/destroy)
 3. Update `lib/api.ts` to derive API URL from branch name in Vercel previews
