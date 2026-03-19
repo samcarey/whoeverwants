@@ -449,9 +449,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
             } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
-              setYesNoChoice(voteData.yes_no_choice);
+              setYesNoChoice(voteData.yes_no_choice as 'yes' | 'no');
             } else if (poll.poll_type === 'participation' && voteData.yes_no_choice) {
-              setYesNoChoice(voteData.yes_no_choice);
+              setYesNoChoice(voteData.yes_no_choice as 'yes' | 'no');
               // Load voter's participation conditions
               if (voteData.min_participants !== null && voteData.min_participants !== undefined) {
                 setVoterMinParticipants(voteData.min_participants);
