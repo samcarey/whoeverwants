@@ -132,6 +132,11 @@ class PollResultsResponse(BaseModel):
     ranked_choice_winner: str | None = None
 
 
+class ParticipantResponse(BaseModel):
+    vote_id: str
+    voter_name: str | None = None
+
+
 class RankedChoiceRoundResponse(BaseModel):
     round_number: int
     option_name: str

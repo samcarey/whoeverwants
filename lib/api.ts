@@ -192,6 +192,12 @@ export async function apiGetPollResults(pollId: string): Promise<PollResults & {
   return toPollResults(data);
 }
 
+// --- Participants ---
+
+export async function apiGetParticipants(pollId: string): Promise<{vote_id: string, voter_name: string | null}[]> {
+  return apiFetch(`/${encodeURIComponent(pollId)}/participants`);
+}
+
 // --- Poll management ---
 
 export async function apiClosePoll(pollId: string, creatorSecret: string, closeReason: string = 'manual'): Promise<Poll> {

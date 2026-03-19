@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { PollResults } from "@/lib/supabase";
-import { apiGetVotes } from "@/lib/api";
+import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import NominationsList from "./NominationsList";
 
@@ -188,9 +188,13 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
           setAllVoters([]);
         }
 
-        // TODO Phase 2D: Get the list of participating voters from the priority algorithm
-        // For now, participation priority is not available via the API
-        setParticipants([]);
+        // Fetch participating voters from the priority algorithm
+        const participantList = await apiGetParticipants(results.poll_id);
+        setParticipants(participantList.map(p => ({
+          id: p.vote_id,
+          voter_name: p.voter_name,
+          vote_id: p.vote_id,
+        })));
       } catch (err) {
         console.error('Error loading participants:', err);
         setParticipants([]);

@@ -10,6 +10,7 @@ from models import (
     ClosePollRequest,
     CreatePollRequest,
     EditVoteRequest,
+    ParticipantResponse,
     PollResponse,
     PollResultsResponse,
     RankedChoiceRoundResponse,
@@ -407,6 +408,32 @@ def get_results(poll_id: str):
         min_participants=poll.get("min_participants"),
         max_participants=poll.get("max_participants"),
     )
+
+
+@router.get("/{poll_id}/participants", response_model=list[ParticipantResponse])
+def get_participants(poll_id: str):
+    """Get the list of participating voters determined by the priority algorithm."""
+    with get_db() as conn:
+        poll = conn.execute(
+            "SELECT poll_type FROM polls WHERE id = %(poll_id)s",
+            {"poll_id": poll_id},
+        ).fetchone()
+        if not poll:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        if poll["poll_type"] != "participation":
+            return []
+
+        votes = conn.execute(
+            "SELECT * FROM votes WHERE poll_id = %(poll_id)s",
+            {"poll_id": poll_id},
+        ).fetchall()
+
+    vote_dicts = [dict(v) for v in votes]
+    participating = calculate_participating_voters(vote_dicts)
+    return [
+        ParticipantResponse(vote_id=p.vote_id, voter_name=p.voter_name)
+        for p in participating
+    ]
 
 
 # --- Poll management ---
