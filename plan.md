@@ -139,6 +139,14 @@ fix-voting-abc123       claude/fix-voting-bug-abc123     2026-03-19 14:00     (V
 
 Stop container, drop database, remove Caddy block, clean up worktree.
 
+### Developer Attribution via `GIT_AUTHOR_EMAIL`
+
+Each developer sets `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` as environment variables in their Claude Code session config. These are standard git env vars that override `git config` per-session.
+
+- Commits show the developer as **author** and Claude as **committer** — proper attribution for who directed vs. executed the work
+- If `GIT_AUTHOR_EMAIL` is unset or is `noreply@anthropic.com` (Claude's default), skip dev site deployment — there's no developer to associate it with
+- The dev preview URL is derived from the email: replace `@` with `-` → e.g. `sam-example.com.whoeverwants.com`
+
 ### Connecting Vercel Preview to Branch API
 
 The frontend needs to know which API to call. Options:
@@ -165,17 +173,23 @@ The frontend needs to know which API to call. Options:
 
 ### Claude Code Web Session Workflow
 
+Developers must set these env vars in their Claude Code session config:
+- `GIT_AUTHOR_NAME` — e.g. `Sam Carey`
+- `GIT_AUTHOR_EMAIL` — e.g. `sam@example.com`
+
 ```bash
 # 1. Push branch
 git push -u origin claude/my-feature-xyz
 
-# 2. Create preview API on droplet
+# 2. Create preview API on droplet (only if GIT_AUTHOR_EMAIL is set and not Claude's default)
+#    Skip if GIT_AUTHOR_EMAIL is unset or "noreply@anthropic.com"
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh create claude/my-feature-xyz" /root 300
 
 # 3. Vercel auto-deploys frontend preview (triggered by push)
+#    Dev site URL derived from GIT_AUTHOR_EMAIL: sam-example.com.whoeverwants.com
 # Output:
 #   API ready: https://my-feature-xyz.api.whoeverwants.com
-#   Frontend: check Vercel dashboard or use `vercel ls` for preview URL
+#   Frontend: https://sam-example.com.whoeverwants.com (or Vercel preview URL)
 ```
 
 ### Auto-Cleanup
