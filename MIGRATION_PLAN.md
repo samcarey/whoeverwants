@@ -99,12 +99,12 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 10. [x] **`POST /api/polls/accessible`** — List polls the user has access to (by poll IDs sent from client).
 
 #### Frontend Migration
-11. [ ] **Add API client** — `lib/api.ts` with `fetch()`-based client pointing to Python API (replaces `supabase` client for migrated operations).
-12. [ ] **Swap `getPollResults()`** — For yes/no polls, call Python API instead of Supabase `poll_results` view.
-13. [ ] **Swap `submitVote()`** — For yes/no polls, POST to Python API instead of Supabase.
-14. [ ] **Swap `createPoll()`** — POST to Python API.
-15. [ ] **Swap poll fetch** — `getPollById()` / `getPollByShortId()` via Python API.
-16. [ ] **Swap `closePoll()` / `reopenPoll()`** — via Python API.
+11. [x] **Add API client** — `lib/api.ts` with `fetch()`-based client pointing to Python API. Includes all CRUD operations, vote management, and results fetching.
+12. [x] **Swap `getPollResults()`** — `PollPageClient.tsx` now calls `apiGetPollResults()` instead of Supabase.
+13. [x] **Swap `submitVote()`** — Vote insert/edit in `PollPageClient.tsx` now uses `apiSubmitVote()` / `apiEditVote()`.
+14. [x] **Swap `createPoll()`** — `create-poll/page.tsx` now uses `apiCreatePoll()`.
+15. [x] **Swap poll fetch** — `page.tsx` uses `apiGetPollById()` / `apiGetPollByShortId()`. `simplePollQueries.ts` fully migrated.
+16. [x] **Swap `closePoll()` / `reopenPoll()`** — `PollPageClient.tsx` now uses `apiClosePoll()` / `apiReopenPoll()`.
 
 #### Deploy & Test
 17. [ ] **Deploy to droplet** — `git pull` + `docker compose up -d --build` on droplet.
@@ -207,6 +207,7 @@ Each algorithm gets its own Python module in `server/algorithms/` with a corresp
 | 2026-03-19 | Phase 2A start | Yes/No vote counting algorithm ported to Python (`server/algorithms/yes_no.py`, 12 tests passing). Fixed hatchling build config. Added Python `.gitignore` entries. |
 | 2026-03-19 | Plan revision | Restructured plan from horizontal layers (all algorithms → all API → all frontend) to **vertical slices** per poll type. Each feature gets algorithm + API + frontend done together so it can be tested end-to-end before moving on. |
 | 2026-03-19 | Phase 2A APIs | All 9 API endpoints implemented (`server/routers/polls.py`), with database module, Pydantic models, CORS middleware, and 32 integration tests. Deployed to droplet and verified all endpoints working. Fixed missing `short_id` column (migration 021 had failed silently). |
+| 2026-03-19 | Phase 2A Frontend | Created `lib/api.ts` fetch-based API client. Replaced ALL supabase calls in critical paths: `PollPageClient.tsx`, `create-poll/page.tsx`, `simplePollQueries.ts`, `VoterList.tsx`, `PollResults.tsx`, `FollowUpHeader.tsx`, `ForkHeader.tsx`, `CompactRankedChoiceResults.tsx`, `p/page.tsx`. Added Next.js rewrite proxy for dev. Real-time subscriptions replaced with polling. |
 
 ---
 

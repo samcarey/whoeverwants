@@ -33,6 +33,7 @@ export interface Poll {
   fork_of?: string;
   min_participants?: number;
   max_participants?: number;
+  short_id?: string;
 }
 
 export interface Vote {

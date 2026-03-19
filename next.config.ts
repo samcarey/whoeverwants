@@ -40,6 +40,26 @@ if (isGitHubPages) {
   nextConfig.output = 'export';
   nextConfig.basePath = process.env.PAGES_BASE_PATH || '';
 } else {
+  // In development, proxy /api/polls requests to the local Python API server
+  nextConfig.rewrites = async () => ({
+    beforeFiles: [],
+    afterFiles: [
+      {
+        source: '/api/polls',
+        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls`,
+      },
+      {
+        source: '/api/polls/',
+        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls`,
+      },
+      {
+        source: '/api/polls/:path*',
+        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls/:path*`,
+      },
+    ],
+    fallback: [],
+  });
+
   // Headers for tunnel compatibility and environment-specific caching
   // (not supported with static export)
   nextConfig.headers = async () => {

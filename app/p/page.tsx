@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
-import { supabase } from "@/lib/supabase";
+import { apiGetPollById } from "@/lib/api";
 
 export const dynamic = 'force-dynamic';
 
@@ -16,26 +16,16 @@ function PollRedirect() {
     async function handleRedirect() {
       if (id) {
         try {
-          // Try to get the poll to check if it has a short_id
-          const { data: poll, error } = await supabase
-            .from("polls")
-            .select("short_id")
-            .eq("id", id)
-            .single();
-
-          if (!error && poll?.short_id) {
-            // Redirect to new short URL format
+          const poll = await apiGetPollById(id);
+          if (poll?.short_id) {
             router.replace(`/p/${poll.short_id}`);
           } else {
-            // Fallback: redirect to UUID format (backward compatibility)
             router.replace(`/p/${id}`);
           }
         } catch (error) {
-          // If we can't fetch the poll, just redirect with the ID
           router.replace(`/p/${id}`);
         }
       } else {
-        // If no id, redirect to home
         router.replace('/');
       }
     }

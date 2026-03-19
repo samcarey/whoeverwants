@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { apiGetPollById } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 
 interface FollowUpHeaderProps {
@@ -27,18 +27,8 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
       }
 
       try {
-        const { data, error } = await supabase
-          .from('polls')
-          .select('title, id')
-          .eq('id', followUpToPollId)
-          .single();
-
-        if (error || !data) {
-          console.error('Error fetching original poll:', error);
-          setError(true);
-        } else {
-          setOriginalPollTitle(data.title);
-        }
+        const data = await apiGetPollById(followUpToPollId);
+        setOriginalPollTitle(data.title);
       } catch (err) {
         console.error('Error fetching original poll:', err);
         setError(true);

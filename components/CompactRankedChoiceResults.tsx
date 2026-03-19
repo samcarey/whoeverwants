@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
+import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
+import { apiGetVotes } from "@/lib/api";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
@@ -58,21 +59,18 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         const roundData = await getRankedChoiceRounds(results.poll_id);
         
         // Check if there are any non-abstain votes
-        const { data: voteData, error: voteError } = await supabase
-          .from('votes')
-          .select('is_abstain')
-          .eq('poll_id', results.poll_id)
-          .eq('vote_type', 'ranked_choice');
-        
-        if (!voteError && voteData) {
-          const hasNonAbstainVotes = voteData.some(vote => !vote.is_abstain);
-          
-          // If there are only abstain votes, show a special message
-          if (!hasNonAbstainVotes && voteData.length > 0) {
+        try {
+          const allVotes = await apiGetVotes(results.poll_id);
+          const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
+          const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain);
+
+          if (!hasNonAbstainVotes && rankedVotes.length > 0) {
             setRoundVisualizations([]);
             setLoading(false);
             return;
           }
+        } catch (voteError) {
+          console.error('Error checking votes:', voteError);
         }
         
         // Group rounds by round number
@@ -472,23 +470,9 @@ function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationPro
   useEffect(() => {
     async function fetchBordaScores() {
       try {
-        const { data, error } = await supabase
-          .from('ranked_choice_rounds')
-          .select('option_name, borda_score, is_eliminated, tie_broken_by_borda')
-          .eq('poll_id', pollId)
-          .eq('round_number', roundNumber)
-          .eq('tie_broken_by_borda', true)
-          .order('borda_score', { ascending: false });
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          setBordaData(data.map(d => ({
-            name: d.option_name,
-            borda_score: d.borda_score || 0,
-            is_eliminated: d.is_eliminated
-          })));
-        }
+        // TODO Phase 2C: Add API endpoint for ranked choice rounds with Borda scores
+        // For now, Borda tiebreak details are not available via the API
+        setBordaData([]);
       } catch (error) {
         console.error('Error fetching Borda scores:', error);
       } finally {

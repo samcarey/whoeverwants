@@ -19,7 +19,8 @@ import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
-import { Poll, supabase, PollResults, getPollResults, getParticipatingVoters, closePoll, reopenPoll } from "@/lib/supabase";
+import { Poll, PollResults, getParticipatingVoters } from "@/lib/supabase";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, ApiVote } from "@/lib/api";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -222,14 +223,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
 
-      // Fetch all votes by these IDs
-      const { data: userVotes, error } = await supabase
-        .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants')
-        .in('id', voteIds)
-        .eq('poll_id', pollId);
+      // Fetch all votes for this poll and filter by localStorage IDs
+      const allPollVotes = await apiGetVotes(pollId);
+      const userVotes = allPollVotes.filter(v => voteIds.includes(v.id));
 
-      if (error || !userVotes || userVotes.length === 0) {
+      if (userVotes.length === 0) {
         return null;
       }
 
@@ -265,21 +263,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const fetchVoteData = useCallback(async (voteId: string) => {
 
     try {
-      const { data, error } = await supabase
-        .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants')
-        .eq('id', voteId)
-        .single();
-
-      if (error) {
-        return null;
-      }
-
-      return data || null;
+      const allVotes = await apiGetVotes(poll.id);
+      const vote = allVotes.find(v => v.id === voteId);
+      return vote || null;
     } catch (error) {
       return null;
     }
-  }, []);
+  }, [poll.id]);
 
   // Fetch and aggregate all user vote data for this poll (for newly created polls)
   const fetchLatestUserVote = useCallback(async (pollId: string) => {
@@ -292,7 +282,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const fetchPollResults = useCallback(async () => {
     setLoadingResults(true);
     try {
-      const results = await getPollResults(poll.id);
+      const results = await apiGetPollResults(poll.id);
       setPollResults(results);
 
       // For participation polls, also fetch the list of participating voters
@@ -322,20 +312,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Load existing nominations from other votes
   const loadExistingNominations = async (excludeUserVote = false) => {
     try {
-      // Force fresh data by adding a timestamp to bypass any caching
-      const { data: votes, error } = await supabase
-        .from('votes')
-        .select('id, nominations, voter_name, created_at, is_abstain')
-        .eq('poll_id', poll.id)
-        .not('nominations', 'is', null)
-        .eq('is_abstain', false)  // Only get non-abstaining votes
-        .order('created_at', { ascending: false })
-        .limit(100); // Add limit to ensure fresh query
-
-      if (error) {
-        console.error('Error loading existing nominations:', error);
-        return;
-      }
+      // Fetch all votes and filter for nomination votes with nominations
+      const allVotes = await apiGetVotes(poll.id);
+      const votes = allVotes
+        .filter(v => v.nominations && v.nominations.length > 0 && !v.is_abstain)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 100);
 
       // Debug logging to understand what votes we're getting
       console.log('[DEBUG] loadExistingNominations - fetched votes:', votes);
@@ -521,18 +503,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     async function fetchFollowUpPolls() {
       try {
         setLoadingFollowUps(true);
-        const { data, error } = await supabase
-          .from('polls')
-          .select('*')
-          .eq('follow_up_to', poll.id)
-          .order('created_at', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching follow-up polls:', error);
-          return;
-        }
-
-        setFollowUpPolls(data || []);
+        // TODO Phase 2E: Add a dedicated endpoint for fetching follow-up polls
+        // For now, this feature is not available until the related polls API is built
+        setFollowUpPolls([]);
       } catch (error) {
         console.error('Unexpected error fetching follow-up polls:', error);
       } finally {
@@ -552,23 +525,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     setLoadingNominations(true);
     try {
-      const { data: votes, error } = await supabase
-        .from('votes')
-        .select('nominations')
-        .eq('poll_id', poll.id)
-        .eq('vote_type', 'nomination')
-        .eq('is_abstain', false)
-        .not('nominations', 'is', null);
-
-      if (error) {
-        console.error('Error fetching nominations:', error);
-        setNominations([]);
-        return;
-      }
+      const allVotes = await apiGetVotes(poll.id);
+      const nominationVotes = allVotes.filter(v =>
+        v.vote_type === 'nomination' && !v.is_abstain && v.nominations && v.nominations.length > 0
+      );
 
       // Collect all unique nominations
       const nominationSet = new Set<string>();
-      votes?.forEach(vote => {
+      nominationVotes.forEach(vote => {
         if (vote.nominations && Array.isArray(vote.nominations)) {
           vote.nominations.forEach((nom: any) => {
             const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
@@ -621,19 +585,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {
     
-    let realtimeWorking = false;
     let pollInterval: NodeJS.Timeout | null = null;
     
-    // Polling fallback function
+    // Polling fallback function — polls the Python API for status changes
     const pollForChanges = async () => {
       try {
-        const { data, error } = await supabase
-          .from('polls')
-          .select('is_closed')
-          .eq('id', poll.id)
-          .single();
-        
-        if (data && data.is_closed && !pollClosed) {
+        const pollData = await apiGetPollById(poll.id);
+
+        if (pollData && pollData.is_closed && !pollClosed) {
           setPollClosed(true);
           setManuallyReopened(false); // Reset flag when closed
           fetchPollResults();
@@ -642,70 +601,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         console.error('Polling error:', error);
       }
     };
-    
-    const subscription = supabase
-      .channel(`poll-changes-${poll.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'polls',
-          filter: `id=eq.${poll.id}`,
-        },
-        (payload) => {
-          
-          // Check if the poll was manually closed
-          if (payload.new && payload.new.is_closed && !pollClosed) {
-            setPollClosed(true);
-            setManuallyReopened(false); // Reset flag when closed by someone else
-            fetchPollResults();
-          } else if (payload.new && payload.new.is_closed && pollClosed) {
-          } else if (payload.new && !payload.new.is_closed) {
-          }
-          
-          // Also handle other potential updates like title changes
-          if (payload.new && payload.old) {
-            const changedFields = Object.keys(payload.new).filter(key => 
-              payload.new[key] !== payload.old[key]
-            );
-            
-            // Log specific field changes
-            changedFields.forEach(field => {
-            });
-          }
-        }
-      )
-      .subscribe((status: any) => {
-        
-        // Status is either a string or an object with status property
-        const statusValue = typeof status === 'string' ? status : status?.status;
-        
-        if (statusValue === 'SUBSCRIBED') {
-          realtimeWorking = true;
-          
-          // Clear polling if real-time is working
-          if (pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-          }
-        } else if (statusValue === 'CHANNEL_ERROR') {
-          
-          // Start polling as fallback (every 2 seconds)
-          if (!pollInterval && !pollClosed) {
-            pollInterval = setInterval(pollForChanges, 2000);
-            // Check immediately as well
-            pollForChanges();
-          }
-        } else if (statusValue === 'TIMED_OUT') {
-        } else if (statusValue === 'CLOSED') {
-        }
-      });
+
+    // No real-time subscription — use polling to detect status changes
+    if (!pollClosed) {
+      pollInterval = setInterval(pollForChanges, 5000);
+      pollForChanges(); // Check immediately
+    }
 
     return () => {
-      subscription.unsubscribe();
-      
-      // Clean up polling interval
       if (pollInterval) {
         clearInterval(pollInterval);
       }
@@ -799,17 +702,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const success = await closePoll(poll.id, secretToUse);
-      if (success) {
-        // Refetch the poll data to get the updated is_closed value
-        const { data: updatedPoll, error } = await supabase
-          .from("polls")
-          .select("*")
-          .eq("id", poll.id)
-          .single();
-        
-        // Poll updated successfully
-        
+      const updatedPoll = await apiClosePoll(poll.id, secretToUse);
+      if (updatedPoll) {
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
         await fetchPollResults();
@@ -841,16 +735,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const success = await reopenPoll(poll.id, secretToUse);
-      if (success) {
-        // Refetch the poll data to get the updated is_closed value
-        const { data: updatedPoll, error } = await supabase
-          .from("polls")
-          .select("*")
-          .eq("id", poll.id)
-          .single();
-        
-        // Poll updated successfully
+      const updatedPoll = await apiReopenPoll(poll.id, secretToUse);
+      if (updatedPoll) {
         setPollClosed(false);
         setManuallyReopened(true); // Set flag to override deadline expiration
         setPollResults(null); // Clear results since poll is now open
@@ -1071,94 +957,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         
         
-        // Update existing vote
-        const { error: updateError, data: returnedData } = await supabase
-          .from('votes')
-          .update(updateData)
-          .eq('id', userVoteId)
-          .select(); // Add select to see what was updated
+        // Update existing vote via API
+        try {
+          const returnedVote = await apiEditVote(poll.id, userVoteId, updateData);
+          voteId = userVoteId;
 
-
-        error = updateError;
-        voteId = userVoteId;
-        
-        // Log the update response for debugging
-        await logToServer('nomination-vote', 'info', 'Vote update response', {
-          updateError,
-          returnedDataExists: !!returnedData,
-          returnedDataLength: returnedData?.length,
-          returnedData: returnedData
-        });
-
-        // Update local userVoteData with the actual returned data from database
-        if (!updateError && returnedData && returnedData.length > 0) {
-          // Use the actual data returned from the database, not the local voteData
-          setUserVoteData(returnedData[0]);
-        } else if (updateError) {
-          // Only show error if there was an actual database error
-          setVoteError("Failed to update vote. Please try again.");
-        } else {
-          // Update succeeded but no data returned - this is actually okay for updates
-          // Manually construct the updated vote data and set it in state
-          await logToServer('nomination-vote', 'info', 'Update succeeded but no returned data, manually updating state', {
-            voteData,
-            userVoteId
+          await logToServer('nomination-vote', 'info', 'Vote update response', {
+            returnedVote
           });
 
-          // Construct the updated vote object based on what we sent
-          const updatedVote = {
-            id: userVoteId,
-            poll_id: poll.id,
-            vote_type: poll.poll_type,
-            ...updateData // This contains the updated fields
-          };
-
-          setUserVoteData(updatedVote);
-
-          // CRITICAL FIX: When RLS blocks UPDATE response, immediately refresh results
-          // This ensures deleted nominations (abstained votes) are removed from display
-          if (poll.poll_type === 'nomination') {
-            await fetchPollResults();
-          }
+          setUserVoteData(returnedVote);
+        } catch (updateErr: any) {
+          error = updateErr;
+          voteId = userVoteId;
+          setVoteError("Failed to update vote. Please try again.");
         }
       } else {
         await logToServer('nomination-vote', 'info', 'Attempting to insert new vote', { voteData });
 
-        // Insert new vote
-        const { data: insertedVote, error: insertError } = await supabase
-          .from('votes')
-          .insert([voteData])
-          .select('id')
-          .single();
+        // Insert new vote via API
+        try {
+          const insertedVote = await apiSubmitVote(poll.id, voteData);
+          voteId = insertedVote.id;
 
-        error = insertError;
-        voteId = insertedVote?.id;
-
-        await logToServer('nomination-vote', 'info', 'Database insert result', {
-          insertedVote,
-          insertError,
-          voteId,
-          hasError: !!insertError
-        });
-
-        if (insertError) {
-          const detailedError = {
-            error: insertError,
-            message: insertError.message,
-            details: insertError.details,
-            hint: insertError.hint,
-            code: insertError.code
-          };
-          console.error('Detailed insert error:', detailedError);
-          await logToServer('nomination-vote', 'error', 'Database insert error', detailedError);
-        }
-
-        if (!voteId && !insertError) {
-          await logToServer('nomination-vote', 'error', 'No vote ID returned but no error', { insertedVote, insertError });
-          setVoteError("Failed to submit vote. Please try again.");
-          return;
-        } else {
           await logToServer('nomination-vote', 'info', 'Vote insert successful', { voteId });
+        } catch (insertErr: any) {
+          error = insertErr;
+          console.error('Vote insert error:', insertErr);
+          await logToServer('nomination-vote', 'error', 'Database insert error', {
+            message: insertErr.message
+          });
         }
       }
 
@@ -1166,10 +994,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         await logToServer('nomination-vote', 'error', 'Vote submission error', {
           error,
           voteData,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
+          message: error.message
         });
         console.error('Error submitting vote:', error);
         console.error('Vote data that failed:', voteData);

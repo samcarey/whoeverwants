@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds, supabase } from "@/lib/supabase";
+import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
+import { apiGetVotes } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import NominationsList from "./NominationsList";
 
@@ -367,17 +368,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     const fetchParticipants = async () => {
       try {
         // Get all voters to establish consistent color mapping
-        const { data: votersData, error: votersError } = await supabase
-          .from('votes')
-          .select('id, voter_name')
-          .eq('poll_id', results.poll_id);
-
-        if (votersError) {
-          console.error('Error fetching all voters:', votersError);
-          setAllVoters([]);
-        } else {
-          // Sort voters alphabetically by name (same as VoterList)
-          const sortedVoters = (votersData || [])
+        try {
+          const allVotes = await apiGetVotes(results.poll_id);
+          const sortedVoters = allVotes
             .filter(v => v.voter_name && v.voter_name.trim() !== '')
             .sort((a, b) => {
               const nameA = (a.voter_name || '').toLowerCase();
@@ -385,23 +378,14 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               return nameA.localeCompare(nameB);
             });
           setAllVoters(sortedVoters);
+        } catch (votersError) {
+          console.error('Error fetching all voters:', votersError);
+          setAllVoters([]);
         }
 
-        // Get the list of participating voters from the priority algorithm
-        const { data, error } = await supabase
-          .rpc('calculate_participating_voters', { poll_id_param: results.poll_id });
-
-        if (error) {
-          console.error('Error fetching participants:', error);
-          setParticipants([]);
-        } else {
-          // Map the result to match expected format
-          setParticipants((data || []).map((p: any) => ({
-            id: p.vote_id,
-            voter_name: p.voter_name,
-            vote_id: p.vote_id
-          })));
-        }
+        // TODO Phase 2D: Get the list of participating voters from the priority algorithm
+        // For now, participation priority is not available via the API
+        setParticipants([]);
       } catch (err) {
         console.error('Error loading participants:', err);
         setParticipants([]);
@@ -722,21 +706,11 @@ function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClic
   useEffect(() => {
     const loadNominations = async () => {
       try {
-        // Fetch all nominations from votes for this poll
-        const { data: votes, error } = await supabase
-          .from('votes')
-          .select('nominations, is_abstain, id, created_at')
-          .eq('poll_id', results.poll_id)
-          .eq('vote_type', 'nomination')
-          .eq('is_abstain', false)  // Only count non-abstaining votes
-          .not('nominations', 'is', null)
-          .order('created_at', { ascending: false }); // Order by most recent first
-
-        if (error) {
-          console.error('Error fetching nominations:', error);
-          setNominations([]);
-          return;
-        }
+        // Fetch all votes and filter for nomination votes
+        const allVotes = await apiGetVotes(results.poll_id);
+        const votes = allVotes
+          .filter(v => v.vote_type === 'nomination' && !v.is_abstain && v.nominations && v.nominations.length > 0)
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
         // Count each nomination
         const nominationMap = new Map<string, number>();
