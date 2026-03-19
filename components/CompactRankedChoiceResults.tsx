@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { PollResults, RankedChoiceRound, getRankedChoiceRounds } from "@/lib/supabase";
-import { apiGetVotes } from "@/lib/api";
+import { PollResults, RankedChoiceRound } from "@/lib/supabase";
+import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
@@ -26,6 +26,7 @@ interface RoundVisualization {
   }>;
   eliminatedCandidates: string[];
   userPreference?: string;
+  roundEntries?: RankedChoiceRound[];
 }
 
 export default function CompactRankedChoiceResults({ results, isPollClosed, userVoteData, onFollowUpClick }: CompactRankedChoiceResultsProps) {
@@ -56,23 +57,43 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
   useEffect(() => {
     async function fetchAndProcessData() {
       try {
-        const roundData = await getRankedChoiceRounds(results.poll_id);
-        
-        // Check if there are any non-abstain votes
-        try {
-          const allVotes = await apiGetVotes(results.poll_id);
-          const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
-          const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain);
+        // Get ranked choice rounds from the results object (populated by Python API)
+        const apiRounds: ApiRankedChoiceRound[] = (results as any).ranked_choice_rounds || [];
 
-          if (!hasNonAbstainVotes && rankedVotes.length > 0) {
-            setRoundVisualizations([]);
-            setLoading(false);
-            return;
+        // If no rounds data, check if all votes are abstains
+        if (apiRounds.length === 0) {
+          try {
+            const allVotes = await apiGetVotes(results.poll_id);
+            const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
+            const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain);
+
+            if (!hasNonAbstainVotes && rankedVotes.length > 0) {
+              setRoundVisualizations([]);
+              setLoading(false);
+              return;
+            }
+          } catch (voteError) {
+            console.error('Error checking votes:', voteError);
           }
-        } catch (voteError) {
-          console.error('Error checking votes:', voteError);
+
+          setRoundVisualizations([]);
+          setLoading(false);
+          return;
         }
-        
+
+        // Convert API rounds to RankedChoiceRound format for compatibility
+        const roundData: RankedChoiceRound[] = apiRounds.map((r, idx) => ({
+          id: `${r.round_number}-${r.option_name}`,
+          poll_id: results.poll_id,
+          round_number: r.round_number,
+          option_name: r.option_name,
+          vote_count: r.vote_count,
+          is_eliminated: r.is_eliminated,
+          created_at: '',
+          borda_score: r.borda_score ?? undefined,
+          tie_broken_by_borda: r.tie_broken_by_borda,
+        }));
+
         // Group rounds by round number
         const roundsByNumber = roundData.reduce((acc, round) => {
           if (!acc[round.round_number]) acc[round.round_number] = [];
@@ -176,7 +197,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
             title: roundNum === totalRounds ? 'Final Result' : `Round ${roundNum} of ${totalRounds}`,
             candidates,
             eliminatedCandidates,
-            userPreference
+            userPreference,
+            roundEntries: currentRoundData,
           });
           
           // Update eliminated list for next round
@@ -443,9 +465,10 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 
                 {/* Show Borda count explanation when tie-breaking occurs */}
                 {hasBordaTieBreaking && (
-                  <BordaCountExplanation 
+                  <BordaCountExplanation
                     pollId={results.poll_id}
                     roundNumber={currentRound.roundNumber}
+                    roundEntries={currentRound.roundEntries}
                   />
                 )}
               </React.Fragment>
@@ -461,29 +484,20 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 interface BordaCountExplanationProps {
   pollId: string;
   roundNumber: number;
+  roundEntries?: RankedChoiceRound[];
 }
 
-function BordaCountExplanation({ pollId, roundNumber }: BordaCountExplanationProps) {
-  const [bordaData, setBordaData] = useState<Array<{name: string, borda_score: number, is_eliminated: boolean}>>([]);
-  const [loading, setLoading] = useState(true);
+function BordaCountExplanation({ pollId, roundNumber, roundEntries }: BordaCountExplanationProps) {
+  // Extract Borda data from round entries that have tie_broken_by_borda flag
+  const bordaData = (roundEntries || [])
+    .filter(r => r.tie_broken_by_borda && r.borda_score !== undefined)
+    .map(r => ({
+      name: r.option_name,
+      borda_score: r.borda_score || 0,
+      is_eliminated: r.is_eliminated,
+    }));
 
-  useEffect(() => {
-    async function fetchBordaScores() {
-      try {
-        // TODO Phase 2C: Add API endpoint for ranked choice rounds with Borda scores
-        // For now, Borda tiebreak details are not available via the API
-        setBordaData([]);
-      } catch (error) {
-        console.error('Error fetching Borda scores:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchBordaScores();
-  }, [pollId, roundNumber]);
-
-  if (loading || bordaData.length === 0) return null;
+  if (bordaData.length === 0) return null;
 
   // Find the eliminated candidate and the survivor(s)
   const eliminatedCandidate = bordaData.find(c => c.is_eliminated);

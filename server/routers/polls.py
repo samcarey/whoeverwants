@@ -12,11 +12,13 @@ from models import (
     EditVoteRequest,
     PollResponse,
     PollResultsResponse,
+    RankedChoiceRoundResponse,
     ReopenPollRequest,
     SubmitVoteRequest,
     VoteResponse,
 )
 from algorithms.nomination import count_nomination_votes
+from algorithms.ranked_choice import calculate_ranked_choice_winner
 from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.yes_no import count_yes_no_votes
 
@@ -320,6 +322,43 @@ def get_results(poll_id: str):
                 {"option": nc.option, "count": nc.count}
                 for nc in result.nomination_counts
             ],
+        )
+
+    if poll_type == "ranked_choice":
+        import json
+        raw_options = poll.get("options")
+        poll_options = None
+        if raw_options:
+            poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        result = calculate_ranked_choice_winner(votes, poll_options or [])
+
+        # Build round response objects
+        rc_rounds = []
+        for round_idx, round_entries in enumerate(result.rounds):
+            for entry in round_entries:
+                rc_rounds.append(RankedChoiceRoundResponse(
+                    round_number=round_idx + 1,
+                    option_name=entry.option_name,
+                    vote_count=entry.vote_count,
+                    is_eliminated=entry.is_eliminated,
+                    borda_score=entry.borda_score,
+                    tie_broken_by_borda=entry.tie_broken_by_borda,
+                ))
+
+        return PollResultsResponse(
+            poll_id=str(poll["id"]),
+            title=poll["title"],
+            poll_type=poll_type,
+            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
+            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
+            options=poll_options,
+            total_votes=len(votes),
+            min_participants=poll.get("min_participants"),
+            max_participants=poll.get("max_participants"),
+            winner=result.winner,
+            ranked_choice_winner=result.winner,
+            ranked_choice_rounds=rc_rounds,
         )
 
     # For other poll types, return basic structure (to be extended in later phases)

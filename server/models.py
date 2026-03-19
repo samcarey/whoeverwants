@@ -128,3 +128,14 @@ class PollResultsResponse(BaseModel):
     min_participants: int | None = None
     max_participants: int | None = None
     nomination_counts: list[NominationCountResponse] | None = None
+    ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
+    ranked_choice_winner: str | None = None
+
+
+class RankedChoiceRoundResponse(BaseModel):
+    round_number: int
+    option_name: str
+    vote_count: int
+    is_eliminated: bool
+    borda_score: int | None = None
+    tie_broken_by_borda: bool = False

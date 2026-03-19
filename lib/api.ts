@@ -84,7 +84,7 @@ function toPoll(data: any): Poll {
   };
 }
 
-function toPollResults(data: any): PollResults {
+function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string } {
   return {
     poll_id: data.poll_id,
     title: data.title,
@@ -101,7 +101,20 @@ function toPollResults(data: any): PollResults {
     min_participants: data.min_participants ?? undefined,
     max_participants: data.max_participants ?? undefined,
     nomination_counts: data.nomination_counts ?? undefined,
+    ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
+    ranked_choice_winner: data.ranked_choice_winner ?? undefined,
   };
+}
+
+// --- Ranked choice round type from API ---
+
+export interface ApiRankedChoiceRound {
+  round_number: number;
+  option_name: string;
+  vote_count: number;
+  is_eliminated: boolean;
+  borda_score: number | null;
+  tie_broken_by_borda: boolean;
 }
 
 // --- Poll CRUD ---
@@ -174,7 +187,7 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
 
 // --- Results ---
 
-export async function apiGetPollResults(pollId: string): Promise<PollResults> {
+export async function apiGetPollResults(pollId: string): Promise<PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string }> {
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/results`);
   return toPollResults(data);
 }
