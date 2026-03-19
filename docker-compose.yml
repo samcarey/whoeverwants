@@ -27,5 +27,16 @@ services:
       db:
         condition: service_healthy
 
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PYTHON_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
 volumes:
   pgdata:

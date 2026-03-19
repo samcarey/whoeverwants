@@ -39,6 +39,9 @@ const nextConfig: NextConfig = {
 if (isGitHubPages) {
   nextConfig.output = 'export';
   nextConfig.basePath = process.env.PAGES_BASE_PATH || '';
+} else if (process.env.NEXT_OUTPUT === 'standalone') {
+  // Docker production build: standalone output for minimal image size
+  nextConfig.output = 'standalone';
 } else {
   // In development, proxy /api/polls requests to the local Python API server
   nextConfig.rewrites = async () => ({
