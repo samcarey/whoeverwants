@@ -236,7 +236,9 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ### ~~Phase 7~~ ✅ COMPLETE
 
-### Phase 8 ✅ COMPLETE
+### ~~Phase 8~~ ✅ COMPLETE
+
+### ~~Phase 9~~ ✅ COMPLETE (CI Fixes — PR #7)
 1. ~~Add `*.api.whoeverwants.com` wildcard DNS~~ ✅ DONE
    - Wildcard A record added in AWS Route 53: `*.api.whoeverwants.com` → `142.93.60.29`
    - Verified: `test-preview.api.whoeverwants.com` resolves correctly
@@ -263,21 +265,60 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ---
 
+## Phase 9: Fix GitHub PR CI Checks ✅ COMPLETE
+
+**Goal**: Get all GitHub Actions CI checks passing so PRs can be merged with confidence.
+
+### Issues Found & Fixed (PR #7)
+
+1. **Vitest coverage provider (`c8` → `v8`)**
+   - `npm run test:coverage` failed with `Failed to load custom CoverageProviderModule from undefined`
+   - Root cause: vitest 3.x deprecated the `c8` provider
+   - Fix: Changed `vitest.config.js` provider to `v8`, added `@vitest/coverage-v8` as devDependency
+
+2. **GitHub Pages static export (`"use client"` + `generateStaticParams` conflict)**
+   - `deploy-dev.yml` appended `generateStaticParams()` to `app/p/[shortId]/page.tsx`, but that file has `"use client"` — Next.js doesn't allow both
+   - Attempted fixes: re-exporting client component from server wrapper (Next.js still couldn't find the export), `printf` replacement (file was written correctly but Next.js still didn't pick it up — possibly a Next.js static analysis quirk)
+   - Final fix: delete the dynamic `[shortId]` route entirely during static export — GitHub Pages SPA fallback (404.html) handles client-side routing anyway
+
+3. **PR comment permissions**
+   - `pr-checks.yml` quality-gate job failed on "Comment PR with test results" with `Resource not accessible by integration`
+   - Fix: Added `permissions: pull-requests: write` to the workflow
+
+4. **GitHub Pages deploy restricted to `main` branch**
+   - The `deploy` step always failed on feature branches because the `github-pages` environment only allows deployments from `main`
+   - Fix: Changed `deploy-dev.yml` trigger from `branches: ['**']` to `branches: [main]`
+
+### Lessons Learned
+
+- **Vitest 3.x requires `@vitest/coverage-v8`** — the old `c8` provider is gone. Always match the coverage package version to the vitest major version.
+- **Next.js static export (`output: 'export'`) and `"use client"` pages**: Even if you write a correct server component wrapper that re-exports from a client module, Next.js static analysis may not find `generateStaticParams`. The simplest fix for dynamic routes in static export is to delete them and rely on SPA fallback routing.
+- **GitHub Actions workflow permissions**: PR comment workflows need explicit `permissions: pull-requests: write`. Without it, the `GITHUB_TOKEN` lacks write access to PR comments.
+- **GitHub Pages environments**: Only allow deploys from the configured branch (usually `main`). Feature branch pushes will always fail the deploy step. Restrict the workflow trigger to `main` to avoid noisy failures.
+- **YAML heredocs in GitHub Actions `run: |` blocks**: Heredoc content with less indentation than the surrounding YAML breaks the literal block scalar. Use `printf` instead for inline file generation.
+
+---
+
 ### Session Notes (2026-03-20)
 
 **What was done this session:**
 1. Added `GITHUB_API_TOKEN` to CLAUDE.md as a required environment variable
 2. Token is a GitHub fine-grained PAT scoped to `samcarey/whoeverwants` with permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read)
-3. This enables Claude Code sessions to: create PRs, read issues, push branches, and check CI/pre-merge status via the GitHub REST API
+3. Fixed all GitHub Actions CI checks (PR #7, merged to main):
+   - Vitest coverage provider: `c8` → `v8` + `@vitest/coverage-v8`
+   - Static export: remove dynamic route instead of patching it
+   - PR checks: added `pull-requests: write` permission
+   - Deploy workflow: restricted to `main` branch only
 
 **Current status:**
-- Phases 7 and 8 are complete
-- GitHub API access being added to enable PR workflow automation
+- Phases 7, 8, and 9 are complete
+- All CI checks passing on PRs (quality-gate, test, test-matrix 18/20, Vercel preview)
+- GitHub API access working for PR workflow automation
 
 **For next session:**
 - `GITHUB_API_TOKEN` will be available as an environment variable
-- Use it with `curl -H "Authorization: Bearer $GITHUB_API_TOKEN"` for GitHub REST API calls
-- Or install `gh` CLI and authenticate with `echo "$GITHUB_API_TOKEN" | gh auth login --with-token`
+- Use it with `curl -H "Authorization: token $GITHUB_API_TOKEN"` for GitHub REST API calls
+- All CI checks should be green on new PRs — if not, check the lessons learned above
 
 ---
 
