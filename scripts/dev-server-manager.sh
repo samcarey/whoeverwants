@@ -31,6 +31,7 @@ CADDY_DEV_DIR="/etc/caddy/dev-servers"
 REPO_URL="https://github.com/samcarey/whoeverwants.git"
 PORT_START=3001
 PORT_MAX=3005
+MAX_DEV_SERVERS=3
 LOCK_DIR="/tmp/dev-server-locks"
 LOG_FILE="/var/log/dev-server-manager.log"
 
@@ -137,7 +138,7 @@ start_nextjs() {
   log "Starting Next.js dev server for $slug on port $port..."
   NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
   HOSTNAME=0.0.0.0 \
-    npx next dev -p "$port" \
+    npx next dev --turbo -p "$port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
@@ -190,6 +191,60 @@ remove_caddy() {
   log "Caddy config removed for $slug"
 }
 
+# Evict oldest dev servers to stay within MAX_DEV_SERVERS limit.
+# Keeps the most recently updated servers, destroys the rest.
+# The current_slug (about to be upserted) is never evicted.
+evict_excess_servers() {
+  local current_slug="$1"
+
+  if [ ! -d "$DEV_DIR" ]; then
+    return
+  fi
+
+  # Collect all slugs with their updated_at timestamps, sorted oldest first
+  local servers=()
+  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
+    [ ! -f "$meta" ] && continue
+    local slug updated
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
+    servers+=("${updated}|${slug}")
+  done
+
+  # Count how many will exist after this upsert
+  local total=${#servers[@]}
+  local current_exists=false
+  for entry in "${servers[@]}"; do
+    local slug="${entry#*|}"
+    if [ "$slug" = "$current_slug" ]; then
+      current_exists=true
+      break
+    fi
+  done
+  if [ "$current_exists" = false ]; then
+    total=$((total + 1))
+  fi
+
+  if [ "$total" -le "$MAX_DEV_SERVERS" ]; then
+    return
+  fi
+
+  # Sort oldest first and evict until we're at the limit
+  local sorted
+  sorted=$(printf '%s\n' "${servers[@]}" | sort)
+  local to_evict=$((total - MAX_DEV_SERVERS))
+
+  while IFS= read -r entry && [ "$to_evict" -gt 0 ]; do
+    local slug="${entry#*|}"
+    if [ "$slug" = "$current_slug" ]; then
+      continue
+    fi
+    log "Evicting dev server '$slug' (limit: $MAX_DEV_SERVERS)"
+    cmd_destroy "$slug"
+    to_evict=$((to_evict - 1))
+  done <<< "$sorted"
+}
+
 # --- Commands ---
 
 cmd_upsert() {
@@ -202,6 +257,9 @@ cmd_upsert() {
     log "Ignoring email: $email"
     return 0
   fi
+
+  # Evict oldest dev servers if at capacity
+  evict_excess_servers "$slug"
 
   # Lock to prevent concurrent updates for same user
   mkdir -p "$LOCK_DIR"

@@ -42,6 +42,12 @@ if [ "$DISK_PCT" -gt 90 ]; then
   FAILURES+=("Disk(${DISK_PCT}%)")
 fi
 
+# Revive any crashed dev servers (independent of core service health)
+REVIVE_OUTPUT=$(bash /root/whoeverwants/scripts/dev-server-manager.sh revive 2>&1) || true
+if echo "$REVIVE_OUTPUT" | grep -q "restarting"; then
+  echo "[$(date -Iseconds)] Dev server revived: $REVIVE_OUTPUT"
+fi
+
 if [ ${#FAILURES[@]} -eq 0 ]; then
   # All healthy — remove alert file so next failure triggers a new alert
   rm -f "$ALERT_FILE"

@@ -175,9 +175,19 @@ if [ ! -f /swapfile ]; then
   mkswap /swapfile
   swapon /swapfile
   echo '/swapfile none swap sw 0 0' >> /etc/fstab
-  echo "2GB swap created"
+  echo "2GB swap created (1/2)"
 else
-  echo "Swap already configured"
+  echo "Swapfile 1 already configured"
+fi
+if [ ! -f /swapfile2 ]; then
+  fallocate -l 2G /swapfile2
+  chmod 600 /swapfile2
+  mkswap /swapfile2
+  swapon /swapfile2
+  echo '/swapfile2 none swap sw 0 0' >> /etc/fstab
+  echo "2GB swap created (2/2, total 4GB)"
+else
+  echo "Swapfile 2 already configured"
 fi
 
 # ── 7. Configure Caddy ───────────────────────────────────────────────
