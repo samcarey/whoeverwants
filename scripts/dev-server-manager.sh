@@ -442,9 +442,19 @@ cmd_destroy() {
   # Remove Caddy config
   remove_caddy "$slug"
 
-  # Remove clone
+  # Kill any lingering node processes rooted in this directory
+  local dir="${DEV_DIR:?}/${slug}"
+  local pids
+  pids=$(lsof +D "$dir" 2>/dev/null | awk 'NR>1{print $2}' | sort -u || true)
+  if [ -n "$pids" ]; then
+    log "Killing lingering processes in $dir: $pids"
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+    sleep 1
+  fi
+
+  # Remove clone (retry once if directory not empty due to race)
   log "--- Removing clone ---"
-  rm -rf "${DEV_DIR:?}/${slug}"
+  rm -rf "$dir" 2>/dev/null || { sleep 2; rm -rf "$dir"; }
 
   log "=== Dev server '$slug' destroyed ==="
 }

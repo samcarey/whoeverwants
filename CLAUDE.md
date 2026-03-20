@@ -171,8 +171,8 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 15.3.3 (App Router, `force-dynamic` routes) |
-| UI | React 18.3.1, Tailwind CSS 4, Geist font |
+| Framework | Next.js 16.2.0 (App Router, `force-dynamic` routes) |
+| UI | React 19.2.4, Tailwind CSS 4, Geist font |
 | Language | TypeScript 5 (strict mode, `@/*` path alias) |
 | Backend | Python (FastAPI), managed by **uv** |
 | Database | PostgreSQL 16 (local, via Docker) |
@@ -305,7 +305,7 @@ whoeverwants/
     ├── tsconfig.json                # ES2017, strict, @/* paths
     ├── vitest.config.js             # jsdom, single-fork, 30s timeout
     ├── postcss.config.mjs           # Tailwind CSS
-    └── .eslintrc.json               # next/core-web-vitals
+    └── eslint.config.mjs             # ESLint flat config (next/core-web-vitals)
 ```
 
 ## Key Concepts
