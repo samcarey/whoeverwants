@@ -14,7 +14,7 @@ export default defineConfig({
     // Alternative approach - set maxConcurrency to 1 
     maxConcurrency: 1,
     coverage: {
-      provider: 'c8',
+      provider: 'v8',
       reporter: ['text', 'lcov', 'html'],
       exclude: [
         'node_modules/**',
