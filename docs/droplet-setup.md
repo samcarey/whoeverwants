@@ -263,12 +263,14 @@ The webhook must be configured in GitHub to send push events to the droplet:
 
 ### Resource Usage
 
-Each dev server uses ~100MB RAM (Next.js standalone build at runtime). The 1GB droplet (with 2GB swap) can run production + 2-3 concurrent dev servers. Dev servers idle for 7+ days are automatically cleaned up.
+Each dev server uses ~300-400MB RAM (`next dev` with hot reload). The 1GB droplet (with 2GB swap) can run production + 1-2 concurrent dev servers. Dev servers idle for 7+ days are automatically cleaned up.
 
 ### Architecture Notes
 
-- Dev servers use **standalone Next.js builds** (not `next dev`) for low memory usage at runtime
-- Builds are heavier (~1-2GB during `npm run build`) but run one at a time (locked per user)
+- Dev servers use **`next dev`** (hot reload mode) for instant updates on push
+- On push, files are updated via `git fetch/reset` — Next.js auto-detects changes and recompiles only what changed
+- Server only restarts if `package-lock.json` changes (new/updated dependencies)
+- Higher memory per server (~400MB) but much faster updates (seconds vs minutes)
 - All dev servers use the **production API** (`api.whoeverwants.com`) — they test frontend changes only
 - For backend testing, use the existing preview environment system (`preview-manager.sh`)
 - Dev servers auto-restart on droplet reboot via the `dev-servers-revive.service`

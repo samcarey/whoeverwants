@@ -12,9 +12,13 @@
 #
 # Each dev server gets:
 #   - A clone of the repo at /root/dev-servers/<email-slug>/
-#   - A Next.js standalone build served on a unique port
+#   - A Next.js dev server (hot reload) on a unique port
 #   - A Caddy route at <email-slug>.dev.whoeverwants.com
 #   - Uses the production API (api.whoeverwants.com)
+#
+# Dev mode: Uses `next dev` for instant hot reload. On push, files are
+# updated via git and Next.js auto-detects changes — no rebuild needed.
+# Server only restarts if package-lock.json changes.
 #
 # Email-to-slug mapping:
 #   sam@example.com -> sam-at-example-com
@@ -26,7 +30,7 @@ DEV_DIR="/root/dev-servers"
 CADDY_DEV_DIR="/etc/caddy/dev-servers"
 REPO_URL="https://github.com/samcarey/whoeverwants.git"
 PORT_START=3001
-PORT_MAX=3010
+PORT_MAX=3005
 LOCK_DIR="/tmp/dev-server-locks"
 LOG_FILE="/var/log/dev-server-manager.log"
 
@@ -118,7 +122,7 @@ stop_nextjs() {
   fi
 }
 
-# Start the Next.js standalone server
+# Start the Next.js dev server (hot reload mode)
 start_nextjs() {
   local slug="$1"
   local port="$2"
@@ -126,28 +130,23 @@ start_nextjs() {
 
   cd "$dir"
 
-  # Ensure static assets are in standalone dir
-  if [ -d ".next/standalone" ]; then
-    cp -r public .next/standalone/public 2>/dev/null || true
-    mkdir -p .next/standalone/.next
-    cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
-  fi
-
-  log "Starting Next.js for $slug on port $port..."
-  PORT=$port HOSTNAME=0.0.0.0 node .next/standalone/server.js \
+  log "Starting Next.js dev server for $slug on port $port..."
+  NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
+  HOSTNAME=0.0.0.0 \
+    npx next dev -p "$port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
 
   # Wait and verify it started
-  sleep 3
+  sleep 5
   if ! kill -0 "$new_pid" 2>/dev/null; then
-    log "ERROR: Next.js failed to start for $slug. Last 20 lines of log:"
+    log "ERROR: Next.js dev server failed to start for $slug. Last 20 lines of log:"
     tail -20 "${dir}/nextjs.log" 2>/dev/null || true
     return 1
   fi
 
-  log "Next.js started for $slug (PID $new_pid, port $port)"
+  log "Next.js dev server started for $slug (PID $new_pid, port $port)"
   echo "$new_pid"
 }
 
@@ -212,9 +211,11 @@ cmd_upsert() {
 
   local dir="${DEV_DIR}/${slug}"
   local is_new=false
+  local needs_restart=false
 
   if [ ! -d "$dir/.git" ]; then
     is_new=true
+    needs_restart=true
     log "--- Cloning repository ---"
     mkdir -p "$DEV_DIR"
     rm -rf "$dir"
@@ -223,8 +224,11 @@ cmd_upsert() {
 
   cd "$dir"
 
-  # Stop running server before updating files
-  stop_nextjs "$slug"
+  # Save current package-lock hash to detect dependency changes
+  local old_lockfile_hash=""
+  if [ -f "package-lock.json" ]; then
+    old_lockfile_hash=$(md5sum package-lock.json | cut -d' ' -f1)
+  fi
 
   # Fetch and checkout the branch
   log "--- Fetching and checking out $branch ---"
@@ -235,9 +239,28 @@ cmd_upsert() {
     || git checkout "$branch"
   git reset --hard FETCH_HEAD
 
-  # Install dependencies
-  log "--- Installing dependencies ---"
-  npm ci --prefer-offline 2>&1 | tail -5
+  # Check if dependencies changed
+  local new_lockfile_hash=""
+  if [ -f "package-lock.json" ]; then
+    new_lockfile_hash=$(md5sum package-lock.json | cut -d' ' -f1)
+  fi
+  if [ "$old_lockfile_hash" != "$new_lockfile_hash" ]; then
+    log "package-lock.json changed — reinstalling deps and restarting"
+    needs_restart=true
+  fi
+
+  # Check if server process is still running
+  local current_pid=""
+  if [ -f "${dir}/.nextjs.pid" ]; then
+    current_pid=$(cat "${dir}/.nextjs.pid")
+    if ! kill -0 "$current_pid" 2>/dev/null; then
+      log "Dev server process not running — needs restart"
+      needs_restart=true
+      current_pid=""
+    fi
+  else
+    needs_restart=true
+  fi
 
   # Determine port (reuse existing or find new)
   local port
@@ -246,15 +269,26 @@ cmd_upsert() {
     port=$(find_available_port)
   fi
 
-  # Build Next.js in standalone mode pointing to production API
-  log "--- Building Next.js (standalone) ---"
-  NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
-  NEXT_OUTPUT=standalone \
-    npx next build 2>&1 | tail -10
+  if [ "$needs_restart" = true ]; then
+    # Stop existing server if running
+    stop_nextjs "$slug"
 
-  # Start the server
-  local pid
-  pid=$(start_nextjs "$slug" "$port")
+    # Install dependencies
+    log "--- Installing dependencies ---"
+    npm ci --prefer-offline 2>&1 | tail -5
+
+    # Clear .next cache on fresh installs for clean state
+    if [ "$is_new" = true ]; then
+      rm -rf .next
+    fi
+
+    # Start the dev server
+    local pid
+    pid=$(start_nextjs "$slug" "$port")
+  else
+    local pid="$current_pid"
+    log "Files updated — Next.js dev server will hot-reload automatically"
+  fi
 
   # Write metadata
   local commit_sha
@@ -285,6 +319,11 @@ EOF
   log "  Commit: ${commit_sha:0:8}"
   log "  Port:   $port"
   log "  PID:    $pid"
+  if [ "$needs_restart" = true ]; then
+    log "  Mode:   Full restart (deps changed or new server)"
+  else
+    log "  Mode:   Hot reload (files updated, no restart needed)"
+  fi
 }
 
 cmd_list() {
@@ -403,7 +442,7 @@ cmd_revive() {
     if ! kill -0 "$pid" 2>/dev/null; then
       log "Dev server '$slug' is not running, restarting on port $port..."
       local dir="${DEV_DIR}/${slug}"
-      if [ -d "$dir/.next/standalone" ]; then
+      if [ -d "$dir/node_modules" ]; then
         local new_pid
         new_pid=$(start_nextjs "$slug" "$port")
         # Update PID in metadata
@@ -418,7 +457,7 @@ with open('$meta', 'r+') as f:
 "
         log "Revived '$slug' with PID $new_pid"
       else
-        log "No standalone build found for '$slug', skipping"
+        log "No node_modules found for '$slug', skipping (needs full upsert)"
       fi
     fi
   done

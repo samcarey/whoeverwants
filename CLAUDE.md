@@ -78,7 +78,7 @@ The droplet is hardened with:
 **Frontend** (Next.js — auto-deployed per-user dev servers):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. GitHub webhook auto-triggers a dev server build on the droplet
+3. GitHub webhook auto-updates your dev server on the droplet (hot reload — no rebuild)
 4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
 
 **Production Frontend** (Vercel):
@@ -94,6 +94,8 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
 **Per-User Dev Servers** (automatic on push):
 - Every push to GitHub auto-updates your dev server via webhook
+- Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
+- Only restarts if `package-lock.json` changes (new dependencies)
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
 - URL stays the same regardless of branch — bookmark it
