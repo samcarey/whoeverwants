@@ -84,11 +84,11 @@ The droplet is hardened with:
 **Production Frontend** (Vercel):
 - Vercel auto-deploys on push to `main` → `whoeverwants.com`
 
-**Backend** (Python API on droplet):
-1. **Commit and push** to GitHub
-2. **Pull on droplet**: `bash scripts/remote.sh "git pull" /root/whoeverwants`
-3. **Build/restart services**: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
-4. **Check logs/debug**: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
+**Backend** (Python API on droplet — auto-deployed on push to main):
+- Merging/pushing to `main` auto-triggers: git pull → Docker rebuild → migration check → health verify
+- Deploy logs: `bash scripts/remote.sh "tail -50 /var/log/dev-webhook.log" /root`
+- Manual rebuild: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
+- API logs: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
