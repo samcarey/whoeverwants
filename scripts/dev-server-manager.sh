@@ -44,7 +44,7 @@ IGNORE_EMAIL_PATTERNS=(
 
 log() {
   local msg="[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
-  echo "$msg"
+  echo "$msg" >&2
   echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
 }
 
@@ -123,6 +123,7 @@ stop_nextjs() {
 }
 
 # Start the Next.js dev server (hot reload mode)
+# NOTE: Only the PID is written to stdout (for capture). All log messages go to stderr.
 start_nextjs() {
   local slug="$1"
   local port="$2"
@@ -147,6 +148,7 @@ start_nextjs() {
   fi
 
   log "Next.js dev server started for $slug (PID $new_pid, port $port)"
+  # Only output the PID — log() already wrote to the log file
   echo "$new_pid"
 }
 
@@ -306,8 +308,12 @@ cmd_upsert() {
 }
 EOF
 
-  # Configure Caddy (on first create or if config missing)
-  if [ "$is_new" = true ] || [ ! -f "${CADDY_DEV_DIR}/${slug}.caddy" ]; then
+  # Configure Caddy (on first create, config missing, or port changed)
+  local current_caddy_port=""
+  if [ -f "${CADDY_DEV_DIR}/${slug}.caddy" ]; then
+    current_caddy_port=$(grep -oP '127\.0\.0\.1:\K[0-9]+' "${CADDY_DEV_DIR}/${slug}.caddy" || echo "")
+  fi
+  if [ "$is_new" = true ] || [ ! -f "${CADDY_DEV_DIR}/${slug}.caddy" ] || [ "$current_caddy_port" != "$port" ]; then
     configure_caddy "$slug" "$port"
   fi
 
