@@ -12,20 +12,37 @@ Whoever Wants is a lightweight, anonymous polling app that helps groups make dec
 
 - **No accounts required** - Create and vote on polls completely anonymously
 - **Yes/No polls** - Simple binary decisions
-- **Ranked choice voting** - For when you have multiple options and want to find the best consensus
+- **Ranked choice voting** - Instant-runoff voting with Borda tiebreak for multi-option consensus
+- **Nomination polls** - Let voters suggest and vote on options
+- **Participation polls** - RSVP with min/max constraints and conditional attendance
 - **Time-limited polls** - Set deadlines to keep decisions moving
 - **Share via link** - Just send the URL to collect responses
-- **Mobile optimized** - Works great on any device
+- **Mobile optimized** - Works great on any device (PWA support)
 
-## About the Code
+## Tech Stack
 
-This app is mostly vibe coded - built with intuition and iteration rather than rigid planning. It's a Next.js app with Supabase for the backend, but the real magic is in keeping things simple and functional.
+- **Frontend**: Next.js 15, React 18, Tailwind CSS 4, TypeScript — hosted on Vercel
+- **Backend**: Python (FastAPI) — hosted on a DigitalOcean droplet
+- **Database**: PostgreSQL 16
 
-**Latest Updates**: Fixed React 19 compatibility issues and restored poll list functionality (August 2024).
+## Development
 
-## Contributing
+```bash
+npm install        # Install frontend dependencies
+npm run dev        # Start Next.js dev server
+npm run test:run   # Run unit tests
+npm run test:e2e   # Run Playwright E2E tests
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+The Python API server lives in `server/` and uses [uv](https://docs.astral.sh/uv/) for package management:
+
+```bash
+cd server
+uv run pytest              # Run API tests
+uv run uvicorn main:app    # Run API locally
+```
+
+See [CLAUDE.md](CLAUDE.md) for full development workflow and architecture docs.
 
 ## License
 
@@ -33,5 +50,3 @@ This project is dual-licensed under your choice of either:
 
 - **MIT License** - See [LICENSE-MIT](LICENSE-MIT)
 - **Apache License 2.0** - See [LICENSE-APACHE](LICENSE-APACHE)
-
-You may use this software under the terms of either license, whichever you prefer.

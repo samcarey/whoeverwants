@@ -199,19 +199,15 @@ whoeverwants/
 │   ├── poll/page.tsx               # Alternate poll endpoint
 │   ├── profile/page.tsx            # User profile (name management)
 │   └── api/                        # Server-side API routes
-│       ├── log/route.ts            # Server-side logging endpoint
+│       ├── log/route.ts            # Server-side logging endpoint (dev only)
 │       ├── debug-logs/route.ts     # Debug log retrieval
 │       ├── last-compile/route.ts   # Build timestamp
-│       ├── polls/discover-related/ # Follow-up/fork poll discovery
-│       ├── fix-vote-policy/        # Vote policy fixes
-│       ├── admin/fix-rls/          # RLS admin fixes
 │       ├── test-pushover/          # Push notification testing
 │       └── notify-claude-input/    # Claude notification integration
 │
-├── components/                     # 34 React components
+├── components/                     # 29 React components
 │   ├── PollList.tsx                # Home page poll list with sections
 │   ├── PollResults.tsx             # Results display (all 4 poll types)
-│   ├── PollActionsCard.tsx         # Poll action buttons
 │   ├── PollManagementButtons.tsx   # Creator controls (close/reopen/duplicate)
 │   ├── YesNoAbstainButtons.tsx     # Yes/No/Abstain voting buttons
 │   ├── RankableOptions.tsx         # Drag-to-rank interface
@@ -231,22 +227,18 @@ whoeverwants/
 │   ├── DuplicateButton.tsx         # Duplicate poll button
 │   ├── VoterList.tsx               # List of voters on a poll
 │   ├── FloatingCopyLinkButton.tsx  # Copy poll URL button
-│   ├── UrlCopy.tsx                 # URL copy utility
 │   ├── ProfileButton.tsx           # Profile access button
 │   ├── GradientBorderButton.tsx    # Styled gradient button
-│   ├── SuccessPopup.tsx            # Success notification popup
-│   ├── OptimizedLoader.tsx         # Loading spinner
 │   ├── ClientOnly.tsx              # Client-only render wrapper
 │   ├── ModalPortal.tsx             # Modal portal container
 │   ├── HeaderPortal.tsx            # Header portal container
-│   ├── PageLayout.tsx              # Page layout wrapper
 │   ├── ResponsiveScaling.tsx       # Mobile viewport scaling
 │   ├── BuildTimer.tsx              # Build timestamp display
 │   └── CounterInput.tsx            # Numeric counter input
 │
-├── lib/                            # 16 utility modules
-│   ├── supabase.ts                 # Supabase client, Poll/Vote/PollResults types,
-│   │                               # core queries (getPollResults, submitVote, etc.)
+├── lib/                            # 17 utility modules
+│   ├── api.ts                      # Python API client (fetch-based)
+│   ├── types.ts                    # Poll, Vote, PollResults type definitions
 │   ├── simplePollQueries.ts        # getAccessiblePolls, getPollWithAccess
 │   ├── pollCreator.ts              # Poll creation & creator secret management
 │   ├── browserPollAccess.ts        # localStorage-based poll access tracking
@@ -286,14 +278,18 @@ whoeverwants/
 │   ├── helpers/                    # Test utilities
 │   └── setup.js                    # Vitest setup (dotenv, mocks)
 │
-├── scripts/                        # 50+ utility scripts
-│   ├── apply-migrations.sh         # Additive migration runner (RECOMMENDED)
-│   ├── complete-migration.sh       # Full test DB rebuild (DESTRUCTIVE)
-│   ├── complete-migration-production.sh  # Full prod DB rebuild (DESTRUCTIVE)
-│   ├── direct-api-migration.sh     # DB clearing utility
+├── scripts/                        # Utility scripts
+│   ├── remote.sh                   # Execute commands on droplet
 │   ├── publish.sh                  # Full deployment workflow
+│   ├── provision-droplet.sh        # Droplet setup from scratch
+│   ├── deploy-preview.sh           # Deploy preview API environment
+│   ├── preview-manager.sh          # Manage preview API instances
+│   ├── dev-server-manager.sh       # Per-user dev server lifecycle
+│   ├── health-check.sh             # Production health monitoring
+│   ├── backup-db.sh                # Database backup (runs on droplet)
 │   ├── debug-console.cjs           # Playwright browser console capture
-│   └── debug-react-state.cjs       # React state debugging
+│   ├── debug-react-state.cjs       # React state debugging
+│   └── watch-and-update-timestamp.cjs # Build timestamp watcher
 │
 ├── public/                         # Static assets
 │   ├── manifest.json               # PWA manifest
@@ -358,12 +354,6 @@ npm run test                   # Watch mode
 npm run test:coverage          # Coverage report
 npm run test:algorithms        # Ranking algorithm tests only
 npm run test:e2e               # Playwright E2E tests
-
-# Database
-npm run db:migrate             # Apply new migrations (test)
-npm run db:migrate:production  # Apply new migrations (production)
-npm run db:rebuild-test        # DESTRUCTIVE: full test DB rebuild
-npm run db:rebuild-production  # DESTRUCTIVE: full prod DB rebuild
 
 # Debugging
 npm run debug:console [url]    # Capture browser console via Playwright
@@ -761,98 +751,23 @@ node scripts/debug-console.cjs
 
 ---
 
-## Database Migration System
+## Database Migrations
 
-This project uses an **additive migration system** that preserves existing data while applying schema changes. There are currently **63 numbered migrations** (001-063) with both up and down files.
-
-### Quick Commands
-
-#### Recommended: Additive Migrations (Preserves Data)
-```bash
-npm run db:migrate             # Apply NEW migrations to TEST database
-npm run db:migrate:production  # Apply NEW migrations to PRODUCTION database
-```
-
-#### Destructive Operations (Use With Caution)
-
-**WARNING**: The commands below will DELETE ALL DATA.
+SQL migration files live in `database/migrations/` (001-064, up + down). All 64 migrations are applied on the production droplet. New migrations are applied manually via `psql` on the droplet:
 
 ```bash
-npm run db:rebuild-test           # Full test DB rebuild
-npm run db:rebuild-production     # Full prod DB rebuild (requires confirmation)
-npm run db:clear-test             # Clear test schema only
+# Apply a new migration on the droplet
+bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants whoeverwants < /root/whoeverwants/database/migrations/065_description_up.sql" /root/whoeverwants
+
+# Verify migration applied
+bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c 'SELECT * FROM _migrations ORDER BY id DESC LIMIT 5;'"
 ```
-
-### How It Works
-
-The migration system uses **Supabase Management API** to execute SQL directly, bypassing PostgreSQL connection issues in containerized environments like GitHub Codespaces.
-
-#### Key Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/apply-migrations.sh` | Additive migration runner (RECOMMENDED) |
-| `scripts/complete-migration.sh` | Full test DB tear-down/rebuild (DESTRUCTIVE) |
-| `scripts/complete-migration-production.sh` | Full prod DB tear-down/rebuild (DESTRUCTIVE) |
-| `scripts/direct-api-migration.sh` | DB clearing utility (TEST only) |
-
-#### Migration File Format
-- Location: `database/migrations/`
-- Naming: `XXX_description_up.sql` / `XXX_description_down.sql`
-- Applied in alphabetical order
-- Tracked in `_migrations` table (additive mode only)
-
-### Authentication & Configuration
-
-**Environment variables from `.env`:**
-
-| Variable | Purpose |
-|----------|---------|
-| `NEXT_PUBLIC_SUPABASE_URL_TEST` | Test database URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY_TEST` | Test anon key |
-| `SUPABASE_TEST_SERVICE_KEY` | Test service role key |
-| `NEXT_PUBLIC_SUPABASE_URL_PRODUCTION` | Production database URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY_PRODUCTION` | Production anon key |
-| `SUPABASE_ACCESS_TOKEN_PRODUCTION` | Production service role key |
-| `SUPABASE_ACCESS_TOKEN` | Management API access token (shared) |
 
 ### Writing New Migrations
 
 1. **Use additive changes**: Add columns with DEFAULT values or allow NULL
 2. **Avoid destructive changes**: Don't DROP columns or tables with data
 3. **Handle existing data**: Provide migration logic for existing rows
-4. **Test thoroughly**: Run migrations on test database first
-
-```sql
--- Example: good migration
-ALTER TABLE polls ADD COLUMN IF NOT EXISTS
-  view_count INTEGER DEFAULT 0;
-
-UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
-```
-
-### Migration History (Key Milestones)
-
-| Range | Description |
-|-------|-------------|
-| 001-015 | Core schema: polls, votes, results view, ranked choice, RLS, creator auth |
-| 016-025 | Short IDs (base62), poll access tracking, nomination vote fields |
-| 026-041 | Vote editing, abstain support, voter names, follow-up/fork relationships |
-| 042-050 | Nomination poll type, vote type constraints, nomination editing |
-| 051-056 | Participation poll type, min/max participants, auto-close triggers |
-| 057-063 | Voter conditions, conditional participation counting, priority algorithm |
-| 064 | Drop unused Supabase objects: poll_results view, 10 functions, trigger, RLS policies |
-
-### Database Status
-
-| Database | Status |
-|----------|--------|
-| DigitalOcean droplet (production) | All 64 migrations applied |
-
-### Safety Guidelines
-
-- **Test DB**: Safe to rebuild anytime (`npm run db:rebuild-test`)
-- **Production DB**: EXTREME CAUTION. Must type `CONFIRM_PRODUCTION_REBUILD`. ALL DATA PERMANENTLY LOST.
 
 ---
 
@@ -863,7 +778,7 @@ UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
 **ALWAYS add comprehensive logging FIRST before attempting fixes:**
 
 1. **Add server-side logging immediately** to capture exact database errors
-2. **Check `/debug-logs/` directory** for detailed error messages
+2. **Check API logs**: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
 3. **Look for constraint violations** - they often "stack" (fixing one reveals another)
 
 ### Common Constraint Issues (in order of likelihood):
