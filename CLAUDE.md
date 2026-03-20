@@ -128,6 +128,29 @@ bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh list"
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh destroy <slug>"
 ```
 
+### Creating Pull Requests
+
+The `gh` CLI is **not available** in this environment. Use the GitHub REST API with `curl` and `$GITHUB_API_TOKEN` instead:
+
+```bash
+curl -s -X POST \
+  -H "Authorization: token $GITHUB_API_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/repos/samcarey/whoeverwants/pulls \
+  -d '{
+    "title": "PR title here",
+    "head": "branch-name",
+    "base": "main",
+    "body": "## Summary\n- Change 1\n- Change 2\n\n## Test plan\n- [ ] Test item"
+  }'
+```
+
+The response JSON contains `html_url` with the PR link. Extract it with:
+
+```bash
+| python3 -c "import sys,json; print(json.load(sys.stdin)['html_url'])"
+```
+
 ### Droplet Setup & Provisioning
 
 Full setup documentation is in **[docs/droplet-setup.md](./docs/droplet-setup.md)**. To provision a new droplet from scratch:
