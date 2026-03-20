@@ -135,7 +135,7 @@ start_nextjs() {
 
   log "Starting Next.js for $slug on port $port..."
   PORT=$port HOSTNAME=0.0.0.0 node .next/standalone/server.js \
-    >> "${dir}/nextjs.log" 2>&1 &
+    >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
 
