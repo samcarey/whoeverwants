@@ -263,6 +263,24 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ---
 
+### Session Notes (2026-03-20)
+
+**What was done this session:**
+1. Added `GITHUB_API_TOKEN` to CLAUDE.md as a required environment variable
+2. Token is a GitHub fine-grained PAT scoped to `samcarey/whoeverwants` with permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read)
+3. This enables Claude Code sessions to: create PRs, read issues, push branches, and check CI/pre-merge status via the GitHub REST API
+
+**Current status:**
+- Phases 7 and 8 are complete
+- GitHub API access being added to enable PR workflow automation
+
+**For next session:**
+- `GITHUB_API_TOKEN` will be available as an environment variable
+- Use it with `curl -H "Authorization: Bearer $GITHUB_API_TOKEN"` for GitHub REST API calls
+- Or install `gh` CLI and authenticate with `echo "$GITHUB_API_TOKEN" | gh auth login --with-token`
+
+---
+
 ## Cost Summary
 
 | Item | Cost |
