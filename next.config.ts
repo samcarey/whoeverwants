@@ -44,8 +44,9 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
 } else {
   // In development, proxy /api/polls requests to the local Python API server
   nextConfig.rewrites = async () => ({
-    beforeFiles: [],
-    afterFiles: [
+    beforeFiles: [
+      // API rewrites must be in beforeFiles so they take priority over
+      // the trailingSlash redirect (which otherwise 308s API POST requests)
       {
         source: '/api/polls',
         destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls`,
@@ -59,6 +60,7 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls/:path*`,
       },
     ],
+    afterFiles: [],
     fallback: [],
   });
 
