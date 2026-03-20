@@ -13,6 +13,7 @@ interface FollowUpHeaderProps {
 export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpHeaderProps) {
   const router = useRouter();
   const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
+  const [originalPollShortId, setOriginalPollShortId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -29,6 +30,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
       try {
         const data = await apiGetPollById(followUpToPollId);
         setOriginalPollTitle(data.title);
+        if (data.short_id) setOriginalPollShortId(data.short_id);
       } catch (err) {
         console.error('Error fetching original poll:', err);
         setError(true);
@@ -117,7 +119,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
         <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Follow up to</span>
           <button
-            onClick={() => router.push(`/p/${followUpToPollId}`)}
+            onClick={() => router.push(`/p/${originalPollShortId || followUpToPollId}`)}
             className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
             title={originalPollTitle}
           >

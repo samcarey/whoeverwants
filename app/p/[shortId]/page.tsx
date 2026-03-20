@@ -43,11 +43,13 @@ function PollContent() {
             pollData = await apiGetPollByShortId(pollId);
           }
         } catch {
-          // If UUID lookup fails, try short_id
-          try {
-            pollData = await apiGetPollByShortId(pollId);
-          } catch {
-            pollData = null;
+          // If lookup fails, only try short_id fallback if it doesn't look like a UUID
+          if (!(pollId.length > 10 && pollId.includes('-'))) {
+            try {
+              pollData = await apiGetPollByShortId(pollId);
+            } catch {
+              pollData = null;
+            }
           }
         }
         // Grant access to this poll

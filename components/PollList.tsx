@@ -238,7 +238,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 if (!isScrolling.current && !isLongPress.current) {
                   setNavigatingPollId(poll.id); // Show loading state
                   setPressedPollId(null); // Clear pressed state
-                  router.push(`/p/${poll.id}`);
+                  router.push(`/p/${poll.short_id || poll.id}`);
                 } else {
                   // Reset states if not navigating
                   setPressedPollId(null); // Clear pressed state
@@ -282,7 +282,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
-                          router.push(`/p/${poll.id}`);
+                          router.push(`/p/${poll.short_id || poll.id}`);
                         }}
                         onTouchStart={handleTouchStart}
                         onTouchEnd={handleTouchEnd}
@@ -368,7 +368,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   if (!isScrolling.current && !isLongPress.current) {
                     setNavigatingPollId(poll.id); // Show loading state
                     setPressedPollId(null); // Clear pressed state
-                    router.push(`/p/${poll.id}`);
+                    router.push(`/p/${poll.short_id || poll.id}`);
                   } else {
                     // Reset states if not navigating
                     setPressedPollId(null); // Clear pressed state
@@ -406,7 +406,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
-                          router.push(`/p/${poll.id}`);
+                          router.push(`/p/${poll.short_id || poll.id}`);
                         }}
                         onTouchStart={handleTouchStart}
                         onTouchEnd={handleTouchEnd}

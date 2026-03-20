@@ -13,6 +13,7 @@ interface ForkHeaderProps {
 export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) {
   const router = useRouter();
   const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
+  const [originalPollShortId, setOriginalPollShortId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -29,6 +30,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
       try {
         const data = await apiGetPollById(forkOfPollId);
         setOriginalPollTitle(data.title);
+        if (data.short_id) setOriginalPollShortId(data.short_id);
       } catch (err) {
         console.error('Error fetching original poll:', err);
         setError(true);
@@ -117,7 +119,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
         <div className="text-sm text-green-900 dark:text-green-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Fork of</span>
           <button
-            onClick={() => router.push(`/p/${forkOfPollId}`)}
+            onClick={() => router.push(`/p/${originalPollShortId || forkOfPollId}`)}
             className="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-900/50 hover:bg-green-200 dark:hover:bg-green-800/70 rounded text-sm font-medium text-green-800 dark:text-green-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
             title={originalPollTitle}
           >
