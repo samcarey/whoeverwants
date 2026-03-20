@@ -1,7 +1,5 @@
 import type { NextConfig } from "next";
 
-const isGitHubPages = process.env.GITHUB_PAGES === 'true';
-
 const nextConfig: NextConfig = {
   trailingSlash: true,
   images: {
@@ -40,11 +38,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-// GitHub Pages: enable static export with configurable base path
-if (isGitHubPages) {
-  nextConfig.output = 'export';
-  nextConfig.basePath = process.env.PAGES_BASE_PATH || '';
-} else if (process.env.NEXT_OUTPUT === 'standalone') {
+if (process.env.NEXT_OUTPUT === 'standalone') {
   // Docker production build: standalone output for minimal image size
   nextConfig.output = 'standalone';
 } else {
