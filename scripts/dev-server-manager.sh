@@ -136,9 +136,11 @@ start_nextjs() {
   cd "$dir"
 
   log "Starting Next.js dev server for $slug on port $port..."
+  # Use `npm run dev` so flags (--webpack, etc.) stay in sync with package.json.
+  # Extra args are passed after `--`.
   NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
   HOSTNAME=0.0.0.0 \
-    npx next dev --turbo -p "$port" \
+    npm run dev -- -p "$port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
