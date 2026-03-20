@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
-import BuildTimer from "@/components/BuildTimer";
+import CommitInfo from "@/components/CommitInfo";
 import ResponsiveScaling from "@/components/ResponsiveScaling";
 
 const geistSans = Geist({
@@ -50,7 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="build-id" content={process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || process.env.BUILD_TIMESTAMP || 'dev'} />
+        <meta name="build-id" content={process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || 'dev'} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="WhoeverWants" />
@@ -66,7 +66,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <BuildTimer />
+        <CommitInfo showTimeBadge={process.env.NODE_ENV === 'development'} />
         <ResponsiveScaling>
           <div className="h-screen-safe flex flex-col font-[family-name:var(--font-geist-sans)]">
             {/* This is where content from each page will be rendered */}
