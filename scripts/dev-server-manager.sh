@@ -136,9 +136,17 @@ start_nextjs() {
   cd "$dir"
 
   log "Starting Next.js dev server for $slug on port $port..."
+
+  # Resolve git commit info so CommitInfo component works in dev mode
+  local git_sha git_branch
+  git_sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo "")
+  git_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
   # Use `npm run dev` so flags (--webpack, etc.) stay in sync with package.json.
   # Extra args are passed after `--`.
   NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
+  NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA="$git_sha" \
+  NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF="$git_branch" \
   HOSTNAME=0.0.0.0 \
     npm run dev -- -p "$port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
