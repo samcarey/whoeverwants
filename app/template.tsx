@@ -435,7 +435,7 @@ export default function Template({ children }: AppTemplateProps) {
               {pathname === '/' && (
                 <div className="max-w-4xl mx-auto px-2 pt-4 pb-1">
                   <div className="text-center">
-                    <h1 className="text-2xl font-bold mb-1">Whoever Wants!!!!</h1>
+                    <h1 className="text-2xl font-bold mb-1">Whoever Wants!</h1>
                     <div className="h-7 flex items-center justify-center mb-4" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
                     </div>
