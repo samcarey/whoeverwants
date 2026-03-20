@@ -75,10 +75,14 @@ The droplet is hardened with:
 
 ### Development Workflow
 
-**Frontend** (Next.js on Vercel):
+**Frontend** (Next.js — auto-deployed per-user dev servers):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. Vercel auto-deploys on push to `main`
+3. GitHub webhook auto-updates your dev server on the droplet (hot reload — no rebuild)
+4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
+
+**Production Frontend** (Vercel):
+- Vercel auto-deploys on push to `main` → `whoeverwants.com`
 
 **Backend** (Python API on droplet):
 1. **Commit and push** to GitHub
@@ -88,11 +92,32 @@ The droplet is hardened with:
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
-**Preview Environments** (per-branch testing):
-1. **Push branch** to GitHub (triggers Vercel preview frontend)
+**Per-User Dev Servers** (automatic on push):
+- Every push to GitHub auto-updates your dev server via webhook
+- Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
+- Only restarts if `package-lock.json` changes (new dependencies)
+- URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
+  - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
+- URL stays the same regardless of branch — bookmark it
+- Claude/bot emails (`*@anthropic.com`) are ignored
+- Dev servers use the production API — they test frontend changes only
+- Auto-cleaned after 7 days of inactivity
+
+```bash
+# List active dev servers
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh list"
+
+# Manually trigger a dev server update
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert user@example.com claude/my-branch" /root 600
+
+# Destroy a dev server
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy user-at-example-com"
+```
+
+**Preview Environments** (per-branch API testing):
+1. **Push branch** to GitHub
 2. **Create preview API**: `bash scripts/deploy-preview.sh` (or manually via `scripts/remote.sh`)
-3. The Vercel preview frontend automatically connects to the branch's preview API
-4. Preview APIs are auto-cleaned after 7 days
+3. Preview APIs are auto-cleaned after 7 days
 
 ```bash
 # Quick deploy preview for current branch

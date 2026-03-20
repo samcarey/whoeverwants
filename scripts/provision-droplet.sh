@@ -157,8 +157,18 @@ EOF
 systemctl daemon-reload
 systemctl enable --now cmd-api
 
-# ── 5. Add swap ──────────────────────────────────────────────────────
-echo "=== 5/11 Configuring swap ==="
+# ── 5. Install Node.js (for per-user dev servers) ────────────────────
+echo "=== 5/15 Installing Node.js ==="
+if ! command -v node &>/dev/null; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+  echo "Node.js installed: $(node --version)"
+else
+  echo "Node.js already installed: $(node --version)"
+fi
+
+# ── 6. Add swap ──────────────────────────────────────────────────────
+echo "=== 6/15 Configuring swap ==="
 if [ ! -f /swapfile ]; then
   fallocate -l 2G /swapfile
   chmod 600 /swapfile
@@ -170,10 +180,10 @@ else
   echo "Swap already configured"
 fi
 
-# ── 6. Configure Caddy ───────────────────────────────────────────────
-# Frontend is hosted on Vercel. Droplet only serves the API.
-echo "=== 6/11 Configuring Caddy ==="
-mkdir -p /etc/caddy/previews
+# ── 7. Configure Caddy ───────────────────────────────────────────────
+# Frontend is hosted on Vercel. Droplet serves the API + dev servers.
+echo "=== 7/15 Configuring Caddy ==="
+mkdir -p /etc/caddy/previews /etc/caddy/dev-servers
 cat > /etc/caddy/Caddyfile <<EOF
 ${DROPLET_IP_DASHED}.sslip.io {
 	reverse_proxy 127.0.0.1:9090
@@ -192,17 +202,22 @@ api.whoeverwants.com {
 	reverse_proxy 127.0.0.1:8000
 }
 
+hooks.api.whoeverwants.com {
+	reverse_proxy 127.0.0.1:9091
+}
+
 import /etc/caddy/previews/*.caddy
+import /etc/caddy/dev-servers/*.caddy
 EOF
 
 systemctl restart caddy
 
-# ── 7. Clone repo and start Docker services ──────────────────────────
+# ── 8. Clone repo and start Docker services ──────────────────────────
 # Note: The FastAPI container uses uv for Python dependency management.
 # uv is installed inside the Docker image (see server/Dockerfile).
 # Dependencies are defined in server/pyproject.toml and locked in server/uv.lock.
 # No manual Python package installation is needed on the host.
-echo "=== 7/11 Cloning repo and starting Docker services ==="
+echo "=== 8/15 Cloning repo and starting Docker services ==="
 if [ ! -d /root/whoeverwants ]; then
   git clone https://github.com/samcarey/whoeverwants.git /root/whoeverwants
 else
@@ -223,8 +238,8 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
-# ── 8. Apply database migrations ─────────────────────────────────────
-echo "=== 8/11 Applying database migrations ==="
+# ── 9. Apply database migrations ─────────────────────────────────────
+echo "=== 9/15 Applying database migrations ==="
 
 docker exec -i whoeverwants-db-1 psql -U whoeverwants -q <<'SQL'
 CREATE TABLE IF NOT EXISTS _migrations (
@@ -249,8 +264,8 @@ for f in database/migrations/*_up.sql; do
 done
 echo "Applied $applied migrations"
 
-# ── 9. Production hardening ──────────────────────────────────────────
-echo "=== 9/11 Production hardening (logs, backups, health checks) ==="
+# ── 10. Production hardening ─────────────────────────────────────────
+echo "=== 10/15 Production hardening (logs, backups, health checks) ==="
 
 # --- Log rotation ---
 cat > /etc/logrotate.d/whoeverwants <<'EOF'
@@ -291,23 +306,83 @@ mkdir -p /root/previews /etc/caddy/previews
 (crontab -l 2>/dev/null | grep -v 'preview-manager.sh' || true; \
  echo "0 4 * * * /root/whoeverwants/scripts/preview-manager.sh cleanup 7 >> /var/log/whoeverwants-preview-cleanup.log 2>&1") | crontab -
 
+# --- Dev server auto-cleanup (daily at 4:30 AM) ---
+chmod +x /root/whoeverwants/scripts/dev-server-manager.sh
+mkdir -p /root/dev-servers /etc/caddy/dev-servers
+(crontab -l 2>/dev/null | grep -v 'dev-server-manager.sh' || true; \
+ echo "30 4 * * * /root/whoeverwants/scripts/dev-server-manager.sh cleanup 7 >> /var/log/whoeverwants-dev-cleanup.log 2>&1") | crontab -
+
 echo "Cron jobs installed:"
 crontab -l
 
-# ── 10. Verify services ─────────────────────────────────────────────
+# ── 11. Dev webhook service ──────────────────────────────────────────
+echo "=== 11/15 Setting up dev webhook service ==="
+
+# Generate webhook secret if it doesn't exist
+if [ ! -f /etc/dev-webhook-secret ]; then
+  python3 -c "import secrets; print(secrets.token_urlsafe(32))" > /etc/dev-webhook-secret
+  chmod 600 /etc/dev-webhook-secret
+  echo "Generated webhook secret (save for GitHub webhook config)"
+fi
+
+cat > /etc/systemd/system/dev-webhook.service <<'EOF'
+[Unit]
+Description=GitHub Webhook Handler for Dev Servers
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/whoeverwants/scripts/dev-webhook.py
+Restart=always
+RestartSec=5
+WorkingDirectory=/root/whoeverwants
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now dev-webhook
+
+# ── 12. Dev server revive on boot ────────────────────────────────────
+echo "=== 12/15 Setting up dev server boot revive ==="
+
+cat > /etc/systemd/system/dev-servers-revive.service <<'EOF'
+[Unit]
+Description=Revive dev servers after reboot
+After=network.target docker.service caddy.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/whoeverwants/scripts/dev-server-manager.sh revive
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable dev-servers-revive
+
+# ── 13. Verify services ─────────────────────────────────────────────
 echo ""
-echo "=== 10/11 Verifying services ==="
+echo "=== 13/15 Verifying services ==="
 
 echo "Health check:"
 curl -s http://localhost:8000/health
 echo ""
 
+echo "Dev webhook:"
+curl -s http://localhost:9091/health || echo "(will start after first request)"
+echo ""
+
 echo "Tables:"
 docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'
 
-# ── 11. Verify security hardening ───────────────────────────────────
+# ── 14. Verify security hardening ───────────────────────────────────
 echo ""
-echo "=== 11/11 Verifying security hardening ==="
+echo "=== 14/15 Verifying security hardening ==="
 
 echo "Firewall status:"
 ufw status
@@ -316,11 +391,21 @@ echo ""
 echo "SSH hardening:"
 grep -E "^(PermitRootLogin|PasswordAuthentication)" /etc/ssh/sshd_config
 
+# ── 15. Summary ──────────────────────────────────────────────────────
 echo ""
-echo "=== Provisioning complete ==="
+echo "=== 15/15 Provisioning complete ==="
 echo ""
 echo "Set these environment variables in your Claude Code session:"
 echo "  export DROPLET_API_URL=https://${DROPLET_IP_DASHED}.sslip.io"
 echo "  export DROPLET_API_TOKEN=<token>"
 echo ""
-echo "IMPORTANT: Never commit the API token to git."
+echo "Webhook secret (for GitHub webhook config):"
+cat /etc/dev-webhook-secret
+echo ""
+echo "DNS records needed:"
+echo "  *.dev.whoeverwants.com  A  ${DROPLET_IP}"
+echo ""
+echo "GitHub webhook URL:"
+echo "  https://hooks.api.whoeverwants.com/github"
+echo ""
+echo "IMPORTANT: Never commit the API token or webhook secret to git."
