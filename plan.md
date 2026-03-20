@@ -239,6 +239,8 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 ### ~~Phase 8~~ ✅ COMPLETE
 
 ### ~~Phase 9~~ ✅ COMPLETE (CI Fixes — PR #7)
+
+### ~~Phase 10~~ ✅ COMPLETE (Per-User Dev Servers)
 1. ~~Add `*.api.whoeverwants.com` wildcard DNS~~ ✅ DONE
    - Wildcard A record added in AWS Route 53: `*.api.whoeverwants.com` → `142.93.60.29`
    - Verified: `test-preview.api.whoeverwants.com` resolves correctly
@@ -388,11 +390,32 @@ URL: https://<email-slug>.dev.whoeverwants.com
 
 ### Key Design Decisions
 
-- **Standalone builds** (not `next dev`): ~100MB RAM at runtime vs ~400MB for dev mode
+- **`next dev` (hot reload)**: ~400MB RAM per server but instant updates on push (seconds, not minutes)
 - **Production API**: Dev servers use `api.whoeverwants.com` — frontend-only testing
 - **Per-user locking**: Only one build runs per user at a time (flock)
 - **Email-based identity**: `GIT_AUTHOR_EMAIL` determines which dev server to update
 - **Shallow clones**: `--depth 50` to save disk space
+- **Smart restart**: Only restarts if `package-lock.json` changes; otherwise files update and Next.js hot-reloads
+
+### Phase 10 Status: ✅ COMPLETE
+
+All steps implemented and tested:
+1. ✅ `dev-server-manager.sh` — full lifecycle management (upsert/list/destroy/cleanup/revive)
+2. ✅ `dev-webhook.py` — GitHub webhook handler with HMAC verification
+3. ✅ Node.js 20 installed on droplet
+4. ✅ Caddy configured for `*.dev.whoeverwants.com` and `hooks.api.whoeverwants.com`
+5. ✅ DNS: `*.dev.whoeverwants.com` A record → droplet IP (user added in Route 53)
+6. ✅ GitHub webhook registered and verified
+7. ✅ Systemd services: `dev-webhook.service`, `dev-servers-revive.service`
+8. ✅ Docs updated: CLAUDE.md, droplet-setup.md, provision-droplet.sh
+
+**Session Notes (2026-03-20, continued):**
+- Initially implemented with standalone builds (`next build`, ~2-3 min per push)
+- Switched to `next dev` hot reload mode — subsequent pushes now update in ~2 seconds
+- Fixed `log()` stdout pollution that corrupted PID capture in metadata JSON
+- Fixed process group cleanup (`kill -- -PID`) for `next dev` child processes
+- Updated Caddy config to always sync port on changes
+- Reduced max concurrent dev servers from 10 to 5 (higher RAM per server)
 
 ---
 
