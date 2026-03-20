@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   trailingSlash: true,
+  // Prevent trailingSlash from issuing 308 redirects on API routes.
+  // Rewrites handle the proxy; the redirect breaks POST request bodies.
+  skipTrailingSlashRedirect: true,
   images: {
     unoptimized: true,
   },
