@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-GitHub webhook handler for per-user dev servers.
+GitHub webhook handler for the WhoeverWants droplet.
 
-Receives push events from GitHub, extracts the commit author email,
-and triggers dev-server-manager.sh to create or update the dev server
-for that author.
+Handles two types of push events:
+1. Push to `main` → auto-deploy production backend (git pull + docker compose rebuild)
+2. Push to any branch → update per-user dev servers based on commit author email
 
 Runs as a systemd service on the droplet, listening on port 9091.
 Caddy proxies hooks.api.whoeverwants.com -> localhost:9091.
@@ -25,6 +25,8 @@ import threading
 PORT = 9091
 SECRET_FILE = "/etc/dev-webhook-secret"
 MANAGER_SCRIPT = "/root/whoeverwants/scripts/dev-server-manager.sh"
+REPO_DIR = "/root/whoeverwants"
+DEPLOY_LOCK = "/tmp/production-deploy.lock"
 
 # Claude/bot email patterns to ignore
 IGNORE_PATTERNS = [
@@ -125,6 +127,93 @@ def trigger_upsert(email: str, branch: str):
         log.error(f"Upsert error for {email}: {e}")
 
 
+def deploy_production():
+    """Pull latest main and rebuild production backend."""
+    import fcntl
+
+    log.info("=== Production deploy triggered (push to main) ===")
+
+    # Acquire lock to prevent concurrent deploys
+    try:
+        lock_fd = open(DEPLOY_LOCK, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        log.info("Production deploy already in progress, skipping")
+        return
+
+    try:
+        # 1. Git pull
+        log.info("--- Pulling latest main ---")
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            log.error(f"Git pull failed: {result.stderr}")
+            return
+        log.info(f"Git pull: {result.stdout.strip()}")
+
+        # If nothing changed, skip rebuild
+        if "Already up to date" in result.stdout:
+            log.info("No changes, skipping rebuild")
+            return
+
+        # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
+        # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
+        log.info("--- Rebuilding and restarting Docker services ---")
+        result = subprocess.run(
+            ["docker", "compose", "up", "-d", "--build"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout for build
+        )
+        if result.returncode != 0:
+            log.error(f"Docker compose build failed: {result.stderr[-500:]}")
+            return
+        log.info(f"Docker compose: {result.stderr.strip()[-300:]}")
+
+        # 3. Apply any new database migrations
+        log.info("--- Checking for new migrations ---")
+        result = subprocess.run(
+            ["bash", os.path.join(REPO_DIR, "scripts", "apply-migrations.sh")],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            log.warning(f"Migration check: {result.stderr[-300:]}")
+        else:
+            log.info(f"Migrations: {result.stdout.strip()[-200:]}")
+
+        # 4. Verify health
+        import urllib.request
+        try:
+            resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
+            if resp.status == 200:
+                log.info("=== Production deploy complete — health check OK ===")
+            else:
+                log.error(f"Health check returned {resp.status}")
+        except Exception as e:
+            log.error(f"Health check failed: {e}")
+
+    except subprocess.TimeoutExpired as e:
+        log.error(f"Production deploy timed out: {e}")
+    except Exception as e:
+        log.error(f"Production deploy error: {e}")
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+        except Exception:
+            pass
+
+
+
 class WebhookHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/github":
@@ -198,6 +287,19 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         # Respond immediately, process in background
         self.send_response(202)
         self.end_headers()
+
+        # Push to main → deploy production backend
+        if branch == "main":
+            self.wfile.write(json.dumps({
+                "status": "accepted",
+                "branch": branch,
+                "action": "production_deploy",
+            }).encode())
+            t = threading.Thread(target=deploy_production)
+            t.daemon = True
+            t.start()
+            return
+
         self.wfile.write(json.dumps({
             "status": "accepted",
             "branch": branch,
