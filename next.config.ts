@@ -12,11 +12,12 @@ const nextConfig: NextConfig = {
   // Allow dev server HMR WebSocket connections from proxy domains
   allowedDevOrigins: ['*.dev.whoeverwants.com'],
 
-  // Expose Vercel's git info to the client for preview API URL derivation and commit info
+  // Expose Vercel's git info to the client for preview API URL derivation and commit info.
+  // Vercel sets VERCEL_GIT_COMMIT_* (no NEXT_PUBLIC_ prefix); dev servers set the prefixed versions directly.
   env: {
-    NEXT_PUBLIC_VERCEL_GIT_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || '',
-    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || '',
-    NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF || '',
+    NEXT_PUBLIC_VERCEL_GIT_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '',
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '',
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '',
   },
 
 };
