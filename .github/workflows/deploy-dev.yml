@@ -37,13 +37,15 @@ jobs:
           # Strip 'force-dynamic' exports from all page files
           find app \( -name '*.tsx' -o -name '*.ts' \) | xargs sed -i "/export const dynamic = 'force-dynamic'/d"
 
-          # Replace the dynamic [shortId] page with a server component wrapper
-          # that exports generateStaticParams (required for static export).
-          # The original page uses "use client" which can't coexist with
-          # generateStaticParams, so we create a server component that
-          # re-exports the client component.
-          mv app/p/\[shortId\]/page.tsx app/p/\[shortId\]/PollPageWrapper.tsx
-          printf 'import PollPage from "./PollPageWrapper";\nexport function generateStaticParams() { return []; }\nexport default PollPage;\n' > app/p/\[shortId\]/page.tsx
+          # Replace the dynamic [shortId] page with a static placeholder.
+          # The original uses "use client" which conflicts with generateStaticParams.
+          # For static export, we just need an empty params list and a placeholder page.
+          cat > app/p/\[shortId\]/page.tsx << 'STATICPAGE'
+export function generateStaticParams() { return []; }
+export default function PollPage() {
+  return <div>Loading poll...</div>;
+}
+STATICPAGE
 
       - name: Build static site
         env:
