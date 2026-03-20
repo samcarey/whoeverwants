@@ -40,12 +40,7 @@ jobs:
           # Replace the dynamic [shortId] page with a static placeholder.
           # The original uses "use client" which conflicts with generateStaticParams.
           # For static export, we just need an empty params list and a placeholder page.
-          cat > app/p/\[shortId\]/page.tsx << 'STATICPAGE'
-export function generateStaticParams() { return []; }
-export default function PollPage() {
-  return <div>Loading poll...</div>;
-}
-STATICPAGE
+          printf 'export function generateStaticParams() { return []; }\nexport default function PollPage() {\n  return <div>Loading poll...</div>;\n}\n' > app/p/\[shortId\]/page.tsx
 
       - name: Build static site
         env:
