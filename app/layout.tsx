@@ -56,9 +56,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="WhoeverWants" />
         <meta name="theme-color" content="#ffffff" />
         <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
-        <link rel="apple-touch-icon" href="/icon-192x192.svg" />
-        <link rel="icon" type="image/svg+xml" sizes="192x192" href="/icon-192x192.svg" />
-        <link rel="icon" type="image/svg+xml" sizes="512x512" href="/icon-512x512.svg" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icon-180x180.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512x512.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1+Code:wght@700&display=swap" rel="stylesheet" />
