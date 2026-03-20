@@ -5,7 +5,7 @@ interface PollData {
   title: string;
   description?: string;
   type: 'poll' | 'nomination';
-  options?: string[];
+  options?: readonly string[];
   deadline?: string;
   customDate?: string;
   customTime?: string;
@@ -98,7 +98,7 @@ export class CreatePollPage extends BasePage {
     }
   }
 
-  async fillOptions(options: string[]) {
+  async fillOptions(options: readonly string[]) {
     // Fill options one by one
     for (let i = 0; i < options.length; i++) {
       // Get the current option inputs (they expand as we type)

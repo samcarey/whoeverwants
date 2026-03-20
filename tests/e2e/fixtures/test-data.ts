@@ -2,7 +2,7 @@ export interface PollTestData {
   title: string;
   description?: string;
   type: 'poll' | 'nomination';
-  options?: string[];
+  options?: readonly string[];
   deadline?: string;
   customDate?: string;
   customTime?: string;

@@ -214,7 +214,7 @@ test.describe('Nomination Poll Creator Workflow', () => {
           await input.fill('');
         }
       } catch (error) {
-        console.log(`Skipping input ${i} - not accessible:`, error.message);
+        console.log(`Skipping input ${i} - not accessible:`, (error as Error).message);
         break;
       }
     }

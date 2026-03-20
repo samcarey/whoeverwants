@@ -853,7 +853,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   // Render a single list container (main or no preference)
   const renderListContainer = (
     listItems: RankableOption[],
-    containerRef: React.RefObject<HTMLDivElement>,
+    containerRef: React.RefObject<HTMLDivElement | null>,
     listType: 'main' | 'noPreference',
     title?: string,
     description?: string
