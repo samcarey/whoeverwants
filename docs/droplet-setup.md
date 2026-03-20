@@ -24,10 +24,13 @@ Note the IP address (e.g., `142.93.60.29`).
 
 ## 2. DNS Requirements
 
-| Record | Type | Value |
-|--------|------|-------|
-| `api.whoeverwants.com` | A | `<droplet IP>` |
-| `whoeverwants.com` | CNAME | `cname.vercel-dns.com` (or Vercel IP) |
+| Record | Type | Value | Purpose |
+|--------|------|-------|---------|
+| `api.whoeverwants.com` | A | `<droplet IP>` | Production API |
+| `*.api.whoeverwants.com` | A | `<droplet IP>` | Preview API environments |
+| `whoeverwants.com` | CNAME | `cname.vercel-dns.com` (or Vercel IP) | Production frontend |
+
+The wildcard `*.api.whoeverwants.com` record enables per-branch preview API instances (e.g., `fix-voting-abc123.api.whoeverwants.com`).
 
 The sslip.io subdomain (`<ip-dashed>.sslip.io`) works automatically with no DNS configuration.
 
@@ -73,10 +76,15 @@ Internet
   ├── api.whoeverwants.com:443 ──► Caddy ──► localhost:8000 ──► FastAPI (Docker: api)
   │                                              │ rate limiting (120 GET, 30 POST per IP/min)
   │
+  ├── *.api.whoeverwants.com:443 ► Caddy ──► localhost:800X ──► Preview FastAPI containers
+  │                                              │ per-branch preview environments
+  │
   ├── <ip>.sslip.io:443 ────────► Caddy ──► localhost:9090 ──► cmd-api.py (systemd)
   │
   │                              PostgreSQL (Docker: db)
   │                              localhost:5432
+  │                                ├── whoeverwants (production database)
+  │                                └── preview_* (per-branch preview databases)
   │                                │
   │                              pg_dump backup ──► /var/backups/whoeverwants/ (14-day retention)
   │
@@ -85,6 +93,7 @@ Internet
 Cron jobs:
   - 3:00 AM daily  ──► backup-db.sh (pg_dump + rotate)
   - Every 5 min    ──► health-check.sh (service checks + auto-recovery)
+  - 4:00 AM daily  ──► preview-manager.sh cleanup (destroy previews >7 days old)
 ```
 
 ### Services Summary
@@ -101,6 +110,7 @@ Cron jobs:
 | Schedule | Script | Purpose |
 |----------|--------|---------|
 | `0 3 * * *` | `scripts/backup-db.sh` | Daily DB backup (pg_dump, gzip, 14-day retention) |
+| `0 4 * * *` | `scripts/preview-manager.sh cleanup` | Destroy preview environments older than 7 days |
 | `*/5 * * * *` | `scripts/health-check.sh` | Service health checks with auto-recovery |
 
 ### Key Files on Droplet
@@ -120,6 +130,49 @@ Cron jobs:
 | `/root/whoeverwants/docker-compose.yml` | Docker Compose config (db + api only) |
 | `/root/whoeverwants/server/` | FastAPI application source (uses uv for dependency management) |
 | `/root/whoeverwants/database/migrations/` | SQL migration files |
+| `/root/previews/` | Git worktrees for preview environments |
+| `/etc/caddy/previews/` | Per-preview Caddy config fragments |
+
+---
+
+## Preview Environments
+
+Per-branch preview environments provide isolated API + database instances for testing.
+
+### How It Works
+
+- Each preview gets a separate Postgres database and FastAPI Docker container
+- Caddy routes `<slug>.api.whoeverwants.com` to the preview's container
+- Vercel automatically deploys a preview frontend for each branch push
+- The frontend derives the API URL from the branch name (convention-based)
+
+### Managing Previews
+
+```bash
+# Create a preview for a branch
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh create claude/my-feature-xyz" /root 300
+
+# List active previews
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh list"
+
+# Destroy a specific preview
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh destroy my-feature-xyz"
+
+# Destroy all previews
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh destroy-all"
+```
+
+### Convenience Wrapper
+
+From the development environment:
+```bash
+# Deploy preview for current branch (pushes to GitHub + creates API on droplet)
+bash scripts/deploy-preview.sh
+```
+
+### Resource Usage
+
+Each preview uses ~70MB RAM (FastAPI container ~60MB + DB overhead ~10MB). The 1GB droplet can comfortably run production + 4-5 previews. Previews older than 7 days are automatically cleaned up.
 
 ---
 

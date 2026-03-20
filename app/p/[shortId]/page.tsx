@@ -8,8 +8,6 @@ import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
 
-export const dynamic = 'force-dynamic';
-
 function PollContent() {
   const [poll, setPoll] = useState<Poll | null>(null);
   const [loading, setLoading] = useState(true);

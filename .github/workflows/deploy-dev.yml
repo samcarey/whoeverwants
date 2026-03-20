@@ -2,7 +2,7 @@ name: Deploy Dev to GitHub Pages
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
 
 permissions:
   pages: write
@@ -37,10 +37,9 @@ jobs:
           # Strip 'force-dynamic' exports from all page files
           find app \( -name '*.tsx' -o -name '*.ts' \) | xargs sed -i "/export const dynamic = 'force-dynamic'/d"
 
-          # Add generateStaticParams to the dynamic [shortId] route so
-          # Next.js static export accepts it (returns [] — no pages are
-          # pre-rendered, but client-side routing still works via 404.html)
-          echo 'export function generateStaticParams() { return []; }' >> app/p/\[shortId\]/page.tsx
+          # Remove the dynamic [shortId] route entirely.
+          # GitHub Pages SPA fallback (404.html) handles client-side routing.
+          rm -rf 'app/p/[shortId]'
 
       - name: Build static site
         env:

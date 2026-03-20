@@ -54,17 +54,42 @@ Droplet (142.93.60.29):
    - Next.js updated from 15.3.3 → 15.5.14 to fix security CVEs blocking builds
    - Preview builds now succeed (branch `claude/continue-plan-Stbwu` deployed successfully)
 
-7. **Update DNS** ⬅️ NEXT
-   - ✅ `api.whoeverwants.com` → A record → `142.93.60.29` (droplet) — already correct
-   - ❌ `whoeverwants.com` → still points to droplet (`142.93.60.29`), needs to point to Vercel
-   - **Action needed**: In AWS Route 53, change `whoeverwants.com` A record from `142.93.60.29` to `76.76.21.21` (Vercel's IP)
-   - DNS is managed via AWS Route 53 (nameservers: `ns-*.awsdns-*.{net,com,co.uk,org}`)
+7. ~~**Update DNS**~~ ✅ DONE
+   - `api.whoeverwants.com` → A record → `142.93.60.29` (droplet)
+   - `whoeverwants.com` → A record → `76.76.21.21` (Vercel)
+   - DNS managed via AWS Route 53
 
-8. **Verify end-to-end**
-   - Merge branch to `main` to trigger production Vercel deploy
-   - Vercel serves frontend at `whoeverwants.com`
-   - API calls from frontend reach `api.whoeverwants.com` → droplet → FastAPI → Postgres
-   - All 4 poll types work (create, vote, results)
+8. ~~**Verify end-to-end**~~ ✅ DONE
+   - Merged to `main`, production Vercel deploy succeeded (READY)
+   - `whoeverwants.com` served by Vercel (`server: Vercel`, HTTP 200)
+   - `api.whoeverwants.com/health` returns OK (droplet FastAPI + Postgres)
+   - CORS preflight passes (origin: `https://whoeverwants.com`)
+   - API accessible polls endpoint returns data correctly
+
+### Phase 7 Complete ✅
+
+### Session Notes (2026-03-19)
+
+**What was done this session:**
+1. Diagnosed Vercel deployment failures — all builds were ERROR due to "Vulnerable version of Next.js detected"
+2. Updated Next.js from 15.3.3 → 15.5.14 (latest 15.x patch) to fix multiple CVEs
+3. Verified Vercel preview build succeeded from feature branch
+4. User merged to `main` — production Vercel deploy now READY
+5. User updated DNS in AWS Route 53: `whoeverwants.com` A record → `76.76.21.21` (Vercel)
+6. Verified end-to-end: Vercel serving frontend, droplet serving API, CORS working
+
+**Current production architecture:**
+- `whoeverwants.com` → Vercel (76.76.21.21) — Next.js frontend, CDN, auto-TLS
+- `api.whoeverwants.com` → Droplet (142.93.60.29) — Caddy → FastAPI → PostgreSQL
+- Auto-deploy: push to `main` triggers Vercel production build
+- Vercel project ID: `prj_07PAXGI2wG74cGRKREB0BiIDUWSn`
+
+**Known issues / things to watch:**
+- Vercel preview deployments are behind SSO protection (can't test previews without auth)
+- `CORS allow-origin` is currently `*` (broad) — should be tightened to specific origins if needed
+- Next.js 16.x is available but would be a major version upgrade — staying on 15.x for stability
+
+**Next up:** Phase 8 — Preview Environments for Development
 
 ### Vercel CLI Access for Claude
 
@@ -209,22 +234,50 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ## Implementation Order
 
-### Phase 7 (do first)
-1. Connect GitHub repo to Vercel, configure build
-2. Add `api.whoeverwants.com` DNS + Caddy config
-3. Add `vercel.json` rewrites or update `lib/api.ts` to call API subdomain
-4. Update DNS: `whoeverwants.com` → Vercel
-5. Remove Next.js from droplet, update health checks and docs
-6. Verify all poll types work E2E
+### ~~Phase 7~~ ✅ COMPLETE
 
-### Phase 8 (do second)
-1. Add `*.api.whoeverwants.com` wildcard DNS
-2. Write `preview-manager.sh` (create/list/destroy)
-3. Update `lib/api.ts` to derive API URL from branch name in Vercel previews
-4. Write `deploy-preview.sh` convenience wrapper
-5. Test E2E: create preview from test branch
-6. Add auto-cleanup cron
-7. Update CLAUDE.md and provision script
+### Phase 8 ✅ COMPLETE
+1. ~~Add `*.api.whoeverwants.com` wildcard DNS~~ ✅ DONE
+   - Wildcard A record added in AWS Route 53: `*.api.whoeverwants.com` → `142.93.60.29`
+   - Verified: `test-preview.api.whoeverwants.com` resolves correctly
+2. ~~Write `preview-manager.sh` (create/list/destroy)~~ ✅ DONE
+   - `scripts/preview-manager.sh` with create/list/destroy/destroy-all/cleanup commands
+   - Tested on droplet: full create → list → destroy round-trip working
+3. ~~Update `lib/api.ts` to derive API URL from branch name in Vercel previews~~ ✅ DONE
+   - Uses `VERCEL_GIT_COMMIT_REF` (exposed via `next.config.ts`) to derive slug
+   - Convention: `claude/foo-bar-xyz` → `https://foo-bar-xyz.api.whoeverwants.com/api/polls`
+4. ~~Write `deploy-preview.sh` convenience wrapper~~ ✅ DONE
+   - Pushes branch + creates preview API on droplet in one command
+5. ~~Test E2E: create preview from test branch~~ ✅ DONE
+   - Created preview for `claude/continue-plan-D3M5v`
+   - Preview API healthy on port 8001, isolated database created
+   - Public URL verified: `https://continue-plan-d3m5v.api.whoeverwants.com/health` → OK
+   - Destroy verified: container removed, database dropped, Caddy cleaned
+6. ~~Add auto-cleanup cron~~ ✅ DONE
+   - Daily at 4 AM: destroys previews older than 7 days
+   - Cron installed on droplet
+7. ~~Update CLAUDE.md and provision script~~ ✅ DONE
+   - CLAUDE.md: added preview environments section to development workflow
+   - `docs/droplet-setup.md`: updated architecture diagram, DNS, cron jobs, preview docs
+   - `scripts/provision-droplet.sh`: added preview directory setup, Caddy import, cleanup cron
+
+---
+
+### Session Notes (2026-03-20)
+
+**What was done this session:**
+1. Added `GITHUB_API_TOKEN` to CLAUDE.md as a required environment variable
+2. Token is a GitHub fine-grained PAT scoped to `samcarey/whoeverwants` with permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read)
+3. This enables Claude Code sessions to: create PRs, read issues, push branches, and check CI/pre-merge status via the GitHub REST API
+
+**Current status:**
+- Phases 7 and 8 are complete
+- GitHub API access being added to enable PR workflow automation
+
+**For next session:**
+- `GITHUB_API_TOKEN` will be available as an environment variable
+- Use it with `curl -H "Authorization: Bearer $GITHUB_API_TOKEN"` for GitHub REST API calls
+- Or install `gh` CLI and authenticate with `echo "$GITHUB_API_TOKEN" | gh auth login --with-token`
 
 ---
 

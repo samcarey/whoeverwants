@@ -173,6 +173,7 @@ fi
 # ── 6. Configure Caddy ───────────────────────────────────────────────
 # Frontend is hosted on Vercel. Droplet only serves the API.
 echo "=== 6/11 Configuring Caddy ==="
+mkdir -p /etc/caddy/previews
 cat > /etc/caddy/Caddyfile <<EOF
 ${DROPLET_IP_DASHED}.sslip.io {
 	reverse_proxy 127.0.0.1:9090
@@ -190,6 +191,8 @@ api.whoeverwants.com {
 
 	reverse_proxy 127.0.0.1:8000
 }
+
+import /etc/caddy/previews/*.caddy
 EOF
 
 systemctl restart caddy
@@ -281,6 +284,12 @@ mkdir -p /var/backups/whoeverwants
 chmod +x /root/whoeverwants/scripts/health-check.sh
 (crontab -l 2>/dev/null | grep -v 'health-check.sh' || true; \
  echo "*/5 * * * * /root/whoeverwants/scripts/health-check.sh >> /var/log/whoeverwants-health.log 2>&1") | crontab -
+
+# --- Preview environment auto-cleanup (daily at 4 AM) ---
+chmod +x /root/whoeverwants/scripts/preview-manager.sh
+mkdir -p /root/previews /etc/caddy/previews
+(crontab -l 2>/dev/null | grep -v 'preview-manager.sh' || true; \
+ echo "0 4 * * * /root/whoeverwants/scripts/preview-manager.sh cleanup 7 >> /var/log/whoeverwants-preview-cleanup.log 2>&1") | crontab -
 
 echo "Cron jobs installed:"
 crontab -l

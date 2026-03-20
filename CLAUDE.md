@@ -54,10 +54,12 @@ The following environment variables must be available. In the Claude Code web en
 DROPLET_API_URL=https://142-93-60-29.sslip.io
 DROPLET_API_TOKEN=<bearer token>
 VERCEL_API_TOKEN=<vercel api token>
+GITHUB_API_TOKEN=<github fine-grained PAT>
 ```
 
 - `DROPLET_API_URL` / `DROPLET_API_TOKEN` — Authenticate requests to the droplet's command execution API (via sslip.io for TLS). Used by `scripts/remote.sh`.
 - `VERCEL_API_TOKEN` — Authenticate requests to the [Vercel REST API](https://vercel.com/docs/rest-api) for managing frontend deployments.
+- `GITHUB_API_TOKEN` — GitHub fine-grained Personal Access Token scoped to `samcarey/whoeverwants`. Permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read). Used for creating PRs, reading issues, and checking CI status via the GitHub REST API.
 
 > **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
 
@@ -85,6 +87,21 @@ The droplet is hardened with:
 4. **Check logs/debug**: `bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants`
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
+
+**Preview Environments** (per-branch testing):
+1. **Push branch** to GitHub (triggers Vercel preview frontend)
+2. **Create preview API**: `bash scripts/deploy-preview.sh` (or manually via `scripts/remote.sh`)
+3. The Vercel preview frontend automatically connects to the branch's preview API
+4. Preview APIs are auto-cleaned after 7 days
+
+```bash
+# Quick deploy preview for current branch
+bash scripts/deploy-preview.sh
+
+# Or manually manage previews on the droplet
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh list"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/preview-manager.sh destroy <slug>"
+```
 
 ### Droplet Setup & Provisioning
 
