@@ -10,7 +10,7 @@
 
 ## Active Plan
 
-The Supabase-to-Python migration (Phases 1-6) is complete. The active plan for infrastructure improvements is in **[plan.md](./plan.md)**. Always consult that document at the start of a session to understand current work. See **[MIGRATION_PLAN.md](./MIGRATION_PLAN.md)** for migration history and lessons learned.
+The Supabase-to-Python migration (Phases 1-6) is complete. The active plan for infrastructure improvements is in **[plan.md](./plan.md)**. Always consult that document at the start of a session to understand current work.
 
 ## DigitalOcean Droplet (Production Server)
 
@@ -61,7 +61,7 @@ GITHUB_API_TOKEN=<github fine-grained PAT>
 - `VERCEL_API_TOKEN` — Authenticate requests to the [Vercel REST API](https://vercel.com/docs/rest-api) for managing frontend deployments.
 - `GITHUB_API_TOKEN` — GitHub fine-grained Personal Access Token scoped to `samcarey/whoeverwants`. Permissions: Pull Requests (R/W), Issues (Read), Contents (R/W), Commit Statuses (Read), Actions (Read). Used for creating PRs, reading issues, and checking CI status via the GitHub REST API.
 
-> **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit, leading to a Kinsing cryptominer compromise. See `security-fix.md` for the full incident report.
+> **SECURITY**: These tokens must NEVER be committed to git — not in CLAUDE.md, `.env`, or any tracked file. Store them only in environment variables. The droplet token was previously leaked via a git commit (fa805e7), leading to a Kinsing cryptominer compromise that required a full droplet rebuild (old IP 157.245.129.162 → current 142.93.60.29).
 
 ### Security Hardening
 
@@ -876,14 +876,16 @@ UPDATE polls SET view_count = 0 WHERE view_count IS NULL;
 
 ### Quick Debug Commands:
 ```bash
-# Check latest logs
-cat debug-logs/nomination-vote-$(date +%Y-%m-%d).log | tail -50
+# Check API logs on droplet
+bash scripts/remote.sh "docker compose logs --tail 100" /root/whoeverwants
 
-# Apply specific migration
-./scripts/apply-single-migration.sh database/migrations/048_fix_vote_type_check_constraint_up.sql
-
-# Clear cache and restart
-rm -rf .next && npm run dev
+# List all check constraints on a table
+bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'votes'::regclass AND contype = 'c';\""
 ```
 
 **Time-saving tip**: Don't guess at the problem. Add logging, get the exact error, then fix the specific constraint.
+
+### API Development Pitfalls
+
+- **Catch-all fallthrough in `get_results()`**: When adding new poll types, `server/routers/polls.py` has a catch-all return at the bottom returning `yes_count=None`. Any poll type without an explicit handler silently falls through and the frontend interprets `None` as `0`. Always add an explicit handler for each poll type.
+- **Frontend TODO stubs cause silent failures**: If the backend adds a new endpoint, check whether the frontend has TODO stubs (e.g., `setParticipants([])`) that need to be connected. Stubs cause incorrect UI without errors.
