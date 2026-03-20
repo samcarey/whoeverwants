@@ -137,7 +137,7 @@ Cron jobs:
 | `/etc/caddy/Caddyfile` | Caddy reverse proxy config |
 | `/etc/logrotate.d/whoeverwants` | Log rotation config (14-day retention) |
 | `/etc/systemd/journald.conf.d/whoeverwants.conf` | Journald size limits (500MB max) |
-| `/swapfile` | 2GB swap file |
+| `/swapfile`, `/swapfile2` | 4GB swap (2x 2GB) |
 | `/var/backups/whoeverwants/` | Database backup directory |
 | `/var/log/whoeverwants-backup.log` | Backup script log |
 | `/var/log/whoeverwants-health.log` | Health check log |
@@ -263,7 +263,7 @@ The webhook must be configured in GitHub to send push events to the droplet:
 
 ### Resource Usage
 
-Each dev server uses ~300-400MB RAM (`next dev` with hot reload). The 1GB droplet (with 2GB swap) can run production + 1-2 concurrent dev servers. Dev servers idle for 7+ days are automatically cleaned up.
+Each dev server uses ~300-400MB RAM (`next dev --turbo` with hot reload). The 1GB droplet (with 4GB swap) can run production + up to 3 concurrent dev servers. The dev server manager automatically evicts the oldest server when the limit of 3 is reached. Dev servers idle for 7+ days are also automatically cleaned up.
 
 ### Architecture Notes
 
