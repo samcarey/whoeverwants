@@ -138,7 +138,7 @@ start_nextjs() {
   log "Starting Next.js dev server for $slug on port $port..."
   NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
   HOSTNAME=0.0.0.0 \
-    npx next dev --turbo -p "$port" \
+    npx next dev --webpack -p "$port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
