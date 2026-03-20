@@ -96,6 +96,7 @@ get_dev_port() {
 }
 
 # Stop the Next.js process for a dev server
+# next dev spawns child processes, so we kill the entire process group
 stop_nextjs() {
   local slug="$1"
   local dir="${DEV_DIR}/${slug}"
@@ -106,7 +107,8 @@ stop_nextjs() {
     pid=$(cat "$pid_file")
     if kill -0 "$pid" 2>/dev/null; then
       log "Stopping Next.js for $slug (PID $pid)..."
-      kill "$pid" 2>/dev/null || true
+      # Kill the entire process group (next dev + child processes)
+      kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
       # Wait up to 10 seconds for graceful shutdown
       local waited=0
       while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 10 ]; do
@@ -115,7 +117,8 @@ stop_nextjs() {
       done
       # Force kill if still running
       if kill -0 "$pid" 2>/dev/null; then
-        kill -9 "$pid" 2>/dev/null || true
+        kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+        sleep 1
       fi
     fi
     rm -f "$pid_file"
