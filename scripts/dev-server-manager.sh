@@ -229,11 +229,11 @@ cmd_upsert() {
   # Fetch and checkout the branch
   log "--- Fetching and checking out $branch ---"
   git fetch origin "$branch" --depth 50
-  # Try to checkout the branch; if it doesn't exist locally, create tracking branch
+  # Use FETCH_HEAD since shallow clones may not have remote tracking branches
   git checkout "$branch" 2>/dev/null \
-    || git checkout -b "$branch" "origin/$branch" 2>/dev/null \
-    || true
-  git reset --hard "origin/$branch"
+    || git checkout -b "$branch" FETCH_HEAD 2>/dev/null \
+    || git checkout "$branch"
+  git reset --hard FETCH_HEAD
 
   # Install dependencies
   log "--- Installing dependencies ---"
