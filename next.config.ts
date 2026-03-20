@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
+  // Allow dev server HMR WebSocket connections from proxy domains
+  allowedDevOrigins: ['*.dev.whoeverwants.com'],
+
   // Expose Vercel's git branch to the client for preview API URL derivation
   env: {
     NEXT_PUBLIC_VERCEL_GIT_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || '',
