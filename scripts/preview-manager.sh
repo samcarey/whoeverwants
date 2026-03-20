@@ -204,6 +204,7 @@ api.whoeverwants.com {
 }
 
 import ${CADDY_PREVIEW_DIR}/*.caddy
+import /etc/caddy/dev-servers/*.caddy
 EOF
 }
 

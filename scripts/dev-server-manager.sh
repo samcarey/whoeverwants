@@ -1,0 +1,451 @@
+#!/bin/bash
+# Per-user dev server manager for the WhoeverWants droplet.
+# Each developer (identified by git author email) gets their own Next.js
+# frontend server that auto-updates when they push new commits.
+#
+# Usage (run on droplet):
+#   dev-server-manager.sh upsert <email> <branch>
+#   dev-server-manager.sh list
+#   dev-server-manager.sh destroy <email-slug>
+#   dev-server-manager.sh destroy-all
+#   dev-server-manager.sh cleanup [days]
+#
+# Each dev server gets:
+#   - A clone of the repo at /root/dev-servers/<email-slug>/
+#   - A Next.js standalone build served on a unique port
+#   - A Caddy route at <email-slug>.dev.whoeverwants.com
+#   - Uses the production API (api.whoeverwants.com)
+#
+# Email-to-slug mapping:
+#   sam@example.com -> sam-at-example-com
+#   user.name@company.co.uk -> user-name-at-company-co-uk
+
+set -euo pipefail
+
+DEV_DIR="/root/dev-servers"
+CADDY_DEV_DIR="/etc/caddy/dev-servers"
+REPO_URL="https://github.com/samcarey/whoeverwants.git"
+PORT_START=3001
+PORT_MAX=3010
+LOCK_DIR="/tmp/dev-server-locks"
+LOG_FILE="/var/log/dev-server-manager.log"
+
+# Claude/bot email patterns to ignore
+IGNORE_EMAIL_PATTERNS=(
+  "noreply@anthropic.com"
+  "claude@anthropic.com"
+  "noreply@github.com"
+  "actions@github.com"
+)
+
+log() {
+  local msg="[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+  echo "$msg"
+  echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# Convert email to URL-safe slug
+# sam@example.com -> sam-at-example-com
+email_to_slug() {
+  local email="$1"
+  echo "$email" | tr '[:upper:]' '[:lower:]' \
+    | sed 's/@/-at-/g' \
+    | sed 's/[^a-z0-9-]/-/g' \
+    | sed 's/--*/-/g' \
+    | sed 's/^-//; s/-$//'
+}
+
+# Check if email should be ignored (Claude, bots, etc.)
+is_ignored_email() {
+  local email="$1"
+  for pattern in "${IGNORE_EMAIL_PATTERNS[@]}"; do
+    if [ "$email" = "$pattern" ]; then
+      return 0
+    fi
+  done
+  # Also ignore any *@anthropic.com
+  if echo "$email" | grep -qi '@anthropic\.com$'; then
+    return 0
+  fi
+  return 1
+}
+
+# Find an available port
+find_available_port() {
+  for port in $(seq $PORT_START $PORT_MAX); do
+    if ! ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+      echo "$port"
+      return 0
+    fi
+  done
+  log "ERROR: No available ports in range $PORT_START-$PORT_MAX"
+  return 1
+}
+
+# Get port from existing dev server metadata
+get_dev_port() {
+  local slug="$1"
+  local meta="${DEV_DIR}/${slug}/.dev-meta.json"
+  if [ -f "$meta" ]; then
+    python3 -c "import json; print(json.load(open('$meta'))['port'])" 2>/dev/null || echo ""
+  fi
+}
+
+# Stop the Next.js process for a dev server
+stop_nextjs() {
+  local slug="$1"
+  local dir="${DEV_DIR}/${slug}"
+  local pid_file="${dir}/.nextjs.pid"
+
+  if [ -f "$pid_file" ]; then
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+      log "Stopping Next.js for $slug (PID $pid)..."
+      kill "$pid" 2>/dev/null || true
+      # Wait up to 10 seconds for graceful shutdown
+      local waited=0
+      while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 10 ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      # Force kill if still running
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    fi
+    rm -f "$pid_file"
+  fi
+}
+
+# Start the Next.js standalone server
+start_nextjs() {
+  local slug="$1"
+  local port="$2"
+  local dir="${DEV_DIR}/${slug}"
+
+  cd "$dir"
+
+  # Ensure static assets are in standalone dir
+  if [ -d ".next/standalone" ]; then
+    cp -r public .next/standalone/public 2>/dev/null || true
+    mkdir -p .next/standalone/.next
+    cp -r .next/static .next/standalone/.next/static 2>/dev/null || true
+  fi
+
+  log "Starting Next.js for $slug on port $port..."
+  PORT=$port HOSTNAME=0.0.0.0 node .next/standalone/server.js \
+    >> "${dir}/nextjs.log" 2>&1 &
+  local new_pid=$!
+  echo "$new_pid" > "${dir}/.nextjs.pid"
+
+  # Wait and verify it started
+  sleep 3
+  if ! kill -0 "$new_pid" 2>/dev/null; then
+    log "ERROR: Next.js failed to start for $slug. Last 20 lines of log:"
+    tail -20 "${dir}/nextjs.log" 2>/dev/null || true
+    return 1
+  fi
+
+  log "Next.js started for $slug (PID $new_pid, port $port)"
+  echo "$new_pid"
+}
+
+# Ensure the Caddy import line for dev-servers exists
+ensure_caddy_import() {
+  mkdir -p "$CADDY_DEV_DIR"
+  if ! grep -q "dev-servers" /etc/caddy/Caddyfile 2>/dev/null; then
+    echo "" >> /etc/caddy/Caddyfile
+    echo "import ${CADDY_DEV_DIR}/*.caddy" >> /etc/caddy/Caddyfile
+    log "Added dev-servers import to Caddyfile"
+  fi
+}
+
+# Add or update Caddy config for a dev server
+configure_caddy() {
+  local slug="$1"
+  local port="$2"
+
+  ensure_caddy_import
+
+  cat > "${CADDY_DEV_DIR}/${slug}.caddy" <<EOF
+${slug}.dev.whoeverwants.com {
+	reverse_proxy 127.0.0.1:${port}
+}
+EOF
+
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+  log "Caddy configured for ${slug}.dev.whoeverwants.com -> port $port"
+}
+
+# Remove Caddy config for a dev server
+remove_caddy() {
+  local slug="$1"
+  rm -f "${CADDY_DEV_DIR}/${slug}.caddy"
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+  log "Caddy config removed for $slug"
+}
+
+# --- Commands ---
+
+cmd_upsert() {
+  local email="${1:?Usage: dev-server-manager.sh upsert <email> <branch>}"
+  local branch="${2:?Usage: dev-server-manager.sh upsert <email> <branch>}"
+  local slug
+  slug=$(email_to_slug "$email")
+
+  if is_ignored_email "$email"; then
+    log "Ignoring email: $email"
+    return 0
+  fi
+
+  # Lock to prevent concurrent updates for same user
+  mkdir -p "$LOCK_DIR"
+  local lockfile="${LOCK_DIR}/${slug}.lock"
+  exec 200>"$lockfile"
+  if ! flock -n 200; then
+    log "Update already in progress for $slug, skipping"
+    return 0
+  fi
+
+  log "=== Upsert dev server: $email (slug: $slug, branch: $branch) ==="
+
+  local dir="${DEV_DIR}/${slug}"
+  local is_new=false
+
+  if [ ! -d "$dir/.git" ]; then
+    is_new=true
+    log "--- Cloning repository ---"
+    mkdir -p "$DEV_DIR"
+    rm -rf "$dir"
+    git clone --depth 50 "$REPO_URL" "$dir"
+  fi
+
+  cd "$dir"
+
+  # Stop running server before updating files
+  stop_nextjs "$slug"
+
+  # Fetch and checkout the branch
+  log "--- Fetching and checking out $branch ---"
+  git fetch origin "$branch" --depth 50
+  # Try to checkout the branch; if it doesn't exist locally, create tracking branch
+  git checkout "$branch" 2>/dev/null \
+    || git checkout -b "$branch" "origin/$branch" 2>/dev/null \
+    || true
+  git reset --hard "origin/$branch"
+
+  # Install dependencies
+  log "--- Installing dependencies ---"
+  npm ci --prefer-offline 2>&1 | tail -5
+
+  # Determine port (reuse existing or find new)
+  local port
+  port=$(get_dev_port "$slug")
+  if [ -z "$port" ]; then
+    port=$(find_available_port)
+  fi
+
+  # Build Next.js in standalone mode pointing to production API
+  log "--- Building Next.js (standalone) ---"
+  NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
+  NEXT_OUTPUT=standalone \
+    npx next build 2>&1 | tail -10
+
+  # Start the server
+  local pid
+  pid=$(start_nextjs "$slug" "$port")
+
+  # Write metadata
+  local commit_sha
+  commit_sha=$(git rev-parse HEAD)
+  cat > "${dir}/.dev-meta.json" <<EOF
+{
+  "slug": "${slug}",
+  "email": "${email}",
+  "branch": "${branch}",
+  "port": ${port},
+  "pid": ${pid},
+  "commit": "${commit_sha}",
+  "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "url": "https://${slug}.dev.whoeverwants.com"
+}
+EOF
+
+  # Configure Caddy (on first create or if config missing)
+  if [ "$is_new" = true ] || [ ! -f "${CADDY_DEV_DIR}/${slug}.caddy" ]; then
+    configure_caddy "$slug" "$port"
+  fi
+
+  log ""
+  log "=== Dev server ready ==="
+  log "  URL:    https://${slug}.dev.whoeverwants.com"
+  log "  Email:  $email"
+  log "  Branch: $branch"
+  log "  Commit: ${commit_sha:0:8}"
+  log "  Port:   $port"
+  log "  PID:    $pid"
+}
+
+cmd_list() {
+  printf "%-35s %-30s %-30s %-5s %-20s %s\n" "SLUG" "EMAIL" "BRANCH" "PORT" "UPDATED" "URL"
+  printf "%-35s %-30s %-30s %-5s %-20s %s\n" "----" "-----" "------" "----" "-------" "---"
+
+  if [ ! -d "$DEV_DIR" ]; then
+    echo "(no dev servers)"
+    return
+  fi
+
+  local found=0
+  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
+    [ ! -f "$meta" ] && continue
+    found=1
+    local slug branch email port updated url pid running
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    email=$(python3 -c "import json; print(json.load(open('$meta'))['email'])")
+    branch=$(python3 -c "import json; print(json.load(open('$meta'))['branch'])")
+    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'][:19])")
+    url=$(python3 -c "import json; print(json.load(open('$meta'))['url'])")
+    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', 'N/A'))")
+
+    # Check if process is running
+    running="STOPPED"
+    if [ "$pid" != "N/A" ] && kill -0 "$pid" 2>/dev/null; then
+      running="RUNNING"
+    fi
+
+    printf "%-35s %-30s %-30s %-5s %-20s %s [%s]\n" "$slug" "$email" "$branch" "$port" "$updated" "$url" "$running"
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "(no dev servers)"
+  fi
+}
+
+cmd_destroy() {
+  local slug="${1:?Usage: dev-server-manager.sh destroy <email-slug>}"
+
+  log "=== Destroying dev server: $slug ==="
+
+  # Stop Next.js
+  stop_nextjs "$slug"
+
+  # Remove Caddy config
+  remove_caddy "$slug"
+
+  # Remove clone
+  log "--- Removing clone ---"
+  rm -rf "${DEV_DIR:?}/${slug}"
+
+  log "=== Dev server '$slug' destroyed ==="
+}
+
+cmd_destroy_all() {
+  log "=== Destroying all dev servers ==="
+  if [ ! -d "$DEV_DIR" ]; then
+    echo "No dev servers to destroy."
+    return
+  fi
+
+  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
+    [ ! -f "$meta" ] && continue
+    local slug
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    cmd_destroy "$slug"
+  done
+
+  log "=== All dev servers destroyed ==="
+}
+
+cmd_cleanup_old() {
+  local max_age_days="${1:-7}"
+  local now
+  now=$(date +%s)
+
+  if [ ! -d "$DEV_DIR" ]; then
+    return
+  fi
+
+  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
+    [ ! -f "$meta" ] && continue
+    local slug updated created_epoch age_days
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
+    created_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
+
+    if [ "$created_epoch" -eq 0 ]; then
+      continue
+    fi
+
+    age_days=$(( (now - created_epoch) / 86400 ))
+    if [ "$age_days" -ge "$max_age_days" ]; then
+      log "Dev server '$slug' last updated ${age_days} days ago (max: ${max_age_days}). Destroying..."
+      cmd_destroy "$slug"
+    fi
+  done
+}
+
+# Restart any dev servers that should be running but aren't (e.g., after reboot)
+cmd_revive() {
+  log "=== Checking for stopped dev servers ==="
+  if [ ! -d "$DEV_DIR" ]; then
+    return
+  fi
+
+  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
+    [ ! -f "$meta" ] && continue
+    local slug port pid
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', '0'))")
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+      log "Dev server '$slug' is not running, restarting on port $port..."
+      local dir="${DEV_DIR}/${slug}"
+      if [ -d "$dir/.next/standalone" ]; then
+        local new_pid
+        new_pid=$(start_nextjs "$slug" "$port")
+        # Update PID in metadata
+        python3 -c "
+import json
+with open('$meta', 'r+') as f:
+    d = json.load(f)
+    d['pid'] = $new_pid
+    f.seek(0)
+    json.dump(d, f, indent=2)
+    f.truncate()
+"
+        log "Revived '$slug' with PID $new_pid"
+      else
+        log "No standalone build found for '$slug', skipping"
+      fi
+    fi
+  done
+}
+
+# --- Main ---
+case "${1:-help}" in
+  upsert)      cmd_upsert "${2:-}" "${3:-}" ;;
+  list)        cmd_list ;;
+  destroy)     cmd_destroy "${2:-}" ;;
+  destroy-all) cmd_destroy_all ;;
+  cleanup)     cmd_cleanup_old "${2:-7}" ;;
+  revive)      cmd_revive ;;
+  *)
+    echo "Usage: dev-server-manager.sh <command> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  upsert <email> <branch>   Create or update a dev server for a user"
+    echo "  list                      List all active dev servers"
+    echo "  destroy <email-slug>      Destroy a specific dev server"
+    echo "  destroy-all               Destroy all dev servers"
+    echo "  cleanup [days]            Destroy dev servers not updated in N days (default: 7)"
+    echo "  revive                    Restart any stopped dev servers"
+    echo ""
+    echo "Email-to-slug mapping:"
+    echo "  sam@example.com -> sam-at-example-com"
+    echo "  user@company.co.uk -> user-at-company-co-uk"
+    exit 1
+    ;;
+esac

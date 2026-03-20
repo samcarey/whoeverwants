@@ -322,6 +322,80 @@ With Vercel handling all frontends, the droplet only needs RAM for:
 
 ---
 
+## Phase 10: Per-User Dev Servers (Replacing Vercel Previews)
+
+**Goal**: Replace Vercel preview deployments with per-user Next.js dev servers on the droplet. Each developer gets a stable, bookmarkable URL based on their email address that automatically updates when they push code.
+
+**Why**: Vercel previews are slow to build, require sign-in to view, and generate a different URL for every push. Per-user dev servers on the droplet provide instant-ish updates, no auth required, and a permanent URL per developer.
+
+### Architecture
+
+```
+Developer pushes code
+  │
+  ├── GitHub webhook ──► hooks.api.whoeverwants.com
+  │                        │
+  │                        ├── Extract author email from commits
+  │                        ├── Ignore Claude/bot emails (*@anthropic.com)
+  │                        └── Trigger dev-server-manager.sh upsert
+  │
+  └── dev-server-manager.sh
+        │
+        ├── New author: git clone + npm ci + next build + start
+        └── Existing author: git fetch + checkout + rebuild + restart
+
+URL: https://<email-slug>.dev.whoeverwants.com
+  sam@example.com → sam-at-example-com.dev.whoeverwants.com
+  (same URL regardless of branch)
+```
+
+### Steps
+
+1. **Write `dev-server-manager.sh`** — per-user dev server lifecycle management
+   - `upsert <email> <branch>`: create or update dev server
+   - `list`: show all active dev servers with status
+   - `destroy <slug>`: tear down a dev server
+   - `cleanup [days]`: destroy idle dev servers
+   - `revive`: restart stopped servers (e.g., after reboot)
+
+2. **Write `dev-webhook.py`** — GitHub webhook handler
+   - Listens on port 9091 (proxied by Caddy via `hooks.api.whoeverwants.com`)
+   - Verifies GitHub HMAC-SHA256 signatures
+   - Extracts author emails from push event commits
+   - Triggers `dev-server-manager.sh upsert` in background threads
+
+3. **Install Node.js on droplet** — required for Next.js builds
+   - Node.js 20 LTS via NodeSource
+
+4. **Update Caddy config** — add routes for dev servers and webhook
+   - `hooks.api.whoeverwants.com` → webhook handler (port 9091)
+   - `*.dev.whoeverwants.com` → per-user Next.js servers (ports 3001-3010)
+   - Import `/etc/caddy/dev-servers/*.caddy` for per-user configs
+
+5. **Add DNS record** — `*.dev.whoeverwants.com` A record → droplet IP
+   - In AWS Route 53 (user action)
+
+6. **Set up GitHub webhook** — register webhook via GitHub API
+   - Payload URL: `https://hooks.api.whoeverwants.com/github`
+   - Events: `push` only
+   - Secret: from `/etc/dev-webhook-secret`
+
+7. **Add systemd services** — reliability
+   - `dev-webhook.service`: webhook handler (auto-restart)
+   - `dev-servers-revive.service`: restart dev servers on boot
+
+8. **Update docs** — CLAUDE.md, droplet-setup.md, provision-droplet.sh
+
+### Key Design Decisions
+
+- **Standalone builds** (not `next dev`): ~100MB RAM at runtime vs ~400MB for dev mode
+- **Production API**: Dev servers use `api.whoeverwants.com` — frontend-only testing
+- **Per-user locking**: Only one build runs per user at a time (flock)
+- **Email-based identity**: `GIT_AUTHOR_EMAIL` determines which dev server to update
+- **Shallow clones**: `--depth 50` to save disk space
+
+---
+
 ## Cost Summary
 
 | Item | Cost |
