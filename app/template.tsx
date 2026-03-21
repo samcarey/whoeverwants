@@ -27,8 +27,9 @@ export default function Template({ children }: AppTemplateProps) {
   const isInBounceRef = useRef(false);
 
   // Pull-to-refresh state
-  const [isPulling, setIsPulling] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
+  const [pullDistance, setPullDistance] = useState(0);  // raw touch delta (drives visuals)
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAnimatingBack, setIsAnimatingBack] = useState(false); // CSS transition active
   
   // Check if referrer is from a different domain or if this is a new tab/external entry
   // Also determine if back button should show home icon instead
@@ -269,6 +270,10 @@ export default function Template({ children }: AppTemplateProps) {
   // explicitly disables it in iOS standalone/fullscreen PWA mode.)
   // Touch listeners must be on the scroll container (not document.body) so that
   // e.preventDefault() actually suppresses the container's native overscroll bounce.
+  //
+  // Mimics Safari's native pull-to-refresh: the whole page translates down with
+  // a damped drag, a circular progress arc shows how close you are to the
+  // threshold, and dragging back up cancels the gesture.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isIOSPWA) return;
@@ -279,39 +284,62 @@ export default function Template({ children }: AppTemplateProps) {
     // Suppress native rubber-band overscroll so our custom handler takes over
     scrollContainer.style.overscrollBehaviorY = 'none';
 
+    const THRESHOLD = 80; // px of raw touch movement to trigger refresh
+    const MAX_PULL = 140; // visual cap (raw touch px)
+
     let startY = 0;
     let isAtTop = true;
     let isDragging = false;
     let currentPullDistance = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (isRefreshing) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isAtTop) return;
+      if (isRefreshing || !isAtTop) return;
 
-      const deltaY = e.touches[0].clientY - startY;
+      const rawDelta = e.touches[0].clientY - startY;
 
-      if (deltaY > 10) {
+      if (rawDelta > 10) {
         isDragging = true;
-        currentPullDistance = deltaY;
-        setPullDistance(deltaY);
-        setIsPulling(deltaY > 60);
+        // Clamp so the indicator doesn't fly off screen
+        currentPullDistance = Math.min(rawDelta, MAX_PULL);
+        setPullDistance(currentPullDistance);
         e.preventDefault();
+      } else if (isDragging && rawDelta <= 10) {
+        // User dragged back up past the start — cancel
+        isDragging = false;
+        currentPullDistance = 0;
+        setPullDistance(0);
       }
     };
 
     const handleTouchEnd = () => {
-      if (isDragging && currentPullDistance > 60) {
-        window.location.reload();
+      if (isRefreshing) return;
+
+      if (isDragging && currentPullDistance >= THRESHOLD) {
+        // Show refreshing state, then reload
+        setIsRefreshing(true);
+        setPullDistance(THRESHOLD);
+        setTimeout(() => window.location.reload(), 400);
+      } else if (isDragging) {
+        // Animate back: enable CSS transition, then set distance to 0 after the
+        // browser has painted the current pulled-down position with transition enabled.
+        setIsAnimatingBack(true);
+        // Double-rAF ensures the transition property is painted before we change the value
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setPullDistance(0);
+            setTimeout(() => setIsAnimatingBack(false), 300);
+          });
+        });
       }
 
       isDragging = false;
       currentPullDistance = 0;
-      setIsPulling(false);
-      setPullDistance(0);
     };
 
     scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -324,7 +352,10 @@ export default function Template({ children }: AppTemplateProps) {
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
       scrollContainer.style.overscrollBehaviorY = '';
     };
-  }, [isIOSPWA]);
+  }, [isIOSPWA, isRefreshing]);
+
+  // Damped visual offset for pull-to-refresh: diminishing returns like rubber band
+  const pullDamped = pullDistance > 0 ? pullDistance * 0.5 : 0;
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
@@ -332,34 +363,57 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator (iOS PWA only) */}
-      {isIOSPWA && isPulling && (
-        <div
-          className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
-          style={{
-            transform: `translateY(${Math.min(pullDistance - 60, 40)}px)`,
-            opacity: pullDistance > 30 ? 1 : pullDistance / 30
-          }}
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2 mt-4">
-            <svg
-              className={`w-6 h-6 text-blue-600 dark:text-blue-400 ${
-                pullDistance > 60 ? 'animate-spin' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+      {/* Pull-to-refresh indicator (iOS PWA only) — circular progress arc like Safari */}
+      {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && (() => {
+        const THRESHOLD = 80;
+        // Progress 0→1 based on how close to threshold
+        const progress = Math.min(pullDistance / THRESHOLD, 1);
+        const pastThreshold = pullDistance >= THRESHOLD;
+        // SVG arc: radius 10, circumference ≈ 62.8
+        const circumference = 2 * Math.PI * 10;
+        const arcLength = progress * circumference;
+
+        return (
+          <div
+            className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
+            style={{
+              top: `calc(env(safe-area-inset-top, 0px) + ${pullDamped - 20}px)`,
+              transition: isAnimatingBack ? 'top 0.3s ease, opacity 0.3s ease' : 'none',
+              opacity: isAnimatingBack ? 0 : 1,
+            }}
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
+              {isRefreshing ? (
+                <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                  {/* Background circle track */}
+                  <circle
+                    cx="12" cy="12" r="10"
+                    stroke="currentColor"
+                    className="text-gray-200 dark:text-gray-600"
+                    strokeWidth="2.5"
+                  />
+                  {/* Progress arc */}
+                  <circle
+                    cx="12" cy="12" r="10"
+                    stroke="currentColor"
+                    className={pastThreshold ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${arcLength} ${circumference}`}
+                    transform="rotate(-90 12 12)"
+                    style={{ transition: 'stroke-dasharray 0.05s linear' }}
+                  />
+                </svg>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
       {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
@@ -395,12 +449,16 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto safari-scroll-container" 
-        style={{ 
+        className="flex-1 overflow-auto safari-scroll-container"
+        style={{
           paddingTop: '0',
-          paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
-          paddingBottom: '1rem'
+          paddingBottom: '1rem',
+          ...(isIOSPWA && (pullDamped > 0 || isAnimatingBack) ? {
+            transform: `translateY(${pullDamped}px)`,
+            transition: isAnimatingBack ? 'transform 0.3s ease' : 'none',
+          } : {}),
         }}>
         <div>
           {/* Spacer div for header elements that are now rendered in portal */}
