@@ -30,7 +30,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 *.log
-debug-logs/
 
 # development artifacts
 *.backup
