@@ -95,7 +95,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 **Per-User Dev Servers** (automatic on push):
 - Every push to GitHub auto-updates your dev server via webhook
 - Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
-- Only restarts if `package-lock.json` changes (new dependencies)
+- Restarts if `package-lock.json` changes (new dependencies) or commit SHA changes (to refresh env vars)
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
 - URL stays the same regardless of branch — bookmark it
@@ -375,6 +375,7 @@ The sections below contain mandatory rules. Follow them exactly.
 - For server logs, use `scripts/remote.sh` to read logs directly from the droplet.
 - Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
+- **Never bold URLs**: Do not wrap URLs in `**bold**` markers. The asterisks get rendered literally in the terminal and break the link. Write URLs as plain text.
 
 ### Python Tooling: uv (Mandatory)
 

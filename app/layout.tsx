@@ -83,6 +83,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
+                // Skip service worker on dev servers to avoid stale cache
+                if (location.hostname.endsWith('.dev.whoeverwants.com') || location.hostname === 'localhost') {
+                  navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    regs.forEach(function(r) { r.unregister(); });
+                  });
+                } else {
                 window.addEventListener('load', function() {
                   // Register enhanced service worker for mobile optimization
                   navigator.serviceWorker.register('/sw-mobile.js')
@@ -111,6 +117,7 @@ export default function RootLayout({
                       navigator.serviceWorker.register('/sw.js').catch(() => {});
                     });
                 });
+                }
               }
             `,
           }}

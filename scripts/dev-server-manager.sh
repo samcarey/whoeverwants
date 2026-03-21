@@ -322,6 +322,19 @@ cmd_upsert() {
     needs_restart=true
   fi
 
+  # Check if commit changed (env vars like NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA
+  # are baked into the process at startup and can't be hot-reloaded)
+  local old_commit=""
+  if [ -f "${dir}/.dev-meta.json" ]; then
+    old_commit=$(python3 -c "import json; print(json.load(open('${dir}/.dev-meta.json')).get('commit', ''))" 2>/dev/null || echo "")
+  fi
+  local new_commit
+  new_commit=$(git rev-parse HEAD)
+  if [ -n "$old_commit" ] && [ "$old_commit" != "$new_commit" ]; then
+    log "Commit changed ($old_commit -> $new_commit) — restarting to update env vars"
+    needs_restart=true
+  fi
+
   # Check if server process is still running
   local current_pid=""
   if [ -f "${dir}/.nextjs.pid" ]; then

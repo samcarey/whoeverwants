@@ -88,9 +88,10 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'commit' | 'logs'>('commit');
+  const [activeTab, setActiveTab] = useState<'build' | 'logs'>('build');
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [copyLabel, setCopyLabel] = useState('Copy All Logs');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
@@ -171,6 +172,14 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const commitDate = commitData ? new Date(commitData.commit.author.date) : null;
   const shortHash = commitHash ? commitHash.substring(0, 7) : '';
 
+  const handleCopyLogs = () => {
+    const text = logBuffer.map(e => e.args).join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel('Copied!');
+      setTimeout(() => setCopyLabel('Copy All Logs'), 1500);
+    });
+  };
+
   return (
     <>
       {/* Time badge - only shown in dev mode, positioned top center with no top margin */}
@@ -191,26 +200,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60"
           onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5 max-w-lg w-[90%] max-h-[70vh] overflow-y-auto shadow-xl">
-            <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-3">Build Info</h3>
-
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5 max-w-lg w-[90%] max-h-[60vh] flex flex-col overflow-hidden shadow-xl">
             {/* Tab bar */}
-            <div className="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex mb-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <button
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === 'commit'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
+                  activeTab === 'build'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
                 }`}
-                onClick={() => setActiveTab('commit')}
+                onClick={() => setActiveTab('build')}
               >
-                Commit
+                Build Info
               </button>
               <button
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
                   activeTab === 'logs'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
                 }`}
                 onClick={() => setActiveTab('logs')}
               >
@@ -218,9 +225,9 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </button>
             </div>
 
-            {/* Commit tab */}
-            {activeTab === 'commit' && (
-              <div className="space-y-3">
+            {/* Build Info tab */}
+            {activeTab === 'build' && (
+              <div className="space-y-3 overflow-y-auto">
                 {commitData ? (
                   <>
                     {branchName && (
@@ -259,24 +266,32 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
             {/* Logs tab */}
             {activeTab === 'logs' && (
-              <div className="font-mono text-xs max-h-[50vh] overflow-y-auto">
-                {logEntries.length === 0 ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
-                ) : (
-                  logEntries.map((entry, i) => (
-                    <div
-                      key={i}
-                      className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
-                        entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
-                        entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
-                        'text-gray-800 dark:text-gray-200'
-                      }`}
-                    >
-                      {entry.args}
-                    </div>
-                  ))
-                )}
-                <div ref={logsEndRef} />
+              <div className="flex flex-col flex-1 min-h-0">
+                <div className="font-mono text-xs flex-1 min-h-[80px] overflow-y-auto mb-2">
+                  {logEntries.length === 0 ? (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
+                  ) : (
+                    logEntries.map((entry, i) => (
+                      <div
+                        key={i}
+                        className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
+                          entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
+                          entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
+                          'text-gray-800 dark:text-gray-200'
+                        }`}
+                      >
+                        {entry.args}
+                      </div>
+                    ))
+                  )}
+                  <div ref={logsEndRef} />
+                </div>
+                <button
+                  className="shrink-0 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
+                  onClick={handleCopyLogs}
+                >
+                  {copyLabel}
+                </button>
               </div>
             )}
           </div>
