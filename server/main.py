@@ -12,12 +12,11 @@ app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
 # Rate limiting (must be added before CORS so it runs first)
 app.add_middleware(RateLimitMiddleware, read_rpm=120, write_rpm=30)
 
-# CORS: allow Vercel-hosted frontend and local development
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "https://whoeverwants.com,http://localhost:3000").split(",")
+# CORS: allow any origin (anonymous API, no credentials needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
