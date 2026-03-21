@@ -1,4 +1,17 @@
 import type { NextConfig } from "next";
+import { branchToSlug } from "./lib/slug";
+
+// Determine the backend API origin for rewrites.
+function getApiRewriteDestination(): string {
+  const branch = process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF;
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    if (branch && branch !== 'main' && branch !== 'master') {
+      return `https://${branchToSlug(branch)}.api.whoeverwants.com`;
+    }
+    return 'https://api.whoeverwants.com';
+  }
+  return process.env.PYTHON_API_URL || 'http://localhost:8000';
+}
 
 const nextConfig: NextConfig = {
   trailingSlash: true,
@@ -26,22 +39,24 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
   // Docker production build: standalone output for minimal image size
   nextConfig.output = 'standalone';
 } else {
-  // In development, proxy /api/polls requests to the local Python API server
+  const apiDest = getApiRewriteDestination();
+
+  // Proxy /api/polls to the backend API (same-origin for Safari ITP compatibility)
   nextConfig.rewrites = async () => ({
     beforeFiles: [
       // API rewrites must be in beforeFiles so they take priority over
       // the trailingSlash redirect (which otherwise 308s API POST requests)
       {
         source: '/api/polls',
-        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls`,
+        destination: `${apiDest}/api/polls`,
       },
       {
         source: '/api/polls/',
-        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls`,
+        destination: `${apiDest}/api/polls`,
       },
       {
         source: '/api/polls/:path*',
-        destination: `${process.env.PYTHON_API_URL || 'http://localhost:8000'}/api/polls/:path*`,
+        destination: `${apiDest}/api/polls/:path*`,
       },
     ],
     afterFiles: [],
