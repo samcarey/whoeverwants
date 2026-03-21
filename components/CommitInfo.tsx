@@ -14,10 +14,16 @@ interface CommitData {
   html_url: string;
 }
 
+interface LogEntry {
+  level: 'log' | 'warn' | 'error' | 'info';
+  args: string;
+  timestamp: number;
+}
+
 const REPO = "samcarey/whoeverwants";
 
 // Global log buffer, persists across renders
-const logBuffer: string[] = [];
+const logBuffer: LogEntry[] = [];
 const MAX_LOG_ENTRIES = 500;
 let consoleIntercepted = false;
 
@@ -25,14 +31,25 @@ function interceptConsole() {
   if (consoleIntercepted || typeof window === 'undefined') return;
   consoleIntercepted = true;
 
-  const original = console.log;
-  console.log = (...args: unknown[]) => {
-    original.apply(console, args);
-    const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    logBuffer.push(line);
-    if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
-    window.dispatchEvent(new Event('__console_log'));
-  };
+  const levels = ['log', 'warn', 'error', 'info'] as const;
+  for (const level of levels) {
+    const original = console[level];
+    console[level] = (...args: unknown[]) => {
+      original.apply(console, args);
+      const entry: LogEntry = {
+        level,
+        args: args.map(a => {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        }).join(' '),
+        timestamp: Date.now(),
+      };
+      logBuffer.push(entry);
+      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+      // Notify listeners
+      window.dispatchEvent(new Event('__console_log'));
+    };
+  }
 }
 
 function formatRelativeTime(date: Date): string {
@@ -73,9 +90,9 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'build' | 'logs'>('build');
   const [error, setError] = useState<string | null>(null);
-  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [copyLabel, setCopyLabel] = useState('Copy All Logs');
-  const logViewerRef = useRef<HTMLDivElement>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
@@ -126,21 +143,21 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     return () => window.removeEventListener('openCommitInfo', handleOpen);
   }, []);
 
-  // Intercept console.log on mount and listen for new entries
+  // Intercept console on mount and listen for new entries
   useEffect(() => {
     interceptConsole();
-    setLogLines([...logBuffer]);
-    const handleLog = () => setLogLines([...logBuffer]);
+    setLogEntries([...logBuffer]);
+    const handleLog = () => setLogEntries([...logBuffer]);
     window.addEventListener('__console_log', handleLog);
     return () => window.removeEventListener('__console_log', handleLog);
   }, []);
 
-  // Auto-scroll log viewer to bottom when switching to logs tab
+  // Auto-scroll logs to bottom when new entries arrive
   useEffect(() => {
-    if (activeTab === 'logs' && logViewerRef.current) {
-      logViewerRef.current.scrollTop = logViewerRef.current.scrollHeight;
+    if (activeTab === 'logs' && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [logLines, activeTab]);
+  }, [logEntries, activeTab]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -156,7 +173,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const shortHash = commitHash ? commitHash.substring(0, 7) : '';
 
   const handleCopyLogs = () => {
-    const text = logBuffer.join('\n');
+    const text = logBuffer.map(e => e.args).join('\n');
     navigator.clipboard.writeText(text).then(() => {
       setCopyLabel('Copied!');
       setTimeout(() => setCopyLabel('Copy All Logs'), 1500);
@@ -250,11 +267,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
             {/* Logs tab */}
             {activeTab === 'logs' && (
               <div className="flex flex-col flex-1 min-h-0">
-                <div
-                  ref={logViewerRef}
-                  className="font-mono text-[11px] leading-snug whitespace-pre-wrap break-all text-gray-800 dark:text-gray-200 bg-black/10 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded p-1.5 flex-1 min-h-[80px] overflow-y-auto mb-2"
-                >
-                  {logLines.length > 0 ? logLines.join('\n') : '(no logs yet)'}
+                <div className="font-mono text-xs flex-1 min-h-[80px] overflow-y-auto mb-2">
+                  {logEntries.length === 0 ? (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
+                  ) : (
+                    logEntries.map((entry, i) => (
+                      <div
+                        key={i}
+                        className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
+                          entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
+                          entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
+                          'text-gray-800 dark:text-gray-200'
+                        }`}
+                      >
+                        {entry.args}
+                      </div>
+                    ))
+                  )}
+                  <div ref={logsEndRef} />
                 </div>
                 <button
                   className="shrink-0 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
