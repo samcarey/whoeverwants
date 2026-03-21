@@ -368,7 +368,10 @@ export default function Template({ children }: AppTemplateProps) {
             {/* Title - vertically centered with slight downward and leftward offset */}
             {pageTitle && (
               <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
-                <h1 className="text-xl font-bold text-center break-words select-none whitespace-nowrap">
+                <h1
+                  className="text-xl font-bold text-center break-words select-none whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                >
                   {pageTitle}
                 </h1>
               </div>
@@ -401,16 +404,22 @@ export default function Template({ children }: AppTemplateProps) {
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1 className="text-2xl font-bold text-center break-words">
+                  <h1
+                    className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                  >
                     {pollPageTitle}
                   </h1>
                 </div>
               )}
-              
+
               {/* Create poll page title */}
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1 className="text-2xl font-bold text-center whitespace-nowrap">
+                  <h1
+                    className="text-2xl font-bold text-center whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                  >
                     Ask for{' '}
                     <span
                       className="text-blue-600 dark:text-blue-400"
@@ -421,11 +430,14 @@ export default function Template({ children }: AppTemplateProps) {
                   </h1>
                 </div>
               )}
-              
+
               {/* Profile page title */}
               {isProfilePage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1 className="text-2xl font-bold text-center break-words">
+                  <h1
+                    className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                  >
                     Profile
                   </h1>
                 </div>
@@ -435,7 +447,10 @@ export default function Template({ children }: AppTemplateProps) {
               {pathname === '/' && (
                 <div className="max-w-4xl mx-auto px-2 pt-4 pb-1">
                   <div className="text-center">
-                    <h1 className="text-2xl font-bold mb-1">Whoever Wants</h1>
+                    <h1
+                      className="text-2xl font-bold mb-1 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                      onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                    >Whoever Wants</h1>
                     <div className="h-7 flex items-center justify-center mb-4" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
                     </div>

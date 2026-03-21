@@ -47,9 +47,6 @@ debug-logs/
 *.tsbuildinfo
 next-env.d.ts
 
-# auto-generated files
-lib/last-compile-time.ts
-
 scratch
 
 # python

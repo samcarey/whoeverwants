@@ -171,8 +171,8 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 15.3.3 (App Router, `force-dynamic` routes) |
-| UI | React 18.3.1, Tailwind CSS 4, Geist font |
+| Framework | Next.js 16.2.0 (App Router, `force-dynamic` routes) |
+| UI | React 19.2.4, Tailwind CSS 4, Geist font |
 | Language | TypeScript 5 (strict mode, `@/*` path alias) |
 | Backend | Python (FastAPI), managed by **uv** |
 | Database | PostgreSQL 16 (local, via Docker) |
@@ -201,7 +201,6 @@ whoeverwants/
 │   └── api/                        # Server-side API routes
 │       ├── log/route.ts            # Server-side logging endpoint (dev only)
 │       ├── debug-logs/route.ts     # Debug log retrieval
-│       ├── last-compile/route.ts   # Build timestamp
 │       ├── test-pushover/          # Push notification testing
 │       └── notify-claude-input/    # Claude notification integration
 │
@@ -233,10 +232,10 @@ whoeverwants/
 │   ├── ModalPortal.tsx             # Modal portal container
 │   ├── HeaderPortal.tsx            # Header portal container
 │   ├── ResponsiveScaling.tsx       # Mobile viewport scaling
-│   ├── BuildTimer.tsx              # Build timestamp display
+│   ├── CommitInfo.tsx              # Commit info modal (GitHub API, relative time)
 │   └── CounterInput.tsx            # Numeric counter input
 │
-├── lib/                            # 17 utility modules
+├── lib/                            # 16 utility modules
 │   ├── api.ts                      # Python API client (fetch-based)
 │   ├── types.ts                    # Poll, Vote, PollResults type definitions
 │   ├── simplePollQueries.ts        # getAccessiblePolls, getPollWithAccess
@@ -251,7 +250,6 @@ whoeverwants/
 │   ├── prefetch.ts                 # Next.js page prefetching
 │   ├── mobile-optimization.ts      # iOS viewport handling
 │   ├── instant-loading.ts          # Page load optimization
-│   ├── last-compile-time.ts        # Build timestamp tracking
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
 │
@@ -288,8 +286,7 @@ whoeverwants/
 │   ├── health-check.sh             # Production health monitoring
 │   ├── backup-db.sh                # Database backup (runs on droplet)
 │   ├── debug-console.cjs           # Playwright browser console capture
-│   ├── debug-react-state.cjs       # React state debugging
-│   └── watch-and-update-timestamp.cjs # Build timestamp watcher
+│   └── debug-react-state.cjs       # React state debugging
 │
 ├── public/                         # Static assets
 │   ├── manifest.json               # PWA manifest
@@ -305,7 +302,7 @@ whoeverwants/
     ├── tsconfig.json                # ES2017, strict, @/* paths
     ├── vitest.config.js             # jsdom, single-fork, 30s timeout
     ├── postcss.config.mjs           # Tailwind CSS
-    └── .eslintrc.json               # next/core-web-vitals
+    └── eslint.config.mjs             # ESLint flat config (next/core-web-vitals)
 ```
 
 ## Key Concepts

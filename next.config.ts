@@ -12,36 +12,14 @@ const nextConfig: NextConfig = {
   // Allow dev server HMR WebSocket connections from proxy domains
   allowedDevOrigins: ['*.dev.whoeverwants.com'],
 
-  // Expose Vercel's git branch to the client for preview API URL derivation
+  // Expose Vercel's git info to the client for preview API URL derivation and commit info.
+  // Vercel sets VERCEL_GIT_COMMIT_* (no NEXT_PUBLIC_ prefix); dev servers set the prefixed versions directly.
   env: {
-    NEXT_PUBLIC_VERCEL_GIT_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || '',
+    NEXT_PUBLIC_VERCEL_GIT_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '',
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '',
+    NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '',
   },
 
-  // Disable all caching in development mode
-  webpack: (config, { dev, webpack }) => {
-    if (dev) {
-      // Disable webpack caching completely in development
-      config.cache = false;
-
-      // Force webpack to rebuild everything
-      config.optimization = {
-        ...config.optimization,
-        removeAvailableModules: false,
-        removeEmptyChunks: false,
-        splitChunks: false,
-      };
-
-
-      // Inject timestamp via DefinePlugin
-      const timestamp = Date.now().toString();
-      config.plugins.push(
-        new webpack.DefinePlugin({
-          'process.env.BUILD_TIMESTAMP': JSON.stringify(timestamp)
-        })
-      );
-    }
-    return config;
-  },
 };
 
 if (process.env.NEXT_OUTPUT === 'standalone') {
