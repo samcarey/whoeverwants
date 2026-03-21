@@ -14,16 +14,10 @@ interface CommitData {
   html_url: string;
 }
 
-interface LogEntry {
-  level: 'log' | 'warn' | 'error' | 'info';
-  args: string;
-  timestamp: number;
-}
-
 const REPO = "samcarey/whoeverwants";
 
 // Global log buffer, persists across renders
-const logBuffer: LogEntry[] = [];
+const logBuffer: string[] = [];
 const MAX_LOG_ENTRIES = 500;
 let consoleIntercepted = false;
 
@@ -31,25 +25,14 @@ function interceptConsole() {
   if (consoleIntercepted || typeof window === 'undefined') return;
   consoleIntercepted = true;
 
-  const levels = ['log', 'warn', 'error', 'info'] as const;
-  for (const level of levels) {
-    const original = console[level];
-    console[level] = (...args: unknown[]) => {
-      original.apply(console, args);
-      const entry: LogEntry = {
-        level,
-        args: args.map(a => {
-          if (typeof a === 'string') return a;
-          try { return JSON.stringify(a); } catch { return String(a); }
-        }).join(' '),
-        timestamp: Date.now(),
-      };
-      logBuffer.push(entry);
-      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
-      // Notify listeners
-      window.dispatchEvent(new Event('__console_log'));
-    };
-  }
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    original.apply(console, args);
+    const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    logBuffer.push(line);
+    if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+    window.dispatchEvent(new Event('__console_log'));
+  };
 }
 
 function formatRelativeTime(date: Date): string {
@@ -88,10 +71,11 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'commit' | 'logs'>('commit');
+  const [activeTab, setActiveTab] = useState<'build' | 'logs'>('build');
   const [error, setError] = useState<string | null>(null);
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [copyLabel, setCopyLabel] = useState('Copy All Logs');
+  const logViewerRef = useRef<HTMLDivElement>(null);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
@@ -142,21 +126,21 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     return () => window.removeEventListener('openCommitInfo', handleOpen);
   }, []);
 
-  // Intercept console on mount and listen for new entries
+  // Intercept console.log on mount and listen for new entries
   useEffect(() => {
     interceptConsole();
-    setLogEntries([...logBuffer]);
-    const handleLog = () => setLogEntries([...logBuffer]);
+    setLogLines([...logBuffer]);
+    const handleLog = () => setLogLines([...logBuffer]);
     window.addEventListener('__console_log', handleLog);
     return () => window.removeEventListener('__console_log', handleLog);
   }, []);
 
-  // Auto-scroll logs to bottom when new entries arrive
+  // Auto-scroll log viewer to bottom when switching to logs tab
   useEffect(() => {
-    if (activeTab === 'logs' && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'logs' && logViewerRef.current) {
+      logViewerRef.current.scrollTop = logViewerRef.current.scrollHeight;
     }
-  }, [logEntries, activeTab]);
+  }, [logLines, activeTab]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -170,6 +154,14 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
   const commitDate = commitData ? new Date(commitData.commit.author.date) : null;
   const shortHash = commitHash ? commitHash.substring(0, 7) : '';
+
+  const handleCopyLogs = () => {
+    const text = logBuffer.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyLabel('Copied!');
+      setTimeout(() => setCopyLabel('Copy All Logs'), 1500);
+    });
+  };
 
   return (
     <>
@@ -191,26 +183,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
           className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60"
           onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5 max-w-lg w-[90%] max-h-[70vh] overflow-y-auto shadow-xl">
-            <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-3">Build Info</h3>
-
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-5 max-w-lg w-[90%] max-h-[60vh] flex flex-col overflow-hidden shadow-xl">
             {/* Tab bar */}
-            <div className="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex mb-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <button
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === 'commit'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
+                  activeTab === 'build'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
                 }`}
-                onClick={() => setActiveTab('commit')}
+                onClick={() => setActiveTab('build')}
               >
-                Commit
+                Build Info
               </button>
               <button
-                className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
                   activeTab === 'logs'
-                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
-                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
                 }`}
                 onClick={() => setActiveTab('logs')}
               >
@@ -218,9 +208,9 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </button>
             </div>
 
-            {/* Commit tab */}
-            {activeTab === 'commit' && (
-              <div className="space-y-3">
+            {/* Build Info tab */}
+            {activeTab === 'build' && (
+              <div className="space-y-3 overflow-y-auto">
                 {commitData ? (
                   <>
                     {branchName && (
@@ -259,24 +249,19 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
             {/* Logs tab */}
             {activeTab === 'logs' && (
-              <div className="font-mono text-xs max-h-[50vh] overflow-y-auto">
-                {logEntries.length === 0 ? (
-                  <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
-                ) : (
-                  logEntries.map((entry, i) => (
-                    <div
-                      key={i}
-                      className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
-                        entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
-                        entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
-                        'text-gray-800 dark:text-gray-200'
-                      }`}
-                    >
-                      {entry.args}
-                    </div>
-                  ))
-                )}
-                <div ref={logsEndRef} />
+              <div className="flex flex-col flex-1 min-h-0">
+                <div
+                  ref={logViewerRef}
+                  className="font-mono text-[11px] leading-snug whitespace-pre-wrap break-all text-gray-800 dark:text-gray-200 bg-black/10 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded p-1.5 flex-1 min-h-[80px] overflow-y-auto mb-2"
+                >
+                  {logLines.length > 0 ? logLines.join('\n') : '(no logs yet)'}
+                </div>
+                <button
+                  className="shrink-0 px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
+                  onClick={handleCopyLogs}
+                >
+                  {copyLabel}
+                </button>
               </div>
             )}
           </div>
