@@ -375,6 +375,7 @@ The sections below contain mandatory rules. Follow them exactly.
 - For server logs, use `scripts/remote.sh` to read logs directly from the droplet.
 - Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
+- **Never bold URLs**: Do not wrap URLs in `**bold**` markers. The asterisks get rendered literally in the terminal and break the link. Write URLs as plain text.
 
 ### Python Tooling: uv (Mandatory)
 
