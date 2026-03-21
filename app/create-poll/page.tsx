@@ -32,8 +32,6 @@ function CreatePollContent() {
   const [forkOf, setForkOf] = useState<string | null>(null);
   const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
 
-  debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
-  
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'poll' | 'nomination' | 'participation'>('nomination');
   const [options, setOptions] = useState<string[]>(['']);
@@ -278,6 +276,7 @@ function CreatePollContent() {
 
   // Initialize state from URL params
   useEffect(() => {
+    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
     if (followUpToParam) setFollowUpTo(followUpToParam);
     if (forkOfParam) setForkOf(forkOfParam);
     if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
