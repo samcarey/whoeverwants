@@ -12,6 +12,11 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
+// Pull-to-refresh constants (iOS PWA only)
+const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
+const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
+const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
+
 export default function Template({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -26,9 +31,12 @@ export default function Template({ children }: AppTemplateProps) {
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
 
-  // Pull-to-refresh state
-  const [isPulling, setIsPulling] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
+  // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
+  // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
+  const [pullActive, setPullActive] = useState(false);    // whether indicator is mounted
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const pullIndicatorRef = useRef<HTMLDivElement>(null);   // direct DOM ref for indicator
+  const pullArcRef = useRef<SVGCircleElement>(null);       // direct DOM ref for arc
   
   // Check if referrer is from a different domain or if this is a new tab/external entry
   // Also determine if back button should show home icon instead
@@ -264,57 +272,123 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh functionality — only for iOS PWA standalone mode
-  // (Native pull-to-refresh works in browsers and Android PWA, but Apple
-  // explicitly disables it in iOS standalone/fullscreen PWA mode.)
+  // Pull-to-refresh for iOS PWA standalone mode only.
+  // Uses direct DOM manipulation during touchmove for 60fps updates.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isIOSPWA) return;
+
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    scrollContainer.style.overscrollBehaviorY = 'none';
 
     let startY = 0;
     let isAtTop = true;
     let isDragging = false;
     let currentPullDistance = 0;
+    let refreshTriggered = false;
+    let rAFPending = false;
+    let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const updateDOM = (distance: number) => {
+      const damped = distance * 0.5;
+      scrollContainer.style.transform = `translateY(${damped}px)`;
+      scrollContainer.style.transition = 'none';
+
+      const indicator = pullIndicatorRef.current;
+      if (indicator) {
+        const fadeStart = PTR_INDICATOR_SIZE * 0.5;
+        const fadeEnd = PTR_INDICATOR_SIZE;
+        indicator.style.opacity = String(Math.min(Math.max((damped - fadeStart) / (fadeEnd - fadeStart), 0), 1));
+        indicator.style.transition = 'none';
+      }
+
+      const arc = pullArcRef.current;
+      if (arc) {
+        const pastThreshold = distance >= PTR_THRESHOLD;
+        arc.style.strokeDasharray = `${Math.min(distance / PTR_THRESHOLD, 1) * PTR_CIRCUMFERENCE} ${PTR_CIRCUMFERENCE}`;
+        // Tailwind classes toggled imperatively — these classes also exist in the
+        // JSX below (spinner SVG) so they won't be purged from the CSS bundle.
+        arc.classList.toggle('text-blue-600', pastThreshold);
+        arc.classList.toggle('dark:text-blue-400', pastThreshold);
+        arc.classList.toggle('text-gray-400', !pastThreshold);
+        arc.classList.toggle('dark:text-gray-500', !pastThreshold);
+      }
+    };
 
     const handleTouchStart = (e: TouchEvent) => {
+      if (refreshTriggered) return;
       startY = e.touches[0].clientY;
-      const scrollContainer = scrollContainerRef.current;
-      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
+      isAtTop = scrollContainer.scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isAtTop) return;
+      if (refreshTriggered || !isAtTop) return;
 
-      const deltaY = e.touches[0].clientY - startY;
+      const rawDelta = e.touches[0].clientY - startY;
 
-      if (deltaY > 10) {
-        isDragging = true;
-        currentPullDistance = deltaY;
-        setPullDistance(deltaY);
-        setIsPulling(deltaY > 60);
+      if (rawDelta > 10) {
+        if (!isDragging) {
+          isDragging = true;
+          setPullActive(true);
+        }
+        currentPullDistance = rawDelta;
+        if (!rAFPending) {
+          rAFPending = true;
+          requestAnimationFrame(() => {
+            rAFPending = false;
+            updateDOM(currentPullDistance);
+          });
+        }
         e.preventDefault();
+      } else if (isDragging && rawDelta <= 10) {
+        isDragging = false;
+        currentPullDistance = 0;
+        updateDOM(0);
+        setPullActive(false);
       }
     };
 
     const handleTouchEnd = () => {
-      if (isDragging && currentPullDistance > 60) {
-        window.location.reload();
+      if (refreshTriggered) return;
+
+      if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
+        refreshTriggered = true;
+        setIsRefreshing(true);
+        setTimeout(() => window.location.reload(), 400);
+      } else if (isDragging) {
+        scrollContainer.style.transition = 'transform 0.3s ease';
+        scrollContainer.style.transform = 'translateY(0px)';
+        const indicator = pullIndicatorRef.current;
+        if (indicator) {
+          indicator.style.transition = 'opacity 0.3s ease';
+          indicator.style.opacity = '0';
+        }
+        snapBackTimeout = setTimeout(() => {
+          scrollContainer.style.transition = '';
+          scrollContainer.style.transform = '';
+          setPullActive(false);
+          snapBackTimeout = null;
+        }, 300);
       }
 
       isDragging = false;
       currentPullDistance = 0;
-      setIsPulling(false);
-      setPullDistance(0);
     };
 
-    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      document.body.removeEventListener('touchstart', handleTouchStart);
-      document.body.removeEventListener('touchmove', handleTouchMove);
-      document.body.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.removeEventListener('touchstart', handleTouchStart);
+      scrollContainer.removeEventListener('touchmove', handleTouchMove);
+      scrollContainer.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.style.overscrollBehaviorY = '';
+      scrollContainer.style.transform = '';
+      scrollContainer.style.transition = '';
+      if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
   }, [isIOSPWA]);
 
@@ -324,33 +398,39 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator (iOS PWA only) */}
-      {isIOSPWA && isPulling && (
+      {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
+           Uses refs for direct DOM updates during drag (no React re-renders). */}
+      {isIOSPWA && (pullActive || isRefreshing) && isMounted && createPortal(
         <div
-          className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
+          ref={pullIndicatorRef}
+          className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
           style={{
-            transform: `translateY(${Math.min(pullDistance - 60, 40)}px)`,
-            opacity: pullDistance > 30 ? 1 : pullDistance / 30
+            top: 'calc(env(safe-area-inset-top, 0px) + 2px)',
+            opacity: isRefreshing ? 1 : 0,
           }}
         >
-          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2 mt-4">
-            <svg
-              className={`w-6 h-6 text-blue-600 dark:text-blue-400 ${
-                pullDistance > 60 ? 'animate-spin' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
+          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
+            {isRefreshing ? (
+              <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" className="text-gray-200 dark:text-gray-600" strokeWidth="2.5" />
+                <circle
+                  ref={pullArcRef}
+                  cx="12" cy="12" r="10" stroke="currentColor"
+                  className="text-gray-400 dark:text-gray-500"
+                  strokeWidth="2.5" strokeLinecap="round"
+                  strokeDasharray={`0 ${PTR_CIRCUMFERENCE}`}
+                  transform="rotate(-90 12 12)"
+                />
+              </svg>
+            )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
@@ -387,12 +467,12 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto safari-scroll-container" 
-        style={{ 
+        className="flex-1 overflow-auto safari-scroll-container"
+        style={{
           paddingTop: '0',
-          paddingLeft: 'max(1rem, env(safe-area-inset-left))', 
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
-          paddingBottom: '1rem'
+          paddingBottom: '1rem',
         }}>
         <div>
           {/* Spacer div for header elements that are now rendered in portal */}
@@ -526,7 +606,7 @@ export default function Template({ children }: AppTemplateProps) {
       <HeaderPortal>
         {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
         {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
-          <div className="fixed left-4 top-4 z-50">
+          <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {shouldShowHomeButton ? (
                 <button 
                   onClick={() => window.location.href = '/'}
@@ -553,14 +633,14 @@ export default function Template({ children }: AppTemplateProps) {
         
         {/* Copy link button in upper right for poll pages */}
         {isPollPage && (
-          <div className="fixed right-4 top-4 z-50">
+          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
           </div>
         )}
         
         {/* New poll button in upper right for home page */}
         {pathname === '/' && (
-          <div className="fixed right-4 top-4 z-50">
+          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             <Link
               href="/create-poll"
               className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
