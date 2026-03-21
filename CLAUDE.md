@@ -376,6 +376,10 @@ The sections below contain mandatory rules. Follow them exactly.
 - Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
 - **Never bold URLs**: Do not wrap URLs in `**bold**` markers. The asterisks get rendered literally in the terminal and break the link. Write URLs as plain text.
+- **PR workflow**: When asked to open a PR, always do these steps first:
+  1. **Run `/simplify`** to clean up any code quality issues, redundancy, or missed improvements.
+  2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
+  3. Then create the PR.
 
 ### Python Tooling: uv (Mandatory)
 
