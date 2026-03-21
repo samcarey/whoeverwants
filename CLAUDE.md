@@ -96,6 +96,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 - Every push to GitHub auto-updates your dev server via webhook
 - Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
 - Restarts if `package-lock.json` changes (new dependencies) or commit SHA changes (to refresh env vars)
+- **After pushing, wait for the dev server to be ready before telling the user.** The server takes ~45-60 seconds to restart. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200, then notify the user.
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
 - URL stays the same regardless of branch — bookmark it
@@ -803,7 +804,15 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 ### PWA / Pull-to-Refresh
 
 - **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone` or `matchMedia('(display-mode: standalone)')` + iOS UA check).
-- **Don't put `pullDistance` in a useEffect dependency array** when using touch-based pull-to-refresh. The state updates on every pixel of movement, causing event listener thrashing (detach + reattach 3 listeners 60+ times/sec). Use a local `let` variable inside the effect for the threshold check, and only use React state for rendering the indicator.
+- **Don't use React state for per-pixel touch tracking.** `setState` on every touchmove causes 60+ re-renders/sec. Instead, use refs + direct DOM manipulation (`element.style.transform`, `element.style.opacity`, `classList.toggle`) for drag visuals, and only use React state for mount/unmount (e.g., `setPullActive(true)` to mount the indicator once).
+- **Coalesce requestAnimationFrame calls.** On 120Hz displays, touchmove fires faster than rAF. Use a `rAFPending` flag to skip redundant frames and read the latest value at callback time (not call time).
+- **Touch listeners must go on the scroll container, not document.body.** `e.preventDefault()` on body touchmove doesn't suppress a child scroll container's native overscroll bounce. Attach listeners to the scrollable element directly.
+
+### iOS PWA Safe Area Positioning
+
+- **`position: fixed; top: 0` goes behind the notch** in iOS PWA with `viewport-fit: cover` and `black-translucent` status bar. All fixed header elements must use `calc(env(safe-area-inset-top, 0px) + offset)`.
+- **The `<html>` element has `padding: env(safe-area-inset-top) ...`** in globals.css, which pushes `<body>` content below the safe area. Elements inside the `ResponsiveScaling` container have their `position: fixed` coordinates relative to the container (because `transform` creates a new containing block), so `top: 0` inside the scaling container is *not* the screen top — it's already below the safe area.
+- **To position at the true screen edge**, render via a portal to `document.body` (outside the scaling container). From there, `fixed top: 0` = the safe area boundary (notch bottom), not the physical screen top.
 
 ### Dev Server Pitfalls
 

@@ -12,6 +12,11 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
+// Pull-to-refresh constants (iOS PWA only)
+const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
+const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
+const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
+
 export default function Template({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -267,9 +272,8 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh functionality — only for iOS PWA standalone mode.
-  // Uses direct DOM manipulation during touchmove for smooth 60fps updates,
-  // avoiding React re-renders on every pixel of movement.
+  // Pull-to-refresh for iOS PWA standalone mode only.
+  // Uses direct DOM manipulation during touchmove for 60fps updates.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isIOSPWA) return;
@@ -279,63 +283,64 @@ export default function Template({ children }: AppTemplateProps) {
 
     scrollContainer.style.overscrollBehaviorY = 'none';
 
-    const THRESHOLD = 240;
-    const CIRCUMFERENCE = 2 * Math.PI * 10;
-    const INDICATOR_SIZE = 40;
-
     let startY = 0;
     let isAtTop = true;
     let isDragging = false;
     let currentPullDistance = 0;
-    let refreshing = false;
+    let refreshTriggered = false;
+    let rAFPending = false;
+    let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    // Direct DOM update — no React re-render
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
-      // Update scroll container position
       scrollContainer.style.transform = `translateY(${damped}px)`;
       scrollContainer.style.transition = 'none';
-      // Update indicator
+
       const indicator = pullIndicatorRef.current;
-      const arc = pullArcRef.current;
       if (indicator) {
-        const fadeStart = INDICATOR_SIZE * 0.5;
-        const fadeEnd = INDICATOR_SIZE;
-        const opacity = Math.min(Math.max((damped - fadeStart) / (fadeEnd - fadeStart), 0), 1);
-        indicator.style.opacity = String(opacity);
+        const fadeStart = PTR_INDICATOR_SIZE * 0.5;
+        const fadeEnd = PTR_INDICATOR_SIZE;
+        indicator.style.opacity = String(Math.min(Math.max((damped - fadeStart) / (fadeEnd - fadeStart), 0), 1));
         indicator.style.transition = 'none';
       }
+
+      const arc = pullArcRef.current;
       if (arc) {
-        const progress = Math.min(distance / THRESHOLD, 1);
-        const arcLength = progress * CIRCUMFERENCE;
-        arc.style.strokeDasharray = `${arcLength} ${CIRCUMFERENCE}`;
-        arc.style.stroke = distance >= THRESHOLD ? '' : '';
-        arc.classList.toggle('text-blue-600', distance >= THRESHOLD);
-        arc.classList.toggle('dark:text-blue-400', distance >= THRESHOLD);
-        arc.classList.toggle('text-gray-400', distance < THRESHOLD);
-        arc.classList.toggle('dark:text-gray-500', distance < THRESHOLD);
+        const pastThreshold = distance >= PTR_THRESHOLD;
+        arc.style.strokeDasharray = `${Math.min(distance / PTR_THRESHOLD, 1) * PTR_CIRCUMFERENCE} ${PTR_CIRCUMFERENCE}`;
+        // Tailwind classes toggled imperatively — these classes also exist in the
+        // JSX below (spinner SVG) so they won't be purged from the CSS bundle.
+        arc.classList.toggle('text-blue-600', pastThreshold);
+        arc.classList.toggle('dark:text-blue-400', pastThreshold);
+        arc.classList.toggle('text-gray-400', !pastThreshold);
+        arc.classList.toggle('dark:text-gray-500', !pastThreshold);
       }
     };
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (refreshing) return;
+      if (refreshTriggered) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (refreshing || !isAtTop) return;
+      if (refreshTriggered || !isAtTop) return;
 
       const rawDelta = e.touches[0].clientY - startY;
 
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
-          setPullActive(true); // mount the indicator (one-time React render)
+          setPullActive(true);
         }
         currentPullDistance = rawDelta;
-        // Wait one frame for React to mount the indicator on first drag
-        requestAnimationFrame(() => updateDOM(currentPullDistance));
+        if (!rAFPending) {
+          rAFPending = true;
+          requestAnimationFrame(() => {
+            rAFPending = false;
+            updateDOM(currentPullDistance);
+          });
+        }
         e.preventDefault();
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
@@ -346,14 +351,13 @@ export default function Template({ children }: AppTemplateProps) {
     };
 
     const handleTouchEnd = () => {
-      if (refreshing) return;
+      if (refreshTriggered) return;
 
-      if (isDragging && currentPullDistance >= THRESHOLD) {
-        refreshing = true;
+      if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
+        refreshTriggered = true;
         setIsRefreshing(true);
         setTimeout(() => window.location.reload(), 400);
       } else if (isDragging) {
-        // Snap back with CSS transition
         scrollContainer.style.transition = 'transform 0.3s ease';
         scrollContainer.style.transform = 'translateY(0px)';
         const indicator = pullIndicatorRef.current;
@@ -361,10 +365,11 @@ export default function Template({ children }: AppTemplateProps) {
           indicator.style.transition = 'opacity 0.3s ease';
           indicator.style.opacity = '0';
         }
-        setTimeout(() => {
+        snapBackTimeout = setTimeout(() => {
           scrollContainer.style.transition = '';
           scrollContainer.style.transform = '';
           setPullActive(false);
+          snapBackTimeout = null;
         }, 300);
       }
 
@@ -383,6 +388,7 @@ export default function Template({ children }: AppTemplateProps) {
       scrollContainer.style.overscrollBehaviorY = '';
       scrollContainer.style.transform = '';
       scrollContainer.style.transition = '';
+      if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
   }, [isIOSPWA]);
 
@@ -417,7 +423,7 @@ export default function Template({ children }: AppTemplateProps) {
                   cx="12" cy="12" r="10" stroke="currentColor"
                   className="text-gray-400 dark:text-gray-500"
                   strokeWidth="2.5" strokeLinecap="round"
-                  strokeDasharray="0 62.83"
+                  strokeDasharray={`0 ${PTR_CIRCUMFERENCE}`}
                   transform="rotate(-90 12 12)"
                 />
               </svg>
