@@ -72,31 +72,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Generate unique session ID for logging
-  const [sessionId] = useState(() => `vote-session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-
-  // Debug logging utility
-  const logToServer = async (logType: string, level: string, message: string, data: any = {}) => {
-    try {
-      // Only access window if we're in the browser
-      const url = typeof window !== 'undefined' ? window.location.href : '';
-
-      await fetch('/api/debug-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          logType,
-          level,
-          message,
-          data,
-          url,
-          timestamp: new Date().toISOString()
-        })
-      });
-    } catch (error) {
-      console.error('Failed to log to server:', error);
-    }
+  // Debug logging utility (output captured by CommitInfo Logs tab)
+  const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
+    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+    fn(`[${_logType}] ${message}`, data);
   };
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);

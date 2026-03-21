@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface CommitData {
   sha: string;
@@ -14,7 +14,43 @@ interface CommitData {
   html_url: string;
 }
 
+interface LogEntry {
+  level: 'log' | 'warn' | 'error' | 'info';
+  args: string;
+  timestamp: number;
+}
+
 const REPO = "samcarey/whoeverwants";
+
+// Global log buffer, persists across renders
+const logBuffer: LogEntry[] = [];
+const MAX_LOG_ENTRIES = 500;
+let consoleIntercepted = false;
+
+function interceptConsole() {
+  if (consoleIntercepted || typeof window === 'undefined') return;
+  consoleIntercepted = true;
+
+  const levels = ['log', 'warn', 'error', 'info'] as const;
+  for (const level of levels) {
+    const original = console[level];
+    console[level] = (...args: unknown[]) => {
+      original.apply(console, args);
+      const entry: LogEntry = {
+        level,
+        args: args.map(a => {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        }).join(' '),
+        timestamp: Date.now(),
+      };
+      logBuffer.push(entry);
+      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+      // Notify listeners
+      window.dispatchEvent(new Event('__console_log'));
+    };
+  }
+}
 
 function formatRelativeTime(date: Date): string {
   const now = new Date();
@@ -52,8 +88,10 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'commit' | 'env'>('commit');
+  const [activeTab, setActiveTab] = useState<'commit' | 'logs'>('commit');
   const [error, setError] = useState<string | null>(null);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
@@ -103,6 +141,22 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     window.addEventListener('openCommitInfo', handleOpen);
     return () => window.removeEventListener('openCommitInfo', handleOpen);
   }, []);
+
+  // Intercept console on mount and listen for new entries
+  useEffect(() => {
+    interceptConsole();
+    setLogEntries([...logBuffer]);
+    const handleLog = () => setLogEntries([...logBuffer]);
+    window.addEventListener('__console_log', handleLog);
+    return () => window.removeEventListener('__console_log', handleLog);
+  }, []);
+
+  // Auto-scroll logs to bottom when new entries arrive
+  useEffect(() => {
+    if (activeTab === 'logs' && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logEntries, activeTab]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -154,13 +208,13 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </button>
               <button
                 className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === 'env'
+                  activeTab === 'logs'
                     ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
                     : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
-                onClick={() => setActiveTab('env')}
+                onClick={() => setActiveTab('logs')}
               >
-                Environment
+                Logs
               </button>
             </div>
 
@@ -203,42 +257,28 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </div>
             )}
 
-            {/* Environment tab */}
-            {activeTab === 'env' && (
-              <div className="space-y-2 font-mono text-xs">
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">NODE_ENV:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{process.env.NODE_ENV}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Commit:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{shortHash || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Branch:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{branchName || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Repo:</span>{' '}
-                  <a
-                    href={`https://github.com/${REPO}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {REPO}
-                  </a>
-                </div>
+            {/* Logs tab */}
+            {activeTab === 'logs' && (
+              <div className="font-mono text-xs max-h-[50vh] overflow-y-auto">
+                {logEntries.length === 0 ? (
+                  <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
+                ) : (
+                  logEntries.map((entry, i) => (
+                    <div
+                      key={i}
+                      className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
+                        entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
+                        entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
+                        'text-gray-800 dark:text-gray-200'
+                      }`}
+                    >
+                      {entry.args}
+                    </div>
+                  ))
+                )}
+                <div ref={logsEndRef} />
               </div>
             )}
-
-            {/* Close button */}
-            <button
-              className="mt-4 px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
-              onClick={() => setShowModal(false)}
-            >
-              Close
-            </button>
           </div>
         </div>
       )}
