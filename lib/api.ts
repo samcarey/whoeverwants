@@ -15,19 +15,20 @@ function branchToSlug(branch: string): string {
 
 // API URL resolution:
 // 1. NEXT_PUBLIC_API_URL env var overrides everything (for preview environments, etc.)
-// 2. Vercel preview deploys: derive API URL from branch name (VERCEL_GIT_COMMIT_REF)
-// 3. In production (Vercel main branch), call api.whoeverwants.com
-// 4. In development, use relative path (Next.js rewrites proxy to localhost:8000)
+// 2. Server-side (SSR): use absolute URLs to call the API directly
+// 3. Client-side: always use relative /api/polls path, proxied by Next.js rewrites.
+//    This keeps all browser requests same-origin, avoiding Safari's Advanced Tracking
+//    and Fingerprinting Protection warnings from cross-origin fetch calls.
 function getApiBase(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  // Server-side in dev: call Docker API directly
-  if (typeof window === 'undefined' && process.env.NODE_ENV !== 'production') {
-    return 'http://localhost:8000/api/polls';
-  }
-  // Production (Vercel): check if this is a preview deploy (non-main branch)
-  if (process.env.NODE_ENV === 'production') {
+  // Server-side: use absolute URLs (no browser privacy concerns in SSR)
+  if (typeof window === 'undefined') {
+    if (process.env.NODE_ENV !== 'production') {
+      return 'http://localhost:8000/api/polls';
+    }
+    // Production SSR: call API directly
     const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
     if (branch && branch !== 'main' && branch !== 'master') {
       const slug = branchToSlug(branch);
@@ -35,7 +36,7 @@ function getApiBase(): string {
     }
     return 'https://api.whoeverwants.com/api/polls';
   }
-  // Client-side in dev: relative path, proxied by Next.js rewrites
+  // Client-side (all environments): relative path, proxied by Next.js rewrites
   return '/api/polls';
 }
 
