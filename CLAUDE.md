@@ -95,7 +95,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 **Per-User Dev Servers** (automatic on push):
 - Every push to GitHub auto-updates your dev server via webhook
 - Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
-- Only restarts if `package-lock.json` changes (new dependencies)
+- Restarts if `package-lock.json` changes (new dependencies) or commit SHA changes (to refresh env vars)
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
 - URL stays the same regardless of branch — bookmark it
