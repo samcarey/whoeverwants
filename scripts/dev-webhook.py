@@ -214,6 +214,29 @@ def deploy_production():
 
 
 
+DEV_DIR = "/root/dev-servers"
+
+
+def find_dev_servers_on_branch(branch: str) -> set[str]:
+    """Find dev server owner emails whose servers are tracking the given branch."""
+    import json as _json
+    emails = set()
+    if not os.path.isdir(DEV_DIR):
+        return emails
+    for slug in os.listdir(DEV_DIR):
+        meta_file = os.path.join(DEV_DIR, slug, ".dev-meta.json")
+        if not os.path.isfile(meta_file):
+            continue
+        try:
+            with open(meta_file) as f:
+                meta = _json.load(f)
+            if meta.get("branch") == branch and meta.get("email"):
+                emails.add(meta["email"])
+        except Exception:
+            continue
+    return emails
+
+
 class WebhookHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/github":
@@ -298,6 +321,11 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             t = threading.Thread(target=deploy_production)
             t.daemon = True
             t.start()
+            # Also update any dev servers tracking main
+            for email in find_dev_servers_on_branch(branch):
+                t = threading.Thread(target=trigger_upsert, args=(email, branch))
+                t.daemon = True
+                t.start()
             return
 
         self.wfile.write(json.dumps({
@@ -308,6 +336,16 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
 
         # Trigger upsert for each author in background threads
         for email in emails:
+            t = threading.Thread(target=trigger_upsert, args=(email, branch))
+            t.daemon = True
+            t.start()
+
+        # Also update any existing dev servers tracking this branch,
+        # even if the push author was a bot (e.g. Claude). This ensures
+        # dev servers stay current regardless of who made the commit.
+        tracked_emails = find_dev_servers_on_branch(branch)
+        for email in tracked_emails - emails:  # avoid duplicate upserts
+            log.info(f"Updating dev server for {email} (tracks {branch}, push by bot)")
             t = threading.Thread(target=trigger_upsert, args=(email, branch))
             t.daemon = True
             t.start()
