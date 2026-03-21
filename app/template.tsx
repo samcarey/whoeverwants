@@ -267,9 +267,17 @@ export default function Template({ children }: AppTemplateProps) {
   // Pull-to-refresh functionality — only for iOS PWA standalone mode
   // (Native pull-to-refresh works in browsers and Android PWA, but Apple
   // explicitly disables it in iOS standalone/fullscreen PWA mode.)
+  // Touch listeners must be on the scroll container (not document.body) so that
+  // e.preventDefault() actually suppresses the container's native overscroll bounce.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isIOSPWA) return;
+
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    // Suppress native rubber-band overscroll so our custom handler takes over
+    scrollContainer.style.overscrollBehaviorY = 'none';
 
     let startY = 0;
     let isAtTop = true;
@@ -278,8 +286,7 @@ export default function Template({ children }: AppTemplateProps) {
 
     const handleTouchStart = (e: TouchEvent) => {
       startY = e.touches[0].clientY;
-      const scrollContainer = scrollContainerRef.current;
-      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
+      isAtTop = scrollContainer.scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -307,14 +314,15 @@ export default function Template({ children }: AppTemplateProps) {
       setPullDistance(0);
     };
 
-    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      document.body.removeEventListener('touchstart', handleTouchStart);
-      document.body.removeEventListener('touchmove', handleTouchMove);
-      document.body.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.removeEventListener('touchstart', handleTouchStart);
+      scrollContainer.removeEventListener('touchmove', handleTouchMove);
+      scrollContainer.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.style.overscrollBehaviorY = '';
     };
   }, [isIOSPWA]);
 
