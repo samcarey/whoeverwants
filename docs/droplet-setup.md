@@ -308,7 +308,7 @@ bash scripts/remote.sh "ufw status"
 - All services except Caddy (ports 80/443) and SSH (port 22) bind to localhost only.
 - Caddy handles TLS provisioning and renewal via Let's Encrypt.
 - FastAPI includes rate limiting: 120 reads/min and 30 writes/min per IP.
-- CORS restricted to `https://whoeverwants.com` and `http://localhost:3000`.
+- CORS allows all origins (`*`) since the API is anonymous (no credentials).
 
 ---
 
