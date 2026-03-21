@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface CommitData {
   sha: string;
@@ -14,7 +14,43 @@ interface CommitData {
   html_url: string;
 }
 
+interface LogEntry {
+  level: 'log' | 'warn' | 'error' | 'info';
+  args: string;
+  timestamp: number;
+}
+
 const REPO = "samcarey/whoeverwants";
+
+// Global log buffer, persists across renders
+const logBuffer: LogEntry[] = [];
+const MAX_LOG_ENTRIES = 500;
+let consoleIntercepted = false;
+
+function interceptConsole() {
+  if (consoleIntercepted || typeof window === 'undefined') return;
+  consoleIntercepted = true;
+
+  const levels = ['log', 'warn', 'error', 'info'] as const;
+  for (const level of levels) {
+    const original = console[level];
+    console[level] = (...args: unknown[]) => {
+      original.apply(console, args);
+      const entry: LogEntry = {
+        level,
+        args: args.map(a => {
+          if (typeof a === 'string') return a;
+          try { return JSON.stringify(a); } catch { return String(a); }
+        }).join(' '),
+        timestamp: Date.now(),
+      };
+      logBuffer.push(entry);
+      if (logBuffer.length > MAX_LOG_ENTRIES) logBuffer.shift();
+      // Notify listeners
+      window.dispatchEvent(new Event('__console_log'));
+    };
+  }
+}
 
 function formatRelativeTime(date: Date): string {
   const now = new Date();
@@ -54,8 +90,8 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'commit' | 'logs'>('commit');
   const [error, setError] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string>('');
-  const [logsLoading, setLogsLoading] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
@@ -106,16 +142,21 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     return () => window.removeEventListener('openCommitInfo', handleOpen);
   }, []);
 
-  // Fetch logs when logs tab is active
+  // Intercept console on mount and listen for new entries
   useEffect(() => {
-    if (activeTab !== 'logs' || !showModal) return;
-    setLogsLoading(true);
-    fetch('/api/log')
-      .then(res => res.json())
-      .then(data => setLogs(data.logs || 'No logs yet'))
-      .catch(() => setLogs('Failed to fetch logs'))
-      .finally(() => setLogsLoading(false));
-  }, [activeTab, showModal]);
+    interceptConsole();
+    setLogEntries([...logBuffer]);
+    const handleLog = () => setLogEntries([...logBuffer]);
+    window.addEventListener('__console_log', handleLog);
+    return () => window.removeEventListener('__console_log', handleLog);
+  }, []);
+
+  // Auto-scroll logs to bottom when new entries arrive
+  useEffect(() => {
+    if (activeTab === 'logs' && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logEntries, activeTab]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -218,14 +259,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
             {/* Logs tab */}
             {activeTab === 'logs' && (
-              <div className="font-mono text-xs">
-                {logsLoading ? (
-                  <div className="text-sm text-gray-500">Loading logs...</div>
+              <div className="font-mono text-xs max-h-[50vh] overflow-y-auto">
+                {logEntries.length === 0 ? (
+                  <div className="text-sm text-gray-500 dark:text-gray-400">No console output yet.</div>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200 max-h-[50vh] overflow-y-auto">
-                    {logs}
-                  </pre>
+                  logEntries.map((entry, i) => (
+                    <div
+                      key={i}
+                      className={`py-0.5 border-b border-gray-100 dark:border-gray-800 whitespace-pre-wrap break-words ${
+                        entry.level === 'error' ? 'text-red-600 dark:text-red-400' :
+                        entry.level === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
+                        'text-gray-800 dark:text-gray-200'
+                      }`}
+                    >
+                      {entry.args}
+                    </div>
+                  ))
                 )}
+                <div ref={logsEndRef} />
               </div>
             )}
           </div>
