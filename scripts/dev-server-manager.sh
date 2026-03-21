@@ -104,12 +104,8 @@ stop_nextjs() {
   local slug="$1"
   local dir="${DEV_DIR}/${slug}"
   local pid_file="${dir}/.nextjs.pid"
-  local port=""
-
-  # Read assigned port from metadata so we can clean it up
-  if [ -f "${dir}/.dev-meta.json" ]; then
-    port=$(python3 -c "import json; print(json.load(open('${dir}/.dev-meta.json'))['port'])" 2>/dev/null || echo "")
-  fi
+  local port
+  port=$(get_dev_port "$slug")
 
   if [ -f "$pid_file" ]; then
     local pid

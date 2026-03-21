@@ -272,9 +272,9 @@ export default function Template({ children }: AppTemplateProps) {
     if (!isIOSPWA) return;
 
     let startY = 0;
-    let currentY = 0;
     let isAtTop = true;
     let isDragging = false;
+    let currentPullDistance = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
       startY = e.touches[0].clientY;
@@ -285,28 +285,24 @@ export default function Template({ children }: AppTemplateProps) {
     const handleTouchMove = (e: TouchEvent) => {
       if (!isAtTop) return;
 
-      currentY = e.touches[0].clientY;
-      const deltaY = currentY - startY;
+      const deltaY = e.touches[0].clientY - startY;
 
       if (deltaY > 10) {
-        // Pulling down from top
         isDragging = true;
+        currentPullDistance = deltaY;
         setPullDistance(deltaY);
         setIsPulling(deltaY > 60);
-
-        // Prevent default scrolling when pulling
         e.preventDefault();
       }
     };
 
     const handleTouchEnd = () => {
-      if (isDragging && pullDistance > 60) {
-        // Trigger page reload
+      if (isDragging && currentPullDistance > 60) {
         window.location.reload();
       }
 
-      // Reset state
       isDragging = false;
+      currentPullDistance = 0;
       setIsPulling(false);
       setPullDistance(0);
     };
@@ -320,7 +316,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.body.removeEventListener('touchmove', handleTouchMove);
       document.body.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [pullDistance, isIOSPWA]);
+  }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';

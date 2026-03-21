@@ -800,6 +800,16 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 **Time-saving tip**: Don't guess at the problem. Add logging, get the exact error, then fix the specific constraint.
 
+### PWA / Pull-to-Refresh
+
+- **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone` or `matchMedia('(display-mode: standalone)')` + iOS UA check).
+- **Don't put `pullDistance` in a useEffect dependency array** when using touch-based pull-to-refresh. The state updates on every pixel of movement, causing event listener thrashing (detach + reattach 3 listeners 60+ times/sec). Use a local `let` variable inside the effect for the threshold check, and only use React state for rendering the indicator.
+
+### Dev Server Pitfalls
+
+- **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
+- **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
+
 ### API Development Pitfalls
 
 - **Catch-all fallthrough in `get_results()`**: When adding new poll types, `server/routers/polls.py` has a catch-all return at the bottom returning `yes_count=None`. Any poll type without an explicit handler silently falls through and the frontend interprets `None` as `0`. Always add an explicit handler for each poll type.
