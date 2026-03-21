@@ -264,9 +264,12 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh functionality
+  // Pull-to-refresh functionality — only for iOS PWA standalone mode
+  // (Native pull-to-refresh works in browsers and Android PWA, but Apple
+  // explicitly disables it in iOS standalone/fullscreen PWA mode.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!isIOSPWA) return;
 
     let startY = 0;
     let currentY = 0;
@@ -298,7 +301,7 @@ export default function Template({ children }: AppTemplateProps) {
 
     const handleTouchEnd = () => {
       if (isDragging && pullDistance > 60) {
-        // Trigger page reload for all pages
+        // Trigger page reload
         window.location.reload();
       }
 
@@ -308,7 +311,6 @@ export default function Template({ children }: AppTemplateProps) {
       setPullDistance(0);
     };
 
-    // Add to document body to capture all touch events
     document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
     document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -318,7 +320,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.body.removeEventListener('touchmove', handleTouchMove);
       document.body.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [pullDistance]);
+  }, [pullDistance, isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
@@ -326,8 +328,8 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator */}
-      {isPulling && (
+      {/* Pull-to-refresh indicator (iOS PWA only) */}
+      {isIOSPWA && isPulling && (
         <div
           className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
           style={{

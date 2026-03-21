@@ -75,7 +75,6 @@ body {
   /* Ensure proper touch scrolling within the scrollable areas */
   .safari-scroll-container {
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
   }
 }
 
