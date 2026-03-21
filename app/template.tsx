@@ -285,7 +285,6 @@ export default function Template({ children }: AppTemplateProps) {
     scrollContainer.style.overscrollBehaviorY = 'none';
 
     const THRESHOLD = 80; // px of raw touch movement to trigger refresh
-    const MAX_PULL = 140; // visual cap (raw touch px)
 
     let startY = 0;
     let isAtTop = true;
@@ -305,8 +304,7 @@ export default function Template({ children }: AppTemplateProps) {
 
       if (rawDelta > 10) {
         isDragging = true;
-        // Clamp so the indicator doesn't fly off screen
-        currentPullDistance = Math.min(rawDelta, MAX_PULL);
+        currentPullDistance = rawDelta;
         setPullDistance(currentPullDistance);
         e.preventDefault();
       } else if (isDragging && rawDelta <= 10) {
