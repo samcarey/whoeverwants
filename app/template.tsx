@@ -363,6 +363,56 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
+      {/* DEBUG: Boundary lines — remove after testing */}
+      {isIOSPWA && (
+        <div className="fixed inset-0 z-[9999] pointer-events-none" style={{ fontSize: '10px', fontFamily: 'monospace' }}>
+          {/* Line 1: top: 0 (true screen edge) */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+            <div style={{ borderTop: '2px solid red', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 4, top: 2, color: 'red', background: 'white', padding: '0 4px' }}>
+                A: top: 0
+              </span>
+            </div>
+          </div>
+
+          {/* Line 2: env(safe-area-inset-top) */}
+          <div style={{ position: 'absolute', top: 'env(safe-area-inset-top, 0px)', left: 0, right: 0 }}>
+            <div style={{ borderTop: '2px solid blue', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 4, top: 2, color: 'blue', background: 'white', padding: '0 4px' }}>
+                B: safe-area-inset-top
+              </span>
+            </div>
+          </div>
+
+          {/* Line 3: safe-area-inset-top + 1rem (content padding start) */}
+          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 1rem)', left: 0, right: 0 }}>
+            <div style={{ borderTop: '2px solid green', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 4, top: 2, color: 'green', background: 'white', padding: '0 4px' }}>
+                C: safe-area + 1rem
+              </span>
+            </div>
+          </div>
+
+          {/* Line 4: safe-area-inset-top + 2rem */}
+          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + 2rem)', left: 0, right: 0 }}>
+            <div style={{ borderTop: '2px solid orange', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 4, top: 2, color: 'orange', background: 'white', padding: '0 4px' }}>
+                D: safe-area + 2rem
+              </span>
+            </div>
+          </div>
+
+          {/* Line 5: 59px (typical iPhone notch inset) */}
+          <div style={{ position: 'absolute', top: '59px', left: 0, right: 0 }}>
+            <div style={{ borderTop: '2px dashed purple', position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 4, top: 2, color: 'purple', background: 'white', padding: '0 4px' }}>
+                E: 59px (typical notch)
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pull-to-refresh indicator (iOS PWA only) — fixed at top, fades in as page pulls down */}
       {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && (() => {
         const THRESHOLD = 80;
