@@ -26,10 +26,12 @@ export default function Template({ children }: AppTemplateProps) {
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
 
-  // Pull-to-refresh state
-  const [pullDistance, setPullDistance] = useState(0);  // raw touch delta (drives visuals)
+  // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
+  // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
+  const [pullActive, setPullActive] = useState(false);    // whether indicator is mounted
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isAnimatingBack, setIsAnimatingBack] = useState(false); // CSS transition active
+  const pullIndicatorRef = useRef<HTMLDivElement>(null);   // direct DOM ref for indicator
+  const pullArcRef = useRef<SVGCircleElement>(null);       // direct DOM ref for arc
   
   // Check if referrer is from a different domain or if this is a new tab/external entry
   // Also determine if back button should show home icon instead
@@ -265,15 +267,9 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh functionality — only for iOS PWA standalone mode
-  // (Native pull-to-refresh works in browsers and Android PWA, but Apple
-  // explicitly disables it in iOS standalone/fullscreen PWA mode.)
-  // Touch listeners must be on the scroll container (not document.body) so that
-  // e.preventDefault() actually suppresses the container's native overscroll bounce.
-  //
-  // Mimics Safari's native pull-to-refresh: the whole page translates down with
-  // a damped drag, a circular progress arc shows how close you are to the
-  // threshold, and dragging back up cancels the gesture.
+  // Pull-to-refresh functionality — only for iOS PWA standalone mode.
+  // Uses direct DOM manipulation during touchmove for smooth 60fps updates,
+  // avoiding React re-renders on every pixel of movement.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!isIOSPWA) return;
@@ -281,59 +277,95 @@ export default function Template({ children }: AppTemplateProps) {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
 
-    // Suppress native rubber-band overscroll so our custom handler takes over
     scrollContainer.style.overscrollBehaviorY = 'none';
 
-    const THRESHOLD = 240; // px of raw touch movement to trigger refresh
+    const THRESHOLD = 240;
+    const CIRCUMFERENCE = 2 * Math.PI * 10;
+    const INDICATOR_SIZE = 40;
 
     let startY = 0;
     let isAtTop = true;
     let isDragging = false;
     let currentPullDistance = 0;
+    let refreshing = false;
+
+    // Direct DOM update — no React re-render
+    const updateDOM = (distance: number) => {
+      const damped = distance * 0.5;
+      // Update scroll container position
+      scrollContainer.style.transform = `translateY(${damped}px)`;
+      scrollContainer.style.transition = 'none';
+      // Update indicator
+      const indicator = pullIndicatorRef.current;
+      const arc = pullArcRef.current;
+      if (indicator) {
+        const fadeStart = INDICATOR_SIZE * 0.5;
+        const fadeEnd = INDICATOR_SIZE;
+        const opacity = Math.min(Math.max((damped - fadeStart) / (fadeEnd - fadeStart), 0), 1);
+        indicator.style.opacity = String(opacity);
+        indicator.style.transition = 'none';
+      }
+      if (arc) {
+        const progress = Math.min(distance / THRESHOLD, 1);
+        const arcLength = progress * CIRCUMFERENCE;
+        arc.style.strokeDasharray = `${arcLength} ${CIRCUMFERENCE}`;
+        arc.style.stroke = distance >= THRESHOLD ? '' : '';
+        arc.classList.toggle('text-blue-600', distance >= THRESHOLD);
+        arc.classList.toggle('dark:text-blue-400', distance >= THRESHOLD);
+        arc.classList.toggle('text-gray-400', distance < THRESHOLD);
+        arc.classList.toggle('dark:text-gray-500', distance < THRESHOLD);
+      }
+    };
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (isRefreshing) return;
+      if (refreshing) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (isRefreshing || !isAtTop) return;
+      if (refreshing || !isAtTop) return;
 
       const rawDelta = e.touches[0].clientY - startY;
 
       if (rawDelta > 10) {
-        isDragging = true;
+        if (!isDragging) {
+          isDragging = true;
+          setPullActive(true); // mount the indicator (one-time React render)
+        }
         currentPullDistance = rawDelta;
-        setPullDistance(currentPullDistance);
+        // Wait one frame for React to mount the indicator on first drag
+        requestAnimationFrame(() => updateDOM(currentPullDistance));
         e.preventDefault();
       } else if (isDragging && rawDelta <= 10) {
-        // User dragged back up past the start — cancel
         isDragging = false;
         currentPullDistance = 0;
-        setPullDistance(0);
+        updateDOM(0);
+        setPullActive(false);
       }
     };
 
     const handleTouchEnd = () => {
-      if (isRefreshing) return;
+      if (refreshing) return;
 
       if (isDragging && currentPullDistance >= THRESHOLD) {
-        // Show refreshing state, then reload
+        refreshing = true;
         setIsRefreshing(true);
-        setPullDistance(THRESHOLD);
         setTimeout(() => window.location.reload(), 400);
       } else if (isDragging) {
-        // Animate back: enable CSS transition, then set distance to 0 after the
-        // browser has painted the current pulled-down position with transition enabled.
-        setIsAnimatingBack(true);
-        // Double-rAF ensures the transition property is painted before we change the value
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setPullDistance(0);
-            setTimeout(() => setIsAnimatingBack(false), 300);
-          });
-        });
+        // Snap back with CSS transition
+        scrollContainer.style.transition = 'transform 0.3s ease';
+        scrollContainer.style.transform = 'translateY(0px)';
+        const indicator = pullIndicatorRef.current;
+        if (indicator) {
+          indicator.style.transition = 'opacity 0.3s ease';
+          indicator.style.opacity = '0';
+        }
+        setTimeout(() => {
+          scrollContainer.style.transition = '';
+          scrollContainer.style.transform = '';
+          setPullActive(false);
+        }, 300);
       }
 
       isDragging = false;
@@ -349,11 +381,10 @@ export default function Template({ children }: AppTemplateProps) {
       scrollContainer.removeEventListener('touchmove', handleTouchMove);
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
       scrollContainer.style.overscrollBehaviorY = '';
+      scrollContainer.style.transform = '';
+      scrollContainer.style.transition = '';
     };
-  }, [isIOSPWA, isRefreshing]);
-
-  // Damped visual offset for pull-to-refresh: diminishing returns like rubber band
-  const pullDamped = pullDistance > 0 ? pullDistance * 0.5 : 0;
+  }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
@@ -361,54 +392,40 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator — rendered via portal to escape scaling container */}
-      {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && isMounted && (() => {
-        const THRESHOLD = 240;
-        const INDICATOR_SIZE = 40;
-        const progress = Math.min(pullDistance / THRESHOLD, 1);
-        const pastThreshold = pullDistance >= THRESHOLD;
-        // Fade in once page has moved down enough to reveal without overlapping
-        const fadeStart = INDICATOR_SIZE * 0.5;
-        const fadeEnd = INDICATOR_SIZE;
-        const opacity = isAnimatingBack
-          ? 0
-          : Math.min(Math.max((pullDamped - fadeStart) / (fadeEnd - fadeStart), 0), 1);
-        const circumference = 2 * Math.PI * 10;
-        const arcLength = progress * circumference;
-
-        return createPortal(
-          <div
-            className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
-            style={{
-              top: 'calc(env(safe-area-inset-top, 0px) + 2px)',
-              opacity,
-              transition: isAnimatingBack ? 'opacity 0.3s ease' : 'none',
-            }}
-          >
-            <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
-              {isRefreshing ? (
-                <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" className="text-gray-200 dark:text-gray-600" strokeWidth="2.5" />
-                  <circle
-                    cx="12" cy="12" r="10" stroke="currentColor"
-                    className={pastThreshold ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}
-                    strokeWidth="2.5" strokeLinecap="round"
-                    strokeDasharray={`${arcLength} ${circumference}`}
-                    transform="rotate(-90 12 12)"
-                    style={{ transition: 'stroke-dasharray 0.05s linear' }}
-                  />
-                </svg>
-              )}
-            </div>
-          </div>,
-          document.body
-        );
-      })()}
+      {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
+           Uses refs for direct DOM updates during drag (no React re-renders). */}
+      {isIOSPWA && (pullActive || isRefreshing) && isMounted && createPortal(
+        <div
+          ref={pullIndicatorRef}
+          className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 0px) + 2px)',
+            opacity: isRefreshing ? 1 : 0,
+          }}
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
+            {isRefreshing ? (
+              <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" className="text-gray-200 dark:text-gray-600" strokeWidth="2.5" />
+                <circle
+                  ref={pullArcRef}
+                  cx="12" cy="12" r="10" stroke="currentColor"
+                  className="text-gray-400 dark:text-gray-500"
+                  strokeWidth="2.5" strokeLinecap="round"
+                  strokeDasharray="0 62.83"
+                  transform="rotate(-90 12 12)"
+                />
+              </svg>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
       {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
@@ -450,10 +467,6 @@ export default function Template({ children }: AppTemplateProps) {
           paddingLeft: 'max(1rem, env(safe-area-inset-left))',
           paddingRight: 'max(1rem, env(safe-area-inset-right))',
           paddingBottom: '1rem',
-          ...(isIOSPWA && (pullDamped > 0 || isAnimatingBack) ? {
-            transform: `translateY(${pullDamped}px)`,
-            transition: isAnimatingBack ? 'transform 0.3s ease' : 'none',
-          } : {}),
         }}>
         <div>
           {/* Spacer div for header elements that are now rendered in portal */}
