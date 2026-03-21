@@ -4,21 +4,13 @@
  */
 
 import type { Poll, PollResults } from './types';
-
-// Derive a preview API slug from a git branch name.
-// e.g., "claude/fix-voting-bug-abc123" -> "fix-voting-bug-abc123"
-function branchToSlug(branch: string): string {
-  let slug = branch.replace(/^claude\//, '').toLowerCase();
-  slug = slug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return slug.slice(0, 50);
-}
+import { branchToSlug } from './slug';
 
 // API URL resolution:
-// 1. NEXT_PUBLIC_API_URL env var overrides everything (for preview environments, etc.)
-// 2. Server-side (SSR): use absolute URLs to call the API directly
-// 3. Client-side: always use relative /api/polls path, proxied by Next.js rewrites.
-//    This keeps all browser requests same-origin, avoiding Safari's Advanced Tracking
-//    and Fingerprinting Protection warnings from cross-origin fetch calls.
+// - NEXT_PUBLIC_API_URL overrides everything
+// - Server-side: absolute URLs (no browser privacy concerns in SSR)
+// - Client-side: relative /api/polls path, proxied by Next.js rewrites
+//   (keeps requests same-origin, avoiding Safari ITP warnings)
 function getApiBase(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
@@ -28,7 +20,6 @@ function getApiBase(): string {
     if (process.env.NODE_ENV !== 'production') {
       return 'http://localhost:8000/api/polls';
     }
-    // Production SSR: call API directly
     const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
     if (branch && branch !== 'main' && branch !== 'master') {
       const slug = branchToSlug(branch);

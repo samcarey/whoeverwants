@@ -1,20 +1,9 @@
 import type { NextConfig } from "next";
-
-// Derive a preview API slug from a git branch name.
-// e.g., "claude/fix-voting-bug-abc123" -> "fix-voting-bug-abc123"
-function branchToSlug(branch: string): string {
-  let slug = branch.replace(/^claude\//, '').toLowerCase();
-  slug = slug.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return slug.slice(0, 50);
-}
+import { branchToSlug } from "./lib/slug";
 
 // Determine the backend API origin for rewrites.
-// - Standalone (Docker dev servers): no rewrites needed
-// - Vercel production: proxy to api.whoeverwants.com (avoids cross-origin Safari ITP warnings)
-// - Vercel preview: proxy to <slug>.api.whoeverwants.com
-// - Local dev: proxy to localhost:8000
 function getApiRewriteDestination(): string {
-  const branch = process.env.VERCEL_GIT_COMMIT_REF;
+  const branch = process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF;
   if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
     if (branch && branch !== 'main' && branch !== 'master') {
       return `https://${branchToSlug(branch)}.api.whoeverwants.com`;
@@ -52,10 +41,7 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
 } else {
   const apiDest = getApiRewriteDestination();
 
-  // Proxy /api/polls requests to the backend API.
-  // In dev: proxies to localhost:8000.
-  // On Vercel: proxies to api.whoeverwants.com, making API calls same-origin
-  // and avoiding Safari's Advanced Tracking and Fingerprinting Protection warnings.
+  // Proxy /api/polls to the backend API (same-origin for Safari ITP compatibility)
   nextConfig.rewrites = async () => ({
     beforeFiles: [
       // API rewrites must be in beforeFiles so they take priority over
