@@ -199,8 +199,6 @@ whoeverwants/
 │   ├── poll/page.tsx               # Alternate poll endpoint
 │   ├── profile/page.tsx            # User profile (name management)
 │   └── api/                        # Server-side API routes
-│       ├── log/route.ts            # Server-side logging endpoint (dev only)
-│       ├── debug-logs/route.ts     # Debug log retrieval
 │       ├── test-pushover/          # Push notification testing
 │       └── notify-claude-input/    # Claude notification integration
 │
@@ -245,7 +243,7 @@ whoeverwants/
 │   ├── pollDiscovery.ts            # Discover follow-up/fork relationships
 │   ├── userProfile.ts              # User name get/save (localStorage)
 │   ├── forgetPoll.ts               # Remove poll from browser's access list
-│   ├── debugLogger.ts              # Server/client logging utility
+│   ├── debugLogger.ts              # Console logging utility
 │   ├── base62.ts                   # Base62 encoding for short IDs
 │   ├── prefetch.ts                 # Next.js page prefetching
 │   ├── mobile-optimization.ts      # iOS viewport handling
@@ -374,8 +372,8 @@ uv lock                        # Regenerate lock file
 
 The sections below contain mandatory rules. Follow them exactly.
 
-- Never ask the user to look at the browser console. Instead, send logs to the server's `/api/log` endpoint and have them run the test manually, then analyze the resulting logs.
-- Never ask the user to check the browser console.
+- For server logs, use `scripts/remote.sh` to read logs directly from the droplet.
+- Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
 
 ### Python Tooling: uv (Mandatory)
