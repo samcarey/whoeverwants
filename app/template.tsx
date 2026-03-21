@@ -384,7 +384,7 @@ export default function Template({ children }: AppTemplateProps) {
           <div
             className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
             style={{
-              top: 'calc(env(safe-area-inset-top, 0px) + 1px)',
+              top: '1px',
               opacity,
               transition: isAnimatingBack ? 'opacity 0.3s ease' : 'none',
             }}
