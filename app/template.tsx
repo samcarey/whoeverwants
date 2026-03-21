@@ -363,68 +363,24 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* DEBUG: Boundary lines — remove after testing */}
-      {isIOSPWA && isMounted && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, pointerEvents: 'none', fontSize: '10px', fontFamily: 'monospace', top: 'calc(-1 * env(safe-area-inset-top, 0px))' }}>
-          {/* Line A: true screen top (0 from viewport) */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
-            <div style={{ borderTop: '2px solid red', position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 4, top: 2, color: 'red', background: 'white', padding: '0 4px' }}>
-                A: screen top
-              </span>
-            </div>
-          </div>
-
-          {/* Line B: safe-area-inset-top (bottom of notch/Dynamic Island) */}
-          <div style={{ position: 'absolute', top: 'env(safe-area-inset-top, 0px)', left: 0, right: 0 }}>
-            <div style={{ borderTop: '2px solid blue', position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 4, top: 2, color: 'blue', background: 'white', padding: '0 4px' }}>
-                B: safe-area-inset-top
-              </span>
-            </div>
-          </div>
-
-          {/* Line C: where content starts (safe-area-inset-top x2 due to html padding) */}
-          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) * 2)', left: 0, right: 0 }}>
-            <div style={{ borderTop: '2px solid green', position: 'relative' }}>
-              <span style={{ position: 'absolute', left: 4, top: 2, color: 'green', background: 'white', padding: '0 4px' }}>
-                C: safe-area x2 (content start?)
-              </span>
-            </div>
-          </div>
-
-          {/* Line D: fixed top:0 inside scaling container (where our indicator currently renders) */}
-          <div style={{ position: 'absolute', top: 'calc(env(safe-area-inset-top, 0px) + env(safe-area-inset-top, 0px))', left: 0, right: 0 }}>
-            <div style={{ borderTop: '2px dashed orange', position: 'relative' }}>
-              <span style={{ position: 'absolute', right: 4, top: 2, color: 'orange', background: 'white', padding: '0 4px' }}>
-                D: container top:0
-              </span>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Pull-to-refresh indicator (iOS PWA only) — fixed at top, fades in as page pulls down */}
-      {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && (() => {
+      {/* Pull-to-refresh indicator — rendered via portal to escape scaling container */}
+      {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && isMounted && (() => {
         const THRESHOLD = 80;
-        const INDICATOR_SIZE = 40; // approx height of circle + padding
-        // Progress 0→1 based on how close to threshold
+        const INDICATOR_SIZE = 40;
         const progress = Math.min(pullDistance / THRESHOLD, 1);
         const pastThreshold = pullDistance >= THRESHOLD;
-        // Fade in once the page has moved down enough to reveal the indicator
-        const fadeStart = INDICATOR_SIZE * 0.5; // start fading in
-        const fadeEnd = INDICATOR_SIZE;          // fully visible
+        // Fade in once page has moved down enough to reveal without overlapping
+        const fadeStart = INDICATOR_SIZE * 0.5;
+        const fadeEnd = INDICATOR_SIZE;
         const opacity = isAnimatingBack
           ? 0
           : Math.min(Math.max((pullDamped - fadeStart) / (fadeEnd - fadeStart), 0), 1);
-        // SVG arc: radius 10, circumference ≈ 62.8
         const circumference = 2 * Math.PI * 10;
         const arcLength = progress * circumference;
 
-        return (
+        return createPortal(
           <div
-            className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
+            className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
             style={{
               top: '1px',
               opacity,
@@ -439,20 +395,11 @@ export default function Template({ children }: AppTemplateProps) {
                 </svg>
               ) : (
                 <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-                  {/* Background circle track */}
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" className="text-gray-200 dark:text-gray-600" strokeWidth="2.5" />
                   <circle
-                    cx="12" cy="12" r="10"
-                    stroke="currentColor"
-                    className="text-gray-200 dark:text-gray-600"
-                    strokeWidth="2.5"
-                  />
-                  {/* Progress arc */}
-                  <circle
-                    cx="12" cy="12" r="10"
-                    stroke="currentColor"
+                    cx="12" cy="12" r="10" stroke="currentColor"
                     className={pastThreshold ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
+                    strokeWidth="2.5" strokeLinecap="round"
                     strokeDasharray={`${arcLength} ${circumference}`}
                     transform="rotate(-90 12 12)"
                     style={{ transition: 'stroke-dasharray 0.05s linear' }}
@@ -460,7 +407,8 @@ export default function Template({ children }: AppTemplateProps) {
                 </svg>
               )}
             </div>
-          </div>
+          </div>,
+          document.body
         );
       })()}
 
@@ -641,7 +589,7 @@ export default function Template({ children }: AppTemplateProps) {
       <HeaderPortal>
         {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
         {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
-          <div className="fixed left-4 top-4 z-50">
+          <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {shouldShowHomeButton ? (
                 <button 
                   onClick={() => window.location.href = '/'}
@@ -668,14 +616,14 @@ export default function Template({ children }: AppTemplateProps) {
         
         {/* Copy link button in upper right for poll pages */}
         {isPollPage && (
-          <div className="fixed right-4 top-4 z-50">
+          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
           </div>
         )}
         
         {/* New poll button in upper right for home page */}
         {pathname === '/' && (
-          <div className="fixed right-4 top-4 z-50">
+          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             <Link
               href="/create-poll"
               className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"

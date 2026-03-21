@@ -185,7 +185,8 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
       {/* Time badge - only shown in dev mode, positioned top center with no top margin */}
       {showTimeBadge && (
         <div
-          className="fixed top-0 left-1/2 -translate-x-1/2 z-[9999] cursor-pointer select-none"
+          className="fixed left-1/2 -translate-x-1/2 z-[9999] cursor-pointer select-none"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 2px)' }}
           onClick={() => setShowModal(true)}
         >
           <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
