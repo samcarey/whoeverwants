@@ -376,6 +376,10 @@ The sections below contain mandatory rules. Follow them exactly.
 - Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
 - **Never bold URLs**: Do not wrap URLs in `**bold**` markers. The asterisks get rendered literally in the terminal and break the link. Write URLs as plain text.
+- **PR workflow**: When asked to open a PR, always do these steps first:
+  1. **Run `/simplify`** to clean up any code quality issues, redundancy, or missed improvements.
+  2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
+  3. Then create the PR.
 
 ### Python Tooling: uv (Mandatory)
 
@@ -795,6 +799,16 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 ```
 
 **Time-saving tip**: Don't guess at the problem. Add logging, get the exact error, then fix the specific constraint.
+
+### PWA / Pull-to-Refresh
+
+- **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone` or `matchMedia('(display-mode: standalone)')` + iOS UA check).
+- **Don't put `pullDistance` in a useEffect dependency array** when using touch-based pull-to-refresh. The state updates on every pixel of movement, causing event listener thrashing (detach + reattach 3 listeners 60+ times/sec). Use a local `let` variable inside the effect for the threshold check, and only use React state for rendering the indicator.
+
+### Dev Server Pitfalls
+
+- **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
+- **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
 
 ### API Development Pitfalls
 
