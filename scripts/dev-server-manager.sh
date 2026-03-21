@@ -97,11 +97,19 @@ get_dev_port() {
 }
 
 # Stop the Next.js process for a dev server
-# next dev spawns child processes, so we kill the entire process group
+# npm run dev spawns child processes (npm -> next -> node), so killing the
+# parent PID alone may leave orphaned children holding the port open.
+# We kill by PID first, then ensure nothing is left on the port.
 stop_nextjs() {
   local slug="$1"
   local dir="${DEV_DIR}/${slug}"
   local pid_file="${dir}/.nextjs.pid"
+  local port=""
+
+  # Read assigned port from metadata so we can clean it up
+  if [ -f "${dir}/.dev-meta.json" ]; then
+    port=$(python3 -c "import json; print(json.load(open('${dir}/.dev-meta.json'))['port'])" 2>/dev/null || echo "")
+  fi
 
   if [ -f "$pid_file" ]; then
     local pid
@@ -123,6 +131,18 @@ stop_nextjs() {
       fi
     fi
     rm -f "$pid_file"
+  fi
+
+  # Kill any orphaned processes still holding the port (child node processes
+  # that survived the parent kill)
+  if [ -n "$port" ]; then
+    local port_pids
+    port_pids=$(fuser "${port}/tcp" 2>/dev/null || true)
+    if [ -n "$port_pids" ]; then
+      log "Killing orphaned processes on port $port: $port_pids"
+      fuser -k "${port}/tcp" 2>/dev/null || true
+      sleep 1
+    fi
   fi
 }
 
