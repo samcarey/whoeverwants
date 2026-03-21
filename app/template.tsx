@@ -363,12 +363,19 @@ export default function Template({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator (iOS PWA only) — circular progress arc like Safari */}
+      {/* Pull-to-refresh indicator (iOS PWA only) — fixed at top, fades in as page pulls down */}
       {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && (() => {
         const THRESHOLD = 80;
+        const INDICATOR_SIZE = 40; // approx height of circle + padding
         // Progress 0→1 based on how close to threshold
         const progress = Math.min(pullDistance / THRESHOLD, 1);
         const pastThreshold = pullDistance >= THRESHOLD;
+        // Fade in once the page has moved down enough to reveal the indicator
+        const fadeStart = INDICATOR_SIZE * 0.5; // start fading in
+        const fadeEnd = INDICATOR_SIZE;          // fully visible
+        const opacity = isAnimatingBack
+          ? 0
+          : Math.min(Math.max((pullDamped - fadeStart) / (fadeEnd - fadeStart), 0), 1);
         // SVG arc: radius 10, circumference ≈ 62.8
         const circumference = 2 * Math.PI * 10;
         const arcLength = progress * circumference;
@@ -377,9 +384,9 @@ export default function Template({ children }: AppTemplateProps) {
           <div
             className="fixed left-0 right-0 z-50 flex justify-center pointer-events-none"
             style={{
-              top: `calc(env(safe-area-inset-top, 0px) + ${pullDamped - 20}px)`,
-              transition: isAnimatingBack ? 'top 0.3s ease, opacity 0.3s ease' : 'none',
-              opacity: isAnimatingBack ? 0 : 1,
+              top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+              opacity,
+              transition: isAnimatingBack ? 'opacity 0.3s ease' : 'none',
             }}
           >
             <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
