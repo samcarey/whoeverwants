@@ -284,7 +284,7 @@ export default function Template({ children }: AppTemplateProps) {
     // Suppress native rubber-band overscroll so our custom handler takes over
     scrollContainer.style.overscrollBehaviorY = 'none';
 
-    const THRESHOLD = 120; // px of raw touch movement to trigger refresh
+    const THRESHOLD = 240; // px of raw touch movement to trigger refresh
 
     let startY = 0;
     let isAtTop = true;
@@ -363,7 +363,7 @@ export default function Template({ children }: AppTemplateProps) {
     <>
       {/* Pull-to-refresh indicator — rendered via portal to escape scaling container */}
       {isIOSPWA && (pullDistance > 0 || isAnimatingBack) && isMounted && (() => {
-        const THRESHOLD = 120;
+        const THRESHOLD = 240;
         const INDICATOR_SIZE = 40;
         const progress = Math.min(pullDistance / THRESHOLD, 1);
         const pastThreshold = pullDistance >= THRESHOLD;
