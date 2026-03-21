@@ -52,8 +52,10 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'commit' | 'env'>('commit');
+  const [activeTab, setActiveTab] = useState<'commit' | 'logs'>('commit');
   const [error, setError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string>('');
+  const [logsLoading, setLogsLoading] = useState(false);
 
   const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
@@ -103,6 +105,17 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
     window.addEventListener('openCommitInfo', handleOpen);
     return () => window.removeEventListener('openCommitInfo', handleOpen);
   }, []);
+
+  // Fetch logs when logs tab is active
+  useEffect(() => {
+    if (activeTab !== 'logs' || !showModal) return;
+    setLogsLoading(true);
+    fetch('/api/log')
+      .then(res => res.json())
+      .then(data => setLogs(data.logs || 'No logs yet'))
+      .catch(() => setLogs('Failed to fetch logs'))
+      .finally(() => setLogsLoading(false));
+  }, [activeTab, showModal]);
 
   // Close modal on Escape
   useEffect(() => {
@@ -154,13 +167,13 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </button>
               <button
                 className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === 'env'
+                  activeTab === 'logs'
                     ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
                     : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                 }`}
-                onClick={() => setActiveTab('env')}
+                onClick={() => setActiveTab('logs')}
               >
-                Environment
+                Logs
               </button>
             </div>
 
@@ -203,42 +216,18 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               </div>
             )}
 
-            {/* Environment tab */}
-            {activeTab === 'env' && (
-              <div className="space-y-2 font-mono text-xs">
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">NODE_ENV:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{process.env.NODE_ENV}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Commit:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{shortHash || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Branch:</span>{' '}
-                  <span className="text-gray-700 dark:text-gray-300">{branchName || 'N/A'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400 dark:text-gray-500">Repo:</span>{' '}
-                  <a
-                    href={`https://github.com/${REPO}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    {REPO}
-                  </a>
-                </div>
+            {/* Logs tab */}
+            {activeTab === 'logs' && (
+              <div className="font-mono text-xs">
+                {logsLoading ? (
+                  <div className="text-sm text-gray-500">Loading logs...</div>
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200 max-h-[50vh] overflow-y-auto">
+                    {logs}
+                  </pre>
+                )}
               </div>
             )}
-
-            {/* Close button */}
-            <button
-              className="mt-4 px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded transition-colors"
-              onClick={() => setShowModal(false)}
-            >
-              Close
-            </button>
           </div>
         </div>
       )}
