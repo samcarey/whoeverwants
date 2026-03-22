@@ -16,25 +16,26 @@ interface VoterListProps {
 
 export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [anonymousCount, setAnonymousCount] = useState(0);
 
   const fetchVoters = async () => {
-    setLoading(true);
-    setError(null);
-
     try {
       const votes = await apiGetVotes(pollId);
       const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
       setVoters(voterData);
       const anonymousVotes = voterData.filter(vote => !vote.voter_name || vote.voter_name.trim() === '');
       setAnonymousCount(anonymousVotes.length);
+      setError(null);
     } catch (err) {
       console.error('Error fetching voters:', err);
-      setError('Failed to load voter list');
+      // Only show error if we have no data yet
+      if (voters.length === 0) {
+        setError('Failed to load voter list');
+      }
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -58,7 +59,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     }
   }, [refreshTrigger]);
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
