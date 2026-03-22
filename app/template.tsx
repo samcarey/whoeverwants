@@ -4,7 +4,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import ProfileButton from '@/components/ProfileButton';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 
@@ -12,9 +11,17 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
+// Detect standalone PWA mode (iOS via navigator.standalone, Android/Chrome via display-mode media query).
+const isStandalonePWA = () =>
+  (navigator as unknown as { standalone?: boolean }).standalone === true ||
+  window.matchMedia('(display-mode: standalone)').matches;
+
 // navigator.standalone is iOS/iPadOS Safari-only; true = launched as standalone PWA.
 const isIOSSPWAStandalone = () =>
   (navigator as unknown as { standalone?: boolean }).standalone === true;
+
+// Session-scoped in-app navigation counter (per-tab, cleared on tab close).
+const NAV_COUNT_KEY = 'app_nav_count';
 
 // Pull-to-refresh constants (iOS PWA only)
 const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
@@ -24,8 +31,8 @@ const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
 export default function Template({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isExternalReferrer, setIsExternalReferrer] = useState(false);
-  const [shouldShowHomeButton, setShouldShowHomeButton] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [hasAppHistory, setHasAppHistory] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
   const [isIOSPWA, setIsIOSPWA] = useState(false);
@@ -42,84 +49,17 @@ export default function Template({ children }: AppTemplateProps) {
   const pullIndicatorRef = useRef<HTMLDivElement>(null);   // direct DOM ref for indicator
   const pullArcRef = useRef<SVGCircleElement>(null);       // direct DOM ref for arc
   
-  // Check if referrer is from a different domain or if this is a new tab/external entry
-  // Also determine if back button should show home icon instead
+  // Detect standalone PWA mode and track in-app navigation for back button.
+  // Back button only shown in standalone PWA mode (no browser chrome = no browser back button).
+  // In regular browser tabs, the browser's own back button handles navigation.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const referrer = document.referrer;
-      const historyLength = window.history.length;
-      let showHome = false;
-      let isExternal = false;
-      
-      if (referrer) {
-        try {
-          const referrerUrl = new URL(referrer);
-          const currentUrl = new URL(window.location.href);
-          const isDifferentOrigin = referrerUrl.origin !== currentUrl.origin;
-          
-          // If referrer is from different origin, definitely external
-          if (isDifferentOrigin) {
-            isExternal = true;
-            showHome = true;
-          } else {
-            // Same origin referrer
-            const isHomepageReferrer = referrerUrl.pathname === '/' || referrerUrl.pathname === '';
-            const isNewTab = historyLength === 1 && referrerUrl.pathname !== new URL(currentUrl).pathname;
-            
-            
-            if (pathname.startsWith('/p/')) {
-              // Poll pages
-              if (isNewTab) {
-                // New tab from copied link
-                isExternal = true;
-                showHome = true;
-              } else if (isHomepageReferrer && historyLength === 2) {
-                // Came directly from homepage, back would go to homepage
-                // Show home button instead of back button
-                isExternal = false;
-                showHome = true;
-              } else {
-                // Normal internal navigation
-                isExternal = false;
-                showHome = false;
-              }
-            } else {
-              // Non-poll pages with same-origin referrer
-              if (isHomepageReferrer && historyLength === 2) {
-                showHome = true;
-              }
-              isExternal = false;
-            }
-          }
-        } catch (e) {
-          // Invalid referrer URL - treat as external
-          isExternal = true;
-          showHome = true;
-        }
-      } else {
-        // No referrer - this happens when:
-        // 1. Direct URL entry/paste in address bar  
-        // 2. Opening link in new tab (copied link) - most common case
-        // 3. Bookmarks
-        // 4. Some privacy settings
-        
-        if (pathname.startsWith('/p/')) {
-          // Poll pages with no referrer should show home button
-          // This covers the main use case: copied links opened in new tabs
-          isExternal = true;
-          showHome = true;
-        } else {
-          // Non-poll pages: check history length
-          isExternal = historyLength <= 1;
-          showHome = historyLength <= 1;
-        }
-      }
-      
-      
-      setIsExternalReferrer(isExternal);
-      setShouldShowHomeButton(showHome);
-      
-    }
+    if (typeof window === 'undefined') return;
+    setIsStandalone(isStandalonePWA());
+
+    // Increment in-app navigation counter (sessionStorage = per-tab, auto-cleared)
+    const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
+    sessionStorage.setItem(NAV_COUNT_KEY, String(count));
+    setHasAppHistory(count > 1);
   }, [pathname]);
 
   // Detect iOS PWA mode once (navigator.standalone is a device constant)
@@ -655,27 +595,29 @@ export default function Template({ children }: AppTemplateProps) {
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow or home button in upper left - only for poll/create/profile pages */}
-        {(isPollPage || isCreatePollPage || isProfilePage) && !isExternalReferrer && (
+        {/* Back/home button in upper left — PWA standalone mode only.
+             In regular browser tabs, the browser's own back button handles navigation.
+             Shows back arrow if user has navigated within the app, home icon otherwise. */}
+        {isStandalone && (isPollPage || isCreatePollPage || isProfilePage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
-            {shouldShowHomeButton ? (
-                <button 
-                  onClick={() => window.location.href = '/'}
-                  className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                  aria-label="Go to home"
-                >
-                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                </button>
-            ) : (
-              <button 
+            {hasAppHistory ? (
+              <button
                 onClick={() => window.history.back()}
                 className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                 aria-label="Go back"
               >
                 <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                onClick={() => window.location.href = '/'}
+                className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                aria-label="Go to home"
+              >
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               </button>
             )}
