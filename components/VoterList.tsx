@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiGetVotes } from '@/lib/api';
 
 interface Voter {
@@ -16,49 +16,49 @@ interface VoterListProps {
 
 export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [anonymousCount, setAnonymousCount] = useState(0);
+  const voterIdsRef = useRef('');
 
-  const fetchVoters = async () => {
-    setLoading(true);
-    setError(null);
-
+  const fetchVoters = useCallback(async () => {
     try {
       const votes = await apiGetVotes(pollId);
       const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
-      setVoters(voterData);
-      const anonymousVotes = voterData.filter(vote => !vote.voter_name || vote.voter_name.trim() === '');
-      setAnonymousCount(anonymousVotes.length);
+
+      // Skip state updates if voter list hasn't changed
+      const newKey = voterData.map(v => `${v.id}:${v.voter_name ?? ''}`).join(',');
+      if (newKey !== voterIdsRef.current) {
+        voterIdsRef.current = newKey;
+        setVoters(voterData);
+        setAnonymousCount(voterData.filter(v => !v.voter_name || v.voter_name.trim() === '').length);
+      }
+      setError(null);
     } catch (err) {
       console.error('Error fetching voters:', err);
-      setError('Failed to load voter list');
+      if (!voterIdsRef.current) {
+        setError('Failed to load voter list');
+      }
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
-  };
+  }, [pollId]);
 
   useEffect(() => {
     if (pollId) {
       fetchVoters();
-
-      // Poll for changes every 10 seconds (no real-time subscription without Supabase)
       const interval = setInterval(fetchVoters, 10000);
-
-      return () => {
-        clearInterval(interval);
-      };
+      return () => clearInterval(interval);
     }
-  }, [pollId]);
+  }, [pollId, fetchVoters]);
 
-  // Trigger refresh when refreshTrigger changes
   useEffect(() => {
     if (refreshTrigger && pollId) {
       fetchVoters();
     }
-  }, [refreshTrigger]);
+  }, [refreshTrigger, pollId, fetchVoters]);
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
