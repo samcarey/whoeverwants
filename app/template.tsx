@@ -49,21 +49,17 @@ export default function Template({ children }: AppTemplateProps) {
   const pullIndicatorRef = useRef<HTMLDivElement>(null);   // direct DOM ref for indicator
   const pullArcRef = useRef<SVGCircleElement>(null);       // direct DOM ref for arc
   
-  // Detect standalone PWA mode and track in-app navigation for back button.
-  // Back button only shown in standalone PWA mode (no browser chrome = no browser back button).
-  // In regular browser tabs, the browser's own back button handles navigation.
+  // Track in-app navigation for back button (runs on each client-side navigation).
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setIsStandalone(isStandalonePWA());
-
-    // Increment in-app navigation counter (sessionStorage = per-tab, auto-cleared)
     const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
     setHasAppHistory(count > 1);
   }, [pathname]);
 
-  // Detect iOS PWA mode once (navigator.standalone is a device constant)
+  // Detect PWA standalone mode once — these are device constants that never change mid-session.
   useEffect(() => {
+    setIsStandalone(isStandalonePWA());
     setIsIOSPWA(isIOSSPWAStandalone());
   }, []);
 
