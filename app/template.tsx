@@ -198,6 +198,15 @@ export default function Template({ children }: AppTemplateProps) {
     let rAFId: number | null = null;
     let scrollContainer: HTMLElement | null = null;
 
+    // Track current visibility to avoid no-op setState calls during scroll
+    let isVisible = true;
+    const setVisible = (visible: boolean) => {
+      if (visible !== isVisible) {
+        isVisible = visible;
+        setShowBottomBar(visible);
+      }
+    };
+
     const processScroll = () => {
       rAFId = null;
       if (!scrollContainer) return;
@@ -205,17 +214,14 @@ export default function Template({ children }: AppTemplateProps) {
       const currentScrollY = scrollContainer.scrollTop;
       const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
-      // Always show at the very top (check first to avoid hiding then immediately showing)
       if (currentScrollY <= 0) {
-        setShowBottomBar(true);
+        setVisible(true);
         lastScrollY.current = currentScrollY;
         return;
       }
 
-      // Detect iOS rubber band overshoot
-      const isOvershootBottom = currentScrollY > maxScrollY;
-
-      if (isOvershootBottom) {
+      // iOS rubber band past the bottom — ignore and clamp lastScrollY
+      if (currentScrollY > maxScrollY) {
         isInBounceRef.current = true;
         if (bounceTimeoutRef.current) {
           clearTimeout(bounceTimeoutRef.current);
@@ -224,39 +230,31 @@ export default function Template({ children }: AppTemplateProps) {
           isInBounceRef.current = false;
           bounceTimeoutRef.current = null;
         }, 150);
-        // Update lastScrollY to clamped value so we don't get a stale delta after bounce
         lastScrollY.current = maxScrollY;
         return;
       }
 
-      // Still in bounce cooldown — update lastScrollY but skip direction logic
+      // Scroll position is unreliable during bounce cooldown
       if (isInBounceRef.current) {
         lastScrollY.current = currentScrollY;
         return;
       }
 
-      // Normal scroll processing
       const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
 
       if (scrollDifference >= scrollThreshold.current) {
-        if (currentScrollY > lastScrollY.current) {
-          setShowBottomBar(false);
-        } else {
-          setShowBottomBar(true);
-        }
+        setVisible(currentScrollY < lastScrollY.current);
       }
 
       lastScrollY.current = currentScrollY;
     };
 
     const handleScroll = () => {
-      // Throttle to one update per animation frame
       if (rAFId === null) {
         rAFId = requestAnimationFrame(processScroll);
       }
     };
 
-    // Use a timeout to ensure the ref is attached after render
     const timeoutId = setTimeout(() => {
       scrollContainer = scrollContainerRef.current;
       if (scrollContainer) {
@@ -269,7 +267,6 @@ export default function Template({ children }: AppTemplateProps) {
       if (rAFId !== null) {
         cancelAnimationFrame(rAFId);
       }
-      // Clean up scroll listener — scrollContainer is captured in closure
       if (scrollContainer) {
         scrollContainer.removeEventListener('scroll', handleScroll);
       }
@@ -554,7 +551,9 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className="fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50"
+          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 ${
+            showBottomBar ? '' : 'pointer-events-none'
+          }`}
           style={{
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
