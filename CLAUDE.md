@@ -824,6 +824,13 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **The `<html>` element has `padding: env(safe-area-inset-top) ...`** in globals.css, which pushes `<body>` content below the safe area. Elements inside the `ResponsiveScaling` container have their `position: fixed` coordinates relative to the container (because `transform` creates a new containing block), so `top: 0` inside the scaling container is *not* the screen top — it's already below the safe area.
 - **To position at the true screen edge**, render via a portal to `document.body` (outside the scaling container). From there, `fixed top: 0` = the safe area boundary (notch bottom), not the physical screen top.
 
+### Back Button Navigation Strategy
+
+- **Only show a custom back button in PWA standalone mode.** In regular browser tabs, the browser already provides back/forward navigation — an in-app back button is redundant and potentially confusing (two back buttons doing different things). The bottom bar (Home + Profile) handles in-app navigation for browser users.
+- **Detect standalone mode with `isStandalonePWA()`** which checks both `navigator.standalone` (iOS) and `window.matchMedia('(display-mode: standalone)')` (Android/Chrome). Both are device constants — evaluate once on mount, not on every navigation.
+- **Don't use `document.referrer` or `window.history.length` for navigation decisions.** `document.referrer` is unreliable (privacy settings, cross-origin, browser variations). `history.length` is cumulative across the tab's lifetime, not app-specific. Use `sessionStorage` to track in-app navigation count instead (per-tab, auto-cleared on close).
+- **In PWA standalone mode**: show back arrow if user has navigated within the app (`sessionStorage` nav count > 1), home icon if this is the entry point (deep link / first page).
+
 ### Dev Server Pitfalls
 
 - **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
