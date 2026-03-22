@@ -12,6 +12,10 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
+// navigator.standalone is iOS/iPadOS Safari-only; true = launched as standalone PWA.
+const isIOSSPWAStandalone = () =>
+  (navigator as unknown as { standalone?: boolean }).standalone === true;
+
 // Pull-to-refresh constants (iOS PWA only)
 const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
 const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
@@ -115,12 +119,13 @@ export default function Template({ children }: AppTemplateProps) {
       setIsExternalReferrer(isExternal);
       setShouldShowHomeButton(showHome);
       
-      // Detect iOS PWA mode
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      setIsIOSPWA(isStandalone && isIOS);
     }
   }, [pathname]);
+
+  // Detect iOS PWA mode once (navigator.standalone is a device constant)
+  useEffect(() => {
+    setIsIOSPWA(isIOSSPWAStandalone());
+  }, []);
 
   // Set mounted state for portal rendering
   useEffect(() => {
@@ -282,9 +287,7 @@ export default function Template({ children }: AppTemplateProps) {
     if (typeof window === 'undefined') return;
 
     // Log detection details regardless of result
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    console.log('[PTR] detection: standalone=' + isStandalone + ', iOS=' + isIOS + ', isIOSPWA=' + isIOSPWA + ', UA=' + navigator.userAgent.substring(0, 80));
+    console.log('[PTR] detection: navigator.standalone=' + isIOSSPWAStandalone() + ', isIOSPWA=' + isIOSPWA);
 
     if (!isIOSPWA) {
       return;

@@ -380,7 +380,9 @@ The sections below contain mandatory rules. Follow them exactly.
 - **PR workflow**: When asked to open a PR, always do these steps first:
   1. **Run `/simplify`** to clean up any code quality issues, redundancy, or missed improvements.
   2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
-  3. Then create the PR.
+  3. **Rebase on main** (`git fetch origin main && git rebase origin/main`) to ensure the branch merges cleanly. Force-push if needed after rebase.
+  4. Create the PR.
+  5. **Wait for PR checks to pass AND verify mergeability** before showing the PR link. Poll the GitHub check-runs API every 15s until all checks complete, and confirm `mergeable: true` on the PR. Report the link only after both succeed, or report failures.
 
 ### Python Tooling: uv (Mandatory)
 
@@ -803,7 +805,8 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### PWA / Pull-to-Refresh
 
-- **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone` or `matchMedia('(display-mode: standalone)')` + iOS UA check).
+- **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone === true` — do NOT use UA sniffing).
+- **Never use UA sniffing (`/iPad|iPhone|iPod/`) to detect iOS.** Since iOS 26, Apple froze the OS version in the UA string. Worse, modern iPhones (17+) and iPads report `Macintosh; Intel Mac OS X 10_15_7` — identical to desktop Safari. In PWA standalone mode, "Safari" and "Mobile" tokens are also stripped, making the UA completely indistinguishable from a Mac. Use `navigator.standalone` (WebKit-only property): `undefined` = not Apple, `false` = Safari browser, `true` = standalone PWA.
 - **Don't use React state for per-pixel touch tracking.** `setState` on every touchmove causes 60+ re-renders/sec. Instead, use refs + direct DOM manipulation (`element.style.transform`, `element.style.opacity`, `classList.toggle`) for drag visuals, and only use React state for mount/unmount (e.g., `setPullActive(true)` to mount the indicator once).
 - **Coalesce requestAnimationFrame calls.** On 120Hz displays, touchmove fires faster than rAF. Use a `rAFPending` flag to skip redundant frames and read the latest value at callback time (not call time).
 - **Touch listeners must go on the scroll container, not document.body.** `e.preventDefault()` on body touchmove doesn't suppress a child scroll container's native overscroll bounce. Attach listeners to the scrollable element directly.
