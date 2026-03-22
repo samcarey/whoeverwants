@@ -280,17 +280,22 @@ export default function Template({ children }: AppTemplateProps) {
   // Uses direct DOM manipulation during touchmove for 60fps updates.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // Log detection details regardless of result
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    console.log('[PTR] detection: standalone=' + isStandalone + ', iOS=' + isIOS + ', isIOSPWA=' + isIOSPWA + ', UA=' + navigator.userAgent.substring(0, 80));
+
     if (!isIOSPWA) {
-      console.log('[PTR] skipped: isIOSPWA =', isIOSPWA);
       return;
     }
 
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) {
-      console.warn('[PTR] skipped: scrollContainerRef.current is null');
+      console.warn('[PTR] scrollContainerRef.current is null — cannot attach');
       return;
     }
-    console.log('[PTR] attaching touch handlers to scroll container');
+    console.log('[PTR] attaching touch handlers, scrollContainer.scrollTop=' + scrollContainer.scrollTop + ', overflow=' + getComputedStyle(scrollContainer).overflow);
 
     // Prevent native overscroll bounce on both the scroll container AND body/html.
     // iOS PWA standalone mode has body { overflow: auto } from globals.css which
@@ -306,6 +311,7 @@ export default function Template({ children }: AppTemplateProps) {
     let refreshTriggered = false;
     let rAFPending = false;
     let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
+    let touchMoveCount = 0;
 
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
@@ -337,12 +343,25 @@ export default function Template({ children }: AppTemplateProps) {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
+      touchMoveCount = 0;
+      console.log('[PTR] touchstart: startY=' + startY + ', scrollTop=' + scrollContainer.scrollTop + ', isAtTop=' + isAtTop);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (refreshTriggered || !isAtTop) return;
+      touchMoveCount++;
+      if (refreshTriggered || !isAtTop) {
+        if (touchMoveCount <= 3) {
+          console.log('[PTR] touchmove #' + touchMoveCount + ' SKIPPED: refreshTriggered=' + refreshTriggered + ', isAtTop=' + isAtTop);
+        }
+        return;
+      }
 
       const rawDelta = e.touches[0].clientY - startY;
+
+      // Log first few touchmove events to diagnose gesture capture
+      if (touchMoveCount <= 5) {
+        console.log('[PTR] touchmove #' + touchMoveCount + ': rawDelta=' + rawDelta.toFixed(1) + ', isDragging=' + isDragging + ', cancelable=' + e.cancelable);
+      }
 
       // Prevent default IMMEDIATELY for any downward movement at the top.
       // iOS's gesture recognizer claims the touch within the first few touchmove
@@ -355,6 +374,7 @@ export default function Template({ children }: AppTemplateProps) {
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
+          console.log('[PTR] drag started at rawDelta=' + rawDelta.toFixed(1));
           setPullActive(true);
         }
         currentPullDistance = rawDelta;
@@ -374,6 +394,7 @@ export default function Template({ children }: AppTemplateProps) {
     };
 
     const handleTouchEnd = () => {
+      console.log('[PTR] touchend: isDragging=' + isDragging + ', distance=' + currentPullDistance + ', threshold=' + PTR_THRESHOLD + ', totalMoves=' + touchMoveCount);
       if (refreshTriggered) return;
 
       if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
