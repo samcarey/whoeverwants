@@ -380,8 +380,9 @@ The sections below contain mandatory rules. Follow them exactly.
 - **PR workflow**: When asked to open a PR, always do these steps first:
   1. **Run `/simplify`** to clean up any code quality issues, redundancy, or missed improvements.
   2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
-  3. Create the PR.
-  4. **Wait for PR checks to pass** before showing the PR link. Poll the GitHub check-runs API every 15s until all checks complete. Report the link only after success, or report failures if checks fail.
+  3. **Rebase on main** (`git fetch origin main && git rebase origin/main`) to ensure the branch merges cleanly. Force-push if needed after rebase.
+  4. Create the PR.
+  5. **Wait for PR checks to pass AND verify mergeability** before showing the PR link. Poll the GitHub check-runs API every 15s until all checks complete, and confirm `mergeable: true` on the PR. Report the link only after both succeed, or report failures.
 
 ### Python Tooling: uv (Mandatory)
 
