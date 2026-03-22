@@ -292,7 +292,12 @@ export default function Template({ children }: AppTemplateProps) {
     }
     console.log('[PTR] attaching touch handlers to scroll container');
 
+    // Prevent native overscroll bounce on both the scroll container AND body/html.
+    // iOS PWA standalone mode has body { overflow: auto } from globals.css which
+    // creates a competing scrollable layer whose bounce steals the pull gesture.
     scrollContainer.style.overscrollBehaviorY = 'none';
+    document.body.style.overscrollBehavior = 'none';
+    document.documentElement.style.overscrollBehavior = 'none';
 
     let startY = 0;
     let isAtTop = true;
@@ -339,6 +344,14 @@ export default function Template({ children }: AppTemplateProps) {
 
       const rawDelta = e.touches[0].clientY - startY;
 
+      // Prevent default IMMEDIATELY for any downward movement at the top.
+      // iOS's gesture recognizer claims the touch within the first few touchmove
+      // events. If we wait (e.g. 10px) before calling preventDefault, iOS starts
+      // native overscroll bounce and ignores our later preventDefault calls.
+      if (rawDelta > 0) {
+        e.preventDefault();
+      }
+
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
@@ -352,7 +365,6 @@ export default function Template({ children }: AppTemplateProps) {
             updateDOM(currentPullDistance);
           });
         }
-        e.preventDefault();
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
         currentPullDistance = 0;
@@ -397,6 +409,8 @@ export default function Template({ children }: AppTemplateProps) {
       scrollContainer.removeEventListener('touchmove', handleTouchMove);
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
       scrollContainer.style.overscrollBehaviorY = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overscrollBehavior = '';
       scrollContainer.style.transform = '';
       scrollContainer.style.transition = '';
       if (snapBackTimeout) clearTimeout(snapBackTimeout);
