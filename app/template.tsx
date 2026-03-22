@@ -195,80 +195,87 @@ export default function Template({ children }: AppTemplateProps) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    let rAFId: number | null = null;
+    let scrollContainer: HTMLElement | null = null;
+
+    const processScroll = () => {
+      rAFId = null;
+      if (!scrollContainer) return;
+
+      const currentScrollY = scrollContainer.scrollTop;
+      const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+
+      // Always show at the very top (check first to avoid hiding then immediately showing)
+      if (currentScrollY <= 0) {
+        setShowBottomBar(true);
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Detect iOS rubber band overshoot
+      const isOvershootBottom = currentScrollY > maxScrollY;
+
+      if (isOvershootBottom) {
+        isInBounceRef.current = true;
+        if (bounceTimeoutRef.current) {
+          clearTimeout(bounceTimeoutRef.current);
+        }
+        bounceTimeoutRef.current = setTimeout(() => {
+          isInBounceRef.current = false;
+          bounceTimeoutRef.current = null;
+        }, 150);
+        // Update lastScrollY to clamped value so we don't get a stale delta after bounce
+        lastScrollY.current = maxScrollY;
+        return;
+      }
+
+      // Still in bounce cooldown — update lastScrollY but skip direction logic
+      if (isInBounceRef.current) {
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Normal scroll processing
+      const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
+
+      if (scrollDifference >= scrollThreshold.current) {
+        if (currentScrollY > lastScrollY.current) {
+          setShowBottomBar(false);
+        } else {
+          setShowBottomBar(true);
+        }
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    const handleScroll = () => {
+      // Throttle to one update per animation frame
+      if (rAFId === null) {
+        rAFId = requestAnimationFrame(processScroll);
+      }
+    };
+
     // Use a timeout to ensure the ref is attached after render
     const timeoutId = setTimeout(() => {
-      const handleScroll = (e: Event) => {
-        const target = e.target as HTMLElement;
-        const currentScrollY = target.scrollTop;
-        const maxScrollY = target.scrollHeight - target.clientHeight;
-
-        // Detect iOS rubber band overshoot
-        const isOvershootTop = currentScrollY < 0;
-        const isOvershootBottom = currentScrollY > maxScrollY;
-        const isInOvershoot = isOvershootTop || isOvershootBottom;
-
-        // If we detect overshoot, enter bounce mode and ignore this event
-        if (isInOvershoot) {
-          isInBounceRef.current = true;
-
-          // Clear any existing timeout and set a new one to exit bounce mode
-          if (bounceTimeoutRef.current) {
-            clearTimeout(bounceTimeoutRef.current);
-          }
-
-          bounceTimeoutRef.current = setTimeout(() => {
-            isInBounceRef.current = false;
-            bounceTimeoutRef.current = null;
-          }, 150); // Wait 150ms after overshoot ends
-
-          return; // Ignore this scroll event
-        }
-
-        // If we're still in bounce mode from previous overshoot, ignore this event
-        if (isInBounceRef.current) {
-          return;
-        }
-
-        // Normal scroll processing
-        const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-
-        // Only trigger if scroll difference is above threshold
-        if (scrollDifference < scrollThreshold.current) return;
-
-        if (currentScrollY > lastScrollY.current) {
-          // Scrolling down - hide bottom bar
-          setShowBottomBar(false);
-        } else if (currentScrollY < lastScrollY.current) {
-          // Scrolling up - show bottom bar
-          setShowBottomBar(true);
-        }
-
-        // Always show at the very top
-        if (currentScrollY === 0) {
-          setShowBottomBar(true);
-        }
-
-        lastScrollY.current = currentScrollY;
-      };
-
-      // Add scroll listener to the scrollable container, not window
-      const scrollContainer = scrollContainerRef.current;
-
+      scrollContainer = scrollContainerRef.current;
       if (scrollContainer) {
         scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-
-        return () => {
-          scrollContainer.removeEventListener('scroll', handleScroll);
-          // Clean up timeout on unmount
-          if (bounceTimeoutRef.current) {
-            clearTimeout(bounceTimeoutRef.current);
-          }
-        };
       }
     }, 100);
 
     return () => {
       clearTimeout(timeoutId);
+      if (rAFId !== null) {
+        cancelAnimationFrame(rAFId);
+      }
+      // Clean up scroll listener — scrollContainer is captured in closure
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      }
+      if (bounceTimeoutRef.current) {
+        clearTimeout(bounceTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -547,12 +554,12 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 transition-opacity duration-200 ease-out ${
-            showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
+          className="fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50"
           style={{
-            // Extend background into safe area - always apply for proper iOS support
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
+            transition: 'transform 200ms ease-out',
+            willChange: 'transform',
           }}
         >
         <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
