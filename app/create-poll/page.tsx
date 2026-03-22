@@ -162,15 +162,15 @@ function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
+  // All polls with options (or no options = Yes/No) are ranked_choice
+  const getPollType = (): 'ranked_choice' | 'nomination' | 'participation' => {
     if (pollType === 'nomination') {
       return 'nomination';
     }
     if (pollType === 'participation') {
       return 'participation';
     }
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
+    return 'ranked_choice';
   };
 
   // Check if an option is a duplicate
@@ -246,7 +246,7 @@ function CreatePollContent() {
     
     // If there are options, must have at least 2 for ranked choice, at least 1 for nomination
     if (filledOptions.length === 1 && pollType !== 'nomination') {
-      return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
+      return "Add at least one more option, or leave all options blank for a yes/no poll.";
     }
     
     // No two options should be exactly the same
@@ -366,7 +366,7 @@ function CreatePollContent() {
               setMaxParticipants(null);
             }
           } else {
-            // yes_no poll
+            // 2-option poll (defaults to Yes/No)
             setPollType('poll');
             setOptions(['']);
           }
@@ -440,7 +440,7 @@ function CreatePollContent() {
               setMaxParticipants(null);
             }
           } else {
-            // yes_no poll
+            // 2-option poll (defaults to Yes/No)
             setPollType('poll');
             setOptions(['']);
           }
@@ -845,10 +845,11 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add options for ranked choice polls only
+      // Add options for ranked choice polls
       // For nomination polls, initial options become the creator's vote (not poll content)
+      // When no options are provided, default to Yes/No
       if (dbPollType === 'ranked_choice') {
-        pollData.options = filledOptions;
+        pollData.options = filledOptions.length > 0 ? filledOptions : ['Yes', 'No'];
       }
 
       // Add min/max participants for participation polls

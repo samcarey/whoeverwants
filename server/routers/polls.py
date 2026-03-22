@@ -26,8 +26,6 @@ from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.participation import calculate_participating_voters
 from algorithms.auto_close import should_auto_close
 from algorithms.related_polls import PollRelation, get_all_related_poll_ids
-from algorithms.yes_no import count_yes_no_votes
-
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
@@ -310,26 +308,6 @@ def get_results(poll_id: str):
 
     poll_type = poll["poll_type"]
 
-    if poll_type == "yes_no":
-        result = count_yes_no_votes(votes)
-        return PollResultsResponse(
-            poll_id=str(poll["id"]),
-            title=poll["title"],
-            poll_type=poll_type,
-            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
-            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
-            options=poll.get("options"),
-            yes_count=result.yes_count,
-            no_count=result.no_count,
-            abstain_count=result.abstain_count,
-            total_votes=result.total_votes,
-            yes_percentage=result.yes_percentage,
-            no_percentage=result.no_percentage,
-            winner=result.winner,
-            min_participants=poll.get("min_participants"),
-            max_participants=poll.get("max_participants"),
-        )
-
     if poll_type == "nomination":
         # Parse poll options from JSONB
         import json
@@ -378,7 +356,7 @@ def get_results(poll_id: str):
                     tie_broken_by_borda=entry.tie_broken_by_borda,
                 ))
 
-        return PollResultsResponse(
+        response = PollResultsResponse(
             poll_id=str(poll["id"]),
             title=poll["title"],
             poll_type=poll_type,
@@ -392,6 +370,31 @@ def get_results(poll_id: str):
             ranked_choice_winner=result.winner,
             ranked_choice_rounds=rc_rounds,
         )
+
+        # For 2-option polls, also compute yes/no-style counts for the simplified UI
+        if poll_options and len(poll_options) == 2:
+            option_a, option_b = poll_options[0], poll_options[1]
+            a_count = 0
+            b_count = 0
+            abstain_count = 0
+            for v in votes:
+                if v.get("is_abstain", False):
+                    abstain_count += 1
+                    continue
+                choices = v.get("ranked_choices")
+                if choices and isinstance(choices, list) and len(choices) > 0:
+                    if choices[0] == option_a:
+                        a_count += 1
+                    elif choices[0] == option_b:
+                        b_count += 1
+            total = a_count + b_count + abstain_count
+            response.yes_count = a_count
+            response.no_count = b_count
+            response.abstain_count = abstain_count
+            response.yes_percentage = round((a_count / total) * 100) if total > 0 else None
+            response.no_percentage = round((b_count / total) * 100) if total > 0 else None
+
+        return response
 
     if poll_type == "participation":
         # Count yes/no/abstain votes

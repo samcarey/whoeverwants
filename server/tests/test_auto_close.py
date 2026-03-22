@@ -18,9 +18,6 @@ class TestShouldAutoClose:
     def test_does_not_close_with_zero_votes(self):
         assert should_auto_close("participation", False, 3, 0) is False
 
-    def test_does_not_close_non_participation_poll(self):
-        assert should_auto_close("yes_no", False, 3, 3) is False
-
     def test_does_not_close_ranked_choice_poll(self):
         assert should_auto_close("ranked_choice", False, 3, 3) is False
 

@@ -8,6 +8,8 @@ interface YesNoAbstainButtonsProps {
   onAbstainClick?: () => void;
   disabled?: boolean;
   showAbstain?: boolean;
+  yesLabel?: string;
+  noLabel?: string;
 }
 
 export default function YesNoAbstainButtons({
@@ -17,7 +19,9 @@ export default function YesNoAbstainButtons({
   onNoClick,
   onAbstainClick,
   disabled = false,
-  showAbstain = true
+  showAbstain = true,
+  yesLabel = 'Yes',
+  noLabel = 'No',
 }: YesNoAbstainButtonsProps) {
   return (
     <div className="flex gap-2">
@@ -30,7 +34,7 @@ export default function YesNoAbstainButtons({
             : 'bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 border-2 border-transparent active:bg-green-300 dark:active:bg-green-700'
         }`}
       >
-        Yes
+        {yesLabel}
       </button>
       <button
         onClick={onNoClick}
@@ -41,7 +45,7 @@ export default function YesNoAbstainButtons({
             : 'bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 text-red-800 dark:text-red-200 border-2 border-transparent active:bg-red-300 dark:active:bg-red-700'
         }`}
       >
-        No
+        {noLabel}
       </button>
       {showAbstain && (
         <button

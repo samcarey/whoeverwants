@@ -14,8 +14,11 @@ interface PollResultsProps {
 }
 
 export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick }: PollResultsProps) {
-  if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+  // 2-option ranked_choice polls get the simplified two-column results UI
+  const isTwoOptionPoll = results.poll_type === 'ranked_choice' && results.options && results.options.length === 2;
+
+  if (isTwoOptionPoll) {
+    return <TwoOptionResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -33,17 +36,21 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+function TwoOptionResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+  const options = results.options || ['Yes', 'No'];
+  const optionA = options[0];
+  const optionB = options[1];
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
   const noPercentage = results.no_percentage || 0;
   const winner = results.winner;
   const totalVotes = results.total_votes;
-  
-  // Check if user voted and what they voted for (only show on closed polls in development)
-  const userVotedYes = userVoteData?.yes_no_choice === 'yes';
-  const userVotedNo = userVoteData?.yes_no_choice === 'no';
+
+  // Check if user voted and what they voted for via ranked_choices
+  const userFirstChoice = userVoteData?.ranked_choices?.[0];
+  const userVotedYes = userFirstChoice === optionA;
+  const userVotedNo = userFirstChoice === optionB;
 
   if (totalVotes === 0) {
     return (
@@ -63,17 +70,17 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Yes Results */}
+        {/* Option A Results */}
         <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'yes' 
-            ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-lg' 
+          winner === optionA
+            ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-lg'
             : winner === 'tie'
             ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
             : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
         }`}>
           <div className="text-center">
             <div className={`text-2xl font-bold mb-1 ${
-              winner === 'yes' 
+              winner === optionA
                 ? 'text-green-800 dark:text-green-200'
                 : winner === 'tie'
                 ? 'text-yellow-800 dark:text-yellow-200'
@@ -82,17 +89,17 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
               {yesPercentage}%
             </div>
             <div className={`text-lg mb-2 ${
-              winner === 'yes' 
+              winner === optionA
                 ? 'text-green-900 dark:text-green-100 font-bold'
                 : winner === 'tie'
                 ? 'text-yellow-900 dark:text-yellow-100 font-bold'
                 : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
             }`}>
-              Yes
+              {optionA}
             </div>
             <div className={`text-sm ${
-              winner === 'yes' 
-                ? 'text-green-700 dark:text-green-300' 
+              winner === optionA
+                ? 'text-green-700 dark:text-green-300'
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
               {yesCount} vote{yesCount !== 1 ? "s" : ""}
@@ -107,17 +114,17 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
           </div>
         </div>
 
-        {/* No Results */}
+        {/* Option B Results */}
         <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'no' 
-            ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-lg' 
+          winner === optionB
+            ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-lg'
             : winner === 'tie'
             ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
             : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
         }`}>
           <div className="text-center">
             <div className={`text-2xl font-bold mb-1 ${
-              winner === 'no' 
+              winner === optionB
                 ? 'text-red-800 dark:text-red-200'
                 : winner === 'tie'
                 ? 'text-yellow-800 dark:text-yellow-200'
@@ -126,17 +133,17 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
               {noPercentage}%
             </div>
             <div className={`text-lg mb-2 ${
-              winner === 'no' 
+              winner === optionB
                 ? 'text-red-900 dark:text-red-100 font-bold'
                 : winner === 'tie'
                 ? 'text-yellow-900 dark:text-yellow-100 font-bold'
                 : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
             }`}>
-              No
+              {optionB}
             </div>
             <div className={`text-sm ${
-              winner === 'no' 
-                ? 'text-red-700 dark:text-red-300' 
+              winner === optionB
+                ? 'text-red-700 dark:text-red-300'
                 : 'text-gray-500 dark:text-gray-400'
             }`}>
               {noCount} vote{noCount !== 1 ? "s" : ""}

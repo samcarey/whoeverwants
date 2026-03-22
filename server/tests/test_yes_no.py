@@ -1,146 +1,94 @@
-"""Tests for yes/no vote counting algorithm."""
+"""Tests for 2-option ranked choice polls (formerly yes/no polls).
 
-from algorithms.yes_no import YesNoResult, count_yes_no_votes
+2-option ranked choice polls use the IRV algorithm but with only 2 candidates.
+The results are equivalent to simple majority voting.
+"""
+
+from algorithms.ranked_choice import calculate_ranked_choice_winner
 
 
-class TestCountYesNoVotes:
+class TestTwoOptionRankedChoice:
+    """Verify that IRV with 2 options produces the same results as the old yes/no counting."""
+
     def test_no_votes(self):
-        result = count_yes_no_votes([])
-        assert result == YesNoResult(
-            yes_count=0,
-            no_count=0,
-            abstain_count=0,
-            total_votes=0,
-            yes_percentage=None,
-            no_percentage=None,
-            winner=None,
-        )
+        result = calculate_ranked_choice_winner([], ["Yes", "No"])
+        assert result.winner is None
+        assert result.total_rounds == 0
 
     def test_unanimous_yes(self):
-        votes = [{"yes_no_choice": "yes"} for _ in range(5)]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 5
-        assert result.no_count == 0
-        assert result.total_votes == 5
-        assert result.yes_percentage == 100
-        assert result.no_percentage == 0
-        assert result.winner == "yes"
+        votes = [{"ranked_choices": ["Yes", "No"]} for _ in range(5)]
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "Yes"
+        assert result.total_rounds == 1
 
     def test_unanimous_no(self):
-        votes = [{"yes_no_choice": "no"} for _ in range(3)]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 0
-        assert result.no_count == 3
-        assert result.total_votes == 3
-        assert result.yes_percentage == 0
-        assert result.no_percentage == 100
-        assert result.winner == "no"
-
-    def test_exact_tie(self):
-        votes = [
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "no"},
-        ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 1
-        assert result.no_count == 1
-        assert result.total_votes == 2
-        assert result.yes_percentage == 50
-        assert result.no_percentage == 50
-        assert result.winner == "tie"
+        votes = [{"ranked_choices": ["No", "Yes"]} for _ in range(3)]
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "No"
+        assert result.total_rounds == 1
 
     def test_yes_wins_majority(self):
         votes = [
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "no"},
+            {"ranked_choices": ["Yes", "No"]},
+            {"ranked_choices": ["Yes", "No"]},
+            {"ranked_choices": ["No", "Yes"]},
         ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 2
-        assert result.no_count == 1
-        assert result.total_votes == 3
-        assert result.yes_percentage == 67
-        assert result.no_percentage == 33
-        assert result.winner == "yes"
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "Yes"
+        assert result.total_rounds == 1
 
-    def test_abstain_votes_counted_in_total(self):
+    def test_no_wins_majority(self):
         votes = [
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "no"},
-            {"yes_no_choice": "yes", "is_abstain": True},
+            {"ranked_choices": ["Yes", "No"]},
+            {"ranked_choices": ["No", "Yes"]},
+            {"ranked_choices": ["No", "Yes"]},
         ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 1
-        assert result.no_count == 1
-        assert result.abstain_count == 1
-        assert result.total_votes == 3
-        assert result.winner == "tie"
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "No"
+        assert result.total_rounds == 1
+
+    def test_abstain_votes_excluded(self):
+        votes = [
+            {"ranked_choices": ["Yes", "No"]},
+            {"ranked_choices": ["No", "Yes"]},
+            {"ranked_choices": ["Yes", "No"], "is_abstain": True},
+        ]
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        # Tie between 1 Yes and 1 No - IRV resolves with Borda tiebreaker
+        # With 2 options and equal votes, alphabetical tiebreak applies
+        assert result.winner is not None  # Will pick one via tiebreak
 
     def test_all_abstain(self):
         votes = [
-            {"yes_no_choice": "yes", "is_abstain": True},
-            {"yes_no_choice": "no", "is_abstain": True},
+            {"ranked_choices": ["Yes", "No"], "is_abstain": True},
+            {"ranked_choices": ["No", "Yes"], "is_abstain": True},
         ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 0
-        assert result.no_count == 0
-        assert result.abstain_count == 2
-        assert result.total_votes == 2
-        assert result.yes_percentage == 0
-        assert result.no_percentage == 0
-        assert result.winner == "tie"
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner is None
 
-    def test_abstain_affects_percentages(self):
-        """Abstain votes are in the denominator, lowering yes/no percentages."""
+    def test_custom_two_options(self):
+        """2-option polls can have arbitrary option names, not just Yes/No."""
         votes = [
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "yes", "is_abstain": True},
+            {"ranked_choices": ["Pizza", "Tacos"]},
+            {"ranked_choices": ["Pizza", "Tacos"]},
+            {"ranked_choices": ["Tacos", "Pizza"]},
         ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 1
-        assert result.abstain_count == 1
-        assert result.total_votes == 2
-        # 1 yes out of 2 total = 50%, not 100%
-        assert result.yes_percentage == 50
+        result = calculate_ranked_choice_winner(votes, ["Pizza", "Tacos"])
+        assert result.winner == "Pizza"
+        assert result.total_rounds == 1
 
-    def test_is_abstain_defaults_false(self):
-        """Votes without is_abstain field are treated as non-abstain."""
-        votes = [{"yes_no_choice": "yes"}]
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 1
-        assert result.abstain_count == 0
-
-    def test_single_yes_vote(self):
-        result = count_yes_no_votes([{"yes_no_choice": "yes"}])
-        assert result.yes_count == 1
-        assert result.total_votes == 1
-        assert result.yes_percentage == 100
-        assert result.no_percentage == 0
-        assert result.winner == "yes"
+    def test_single_vote(self):
+        votes = [{"ranked_choices": ["Yes", "No"]}]
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "Yes"
+        assert result.total_rounds == 1
 
     def test_large_poll(self):
         votes = (
-            [{"yes_no_choice": "yes"} for _ in range(67)]
-            + [{"yes_no_choice": "no"} for _ in range(30)]
-            + [{"yes_no_choice": "yes", "is_abstain": True} for _ in range(3)]
+            [{"ranked_choices": ["Yes", "No"]} for _ in range(67)]
+            + [{"ranked_choices": ["No", "Yes"]} for _ in range(30)]
+            + [{"ranked_choices": ["Yes", "No"], "is_abstain": True} for _ in range(3)]
         )
-        result = count_yes_no_votes(votes)
-        assert result.yes_count == 67
-        assert result.no_count == 30
-        assert result.abstain_count == 3
-        assert result.total_votes == 100
-        assert result.yes_percentage == 67
-        assert result.no_percentage == 30
-        assert result.winner == "yes"
-
-    def test_rounding_percentages(self):
-        """Percentages round to nearest integer (matching SQL ROUND behavior)."""
-        # 1/3 = 33.33... -> 33, 2/3 = 66.66... -> 67
-        votes = [
-            {"yes_no_choice": "yes"},
-            {"yes_no_choice": "no"},
-            {"yes_no_choice": "no"},
-        ]
-        result = count_yes_no_votes(votes)
-        assert result.yes_percentage == 33
-        assert result.no_percentage == 67
+        result = calculate_ranked_choice_winner(votes, ["Yes", "No"])
+        assert result.winner == "Yes"
+        assert result.total_rounds == 1

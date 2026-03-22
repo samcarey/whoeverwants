@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 
 
 class PollType(str, Enum):
-    yes_no = "yes_no"
     ranked_choice = "ranked_choice"
     nomination = "nomination"
     participation = "participation"
@@ -24,7 +23,7 @@ class CloseReason(str, Enum):
 
 class CreatePollRequest(BaseModel):
     title: str
-    poll_type: PollType = PollType.yes_no
+    poll_type: PollType = PollType.ranked_choice
     options: list[str] | None = None
     response_deadline: str | None = None
     creator_secret: str

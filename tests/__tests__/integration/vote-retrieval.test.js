@@ -46,21 +46,21 @@ describe('Vote Storage and Retrieval', () => {
   })
 
   describe('API Vote Structure', () => {
-    it('should handle yes/no vote data structure correctly', () => {
-      // Simulates what the API returns
+    it('should handle 2-option ranked choice vote data structure correctly', () => {
+      // 2-option polls (formerly yes/no) now use ranked_choices
       const apiVote = {
         id: 'vote-789',
         poll_id: 'poll-123',
-        vote_type: 'yes_no',
-        yes_no_choice: 'yes',
-        ranked_choices: null,
+        vote_type: 'ranked_choice',
+        yes_no_choice: null,
+        ranked_choices: ['Yes', 'No'],
         nominations: null,
         is_abstain: false,
         voter_name: null,
       }
 
-      expect(apiVote.yes_no_choice).toBe('yes')
-      expect(apiVote.vote_type).toBe('yes_no')
+      expect(apiVote.ranked_choices).toEqual(['Yes', 'No'])
+      expect(apiVote.vote_type).toBe('ranked_choice')
     })
 
     it('should handle ranked choice vote data structure correctly', () => {
@@ -80,29 +80,30 @@ describe('Vote Storage and Retrieval', () => {
     })
   })
 
-  describe('Vote Retrieval Bug', () => {
-    it('should correctly retrieve and display YES vote (not NO)', () => {
+  describe('Vote Retrieval for 2-option polls', () => {
+    it('should correctly retrieve first-choice vote', () => {
       const pollId = 'bug-test-poll'
       const voteId = 'bug-test-vote'
 
-      // Simulates API response for a yes vote
+      // 2-option vote: first choice is "Yes"
       const apiVote = {
         id: voteId,
         poll_id: pollId,
-        vote_type: 'yes_no',
-        yes_no_choice: 'yes',
+        vote_type: 'ranked_choice',
+        ranked_choices: ['Yes', 'No'],
       }
 
       // Store vote ID in localStorage
       localStorage.setItem('pollVoteIds', JSON.stringify({ [pollId]: voteId }))
       localStorage.setItem('votedPolls', JSON.stringify({ [pollId]: true }))
 
-      // The vote should be YES, not NO
-      expect(apiVote.yes_no_choice).toBe('yes')
-      expect(apiVote.yes_no_choice).not.toBe('no')
+      // The first ranked choice should be "Yes"
+      expect(apiVote.ranked_choices[0]).toBe('Yes')
 
-      // Simulate UI display logic
-      const displayText = apiVote.yes_no_choice === 'yes' ? 'Yes' : 'No'
+      // Simulate UI display logic for 2-option polls
+      const options = ['Yes', 'No']
+      const firstChoice = apiVote.ranked_choices[0]
+      const displayText = firstChoice === options[0] ? options[0] : options[1]
       expect(displayText).toBe('Yes')
     })
   })

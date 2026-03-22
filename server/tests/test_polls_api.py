@@ -34,12 +34,13 @@ def creator_secret():
 
 @pytest.fixture
 def sample_poll(client, creator_secret):
-    """Create a sample yes/no poll and return its data."""
+    """Create a sample 2-option ranked choice poll (formerly yes/no)."""
     resp = client.post(
         "/api/polls",
         json={
             "title": "Test Poll",
-            "poll_type": "yes_no",
+            "poll_type": "ranked_choice",
+            "options": ["Yes", "No"],
             "creator_secret": creator_secret,
         },
     )
@@ -62,19 +63,21 @@ class TestHealth:
 
 
 class TestCreatePoll:
-    def test_create_yes_no_poll(self, client, creator_secret):
+    def test_create_two_option_poll(self, client, creator_secret):
         resp = client.post(
             "/api/polls",
             json={
                 "title": "Lunch?",
-                "poll_type": "yes_no",
+                "poll_type": "ranked_choice",
+                "options": ["Yes", "No"],
                 "creator_secret": creator_secret,
             },
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Lunch?"
-        assert data["poll_type"] == "yes_no"
+        assert data["poll_type"] == "ranked_choice"
+        assert data["options"] == ["Yes", "No"]
         assert data["is_closed"] is False
         assert data["short_id"] is not None
         assert data["id"] is not None
@@ -99,7 +102,8 @@ class TestCreatePoll:
             "/api/polls",
             json={
                 "title": "RSVP",
-                "poll_type": "yes_no",
+                "poll_type": "ranked_choice",
+                "options": ["Yes", "No"],
                 "response_deadline": "2026-12-31T23:59:59+00:00",
                 "creator_secret": creator_secret,
             },
@@ -122,6 +126,21 @@ class TestCreatePoll:
         data = resp.json()
         assert data["min_participants"] == 4
         assert data["max_participants"] == 8
+
+    def test_create_custom_two_option_poll(self, client, creator_secret):
+        """Arbitrary 2-option polls like 'Pizza or Tacos' are valid."""
+        resp = client.post(
+            "/api/polls",
+            json={
+                "title": "What should we eat?",
+                "poll_type": "ranked_choice",
+                "options": ["Pizza", "Tacos"],
+                "creator_secret": creator_secret,
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["options"] == ["Pizza", "Tacos"]
 
 
 # --- Get poll ---
@@ -152,28 +171,28 @@ class TestGetPoll:
 
 
 class TestSubmitVote:
-    def test_submit_yes_vote(self, client, sample_poll):
+    def test_submit_first_option_vote(self, client, sample_poll):
         resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["yes_no_choice"] == "yes"
+        assert data["ranked_choices"] == ["Yes", "No"]
         assert data["is_abstain"] is False
 
-    def test_submit_no_vote(self, client, sample_poll):
+    def test_submit_second_option_vote(self, client, sample_poll):
         resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "no"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["No", "Yes"]},
         )
         assert resp.status_code == 201
-        assert resp.json()["yes_no_choice"] == "no"
+        assert resp.json()["ranked_choices"] == ["No", "Yes"]
 
     def test_submit_abstain_vote(self, client, sample_poll):
         resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "is_abstain": True},
+            json={"vote_type": "ranked_choice", "is_abstain": True},
         )
         assert resp.status_code == 201
         assert resp.json()["is_abstain"] is True
@@ -182,8 +201,8 @@ class TestSubmitVote:
         resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
             json={
-                "vote_type": "yes_no",
-                "yes_no_choice": "yes",
+                "vote_type": "ranked_choice",
+                "ranked_choices": ["Yes", "No"],
                 "voter_name": "Alice",
             },
         )
@@ -194,7 +213,7 @@ class TestSubmitVote:
         fake_id = str(uuid.uuid4())
         resp = client.post(
             f"/api/polls/{fake_id}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         assert resp.status_code == 404
 
@@ -206,7 +225,7 @@ class TestSubmitVote:
         )
         resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         assert resp.status_code == 400
 
@@ -224,11 +243,11 @@ class TestGetVotes:
         # Submit two votes
         client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "no"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["No", "Yes"]},
         )
         resp = client.get(f"/api/polls/{sample_poll['id']}/votes")
         assert resp.status_code == 200
@@ -249,23 +268,23 @@ class TestEditVote:
         # Submit vote
         vote_resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         vote_id = vote_resp.json()["id"]
 
         # Edit it
         resp = client.put(
             f"/api/polls/{sample_poll['id']}/votes/{vote_id}",
-            json={"yes_no_choice": "no"},
+            json={"ranked_choices": ["No", "Yes"]},
         )
         assert resp.status_code == 200
-        assert resp.json()["yes_no_choice"] == "no"
+        assert resp.json()["ranked_choices"] == ["No", "Yes"]
 
     def test_edit_vote_not_found(self, client, sample_poll):
         fake_vote_id = str(uuid.uuid4())
         resp = client.put(
             f"/api/polls/{sample_poll['id']}/votes/{fake_vote_id}",
-            json={"yes_no_choice": "no"},
+            json={"ranked_choices": ["No", "Yes"]},
         )
         assert resp.status_code == 404
 
@@ -273,7 +292,7 @@ class TestEditVote:
         # Submit vote
         vote_resp = client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         vote_id = vote_resp.json()["id"]
 
@@ -286,7 +305,7 @@ class TestEditVote:
         # Try to edit
         resp = client.put(
             f"/api/polls/{sample_poll['id']}/votes/{vote_id}",
-            json={"yes_no_choice": "no"},
+            json={"ranked_choices": ["No", "Yes"]},
         )
         assert resp.status_code == 400
 
@@ -303,15 +322,15 @@ class TestResults:
         assert data["winner"] is None
 
     def test_results_with_votes(self, client, sample_poll):
-        # Submit 3 yes, 1 no
+        # Submit 3 "Yes", 1 "No"
         for _ in range(3):
             client.post(
                 f"/api/polls/{sample_poll['id']}/votes",
-                json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+                json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
             )
         client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "no"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["No", "Yes"]},
         )
 
         resp = client.get(f"/api/polls/{sample_poll['id']}/results")
@@ -320,18 +339,18 @@ class TestResults:
         assert data["yes_count"] == 3
         assert data["no_count"] == 1
         assert data["total_votes"] == 4
-        assert data["winner"] == "yes"
+        assert data["winner"] == "Yes"
         assert data["yes_percentage"] == 75
         assert data["no_percentage"] == 25
 
     def test_results_with_abstain(self, client, sample_poll):
         client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes"},
+            json={"vote_type": "ranked_choice", "ranked_choices": ["Yes", "No"]},
         )
         client.post(
             f"/api/polls/{sample_poll['id']}/votes",
-            json={"vote_type": "yes_no", "is_abstain": True},
+            json={"vote_type": "ranked_choice", "is_abstain": True},
         )
 
         resp = client.get(f"/api/polls/{sample_poll['id']}/results")
@@ -339,7 +358,7 @@ class TestResults:
         assert data["yes_count"] == 1
         assert data["abstain_count"] == 1
         assert data["total_votes"] == 2
-        assert data["winner"] == "yes"
+        assert data["winner"] == "Yes"
 
     def test_results_poll_not_found(self, client):
         fake_id = str(uuid.uuid4())

@@ -2,11 +2,10 @@
 
 Enforces that each vote contains exactly the fields required for its poll type
 and no fields belonging to other poll types. Mirrors the database CHECK constraint
-from migration 053.
+from migration 066.
 
 Rules:
-- yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/nominations
-- participation: same structure as yes_no (yes_no_choice required)
+- participation: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/nominations
 - ranked_choice: requires non-empty ranked_choices array, forbids yes_no_choice/nominations
 - nomination: requires non-empty nominations array, forbids yes_no_choice/ranked_choices
 - All types: is_abstain=True relaxes the "required" field constraint
@@ -38,8 +37,8 @@ def validate_vote(
                 f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
             )
 
-    if poll_type == "yes_no" or poll_type == "participation":
-        _validate_yes_no_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
+    if poll_type == "participation":
+        _validate_participation_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
     elif poll_type == "ranked_choice":
         _validate_ranked_choice_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
     elif poll_type == "nomination":
@@ -48,7 +47,7 @@ def validate_vote(
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
 
 
-def _validate_yes_no_vote(
+def _validate_participation_vote(
     yes_no_choice: str | None,
     ranked_choices: list[str] | None,
     nominations: list[str] | None,
@@ -56,15 +55,15 @@ def _validate_yes_no_vote(
 ) -> None:
     # Forbid other poll type fields
     if ranked_choices:
-        raise VoteValidationError("ranked_choices not allowed for yes/no polls")
+        raise VoteValidationError("ranked_choices not allowed for participation polls")
     if nominations:
-        raise VoteValidationError("nominations not allowed for yes/no polls")
+        raise VoteValidationError("nominations not allowed for participation polls")
 
     if is_abstain:
         return  # No further validation needed
 
     if not yes_no_choice:
-        raise VoteValidationError("yes_no_choice is required for yes/no polls")
+        raise VoteValidationError("yes_no_choice is required for participation polls")
     if yes_no_choice not in ("yes", "no"):
         raise VoteValidationError(
             f"yes_no_choice must be 'yes' or 'no', got '{yes_no_choice}'"
