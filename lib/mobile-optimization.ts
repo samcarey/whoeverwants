@@ -71,7 +71,8 @@ export function useTouchOptimizedPrefetch() {
 // iOS Safari specific optimizations
 export function useIOSOptimizations() {
   useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    // navigator.standalone is iOS/iPadOS Safari-only; undefined on non-Apple devices.
+    const isIOS = (navigator as unknown as { standalone?: boolean }).standalone !== undefined;
     if (!isIOS) return;
 
     // Prevent iOS from pausing JavaScript during scroll

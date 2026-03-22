@@ -287,8 +287,7 @@ export default function Template({ children }: AppTemplateProps) {
     if (typeof window === 'undefined') return;
 
     // Log detection details regardless of result
-    const navStandalone = (navigator as unknown as { standalone?: boolean }).standalone;
-    console.log('[PTR] detection: navigator.standalone=' + navStandalone + ', isIOSPWA=' + isIOSPWA);
+    console.log('[PTR] detection: navigator.standalone=' + isIOSSPWAStandalone() + ', isIOSPWA=' + isIOSPWA);
 
     if (!isIOSPWA) {
       return;
