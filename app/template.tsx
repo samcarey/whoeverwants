@@ -195,80 +195,84 @@ export default function Template({ children }: AppTemplateProps) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Use a timeout to ensure the ref is attached after render
-    const timeoutId = setTimeout(() => {
-      const handleScroll = (e: Event) => {
-        const target = e.target as HTMLElement;
-        const currentScrollY = target.scrollTop;
-        const maxScrollY = target.scrollHeight - target.clientHeight;
+    let rAFId: number | null = null;
+    let scrollContainer: HTMLElement | null = null;
 
-        // Detect iOS rubber band overshoot
-        const isOvershootTop = currentScrollY < 0;
-        const isOvershootBottom = currentScrollY > maxScrollY;
-        const isInOvershoot = isOvershootTop || isOvershootBottom;
+    // Track current visibility to avoid no-op setState calls during scroll
+    let isVisible = true;
+    const setVisible = (visible: boolean) => {
+      if (visible !== isVisible) {
+        isVisible = visible;
+        setShowBottomBar(visible);
+      }
+    };
 
-        // If we detect overshoot, enter bounce mode and ignore this event
-        if (isInOvershoot) {
-          isInBounceRef.current = true;
+    const processScroll = () => {
+      rAFId = null;
+      if (!scrollContainer) return;
 
-          // Clear any existing timeout and set a new one to exit bounce mode
-          if (bounceTimeoutRef.current) {
-            clearTimeout(bounceTimeoutRef.current);
-          }
+      const currentScrollY = scrollContainer.scrollTop;
+      const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
-          bounceTimeoutRef.current = setTimeout(() => {
-            isInBounceRef.current = false;
-            bounceTimeoutRef.current = null;
-          }, 150); // Wait 150ms after overshoot ends
-
-          return; // Ignore this scroll event
-        }
-
-        // If we're still in bounce mode from previous overshoot, ignore this event
-        if (isInBounceRef.current) {
-          return;
-        }
-
-        // Normal scroll processing
-        const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-
-        // Only trigger if scroll difference is above threshold
-        if (scrollDifference < scrollThreshold.current) return;
-
-        if (currentScrollY > lastScrollY.current) {
-          // Scrolling down - hide bottom bar
-          setShowBottomBar(false);
-        } else if (currentScrollY < lastScrollY.current) {
-          // Scrolling up - show bottom bar
-          setShowBottomBar(true);
-        }
-
-        // Always show at the very top
-        if (currentScrollY === 0) {
-          setShowBottomBar(true);
-        }
-
+      if (currentScrollY <= 0) {
+        setVisible(true);
         lastScrollY.current = currentScrollY;
-      };
+        return;
+      }
 
-      // Add scroll listener to the scrollable container, not window
-      const scrollContainer = scrollContainerRef.current;
+      // iOS rubber band past the bottom — ignore and clamp lastScrollY
+      if (currentScrollY > maxScrollY) {
+        isInBounceRef.current = true;
+        if (bounceTimeoutRef.current) {
+          clearTimeout(bounceTimeoutRef.current);
+        }
+        bounceTimeoutRef.current = setTimeout(() => {
+          isInBounceRef.current = false;
+          bounceTimeoutRef.current = null;
+        }, 150);
+        lastScrollY.current = maxScrollY;
+        return;
+      }
 
+      // Scroll position is unreliable during bounce cooldown
+      if (isInBounceRef.current) {
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
+
+      if (scrollDifference >= scrollThreshold.current) {
+        setVisible(currentScrollY < lastScrollY.current);
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    const handleScroll = () => {
+      if (rAFId === null) {
+        rAFId = requestAnimationFrame(processScroll);
+      }
+    };
+
+    const timeoutId = setTimeout(() => {
+      scrollContainer = scrollContainerRef.current;
       if (scrollContainer) {
         scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-
-        return () => {
-          scrollContainer.removeEventListener('scroll', handleScroll);
-          // Clean up timeout on unmount
-          if (bounceTimeoutRef.current) {
-            clearTimeout(bounceTimeoutRef.current);
-          }
-        };
       }
     }, 100);
 
     return () => {
       clearTimeout(timeoutId);
+      if (rAFId !== null) {
+        cancelAnimationFrame(rAFId);
+      }
+      if (scrollContainer) {
+        scrollContainer.removeEventListener('scroll', handleScroll);
+      }
+      if (bounceTimeoutRef.current) {
+        clearTimeout(bounceTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -547,12 +551,14 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 transition-opacity duration-200 ease-out ${
-            showBottomBar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 ${
+            showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            // Extend background into safe area - always apply for proper iOS support
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
+            transition: 'transform 200ms ease-out',
+            willChange: 'transform',
           }}
         >
         <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
