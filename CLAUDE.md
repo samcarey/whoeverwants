@@ -380,7 +380,8 @@ The sections below contain mandatory rules. Follow them exactly.
 - **PR workflow**: When asked to open a PR, always do these steps first:
   1. **Run `/simplify`** to clean up any code quality issues, redundancy, or missed improvements.
   2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
-  3. Then create the PR.
+  3. Create the PR.
+  4. **Wait for PR checks to pass** before showing the PR link. Poll the GitHub check-runs API every 15s until all checks complete. Report the link only after success, or report failures if checks fail.
 
 ### Python Tooling: uv (Mandatory)
 
