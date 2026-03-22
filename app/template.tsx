@@ -280,10 +280,17 @@ export default function Template({ children }: AppTemplateProps) {
   // Uses direct DOM manipulation during touchmove for 60fps updates.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!isIOSPWA) return;
+    if (!isIOSPWA) {
+      console.log('[PTR] skipped: isIOSPWA =', isIOSPWA);
+      return;
+    }
 
     const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
+    if (!scrollContainer) {
+      console.warn('[PTR] skipped: scrollContainerRef.current is null');
+      return;
+    }
+    console.log('[PTR] attaching touch handlers to scroll container');
 
     scrollContainer.style.overscrollBehaviorY = 'none';
 

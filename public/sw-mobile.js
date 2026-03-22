@@ -1,24 +1,20 @@
 // Enhanced Service Worker for Mobile Instant Loading
-const CACHE_NAME = 'whoeverwants-mobile-v2';
-const CRITICAL_PAGES = [
-  '/',
-  '/create-poll',
-];
+const CACHE_NAME = 'whoeverwants-mobile-v3';
+
+const STATIC_FILE_RE = /\.(json|png|svg|ico|woff2?)$/;
 
 const ASSETS_TO_CACHE = [
-  '/',
-  '/create-poll',
   '/manifest.json',
 ];
 
 // Install event - cache critical resources immediately
 self.addEventListener('install', (event) => {
-  console.log('SW: Installing enhanced mobile service worker');
-  
+  console.log('SW: Installing enhanced mobile service worker v3');
+
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('SW: Caching critical pages for mobile');
+        console.log('SW: Caching critical assets');
         return cache.addAll(ASSETS_TO_CACHE);
       })
       .then(() => {
@@ -33,8 +29,8 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('SW: Activating enhanced mobile service worker');
-  
+  console.log('SW: Activating enhanced mobile service worker v3');
+
   event.waitUntil(
     Promise.all([
       // Clean up old caches
@@ -42,7 +38,10 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           cacheNames
             .filter((cacheName) => cacheName !== CACHE_NAME)
-            .map((cacheName) => caches.delete(cacheName))
+            .map((cacheName) => {
+              console.log('SW: Deleting old cache', cacheName);
+              return caches.delete(cacheName);
+            })
         );
       }),
       // Take control immediately
@@ -51,66 +50,43 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache first for instant loading
+// Fetch event - network-first for pages, cache-first for static assets
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  
+
   // Only handle same-origin requests
   if (url.origin !== location.origin) return;
-  
-  // Handle page requests with cache-first strategy for instant loading
-  if (request.mode === 'navigate' || 
-      CRITICAL_PAGES.some(page => url.pathname.startsWith(page))) {
-    
+
+  // Skip API requests — always go to network
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Handle navigation requests with network-first strategy
+  // This ensures users always get the latest HTML (which references correct JS bundles)
+  if (request.mode === 'navigate') {
     event.respondWith(
-      // Try cache first for instant loading
-      caches.match(request)
-        .then((cachedResponse) => {
-          if (cachedResponse) {
-            console.log('SW: Serving from cache (instant):', url.pathname);
-            
-            // Fetch in background to update cache
-            fetch(request).then((networkResponse) => {
-              if (networkResponse && networkResponse.status === 200) {
-                const responseClone = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => {
-                  cache.put(request, responseClone);
-                });
-              }
-            }).catch(() => {
-              // Network failed, cached version is still good
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
             });
-            
-            return cachedResponse;
           }
-          
-          // Not in cache, fetch from network
-          console.log('SW: Fetching from network:', url.pathname);
-          return fetch(request).then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const responseClone = networkResponse.clone();
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(request, responseClone);
-              });
-            }
-            return networkResponse;
-          });
+          return networkResponse;
         })
-        .catch((error) => {
-          console.error('SW: Fetch failed:', error);
-          // Return offline page if available
-          return caches.match('/');
+        .catch(() => {
+          // Network failed, try cache as fallback for offline support
+          return caches.match(request).then((cachedResponse) => {
+            return cachedResponse || caches.match('/');
+          });
         })
     );
     return;
   }
-  
-  // Handle static assets
-  if (request.url.includes('/_next/static/') || 
-      request.url.includes('.css') || 
-      request.url.includes('.js')) {
-    
+
+  // Handle static assets with cache-first (content-hashed filenames are immutable)
+  if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(
       caches.match(request)
         .then((cachedResponse) => {
@@ -127,13 +103,34 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+
+  // Handle other static files (manifest, icons, etc.) with cache-first + background update
+  if (STATIC_FILE_RE.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request)
+        .then((cachedResponse) => {
+          const fetchPromise = fetch(request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const responseClone = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(request, responseClone);
+              });
+            }
+            return networkResponse;
+          }).catch(() => cachedResponse);
+
+          return cachedResponse || fetchPromise;
+        })
+    );
+    return;
+  }
 });
 
 // Background sync for pre-caching pages
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'PRECACHE_PAGES') {
     const pages = event.data.pages || [];
-    
+
     event.waitUntil(
       caches.open(CACHE_NAME).then((cache) => {
         return Promise.all(
@@ -150,11 +147,10 @@ self.addEventListener('message', (event) => {
       })
     );
   }
-  
+
   if (event.data && event.data.type === 'WARM_PAGE') {
     const page = event.data.page;
     if (page) {
-      // Warm up page by fetching it
       fetch(page).then((response) => {
         if (response && response.status === 200) {
           return caches.open(CACHE_NAME).then((cache) => {
@@ -168,4 +164,4 @@ self.addEventListener('message', (event) => {
   }
 });
 
-console.log('SW: Enhanced mobile service worker loaded');
+console.log('SW: Enhanced mobile service worker v3 loaded');
