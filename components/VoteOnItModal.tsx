@@ -108,6 +108,10 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8 max-h-[80vh] overflow-y-auto">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 text-center">
+            Ask for Preferences
+          </h3>
+
           {/* Deadline picker */}
           <div className="mb-4">
             <label htmlFor="vote-deadline" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
