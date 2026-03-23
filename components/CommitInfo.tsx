@@ -106,7 +106,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
         const res = await fetch('/api/git-info');
         if (!res.ok) return;
         const { sha } = await res.json();
-        if (sha) setCommitHash(sha);
+        if (sha) setCommitHash(prev => prev === sha ? prev : sha);
       } catch { /* ignore */ }
     };
     fetchGitSha();

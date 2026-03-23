@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
-import { apiFindDuplicatePoll, apiCreatePoll } from "@/lib/api";
+import { apiCreatePoll } from "@/lib/api";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { getUserName } from "@/lib/userProfile";
 
@@ -31,7 +31,6 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setDeadlineOption("10min");
@@ -47,17 +46,6 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
     setError(null);
 
     try {
-      // Check for existing duplicate first
-      const existing = await apiFindDuplicatePoll(pollTitle, pollId);
-      if (existing) {
-        // Duplicate exists — navigate to it
-        const shortId = existing.short_id || existing.id;
-        router.push(`/p/${shortId}`);
-        onClose();
-        return;
-      }
-
-      // No duplicate — create the poll
       const option = DEADLINE_OPTIONS.find(opt => opt.value === deadlineOption);
       const deadline = new Date(Date.now() + (option?.minutes ?? 10) * 60 * 1000);
 
@@ -86,7 +74,6 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
   };
 
   const handleEdit = () => {
-    // Fall back to the existing flow — navigate to create-poll form
     const voteData = {
       title: pollTitle,
       options: nominations,
@@ -99,20 +86,17 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
 
   return (
     <ModalPortal>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50 dark:bg-black/70 z-[100] animate-fade-in"
         onClick={onClose}
       />
 
-      {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8 max-h-[80vh] overflow-y-auto">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 text-center">
             Ask for Preferences
           </h3>
 
-          {/* Deadline picker */}
           <div className="mb-4">
             <label htmlFor="vote-deadline" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
               Response Deadline
@@ -138,7 +122,6 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
             </div>
           )}
 
-          {/* Action buttons - stacked and centered */}
           <div className="flex flex-col gap-2">
             <button
               onClick={handleCreate}
