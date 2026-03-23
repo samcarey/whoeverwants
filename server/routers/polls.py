@@ -13,6 +13,7 @@ from models import (
     ParticipantResponse,
     PollResponse,
     PollResultsResponse,
+    PollType,
     RankedChoiceRoundResponse,
     RelatedPollsRequest,
     RelatedPollsResponse,
