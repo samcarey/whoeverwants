@@ -440,6 +440,9 @@ cmd_upsert() {
     mkdir -p "$DEV_DIR"
     rm -rf "$dir"
     git clone --depth 50 "$REPO_URL" "$dir"
+  elif [ ! -d "$dir/node_modules" ]; then
+    # Clone exists from a previous failed attempt but deps weren't installed
+    needs_npm_install=true
   fi
 
   cd "$dir"
@@ -482,10 +485,12 @@ cmd_upsert() {
     needs_uv_sync=true
   fi
 
-  # --- Database setup ---
+  # --- Database setup (non-fatal — don't block frontend/API on migration errors) ---
   log "--- Setting up database ---"
   create_dev_database "$db_name"
+  set +e
   apply_dev_migrations "$db_name" "${dir}/database/migrations"
+  set -e
 
   # --- Python dependencies ---
   if [ "$needs_uv_sync" = true ]; then

@@ -35,6 +35,11 @@ pending=0
 for f in "$MIGRATIONS_DIR"/*_up.sql; do
   [ -f "$f" ] || continue
   basename=$(basename "$f")
+  # Skip 000_populate_tracking_table — it's for production DBs that already
+  # have all tables. Fresh dev DBs need to run actual migrations from scratch.
+  if [[ "$basename" == 000_* ]]; then
+    continue
+  fi
   # Re-read applied list each iteration (some migrations like 000_* insert tracking rows)
   applied=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "SELECT filename FROM _migrations;" 2>/dev/null || echo "")
   if echo "$applied" | grep -qxF "$basename"; then
