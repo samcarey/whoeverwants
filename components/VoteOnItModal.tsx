@@ -108,51 +108,24 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8 max-h-[80vh] overflow-y-auto">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 text-center">
-            Create Preference Poll
-          </h3>
-
-          {/* Title */}
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title</label>
-            <div className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm text-gray-900 dark:text-white">
-              {pollTitle}
-            </div>
-          </div>
-
-          {/* Options */}
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Options ({nominations.length})
-            </label>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {nominations.map((nom, i) => (
-                <div key={i} className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700 rounded text-sm text-gray-800 dark:text-gray-200">
-                  {nom}
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Deadline picker */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Deadline</label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <label htmlFor="vote-deadline" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              Response Deadline
+            </label>
+            <select
+              id="vote-deadline"
+              value={deadlineOption}
+              onChange={(e) => setDeadlineOption(e.target.value)}
+              disabled={isSubmitting}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               {DEADLINE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDeadlineOption(opt.value)}
-                  disabled={isSubmitting}
-                  className={`px-2 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                    deadlineOption === opt.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                  } disabled:opacity-50`}
-                >
+                <option key={opt.value} value={opt.value}>
                   {opt.label}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
           {error && (
@@ -161,19 +134,19 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="flex gap-3">
+          {/* Action buttons - stacked and centered */}
+          <div className="flex flex-col gap-2">
             <button
               onClick={handleCreate}
               disabled={isSubmitting}
-              className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 disabled:bg-gray-400 text-white font-medium text-sm rounded-lg transition-all disabled:cursor-not-allowed"
+              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 disabled:bg-gray-400 text-white font-medium text-sm rounded-lg transition-all disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Creating..." : "Create Poll"}
             </button>
             <button
               onClick={handleEdit}
               disabled={isSubmitting}
-              className="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 active:bg-gray-300 dark:active:bg-gray-500 active:scale-95 text-gray-900 dark:text-white font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600"
+              className="w-full py-3 px-4 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 active:bg-gray-300 dark:active:bg-gray-500 active:scale-95 text-gray-900 dark:text-white font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600"
             >
               Edit First
             </button>
