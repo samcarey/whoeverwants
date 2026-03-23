@@ -18,7 +18,7 @@
 #
 # Dev mode: Uses `next dev` for instant hot reload. On push, files are
 # updated via git and Next.js auto-detects changes — no rebuild needed.
-# Server only restarts if package-lock.json changes.
+# Server only restarts if package-lock.json changes or the process died.
 #
 # Email-to-slug mapping:
 #   sam@example.com -> sam-at-example-com
@@ -338,18 +338,9 @@ cmd_upsert() {
     needs_restart=true
   fi
 
-  # Check if commit changed (env vars like NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA
-  # are baked into the process at startup and can't be hot-reloaded)
-  local old_commit=""
-  if [ -f "${dir}/.dev-meta.json" ]; then
-    old_commit=$(python3 -c "import json; print(json.load(open('${dir}/.dev-meta.json')).get('commit', ''))" 2>/dev/null || echo "")
-  fi
-  local new_commit
-  new_commit=$(git rev-parse HEAD)
-  if [ -n "$old_commit" ] && [ "$old_commit" != "$new_commit" ]; then
-    log "Commit changed ($old_commit -> $new_commit) — restarting to update env vars"
-    needs_restart=true
-  fi
+  # Commit SHA changes alone don't trigger restart. NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA
+  # is set at startup, so the displayed SHA reflects what's actually running —
+  # if a restart fails, the old SHA stays visible, making staleness obvious.
 
   # Check if server process is still running
   local current_pid=""
