@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { apiCreatePoll } from "@/lib/api";
+import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -863,6 +863,20 @@ function CreatePollContent() {
         }
       }
 
+
+      // Check for duplicate follow-up poll before creating
+      if (followUpTo) {
+        try {
+          const existing = await apiFindDuplicatePoll(title, followUpTo);
+          if (existing) {
+            const shortId = existing.short_id || existing.id;
+            router.push(`/p/${shortId}`);
+            return;
+          }
+        } catch {
+          // If the check fails, proceed with creation
+        }
+      }
 
       let createdPoll;
       try {

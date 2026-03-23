@@ -170,6 +170,19 @@ export async function apiGetPollById(pollId: string): Promise<Poll> {
   return toPoll(data);
 }
 
+export async function apiFindDuplicatePoll(title: string, followUpTo: string): Promise<Poll | null> {
+  try {
+    const params = new URLSearchParams({ title, follow_up_to: followUpTo });
+    const data = await apiFetch(`/find-duplicate?${params}`);
+    return toPoll(data);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
 // --- Voting ---
 
 export async function apiSubmitVote(pollId: string, params: {

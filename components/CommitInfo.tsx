@@ -94,8 +94,26 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [copyLabel, setCopyLabel] = useState('Copy All Logs');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const commitHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
+  const vercelHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
+  const [commitHash, setCommitHash] = useState(vercelHash);
+
+  // In dev mode, fetch the current git SHA from the server on mount and on visibility change
+  useEffect(() => {
+    if (vercelHash) return; // Vercel build — SHA is baked in
+    const fetchGitSha = async () => {
+      try {
+        const res = await fetch('/api/git-info');
+        if (!res.ok) return;
+        const { sha } = await res.json();
+        if (sha) setCommitHash(prev => prev === sha ? prev : sha);
+      } catch { /* ignore */ }
+    };
+    fetchGitSha();
+    const onVisibility = () => { if (document.visibilityState === 'visible') fetchGitSha(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [vercelHash]);
 
   const fetchCommitInfo = useCallback(async () => {
     if (!commitHash) {
