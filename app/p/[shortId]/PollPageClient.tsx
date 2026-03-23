@@ -21,7 +21,8 @@ import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
+import VoteOnItModal from "@/components/VoteOnItModal";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -83,6 +84,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [showVoteOnItModal, setShowVoteOnItModal] = useState(false);
   const [nominations, setNominations] = useState<string[]>([]);
   const [loadingNominations, setLoadingNominations] = useState(false);
 
@@ -786,17 +788,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setShowVoteConfirmModal(true);
   };
 
-  const handleVoteOnNominationsClick = () => {
-    // Store data for the new preference poll
-    const voteData = {
-      title: poll.title,
-      options: nominations,
-      followUpTo: poll.id
-    };
-    localStorage.setItem(`vote-from-nomination-${poll.id}`, JSON.stringify(voteData));
+  const handleVoteOnNominationsClick = async () => {
+    // Check if a follow-up preference poll already exists with the same title
+    setLoadingNominations(true);
+    try {
+      const existing = await apiFindDuplicatePoll(poll.title, poll.id);
+      if (existing) {
+        // Navigate directly to the existing poll
+        const shortId = existing.short_id || existing.id;
+        router.push(`/p/${shortId}`);
+        return;
+      }
+    } catch {
+      // If the check fails, fall through to show the modal
+    } finally {
+      setLoadingNominations(false);
+    }
 
-    // Navigate to create-poll page with vote parameter
-    router.push(`/create-poll?voteFromNomination=${poll.id}`);
+    // No duplicate found — show the creation modal
+    setShowVoteOnItModal(true);
   };
 
   const submitVote = async () => {
@@ -1942,6 +1952,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         isOpen={showFollowUpModal}
         poll={poll}
         onClose={() => setShowFollowUpModal(false)}
+      />
+
+      {/* Vote on It Modal */}
+      <VoteOnItModal
+        isOpen={showVoteOnItModal}
+        pollId={poll.id}
+        pollTitle={poll.title}
+        nominations={nominations}
+        onClose={() => setShowVoteOnItModal(false)}
       />
 
     </>

@@ -132,6 +132,25 @@ def create_poll(req: CreatePollRequest):
     return _row_to_poll(row)
 
 
+@router.get("/find-duplicate", response_model=PollResponse)
+def find_duplicate_poll(title: str, follow_up_to: str):
+    """Find an existing poll that is a follow-up to the same parent with the same title (case-insensitive)."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM polls
+            WHERE LOWER(title) = LOWER(%(title)s)
+              AND follow_up_to = %(follow_up_to)s
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            {"title": title, "follow_up_to": follow_up_to},
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="No duplicate poll found")
+    return _row_to_poll(row)
+
+
 @router.get("/by-short-id/{short_id}", response_model=PollResponse)
 def get_poll_by_short_id(short_id: str):
     """Get a poll by its short ID."""
