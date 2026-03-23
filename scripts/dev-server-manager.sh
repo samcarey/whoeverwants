@@ -1,7 +1,10 @@
 #!/bin/bash
-# Per-user dev server manager for the WhoeverWants droplet.
-# Each developer (identified by git author email) gets their own Next.js
-# frontend server that auto-updates when they push new commits.
+# Per-user FULL-STACK dev server manager for the WhoeverWants droplet.
+# Each developer (identified by git author email) gets their own:
+#   - Next.js frontend on a unique port (3001-3005)
+#   - FastAPI backend on a unique port (8001-8005)
+#   - PostgreSQL database (shared instance, separate DB per dev server)
+#   - All migrations from their branch auto-applied
 #
 # Usage (run on droplet):
 #   dev-server-manager.sh upsert <email> <branch>
@@ -9,16 +12,6 @@
 #   dev-server-manager.sh destroy <email-slug>
 #   dev-server-manager.sh destroy-all
 #   dev-server-manager.sh cleanup [days]
-#
-# Each dev server gets:
-#   - A clone of the repo at /root/dev-servers/<email-slug>/
-#   - A Next.js dev server (hot reload) on a unique port
-#   - A Caddy route at <email-slug>.dev.whoeverwants.com
-#   - Uses the production API (api.whoeverwants.com)
-#
-# Dev mode: Uses `next dev` for instant hot reload. On push, files are
-# updated via git and Next.js auto-detects changes — no rebuild needed.
-# Server only restarts if package-lock.json changes or the process died.
 #
 # Email-to-slug mapping:
 #   sam@example.com -> sam-at-example-com
@@ -29,11 +22,23 @@ set -euo pipefail
 DEV_DIR="/root/dev-servers"
 CADDY_DEV_DIR="/etc/caddy/dev-servers"
 REPO_URL="https://github.com/samcarey/whoeverwants.git"
-PORT_START=3001
-PORT_MAX=3005
+FRONTEND_PORT_START=3001
+FRONTEND_PORT_MAX=3005
+API_PORT_START=8001
+API_PORT_MAX=8005
 MAX_DEV_SERVERS=3
 LOCK_DIR="/tmp/dev-server-locks"
 LOG_FILE="/var/log/dev-server-manager.log"
+
+# Database connection (shared PostgreSQL container)
+DB_CONTAINER="whoeverwants-db-1"
+DB_USER="whoeverwants"
+DB_PASSWORD="whoeverwants"
+DB_HOST="127.0.0.1"
+DB_PORT="5432"
+
+# Path to uv (installed via astral.sh)
+UV_BIN="/root/.local/bin/uv"
 
 # Claude/bot email patterns to ignore
 IGNORE_EMAIL_PATTERNS=(
@@ -60,6 +65,13 @@ email_to_slug() {
     | sed 's/^-//; s/-$//'
 }
 
+# Convert slug to database name (replace hyphens with underscores)
+# sam-at-example-com -> dev_sam_at_example_com
+slug_to_dbname() {
+  local slug="$1"
+  echo "dev_${slug//-/_}"
+}
+
 # Check if email should be ignored (Claude, bots, etc.)
 is_ignored_email() {
   local email="$1"
@@ -75,15 +87,17 @@ is_ignored_email() {
   return 1
 }
 
-# Find an available port
-find_available_port() {
-  for port in $(seq $PORT_START $PORT_MAX); do
+# Find an available port in a range
+find_available_port_in_range() {
+  local start="$1"
+  local max="$2"
+  for port in $(seq "$start" "$max"); do
     if ! ss -tlnp 2>/dev/null | grep -q ":${port} "; then
       echo "$port"
       return 0
     fi
   done
-  log "ERROR: No available ports in range $PORT_START-$PORT_MAX"
+  log "ERROR: No available ports in range $start-$max"
   return 1
 }
 
@@ -96,10 +110,18 @@ get_dev_port() {
   fi
 }
 
+# Get API port from existing dev server metadata
+get_api_port() {
+  local slug="$1"
+  local meta="${DEV_DIR}/${slug}/.dev-meta.json"
+  if [ -f "$meta" ]; then
+    python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))" 2>/dev/null || echo ""
+  fi
+}
+
+# --- Process management ---
+
 # Stop the Next.js process for a dev server
-# npm run dev spawns child processes (npm -> next -> node), so killing the
-# parent PID alone may leave orphaned children holding the port open.
-# We kill by PID first, then ensure nothing is left on the port.
 stop_nextjs() {
   local slug="$1"
   local dir="${DEV_DIR}/${slug}"
@@ -112,15 +134,12 @@ stop_nextjs() {
     pid=$(cat "$pid_file")
     if kill -0 "$pid" 2>/dev/null; then
       log "Stopping Next.js for $slug (PID $pid)..."
-      # Kill the entire process group (next dev + child processes)
       kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
-      # Wait up to 10 seconds for graceful shutdown
       local waited=0
       while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 10 ]; do
         sleep 1
         waited=$((waited + 1))
       done
-      # Force kill if still running
       if kill -0 "$pid" 2>/dev/null; then
         kill -9 -- -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
         sleep 1
@@ -129,8 +148,7 @@ stop_nextjs() {
     rm -f "$pid_file"
   fi
 
-  # Kill any orphaned processes still holding the port (child node processes
-  # that survived the parent kill)
+  # Kill any orphaned processes still holding the port
   if [ -n "$port" ]; then
     local port_pids
     port_pids=$(fuser "${port}/tcp" 2>/dev/null || true)
@@ -142,34 +160,73 @@ stop_nextjs() {
   fi
 }
 
-# Start the Next.js dev server (hot reload mode)
+# Stop the FastAPI process for a dev server
+stop_api() {
+  local slug="$1"
+  local dir="${DEV_DIR}/${slug}"
+  local pid_file="${dir}/.api.pid"
+  local port
+  port=$(get_api_port "$slug")
+
+  if [ -f "$pid_file" ]; then
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+      log "Stopping API for $slug (PID $pid)..."
+      kill "$pid" 2>/dev/null || true
+      local waited=0
+      while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 5 ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+        sleep 1
+      fi
+    fi
+    rm -f "$pid_file"
+  fi
+
+  # Kill any orphaned processes still holding the API port
+  if [ -n "$port" ]; then
+    local port_pids
+    port_pids=$(fuser "${port}/tcp" 2>/dev/null || true)
+    if [ -n "$port_pids" ]; then
+      log "Killing orphaned processes on API port $port: $port_pids"
+      fuser -k "${port}/tcp" 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+}
+
+# Start the Next.js dev server
 # NOTE: Only the PID is written to stdout (for capture). All log messages go to stderr.
 start_nextjs() {
   local slug="$1"
-  local port="$2"
+  local frontend_port="$2"
+  local api_port="$3"
   local dir="${DEV_DIR}/${slug}"
 
   cd "$dir"
 
-  log "Starting Next.js dev server for $slug on port $port..."
+  log "Starting Next.js dev server for $slug on port $frontend_port (API on $api_port)..."
 
-  # Resolve git commit info so CommitInfo component works in dev mode
   local git_sha git_branch
   git_sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo "")
   git_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
-  # Use `npm run dev` so flags (--webpack, etc.) stay in sync with package.json.
-  # Extra args are passed after `--`.
-  NEXT_PUBLIC_API_URL="https://api.whoeverwants.com/api/polls" \
+  # PYTHON_API_URL tells next.config.ts where to proxy /api/polls requests.
+  # NEXT_PUBLIC_API_URL tells lib/api.ts where to make server-side requests.
+  PYTHON_API_URL="http://localhost:${api_port}" \
+  NEXT_PUBLIC_API_URL="http://localhost:${api_port}/api/polls" \
   NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA="$git_sha" \
   NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF="$git_branch" \
   HOSTNAME=0.0.0.0 \
-    npm run dev -- -p "$port" \
+    npm run dev -- -p "$frontend_port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
 
-  # Wait and verify it started
   sleep 5
   if ! kill -0 "$new_pid" 2>/dev/null; then
     log "ERROR: Next.js dev server failed to start for $slug. Last 20 lines of log:"
@@ -177,12 +234,91 @@ start_nextjs() {
     return 1
   fi
 
-  log "Next.js dev server started for $slug (PID $new_pid, port $port)"
-  # Only output the PID — log() already wrote to the log file
+  log "Next.js dev server started for $slug (PID $new_pid, port $frontend_port)"
   echo "$new_pid"
 }
 
-# Ensure the Caddy import line for dev-servers exists
+# Start the FastAPI dev server
+# NOTE: Only the PID is written to stdout (for capture). All log messages go to stderr.
+start_api() {
+  local slug="$1"
+  local api_port="$2"
+  local db_name="$3"
+  local dir="${DEV_DIR}/${slug}"
+
+  cd "${dir}/server"
+
+  log "Starting API server for $slug on port $api_port (DB: $db_name)..."
+
+  # Install Python deps if needed (first time or pyproject.toml changed)
+  if [ ! -d "${dir}/server/.venv" ]; then
+    log "  Installing Python dependencies..."
+    "$UV_BIN" sync --quiet 2>&1 | tail -3 || true
+  fi
+
+  DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${db_name}" \
+    "$UV_BIN" run uvicorn main:app --host 0.0.0.0 --port "$api_port" --workers 1 \
+    >> "${dir}/api.log" 2>&1 &
+  local new_pid=$!
+  echo "$new_pid" > "${dir}/.api.pid"
+
+  sleep 3
+  if ! kill -0 "$new_pid" 2>/dev/null; then
+    log "ERROR: API server failed to start for $slug. Last 20 lines of log:"
+    tail -20 "${dir}/api.log" 2>/dev/null || true
+    return 1
+  fi
+
+  log "API server started for $slug (PID $new_pid, port $api_port, DB: $db_name)"
+  echo "$new_pid"
+}
+
+# --- Database management ---
+
+# Create a dev database if it doesn't exist
+create_dev_database() {
+  local db_name="$1"
+  local exists
+  exists=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -tAc \
+    "SELECT 1 FROM pg_database WHERE datname = '$db_name';" 2>/dev/null || echo "")
+  if [ "$exists" != "1" ]; then
+    log "  Creating database: $db_name"
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -c "CREATE DATABASE $db_name;" >/dev/null
+  fi
+}
+
+# Apply migrations from the dev server's branch
+apply_dev_migrations() {
+  local db_name="$1"
+  local migrations_dir="$2"
+
+  if [ ! -d "$migrations_dir" ]; then
+    log "  No migrations directory found at $migrations_dir"
+    return
+  fi
+
+  log "  Applying migrations to $db_name..."
+  bash "$(dirname "$0")/apply-dev-migrations.sh" "$db_name" "$migrations_dir"
+}
+
+# Drop a dev database
+drop_dev_database() {
+  local db_name="$1"
+  local exists
+  exists=$(docker exec "$DB_CONTAINER" psql -U "$DB_USER" -tAc \
+    "SELECT 1 FROM pg_database WHERE datname = '$db_name';" 2>/dev/null || echo "")
+  if [ "$exists" = "1" ]; then
+    # Terminate existing connections first
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -c \
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$db_name' AND pid <> pg_backend_pid();" \
+      >/dev/null 2>&1 || true
+    docker exec "$DB_CONTAINER" psql -U "$DB_USER" -c "DROP DATABASE $db_name;" >/dev/null
+    log "  Dropped database: $db_name"
+  fi
+}
+
+# --- Caddy management ---
+
 ensure_caddy_import() {
   mkdir -p "$CADDY_DEV_DIR"
   if ! grep -q "dev-servers" /etc/caddy/Caddyfile 2>/dev/null; then
@@ -192,7 +328,6 @@ ensure_caddy_import() {
   fi
 }
 
-# Add or update Caddy config for a dev server
 configure_caddy() {
   local slug="$1"
   local port="$2"
@@ -209,7 +344,6 @@ EOF
   log "Caddy configured for ${slug}.dev.whoeverwants.com -> port $port"
 }
 
-# Remove Caddy config for a dev server
 remove_caddy() {
   local slug="$1"
   rm -f "${CADDY_DEV_DIR}/${slug}.caddy"
@@ -217,9 +351,8 @@ remove_caddy() {
   log "Caddy config removed for $slug"
 }
 
-# Evict oldest dev servers to stay within MAX_DEV_SERVERS limit.
-# Keeps the most recently updated servers, destroys the rest.
-# The current_slug (about to be upserted) is never evicted.
+# --- Eviction ---
+
 evict_excess_servers() {
   local current_slug="$1"
 
@@ -227,7 +360,6 @@ evict_excess_servers() {
     return
   fi
 
-  # Collect all slugs with their updated_at timestamps, sorted oldest first
   local servers=()
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
@@ -237,7 +369,6 @@ evict_excess_servers() {
     servers+=("${updated}|${slug}")
   done
 
-  # Count how many will exist after this upsert
   local total=${#servers[@]}
   local current_exists=false
   for entry in "${servers[@]}"; do
@@ -255,7 +386,6 @@ evict_excess_servers() {
     return
   fi
 
-  # Sort oldest first and evict until we're at the limit
   local sorted
   sorted=$(printf '%s\n' "${servers[@]}" | sort)
   local to_evict=$((total - MAX_DEV_SERVERS))
@@ -284,7 +414,6 @@ cmd_upsert() {
     return 0
   fi
 
-  # Evict oldest dev servers if at capacity
   evict_excess_servers "$slug"
 
   # Lock to prevent concurrent updates for same user
@@ -299,12 +428,14 @@ cmd_upsert() {
   log "=== Upsert dev server: $email (slug: $slug, branch: $branch) ==="
 
   local dir="${DEV_DIR}/${slug}"
+  local db_name
+  db_name=$(slug_to_dbname "$slug")
   local is_new=false
-  local needs_restart=false
+  local needs_npm_install=false
 
   if [ ! -d "$dir/.git" ]; then
     is_new=true
-    needs_restart=true
+    needs_npm_install=true
     log "--- Cloning repository ---"
     mkdir -p "$DEV_DIR"
     rm -rf "$dir"
@@ -313,79 +444,90 @@ cmd_upsert() {
 
   cd "$dir"
 
-  # Save current package-lock hash to detect dependency changes
+  # Save current hashes to detect dependency changes
   local old_lockfile_hash=""
+  local old_pyproject_hash=""
   if [ -f "package-lock.json" ]; then
     old_lockfile_hash=$(md5sum package-lock.json | cut -d' ' -f1)
+  fi
+  if [ -f "server/pyproject.toml" ]; then
+    old_pyproject_hash=$(md5sum server/pyproject.toml | cut -d' ' -f1)
   fi
 
   # Fetch and checkout the branch
   log "--- Fetching and checking out $branch ---"
   git fetch origin "$branch" --depth 50
-  # Use FETCH_HEAD since shallow clones may not have remote tracking branches
   git checkout "$branch" 2>/dev/null \
     || git checkout -b "$branch" FETCH_HEAD 2>/dev/null \
     || git checkout "$branch"
   git reset --hard FETCH_HEAD
 
-  # Check if dependencies changed
+  # Check if JS dependencies changed
   local new_lockfile_hash=""
   if [ -f "package-lock.json" ]; then
     new_lockfile_hash=$(md5sum package-lock.json | cut -d' ' -f1)
   fi
   if [ "$old_lockfile_hash" != "$new_lockfile_hash" ]; then
-    log "package-lock.json changed — reinstalling deps and restarting"
-    needs_restart=true
+    log "package-lock.json changed — will reinstall JS deps"
+    needs_npm_install=true
   fi
 
-  # Check if server process is still running
-  local current_pid=""
-  if [ -f "${dir}/.nextjs.pid" ]; then
-    current_pid=$(cat "${dir}/.nextjs.pid")
-    if ! kill -0 "$current_pid" 2>/dev/null; then
-      log "Dev server process not running — needs restart"
-      needs_restart=true
-      current_pid=""
-    fi
-  else
-    needs_restart=true
+  # Check if Python dependencies changed
+  local needs_uv_sync=false
+  local new_pyproject_hash=""
+  if [ -f "server/pyproject.toml" ]; then
+    new_pyproject_hash=$(md5sum server/pyproject.toml | cut -d' ' -f1)
+  fi
+  if [ "$old_pyproject_hash" != "$new_pyproject_hash" ] || [ ! -d "server/.venv" ]; then
+    needs_uv_sync=true
   fi
 
-  # Determine port (reuse existing or find new)
-  local port
-  port=$(get_dev_port "$slug")
-  if [ -z "$port" ]; then
-    port=$(find_available_port)
+  # --- Database setup ---
+  log "--- Setting up database ---"
+  create_dev_database "$db_name"
+  apply_dev_migrations "$db_name" "${dir}/database/migrations"
+
+  # --- Python dependencies ---
+  if [ "$needs_uv_sync" = true ]; then
+    log "--- Installing Python dependencies ---"
+    cd "${dir}/server"
+    "$UV_BIN" sync --quiet 2>&1 | tail -3 || true
+    cd "$dir"
   fi
 
-  if [ "$needs_restart" = true ]; then
-    # Full restart: stop, reinstall deps, start
-    stop_nextjs "$slug"
+  # --- Determine ports (reuse existing or find new) ---
+  local frontend_port api_port
+  frontend_port=$(get_dev_port "$slug")
+  api_port=$(get_api_port "$slug")
+  if [ -z "$frontend_port" ]; then
+    frontend_port=$(find_available_port_in_range "$FRONTEND_PORT_START" "$FRONTEND_PORT_MAX")
+  fi
+  if [ -z "$api_port" ]; then
+    api_port=$(find_available_port_in_range "$API_PORT_START" "$API_PORT_MAX")
+  fi
 
-    log "--- Installing dependencies ---"
+  # --- Stop existing processes ---
+  stop_api "$slug"
+  stop_nextjs "$slug"
+
+  # --- Install JS deps if needed ---
+  if [ "$needs_npm_install" = true ]; then
+    log "--- Installing JS dependencies ---"
     npm ci --prefer-offline 2>&1 | tail -5
-
-    # Clear .next cache on fresh installs for clean state
     if [ "$is_new" = true ]; then
       rm -rf .next
     fi
-
-    local pid
-    pid=$(start_nextjs "$slug" "$port")
-    log "  Mode:   Full restart (deps changed or new server)"
-  else
-    # Light restart: stop and start without reinstalling deps.
-    # Always restart so that NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA env var
-    # updates and Next.js reliably picks up all file changes (hot reload
-    # via file watcher is unreliable for git reset --hard across many files).
-    stop_nextjs "$slug"
-
-    local pid
-    pid=$(start_nextjs "$slug" "$port")
-    log "  Mode:   Light restart (no dep changes)"
   fi
 
-  # Write metadata
+  # --- Start API server ---
+  local api_pid
+  api_pid=$(start_api "$slug" "$api_port" "$db_name")
+
+  # --- Start Next.js frontend ---
+  local frontend_pid
+  frontend_pid=$(start_nextjs "$slug" "$frontend_port" "$api_port")
+
+  # --- Write metadata ---
   local commit_sha
   commit_sha=$(git rev-parse HEAD)
   cat > "${dir}/.dev-meta.json" <<EOF
@@ -393,8 +535,11 @@ cmd_upsert() {
   "slug": "${slug}",
   "email": "${email}",
   "branch": "${branch}",
-  "port": ${port},
-  "pid": ${pid},
+  "port": ${frontend_port},
+  "api_port": ${api_port},
+  "db_name": "${db_name}",
+  "pid": ${frontend_pid},
+  "api_pid": ${api_pid},
   "commit": "${commit_sha}",
   "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "url": "https://${slug}.dev.whoeverwants.com"
@@ -404,30 +549,26 @@ EOF
   # Configure Caddy (on first create, config missing, or port changed)
   local current_caddy_port=""
   if [ -f "${CADDY_DEV_DIR}/${slug}.caddy" ]; then
-    current_caddy_port=$(grep -oP '127\.0\.0\.1:\K[0-9]+' "${CADDY_DEV_DIR}/${slug}.caddy" || echo "")
+    current_caddy_port=$(grep -oP '127\.0\.0\.1:\K[0-9]+' "${CADDY_DEV_DIR}/${slug}.caddy" | head -1 || echo "")
   fi
-  if [ "$is_new" = true ] || [ ! -f "${CADDY_DEV_DIR}/${slug}.caddy" ] || [ "$current_caddy_port" != "$port" ]; then
-    configure_caddy "$slug" "$port"
+  if [ "$is_new" = true ] || [ ! -f "${CADDY_DEV_DIR}/${slug}.caddy" ] || [ "$current_caddy_port" != "$frontend_port" ]; then
+    configure_caddy "$slug" "$frontend_port"
   fi
 
   log ""
   log "=== Dev server ready ==="
-  log "  URL:    https://${slug}.dev.whoeverwants.com"
-  log "  Email:  $email"
-  log "  Branch: $branch"
-  log "  Commit: ${commit_sha:0:8}"
-  log "  Port:   $port"
-  log "  PID:    $pid"
-  if [ "$needs_restart" = true ]; then
-    log "  Mode:   Full restart (deps changed or new server)"
-  else
-    log "  Mode:   Hot reload (files updated, no restart needed)"
-  fi
+  log "  URL:       https://${slug}.dev.whoeverwants.com"
+  log "  Email:     $email"
+  log "  Branch:    $branch"
+  log "  Commit:    ${commit_sha:0:8}"
+  log "  Frontend:  port $frontend_port (PID $frontend_pid)"
+  log "  API:       port $api_port (PID $api_pid)"
+  log "  Database:  $db_name"
 }
 
 cmd_list() {
-  printf "%-35s %-30s %-30s %-5s %-20s %s\n" "SLUG" "EMAIL" "BRANCH" "PORT" "UPDATED" "URL"
-  printf "%-35s %-30s %-30s %-5s %-20s %s\n" "----" "-----" "------" "----" "-------" "---"
+  printf "%-35s %-30s %-30s %-5s %-5s %-20s %s\n" "SLUG" "EMAIL" "BRANCH" "FE" "API" "UPDATED" "STATUS"
+  printf "%-35s %-30s %-30s %-5s %-5s %-20s %s\n" "----" "-----" "------" "--" "---" "-------" "------"
 
   if [ ! -d "$DEV_DIR" ]; then
     echo "(no dev servers)"
@@ -438,22 +579,27 @@ cmd_list() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     found=1
-    local slug branch email port updated url pid running
+    local slug branch email port api_port updated pid api_pid fe_status api_status
     slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
     email=$(python3 -c "import json; print(json.load(open('$meta'))['email'])")
     branch=$(python3 -c "import json; print(json.load(open('$meta'))['branch'])")
     port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', 'N/A'))")
     updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'][:19])")
-    url=$(python3 -c "import json; print(json.load(open('$meta'))['url'])")
     pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', 'N/A'))")
+    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', 'N/A'))")
 
-    # Check if process is running
-    running="STOPPED"
+    fe_status="DOWN"
     if [ "$pid" != "N/A" ] && kill -0 "$pid" 2>/dev/null; then
-      running="RUNNING"
+      fe_status="UP"
+    fi
+    api_status="DOWN"
+    if [ "$api_pid" != "N/A" ] && kill -0 "$api_pid" 2>/dev/null; then
+      api_status="UP"
     fi
 
-    printf "%-35s %-30s %-30s %-5s %-20s %s [%s]\n" "$slug" "$email" "$branch" "$port" "$updated" "$url" "$running"
+    printf "%-35s %-30s %-30s %-5s %-5s %-20s FE:%s API:%s\n" \
+      "$slug" "$email" "$branch" "$port" "$api_port" "$updated" "$fe_status" "$api_status"
   done
 
   if [ "$found" -eq 0 ]; then
@@ -463,16 +609,22 @@ cmd_list() {
 
 cmd_destroy() {
   local slug="${1:?Usage: dev-server-manager.sh destroy <email-slug>}"
+  local db_name
+  db_name=$(slug_to_dbname "$slug")
 
   log "=== Destroying dev server: $slug ==="
 
-  # Stop Next.js
+  # Stop processes
+  stop_api "$slug"
   stop_nextjs "$slug"
 
   # Remove Caddy config
   remove_caddy "$slug"
 
-  # Kill any lingering node processes rooted in this directory
+  # Drop the dev database
+  drop_dev_database "$db_name"
+
+  # Kill any lingering processes rooted in this directory
   local dir="${DEV_DIR:?}/${slug}"
   local pids
   pids=$(lsof +D "$dir" 2>/dev/null | awk 'NR>1{print $2}' | sort -u || true)
@@ -482,7 +634,7 @@ cmd_destroy() {
     sleep 1
   fi
 
-  # Remove clone (retry once if directory not empty due to race)
+  # Remove clone
   log "--- Removing clone ---"
   rm -rf "$dir" 2>/dev/null || { sleep 2; rm -rf "$dir"; }
 
@@ -543,18 +695,41 @@ cmd_revive() {
 
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
-    local slug port pid
+    local slug port api_port db_name pid api_pid
     slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
     port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))")
+    db_name=$(python3 -c "import json; print(json.load(open('$meta')).get('db_name', ''))")
     pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', '0'))")
+    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', '0'))")
 
+    local dir="${DEV_DIR}/${slug}"
+
+    # Revive API if not running
+    if [ -n "$api_port" ] && [ -n "$db_name" ] && ! kill -0 "$api_pid" 2>/dev/null; then
+      if [ -d "${dir}/server/.venv" ]; then
+        log "API for '$slug' is not running, restarting on port $api_port..."
+        local new_api_pid
+        new_api_pid=$(start_api "$slug" "$api_port" "$db_name")
+        python3 -c "
+import json
+with open('$meta', 'r+') as f:
+    d = json.load(f)
+    d['api_pid'] = $new_api_pid
+    f.seek(0)
+    json.dump(d, f, indent=2)
+    f.truncate()
+"
+        log "Revived API for '$slug' with PID $new_api_pid"
+      fi
+    fi
+
+    # Revive frontend if not running
     if ! kill -0 "$pid" 2>/dev/null; then
-      log "Dev server '$slug' is not running, restarting on port $port..."
-      local dir="${DEV_DIR}/${slug}"
-      if [ -d "$dir/node_modules" ]; then
+      if [ -d "$dir/node_modules" ] && [ -n "$api_port" ]; then
+        log "Frontend for '$slug' is not running, restarting on port $port..."
         local new_pid
-        new_pid=$(start_nextjs "$slug" "$port")
-        # Update PID in metadata
+        new_pid=$(start_nextjs "$slug" "$port" "$api_port")
         python3 -c "
 import json
 with open('$meta', 'r+') as f:
@@ -564,9 +739,9 @@ with open('$meta', 'r+') as f:
     json.dump(d, f, indent=2)
     f.truncate()
 "
-        log "Revived '$slug' with PID $new_pid"
+        log "Revived frontend for '$slug' with PID $new_pid"
       else
-        log "No node_modules found for '$slug', skipping (needs full upsert)"
+        log "Missing node_modules or api_port for '$slug', skipping (needs full upsert)"
       fi
     fi
   done
@@ -584,16 +759,18 @@ case "${1:-help}" in
     echo "Usage: dev-server-manager.sh <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  upsert <email> <branch>   Create or update a dev server for a user"
+    echo "  upsert <email> <branch>   Create or update a full-stack dev server"
     echo "  list                      List all active dev servers"
-    echo "  destroy <email-slug>      Destroy a specific dev server"
+    echo "  destroy <email-slug>      Destroy a specific dev server (including database)"
     echo "  destroy-all               Destroy all dev servers"
     echo "  cleanup [days]            Destroy dev servers not updated in N days (default: 7)"
     echo "  revive                    Restart any stopped dev servers"
     echo ""
-    echo "Email-to-slug mapping:"
-    echo "  sam@example.com -> sam-at-example-com"
-    echo "  user@company.co.uk -> user-at-company-co-uk"
+    echo "Each dev server gets:"
+    echo "  - Next.js frontend (port 3001-3005)"
+    echo "  - FastAPI backend (port 8001-8005)"
+    echo "  - PostgreSQL database (shared instance, separate DB)"
+    echo "  - Migrations auto-applied from branch"
     exit 1
     ;;
 esac
