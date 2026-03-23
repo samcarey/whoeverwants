@@ -95,7 +95,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 **Per-User Dev Servers** (automatic on push):
 - Every push to GitHub auto-updates your dev server via webhook
 - Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
-- Restarts if `package-lock.json` changes (new dependencies) or commit SHA changes (to refresh env vars)
+- Restarts only if `package-lock.json` changes (new dependencies) or the process died — commit SHA changes alone use hot reload
 - **After pushing, wait for the dev server to be ready before telling the user.** The server takes ~45-60 seconds to restart. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200, then notify the user.
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
