@@ -2,22 +2,16 @@ import React from 'react';
 
 interface YesNoAbstainButtonsProps {
   yesNoChoice: 'yes' | 'no' | null;
-  isAbstaining?: boolean;
   onYesClick: () => void;
   onNoClick: () => void;
-  onAbstainClick?: () => void;
   disabled?: boolean;
-  showAbstain?: boolean;
 }
 
 export default function YesNoAbstainButtons({
   yesNoChoice,
-  isAbstaining = false,
   onYesClick,
   onNoClick,
-  onAbstainClick,
   disabled = false,
-  showAbstain = true
 }: YesNoAbstainButtonsProps) {
   return (
     <div className="flex gap-2">
@@ -43,19 +37,6 @@ export default function YesNoAbstainButtons({
       >
         No
       </button>
-      {showAbstain && (
-        <button
-          onClick={onAbstainClick}
-          disabled={disabled}
-          className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-            isAbstaining
-              ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600 active:bg-yellow-300 dark:active:bg-yellow-700'
-              : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent active:bg-yellow-300 dark:active:bg-yellow-700'
-          }`}
-        >
-          Abstain
-        </button>
-      )}
     </div>
   );
 }

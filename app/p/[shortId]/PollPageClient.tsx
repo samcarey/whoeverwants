@@ -19,6 +19,7 @@ import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
+import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -1359,10 +1360,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <div className="mb-4">
                       <YesNoAbstainButtons
                         yesNoChoice={yesNoChoice}
-                        isAbstaining={isAbstaining}
                         onYesClick={() => handleYesNoVote('yes')}
                         onNoClick={() => handleYesNoVote('no')}
-                        onAbstainClick={handleAbstain}
+                      />
+                      <AbstainButton
+                        isAbstaining={isAbstaining}
+                        onClick={handleAbstain}
                       />
                     </div>
                     
@@ -1538,7 +1541,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onYesClick={() => handleYesNoVote('yes')}
                       onNoClick={() => handleYesNoVote('no')}
                       disabled={isSubmitting}
-                      showAbstain={false}
                     />
                   </div>
 
@@ -1765,19 +1767,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       />
                     )}
                     
-                    {/* Abstain button for ranked choice */}
-                    <div className="mt-4">
-                      <button 
-                        onClick={() => handleAbstain()}
-                        className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                          isAbstaining
-                            ? 'bg-yellow-200 dark:bg-yellow-800 text-yellow-900 dark:text-yellow-100 border-2 border-yellow-400 dark:border-yellow-600' 
-                            : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent'
-                        }`}
-                      >
-                        {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain from this vote'}
-                      </button>
-                    </div>
+                    <AbstainButton
+                      isAbstaining={isAbstaining}
+                      onClick={handleAbstain}
+                    />
                     
                     {voteError && (
                       <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
