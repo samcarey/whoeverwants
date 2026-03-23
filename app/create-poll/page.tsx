@@ -55,6 +55,8 @@ function CreatePollContent() {
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
+  const [autoCreatePreferences, setAutoCreatePreferences] = useState(false);
+  const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -851,6 +853,16 @@ function CreatePollContent() {
         pollData.options = filledOptions;
       }
 
+      // Add auto-create preferences settings for nomination polls
+      if (dbPollType === 'nomination' && autoCreatePreferences) {
+        pollData.auto_create_preferences = true;
+        const deadlineMinutesMap: Record<string, number> = {
+          '5min': 5, '10min': 10, '15min': 15, '30min': 30,
+          '1hr': 60, '2hr': 120, '4hr': 240,
+        };
+        pollData.auto_preferences_deadline_minutes = deadlineMinutesMap[autoPreferencesDeadline] || 10;
+      }
+
       // Add min/max participants for participation polls
       if (dbPollType === 'participation') {
         // Min is always required
@@ -1176,6 +1188,46 @@ function CreatePollContent() {
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Auto-create preferences poll checkbox - nomination polls only */}
+          {pollType === 'nomination' && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoCreatePreferences}
+                  onChange={(e) => setAutoCreatePreferences(e.target.checked)}
+                  disabled={isLoading}
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Ask for preferences when closed
+                </span>
+              </label>
+              {autoCreatePreferences && (
+                <div className="ml-6">
+                  <label htmlFor="autoPreferencesDeadline" className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    Preferences poll deadline
+                  </label>
+                  <select
+                    id="autoPreferencesDeadline"
+                    value={autoPreferencesDeadline}
+                    onChange={(e) => setAutoPreferencesDeadline(e.target.value)}
+                    disabled={isLoading}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    <option value="5min">5 minutes</option>
+                    <option value="10min">10 minutes</option>
+                    <option value="15min">15 minutes</option>
+                    <option value="30min">30 minutes</option>
+                    <option value="1hr">1 hour</option>
+                    <option value="2hr">2 hours</option>
+                    <option value="4hr">4 hours</option>
+                  </select>
+                </div>
+              )}
             </div>
           )}
 

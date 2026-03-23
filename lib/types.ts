@@ -18,6 +18,8 @@ export interface Poll {
   min_participants?: number;
   max_participants?: number;
   short_id?: string;
+  auto_create_preferences?: boolean;
+  auto_preferences_deadline_minutes?: number;
 }
 
 export interface Vote {

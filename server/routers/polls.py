@@ -55,6 +55,77 @@ def _check_auto_close(conn, poll_id: str) -> None:
         )
 
 
+def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
+    """Activate the reserved ranked_choice follow-up when a nomination poll closes.
+
+    Collects all nominations from votes, finds the reserved placeholder poll,
+    and updates it with the nominations as options, a deadline, and opens it.
+    """
+    import json
+
+    parent_id = str(parent_row["id"])
+    deadline_minutes = parent_row.get("auto_preferences_deadline_minutes") or 10
+
+    # Collect unique nominations from all votes on the parent poll
+    votes = conn.execute(
+        "SELECT nominations FROM votes WHERE poll_id = %(poll_id)s AND nominations IS NOT NULL",
+        {"poll_id": parent_id},
+    ).fetchall()
+
+    all_nominations: list[str] = []
+    seen: set[str] = set()
+    for v in votes:
+        for nom in (v["nominations"] or []):
+            lower = nom.strip().lower()
+            if lower and lower not in seen:
+                seen.add(lower)
+                all_nominations.append(nom.strip())
+
+    if len(all_nominations) < 2:
+        # Not enough nominations to create a meaningful ranked choice poll.
+        # Leave the reserved poll closed.
+        return
+
+    # Find the reserved placeholder poll
+    reserved = conn.execute(
+        """
+        SELECT id FROM polls
+        WHERE follow_up_to = %(parent_id)s
+          AND poll_type = 'ranked_choice'
+          AND is_closed = true
+          AND options IS NULL
+        ORDER BY created_at ASC
+        LIMIT 1
+        """,
+        {"parent_id": parent_id},
+    ).fetchone()
+
+    if not reserved:
+        return  # No reserved poll found (shouldn't happen)
+
+    # Calculate deadline from now
+    from datetime import timedelta
+    deadline = now + timedelta(minutes=deadline_minutes)
+
+    # Activate the reserved poll
+    conn.execute(
+        """
+        UPDATE polls
+        SET options = %(options)s::jsonb,
+            response_deadline = %(deadline)s,
+            is_closed = false,
+            updated_at = %(now)s
+        WHERE id = %(reserved_id)s
+        """,
+        {
+            "options": json.dumps(all_nominations),
+            "deadline": deadline.isoformat(),
+            "now": now,
+            "reserved_id": str(reserved["id"]),
+        },
+    )
+
+
 def _row_to_poll(row: dict) -> PollResponse:
     """Convert a database row to a PollResponse."""
     return PollResponse(
@@ -74,6 +145,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         min_participants=row.get("min_participants"),
         max_participants=row.get("max_participants"),
         short_id=row.get("short_id"),
+        auto_create_preferences=row.get("auto_create_preferences", False),
+        auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
     )
 
 
@@ -108,10 +181,12 @@ def create_poll(req: CreatePollRequest):
             INSERT INTO polls (title, poll_type, options, response_deadline,
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
+                               auto_create_preferences, auto_preferences_deadline_minutes,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
+                    %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -126,9 +201,34 @@ def create_poll(req: CreatePollRequest):
                 "fork_of": req.fork_of,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
+                "auto_create_preferences": req.auto_create_preferences,
+                "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
                 "now": now,
             },
         ).fetchone()
+
+        # If this is a nomination poll with auto_create_preferences, reserve a
+        # placeholder ranked_choice follow-up poll so no one else can create a
+        # conflicting follow-up with the same title.
+        if req.poll_type == PollType.nomination and req.auto_create_preferences:
+            conn.execute(
+                """
+                INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
+                                   creator_secret, creator_name,
+                                   created_at, updated_at)
+                VALUES (%(title)s, 'ranked_choice', true, %(parent_id)s,
+                        %(creator_secret)s, %(creator_name)s,
+                        %(now)s, %(now)s)
+                """,
+                {
+                    "title": req.title,
+                    "parent_id": str(row["id"]),
+                    "creator_secret": req.creator_secret,
+                    "creator_name": req.creator_name,
+                    "now": now,
+                },
+            )
+
     return _row_to_poll(row)
 
 
@@ -314,6 +414,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
 @router.get("/{poll_id}/results", response_model=PollResultsResponse)
 def get_results(poll_id: str):
     """Compute and return poll results."""
+    now = datetime.now(timezone.utc)
     with get_db() as conn:
         poll = conn.execute(
             "SELECT * FROM polls WHERE id = %(poll_id)s",
@@ -321,6 +422,23 @@ def get_results(poll_id: str):
         ).fetchone()
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
+
+        # Auto-close nomination polls with auto_create_preferences when deadline
+        # has passed. This activates the reserved preferences poll server-side
+        # regardless of which client fetches results first.
+        if (
+            poll["poll_type"] == "nomination"
+            and poll.get("auto_create_preferences")
+            and not poll["is_closed"]
+            and poll.get("response_deadline")
+            and poll["response_deadline"] <= now
+        ):
+            conn.execute(
+                """UPDATE polls SET is_closed = true, close_reason = 'deadline', updated_at = %(now)s
+                   WHERE id = %(poll_id)s AND is_closed = false""",
+                {"poll_id": poll_id, "now": now},
+            )
+            _activate_reserved_preferences_poll(conn, dict(poll), now)
 
         votes = conn.execute(
             "SELECT * FROM votes WHERE poll_id = %(poll_id)s",
@@ -491,6 +609,7 @@ def get_participants(poll_id: str):
 @router.post("/{poll_id}/close", response_model=PollResponse)
 def close_poll(poll_id: str, req: ClosePollRequest):
     """Close a poll. Requires creator_secret."""
+    now = datetime.now(timezone.utc)
     with get_db() as conn:
         row = conn.execute(
             """
@@ -505,11 +624,17 @@ def close_poll(poll_id: str, req: ClosePollRequest):
                 "poll_id": poll_id,
                 "creator_secret": req.creator_secret,
                 "close_reason": req.close_reason.value,
-                "now": datetime.now(timezone.utc),
+                "now": now,
             },
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+        if not row:
+            raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+
+        # If this is a nomination poll with auto_create_preferences, activate
+        # the reserved ranked_choice follow-up poll.
+        if row["poll_type"] == "nomination" and row.get("auto_create_preferences"):
+            _activate_reserved_preferences_poll(conn, row, now)
+
     return _row_to_poll(row)
 
 
