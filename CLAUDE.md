@@ -257,7 +257,8 @@ whoeverwants/
 │   ├── 016-041: Short IDs, poll access, nomination fields, RLS policies
 │   ├── 042-050: Nomination poll type, vote constraints, editing
 │   ├── 051-056: Participation poll type, auto-close triggers
-│   └── 057-063: Voter conditions, participation priority algorithm
+│   ├── 057-063: Voter conditions, participation priority algorithm
+│   └── 064-066: Cleanup, sequential IDs, unify yes_no into ranked_choice
 │
 ├── tests/
 │   ├── __tests__/                  # Vitest unit/integration tests
@@ -310,10 +311,11 @@ whoeverwants/
 
 | Type | Description | Vote Data |
 |------|-------------|-----------|
-| `yes_no` | Simple binary vote | `{ vote: "yes" \| "no" }` |
-| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak | `{ rankings: string[] }` |
+| `ranked_choice` | IRV with Borda tiebreak. 2-option polls get simplified yes/no UI | `{ ranked_choices: string[] }` |
 | `nomination` | Nominate options, then vote on them | `{ nominations: string[] }` |
 | `participation` | RSVP with min/max constraints & voter conditions | `{ participating: boolean, conditions: {...} }` |
+
+> **Note:** The former `yes_no` poll type was unified into `ranked_choice` (migration 066). Polls with exactly 2 options are detected by the frontend (`isTwoOptionPoll`) and rendered with the simplified two-button UI. Creating a poll with no options defaults to `["Yes", "No"]`.
 
 ### Access Control Model
 
