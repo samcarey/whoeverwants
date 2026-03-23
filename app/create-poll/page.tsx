@@ -55,7 +55,7 @@ function CreatePollContent() {
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
-  const [autoCreatePreferences, setAutoCreatePreferences] = useState(false);
+  const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
 
   // Helper to re-enable form elements
