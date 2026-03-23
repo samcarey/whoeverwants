@@ -1648,7 +1648,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">Your ranking:</h4>
+                      <h4 className="font-medium">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
                     </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
@@ -1663,7 +1663,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
                           </div>
                         ))}
-                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">Loading your ranking...</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -1672,6 +1672,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
+                          </div>
+                        ) : pollOptions.length === 2 ? (
+                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
+                            <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                              ✓
+                            </span>
+                            <span>{rankedChoices[0]}</span>
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
@@ -1752,19 +1759,49 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               ) : (
                 <>
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
-                      Reorder from most to least preferred
-                    </h4>
-                    
-                    {pollOptions.length > 0 && (
-                      <RankableOptions 
-                        key={isEditingVote ? 'editing' : 'new'}
-                        options={pollOptions} 
-                        onRankingChange={handleRankingChange}
-                        disabled={isSubmitting || isAbstaining}
-                        storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
-                        initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                      />
+                    {pollOptions.length === 2 ? (
+                      <>
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
+                          Select your preference
+                        </h4>
+                        <div className="flex gap-2">
+                          {pollOptions.map((option: string) => (
+                            <button
+                              key={option}
+                              onClick={() => {
+                                const other = pollOptions.find((o: string) => o !== option)!;
+                                handleRankingChange([option, other]);
+                                setIsAbstaining(false);
+                              }}
+                              disabled={isSubmitting || isAbstaining}
+                              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                rankedChoices[0] === option
+                                  ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
+                                  : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
+                          Reorder from most to least preferred
+                        </h4>
+
+                        {pollOptions.length > 0 && (
+                          <RankableOptions
+                            key={isEditingVote ? 'editing' : 'new'}
+                            options={pollOptions}
+                            onRankingChange={handleRankingChange}
+                            disabled={isSubmitting || isAbstaining}
+                            storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
+                            initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
+                          />
+                        )}
+                      </>
                     )}
                     
                     <AbstainButton
