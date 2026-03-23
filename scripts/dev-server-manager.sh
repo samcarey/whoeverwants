@@ -338,10 +338,6 @@ cmd_upsert() {
     needs_restart=true
   fi
 
-  # Commit SHA changes alone don't trigger restart. NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA
-  # is set at startup, so the displayed SHA reflects what's actually running —
-  # if a restart fails, the old SHA stays visible, making staleness obvious.
-
   # Check if server process is still running
   local current_pid=""
   if [ -f "${dir}/.nextjs.pid" ]; then
@@ -363,10 +359,9 @@ cmd_upsert() {
   fi
 
   if [ "$needs_restart" = true ]; then
-    # Stop existing server if running
+    # Full restart: stop, reinstall deps, start
     stop_nextjs "$slug"
 
-    # Install dependencies
     log "--- Installing dependencies ---"
     npm ci --prefer-offline 2>&1 | tail -5
 
@@ -375,12 +370,19 @@ cmd_upsert() {
       rm -rf .next
     fi
 
-    # Start the dev server
     local pid
     pid=$(start_nextjs "$slug" "$port")
+    log "  Mode:   Full restart (deps changed or new server)"
   else
-    local pid="$current_pid"
-    log "Files updated — Next.js dev server will hot-reload automatically"
+    # Light restart: stop and start without reinstalling deps.
+    # Always restart so that NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA env var
+    # updates and Next.js reliably picks up all file changes (hot reload
+    # via file watcher is unreliable for git reset --hard across many files).
+    stop_nextjs "$slug"
+
+    local pid
+    pid=$(start_nextjs "$slug" "$port")
+    log "  Mode:   Light restart (no dep changes)"
   fi
 
   # Write metadata
