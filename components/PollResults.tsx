@@ -42,16 +42,15 @@ function TwoOptionResults({ results, isPollClosed, userVoteData, onFollowUpClick
   const optionB = options[1];
 
   // Compute counts from ranked_choice_rounds if API doesn't provide yes_count/no_count
-  const rounds = (results as any).ranked_choice_rounds as Array<{ option_name: string; vote_count: number }> | undefined;
-  const roundA = rounds?.find(r => r.option_name === optionA);
-  const roundB = rounds?.find(r => r.option_name === optionB);
+  const roundA = results.ranked_choice_rounds?.find(r => r.option_name === optionA);
+  const roundB = results.ranked_choice_rounds?.find(r => r.option_name === optionB);
 
   const yesCount = results.yes_count ?? roundA?.vote_count ?? 0;
   const noCount = results.no_count ?? roundB?.vote_count ?? 0;
   const totalVotes = results.total_votes;
-  const nonAbstainTotal = yesCount + noCount;
-  const yesPercentage = results.yes_percentage ?? (nonAbstainTotal > 0 ? Math.round((yesCount / totalVotes) * 100) : 0);
-  const noPercentage = results.no_percentage ?? (nonAbstainTotal > 0 ? Math.round((noCount / totalVotes) * 100) : 0);
+  const countTotal = yesCount + noCount + (results.abstain_count ?? (totalVotes - yesCount - noCount));
+  const yesPercentage = results.yes_percentage ?? (countTotal > 0 ? Math.round((yesCount / countTotal) * 100) : 0);
+  const noPercentage = results.no_percentage ?? (countTotal > 0 ? Math.round((noCount / countTotal) * 100) : 0);
   const winner = results.winner;
 
   // Check if user voted and what they voted for via ranked_choices

@@ -879,8 +879,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           }
 
           // Additional validation: ensure choices are valid poll options
-          const parsedOptions = typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
-          const invalidChoices = filteredRankedChoices.filter(choice => !parsedOptions.includes(choice));
+          const invalidChoices = filteredRankedChoices.filter(choice => !pollOptions.includes(choice));
 
           if (invalidChoices.length > 0) {
             console.error('Invalid choices detected:', invalidChoices);
@@ -937,10 +936,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         // Use the same filtered data that was prepared in voteData to ensure consistency
+        const twoOptionChoices = isTwoOptionPoll
+          ? (yesNoChoice === 'yes' ? [pollOptions[0], pollOptions[1]] : [pollOptions[1], pollOptions[0]])
+          : null;
         const updateData = poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null }
           : poll.poll_type === 'ranked_choice'
-          ? { ranked_choices: isAbstaining ? null : (isTwoOptionPoll ? (() => { const [a, b] = pollOptions; return yesNoChoice === 'yes' ? [a, b] : [b, a]; })() : rankedChoices), is_abstain: isAbstaining, voter_name: voterName.trim() || null }
+          ? { ranked_choices: isAbstaining ? null : (twoOptionChoices || rankedChoices), is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : { nominations: voteData.nominations, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
         
         

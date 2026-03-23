@@ -51,6 +51,9 @@ export interface PollResults {
   participants_in_count?: number;
   is_happening?: boolean;
   nomination_counts?: NominationCount[];
+  ranked_choice_rounds?: RankedChoiceRound[];
+  ranked_choice_winner?: string;
+  abstain_count?: number;
 }
 
 export interface RankedChoiceRound {
