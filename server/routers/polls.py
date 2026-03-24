@@ -434,12 +434,13 @@ def get_results(poll_id: str):
             and poll.get("response_deadline")
             and poll["response_deadline"] <= now
         ):
-            conn.execute(
+            result = conn.execute(
                 """UPDATE polls SET is_closed = true, close_reason = 'deadline', updated_at = %(now)s
                    WHERE id = %(poll_id)s AND is_closed = false""",
                 {"poll_id": poll_id, "now": now},
             )
-            _activate_reserved_preferences_poll(conn, dict(poll), now)
+            if result.rowcount == 1:
+                _activate_reserved_preferences_poll(conn, dict(poll), now)
 
         votes = conn.execute(
             "SELECT * FROM votes WHERE poll_id = %(poll_id)s",

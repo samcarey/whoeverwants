@@ -40,14 +40,13 @@ for f in "$MIGRATIONS_DIR"/*_up.sql; do
   if [[ "$basename" == 000_* ]]; then
     continue
   fi
-  # Re-read applied list each iteration (some migrations like 000_* insert tracking rows)
-  applied=$(docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -t -A -c "SELECT filename FROM _migrations;" 2>/dev/null || echo "")
   if echo "$applied" | grep -qxF "$basename"; then
     continue
   fi
   echo "  Applying: $basename"
   run_sql_file "$f"
   run_sql "INSERT INTO _migrations (filename) VALUES ('$basename') ON CONFLICT DO NOTHING;" >/dev/null
+  applied="${applied}"$'\n'"${basename}"
   pending=$((pending + 1))
 done
 

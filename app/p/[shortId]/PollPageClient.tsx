@@ -550,28 +550,27 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       const now = new Date();
       setCurrentTime(now);
 
-      // If poll just expired, automatically fetch results
+      // If poll just expired, automatically fetch results.
+      // For nomination polls with auto_create_preferences, the server-side
+      // get_results endpoint auto-closes and activates the preferences poll.
       if (now >= deadline && !isPollClosed) {
         fetchPollResults();
 
-        // For nomination polls with auto_create_preferences, call apiClosePoll
-        // to trigger server-side activation of the reserved preferences poll.
         if (
           poll.poll_type === 'nomination' &&
           poll.auto_create_preferences &&
           !autoCloseTriggeredRef.current
         ) {
           autoCloseTriggeredRef.current = true;
-          const creatorSecret = getCreatorSecret(poll.id);
-          if (creatorSecret) {
-            apiClosePoll(poll.id, creatorSecret, 'deadline')
-              .then(() => {
-                setPollClosed(true);
-              })
-              .catch((err) => {
-                console.error('Auto-close for preferences failed:', err);
-              });
-          }
+          setPollClosed(true);
+          apiFindDuplicatePoll(poll.title, poll.id)
+            .then((followUp) => {
+              if (followUp && !followUp.is_closed) {
+                const shortId = followUp.short_id || followUp.id;
+                router.push(`/p/${shortId}`);
+              }
+            })
+            .catch(() => {});
         }
       }
     };
@@ -583,7 +582,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.auto_create_preferences, poll.id]);
+  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.auto_create_preferences, poll.id, poll.title, router]);
 
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {

@@ -856,11 +856,8 @@ function CreatePollContent() {
       // Add auto-create preferences settings for nomination polls
       if (dbPollType === 'nomination' && autoCreatePreferences) {
         pollData.auto_create_preferences = true;
-        const deadlineMinutesMap: Record<string, number> = {
-          '5min': 5, '10min': 10, '15min': 15, '30min': 30,
-          '1hr': 60, '2hr': 120, '4hr': 240,
-        };
-        pollData.auto_preferences_deadline_minutes = deadlineMinutesMap[autoPreferencesDeadline] || 10;
+        pollData.auto_preferences_deadline_minutes =
+          baseDeadlineOptions.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
       }
 
       // Add min/max participants for participation polls

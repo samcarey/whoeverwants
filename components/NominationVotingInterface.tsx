@@ -264,13 +264,10 @@ export default function NominationVotingInterface({
           </div>
         )}
 
-        {/* Auto-preferences note */}
         {!isPollClosed && !isLoadingVoteData && autoCreatePreferences && (
-          <div className="mt-3 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              A preferences poll will be created automatically when this poll closes.
-            </p>
-          </div>
+          <p className="mt-3 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            A preferences poll will be created automatically when this poll closes.
+          </p>
         )}
 
         {/* Show follow-up/fork header after Follow up button when voted */}
