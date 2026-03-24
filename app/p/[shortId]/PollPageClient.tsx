@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -87,6 +87,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showVoteOnItModal, setShowVoteOnItModal] = useState(false);
   const [nominations, setNominations] = useState<string[]>([]);
   const [loadingNominations, setLoadingNominations] = useState(false);
+  const autoCloseTriggeredRef = useRef(false);
 
   // Participation poll voter conditions - initialize with poll's constraints
   const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(poll.min_participants ?? 1);
@@ -548,10 +549,29 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const updateTimer = () => {
       const now = new Date();
       setCurrentTime(now);
-      
-      // If poll just expired, automatically fetch results
+
+      // If poll just expired, automatically fetch results.
+      // For nomination polls with auto_create_preferences, the server-side
+      // get_results endpoint auto-closes and activates the preferences poll.
       if (now >= deadline && !isPollClosed) {
         fetchPollResults();
+
+        if (
+          poll.poll_type === 'nomination' &&
+          poll.auto_create_preferences &&
+          !autoCloseTriggeredRef.current
+        ) {
+          autoCloseTriggeredRef.current = true;
+          setPollClosed(true);
+          apiFindDuplicatePoll(poll.title, poll.id)
+            .then((followUp) => {
+              if (followUp && !followUp.is_closed) {
+                const shortId = followUp.short_id || followUp.id;
+                router.push(`/p/${shortId}`);
+              }
+            })
+            .catch(() => {});
+        }
       }
     };
 
@@ -562,7 +582,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults]);
+  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.auto_create_preferences, poll.id, poll.title, router]);
 
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {
@@ -689,6 +709,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
         await fetchPollResults();
+
+        // If this nomination poll had auto_create_preferences, find and navigate
+        // to the activated preferences poll.
+        if (poll.poll_type === 'nomination' && poll.auto_create_preferences) {
+          try {
+            const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
+            if (followUp && !followUp.is_closed) {
+              const shortId = followUp.short_id || followUp.id;
+              router.push(`/p/${shortId}`);
+            }
+          } catch {
+            // Non-critical — user can still find it via follow-up links
+          }
+        }
       } else {
         alert('Failed to close poll. Please try again.');
       }
@@ -1622,6 +1656,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               nominations={nominations}
               loadingNominations={loadingNominations}
               onVoteOnNominationsClick={handleVoteOnNominationsClick}
+              autoCreatePreferences={poll.auto_create_preferences}
             />
           ) : (
             <div>

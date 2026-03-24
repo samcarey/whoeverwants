@@ -38,6 +38,7 @@ interface NominationVotingInterfaceProps {
   nominations: string[];
   loadingNominations: boolean;
   onVoteOnNominationsClick: () => void;
+  autoCreatePreferences?: boolean;
 }
 
 export default function NominationVotingInterface({
@@ -67,7 +68,8 @@ export default function NominationVotingInterface({
   onFollowUpClick,
   nominations,
   loadingNominations,
-  onVoteOnNominationsClick
+  onVoteOnNominationsClick,
+  autoCreatePreferences
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -235,7 +237,7 @@ export default function NominationVotingInterface({
               </svg>
               <span className="font-semibold">Follow up</span>
             </GradientBorderButton>
-            {nominations.length >= 2 && (
+            {nominations.length >= 2 && !autoCreatePreferences && (
               <GradientBorderButton
                 onClick={onVoteOnNominationsClick}
                 disabled={loadingNominations}
@@ -260,6 +262,12 @@ export default function NominationVotingInterface({
               </GradientBorderButton>
             )}
           </div>
+        )}
+
+        {!isPollClosed && !isLoadingVoteData && autoCreatePreferences && (
+          <p className="mt-3 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            A preferences poll will be created automatically when this poll closes.
+          </p>
         )}
 
         {/* Show follow-up/fork header after Follow up button when voted */}

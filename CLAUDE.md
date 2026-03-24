@@ -75,16 +75,22 @@ The droplet is hardened with:
 
 ### Development Workflow
 
-**Frontend** (Next.js — auto-deployed per-user dev servers):
+**Full-Stack Dev Servers** (auto-deployed per-user on push):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. GitHub webhook auto-updates your dev server on the droplet (hot reload — no rebuild)
+3. GitHub webhook creates/updates your full-stack dev server on the droplet
 4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
+
+Each dev server gets its own:
+- **Next.js frontend** on port 3001-3005
+- **FastAPI backend** on port 8001-8005 (runs via `uv run uvicorn`, 1 worker)
+- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_sam_at_samcarey_com`)
+- **All migrations from the branch** auto-applied on creation and update
 
 **Production Frontend** (Vercel):
 - Vercel auto-deploys on push to `main` → `whoeverwants.com`
 
-**Backend** (Python API on droplet — auto-deployed on push to main):
+**Production Backend** (Python API on droplet — auto-deployed on push to main):
 - Merging/pushing to `main` auto-triggers: git pull → Docker rebuild → migration check → health verify
 - Deploy logs: `bash scripts/remote.sh "tail -50 /var/log/dev-webhook.log" /root`
 - Manual rebuild: `bash scripts/remote.sh "docker compose up -d --build" /root/whoeverwants`
@@ -93,26 +99,33 @@ The droplet is hardened with:
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
 **Per-User Dev Servers** (automatic on push):
-- Every push to GitHub auto-updates your dev server via webhook
-- Uses `next dev` (hot reload) — file changes apply in seconds, no full rebuild
-- Restarts only if `package-lock.json` changes (new dependencies) or the process died — commit SHA changes alone use hot reload
-- **After pushing, wait for the dev server to be ready before telling the user.** The server takes ~45-60 seconds to restart. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200, then notify the user.
+- Every push to GitHub auto-updates your dev server via webhook (restarts both frontend and API)
+- Frontend uses `next dev` with `PYTHON_API_URL` pointing to the local API
+- API runs via `uv run uvicorn` with `DATABASE_URL` pointing to the dev database
+- Migrations from the branch are auto-applied to the dev database on each update
+- **After pushing, wait for the dev server to be ready.** The server takes ~30-60 seconds. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
 - URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
   - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
 - URL stays the same regardless of branch — bookmark it
 - Claude/bot emails (`*@anthropic.com`) are ignored
-- Dev servers use the production API — they test frontend changes only
+- Dev servers are fully isolated — each has its own API and database
 - Auto-cleaned after 7 days of inactivity
 
 ```bash
-# List active dev servers
+# List active dev servers (shows frontend and API status)
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh list"
 
 # Manually trigger a dev server update
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert user@example.com claude/my-branch" /root 600
 
-# Destroy a dev server
+# Destroy a dev server (also drops its database)
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy user-at-example-com"
+
+# Check dev API health
+bash scripts/remote.sh "curl -s http://localhost:<api_port>/health"
+
+# Check dev API logs
+bash scripts/remote.sh "tail -50 /root/dev-servers/<slug>/api.log"
 ```
 
 **Preview Environments** (per-branch API testing):

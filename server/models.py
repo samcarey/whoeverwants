@@ -33,6 +33,8 @@ class CreatePollRequest(BaseModel):
     fork_of: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
+    auto_create_preferences: bool = False
+    auto_preferences_deadline_minutes: int | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -99,6 +101,8 @@ class PollResponse(BaseModel):
     min_participants: int | None = None
     max_participants: int | None = None
     short_id: str | None = None
+    auto_create_preferences: bool = False
+    auto_preferences_deadline_minutes: int | None = None
 
 
 class VoteResponse(BaseModel):
