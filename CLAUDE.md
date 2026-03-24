@@ -854,6 +854,12 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Catch-all fallthrough in `get_results()`**: When adding new poll types, `server/routers/polls.py` has a catch-all return at the bottom returning `yes_count=None`. Any poll type without an explicit handler silently falls through and the frontend interprets `None` as `0`. Always add an explicit handler for each poll type.
 - **Frontend TODO stubs cause silent failures**: If the backend adds a new endpoint, check whether the frontend has TODO stubs (e.g., `setParticipants([])`) that need to be connected. Stubs cause incorrect UI without errors.
 
+### Auto-Created Follow-Up Polls & Creator Secrets
+
+- **Auto-created polls share the parent's `creator_secret`**, but the browser only stores secrets for polls it created directly. When navigating to an auto-created follow-up poll (e.g., preferences poll from a nomination poll), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `poll.follow_up_to` and propagate if the parent's secret is known).
+- **Use `recordPollCreation()` from `lib/browserPollAccess.ts`** instead of calling `storeCreatorSecret()` + `addAccessiblePollId()` separately. The higher-level function already does both.
+- **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update all snapshot construction sites: `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`. Extract a shared object to avoid drift.
+
 ### CI/GitHub Actions Pitfalls
 
 - **Vitest 3.x requires `@vitest/coverage-v8`** — the old `c8` provider is removed. Match the coverage package version to the vitest major version.

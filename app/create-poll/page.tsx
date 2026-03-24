@@ -1214,7 +1214,7 @@ function CreatePollContent() {
                 value={autoCloseAfter ?? ''}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val) || 1));
+                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
                 }}
                 disabled={isLoading}
                 placeholder="—"

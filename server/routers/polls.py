@@ -35,7 +35,8 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 def _check_auto_close(conn, poll_id: str) -> None:
     """Auto-close a poll based on auto_close_after (respondent count) or max_participants."""
     poll = conn.execute(
-        "SELECT * FROM polls WHERE id = %(poll_id)s",
+        """SELECT poll_type, is_closed, auto_close_after, max_participants, auto_create_preferences
+           FROM polls WHERE id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()
     if not poll or poll["is_closed"]:
@@ -46,7 +47,7 @@ def _check_auto_close(conn, poll_id: str) -> None:
     # Check auto_close_after (works for all poll types)
     if poll["auto_close_after"] is not None:
         respondent_count = conn.execute(
-            "SELECT COUNT(DISTINCT id) as cnt FROM votes WHERE poll_id = %(poll_id)s",
+            "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()["cnt"]
         if respondent_count >= poll["auto_close_after"]:
@@ -57,7 +58,7 @@ def _check_auto_close(conn, poll_id: str) -> None:
             closed = True
 
     # Check max_participants (participation polls only)
-    if not closed:
+    if not closed and poll["poll_type"] == "participation" and poll["max_participants"] is not None:
         yes_count = conn.execute(
             """SELECT COUNT(*) as cnt FROM votes
                WHERE poll_id = %(poll_id)s

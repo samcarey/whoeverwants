@@ -23,7 +23,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
 import VoteOnItModal from "@/components/VoteOnItModal";
-import { isCreatedByThisBrowser, getCreatorSecret, storeCreatorSecret, addAccessiblePollId } from "@/lib/browserPollAccess";
+import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -384,16 +384,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setPollUrl(window.location.href.split('?')[0]);
     }
     
-    // Check if this browser created the poll.
-    // For auto-created follow-up polls (e.g. preferences from nomination), the
-    // creator_secret matches the parent poll. If we have the parent's secret
-    // but not the child's, propagate it so close/reopen work on the child too.
+    // Auto-created follow-up polls share the parent's creator_secret.
+    // Propagate so close/reopen work on the child too.
     if (!getCreatorSecret(poll.id) && poll.follow_up_to) {
       const parentSecret = getCreatorSecret(poll.follow_up_to);
-      if (parentSecret) {
-        storeCreatorSecret(poll.id, parentSecret);
-        addAccessiblePollId(poll.id);
-      }
+      if (parentSecret) recordPollCreation(poll.id, parentSecret);
     }
     setIsCreator(isCreatedByThisBrowser(poll.id));
 
@@ -726,12 +721,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           try {
             const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
             if (followUp && !followUp.is_closed) {
-              // The auto-created preferences poll shares the parent's creator_secret.
-              // Store it so the browser can close/manage the follow-up poll too.
-              if (creatorSecret) {
-                storeCreatorSecret(followUp.id, creatorSecret);
-                addAccessiblePollId(followUp.id);
-              }
+              if (creatorSecret) recordPollCreation(followUp.id, creatorSecret);
               const shortId = followUp.short_id || followUp.id;
               router.push(`/p/${shortId}`);
             }
