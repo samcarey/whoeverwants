@@ -270,6 +270,21 @@ start_api() {
     return 1
   fi
 
+  # Verify API is actually responding (process running != API healthy)
+  local health_ok=false
+  for i in 1 2 3 4 5; do
+    if curl -sf "http://localhost:${api_port}/health" >/dev/null 2>&1; then
+      health_ok=true
+      break
+    fi
+    sleep 2
+  done
+  if [ "$health_ok" = false ]; then
+    log "WARNING: API process running but /health not responding on port $api_port after 10s"
+    log "  Last 10 lines of api.log:"
+    tail -10 "${dir}/api.log" >&2 2>/dev/null || true
+  fi
+
   log "API server started for $slug (PID $new_pid, port $api_port, DB: $db_name)"
   echo "$new_pid"
 }
@@ -413,6 +428,12 @@ cmd_upsert() {
   if is_ignored_email "$email"; then
     log "Ignoring email: $email"
     return 0
+  fi
+
+  # Validate prerequisites
+  if [ ! -x "$UV_BIN" ]; then
+    log "ERROR: uv not found at $UV_BIN. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    return 1
   fi
 
   evict_excess_servers "$slug"
