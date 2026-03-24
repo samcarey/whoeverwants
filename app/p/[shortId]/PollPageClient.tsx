@@ -642,10 +642,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
   }, [poll.options]);
 
-  // Randomize display order for 2-option polls (stable per mount)
-  const twoOptionDisplayOrder = useMemo(() => {
-    if (pollOptions.length !== 2) return pollOptions;
-    return Math.random() < 0.5 ? [pollOptions[0], pollOptions[1]] : [pollOptions[1], pollOptions[0]];
+  // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
+  const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
+  useEffect(() => {
+    if (pollOptions.length === 2) {
+      setTwoOptionDisplayOrder(
+        Math.random() < 0.5 ? [pollOptions[0], pollOptions[1]] : [pollOptions[1], pollOptions[0]]
+      );
+    }
   }, [pollOptions]);
 
   const handleYesNoVote = (choice: 'yes' | 'no') => {
@@ -932,7 +936,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         }
         
         // Additional validation: ensure choices are valid poll options
-        const pollOptions = typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
         const invalidChoices = filteredRankedChoices.filter(choice => !pollOptions.includes(choice));
         
         if (invalidChoices.length > 0) {
