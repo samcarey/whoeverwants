@@ -105,6 +105,8 @@ function toPoll(data: any): Poll {
     short_id: data.short_id ?? undefined,
     auto_create_preferences: data.auto_create_preferences ?? undefined,
     auto_preferences_deadline_minutes: data.auto_preferences_deadline_minutes ?? undefined,
+    auto_close_mode: data.auto_close_mode ?? undefined,
+    auto_close_num: data.auto_close_num ?? undefined,
   };
 }
 
@@ -156,6 +158,8 @@ export async function apiCreatePoll(params: {
   max_participants?: number;
   auto_create_preferences?: boolean;
   auto_preferences_deadline_minutes?: number;
+  auto_close_mode?: string;
+  auto_close_num?: number;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',

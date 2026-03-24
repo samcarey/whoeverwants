@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from database import get_db
 from models import (
     AccessiblePollsRequest,
+    AutoCloseMode,
     ClosePollRequest,
     CreatePollRequest,
     EditVoteRequest,
@@ -33,27 +34,67 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
 def _check_auto_close(conn, poll_id: str) -> None:
-    """Auto-close a participation poll if yes votes >= max_participants."""
+    """Auto-close a poll based on auto-close settings.
+
+    Handles:
+    1. Participation polls: close when yes votes >= max_participants
+    2. Any poll with auto_close_mode='num_responses': close when total votes >= auto_close_num
+    3. Any poll with auto_close_mode='previous_respondents': close when total votes >= parent poll's vote count
+    """
     poll = conn.execute(
-        "SELECT poll_type, is_closed, max_participants FROM polls WHERE id = %(poll_id)s",
+        "SELECT poll_type, is_closed, max_participants, auto_close_mode, auto_close_num, follow_up_to FROM polls WHERE id = %(poll_id)s",
         {"poll_id": poll_id},
     ).fetchone()
-    if not poll:
+    if not poll or poll["is_closed"]:
         return
-    yes_count = conn.execute(
-        """SELECT COUNT(*) as cnt FROM votes
-           WHERE poll_id = %(poll_id)s
-             AND vote_type = 'participation'
-             AND yes_no_choice = 'yes'""",
+
+    # 1. Original participation auto-close logic
+    if poll["poll_type"] == "participation" and poll["max_participants"] is not None:
+        yes_count = conn.execute(
+            """SELECT COUNT(*) as cnt FROM votes
+               WHERE poll_id = %(poll_id)s
+                 AND vote_type = 'participation'
+                 AND yes_no_choice = 'yes'""",
+            {"poll_id": poll_id},
+        ).fetchone()["cnt"]
+        if should_auto_close(
+            poll["poll_type"], poll["is_closed"], poll["max_participants"], yes_count
+        ):
+            conn.execute(
+                "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            )
+            return
+
+    # 2. Auto-close by response count
+    auto_close_mode = poll.get("auto_close_mode") or "none"
+    if auto_close_mode == "none":
+        return
+
+    total_votes = conn.execute(
+        "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
         {"poll_id": poll_id},
     ).fetchone()["cnt"]
-    if should_auto_close(
-        poll["poll_type"], poll["is_closed"], poll["max_participants"], yes_count
-    ):
-        conn.execute(
-            "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
-            {"poll_id": poll_id},
-        )
+
+    if auto_close_mode == "num_responses":
+        threshold = poll.get("auto_close_num")
+        if threshold is not None and total_votes >= threshold:
+            conn.execute(
+                "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            )
+    elif auto_close_mode == "previous_respondents":
+        parent_id = poll.get("follow_up_to")
+        if parent_id:
+            parent_vote_count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(parent_id)s",
+                {"parent_id": str(parent_id)},
+            ).fetchone()["cnt"]
+            if parent_vote_count > 0 and total_votes >= parent_vote_count:
+                conn.execute(
+                    "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+                    {"poll_id": poll_id},
+                )
 
 
 def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
@@ -148,6 +189,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         short_id=row.get("short_id"),
         auto_create_preferences=row.get("auto_create_preferences", False),
         auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
+        auto_close_mode=row.get("auto_close_mode") or "none",
+        auto_close_num=row.get("auto_close_num"),
     )
 
 
@@ -183,11 +226,13 @@ def create_poll(req: CreatePollRequest):
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
                                auto_create_preferences, auto_preferences_deadline_minutes,
+                               auto_close_mode, auto_close_num,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
                     %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
+                    %(auto_close_mode)s, %(auto_close_num)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -204,6 +249,8 @@ def create_poll(req: CreatePollRequest):
                 "max_participants": req.max_participants,
                 "auto_create_preferences": req.auto_create_preferences,
                 "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
+                "auto_close_mode": req.auto_close_mode.value,
+                "auto_close_num": req.auto_close_num,
                 "now": now,
             },
         ).fetchone()

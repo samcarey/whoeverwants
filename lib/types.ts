@@ -20,6 +20,8 @@ export interface Poll {
   short_id?: string;
   auto_create_preferences?: boolean;
   auto_preferences_deadline_minutes?: number;
+  auto_close_mode?: 'none' | 'previous_respondents' | 'num_responses';
+  auto_close_num?: number;
 }
 
 export interface Vote {

@@ -57,6 +57,8 @@ function CreatePollContent() {
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
+  const [autoCloseMode, setAutoCloseMode] = useState<'none' | 'previous_respondents' | 'num_responses'>('none');
+  const [autoCloseNum, setAutoCloseNum] = useState<number>(5);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -279,9 +281,15 @@ function CreatePollContent() {
   // Initialize state from URL params
   useEffect(() => {
     debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
-    if (followUpToParam) setFollowUpTo(followUpToParam);
+    if (followUpToParam) {
+      setFollowUpTo(followUpToParam);
+      setAutoCloseMode('previous_respondents');
+    }
     if (forkOfParam) setForkOf(forkOfParam);
-    if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
+    if (duplicateOfParam) {
+      setDuplicateOf(duplicateOfParam);
+      setAutoCloseMode('previous_respondents');
+    }
     if (voteFromNominationParam) setVoteFromNomination(voteFromNominationParam);
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
@@ -860,6 +868,14 @@ function CreatePollContent() {
           baseDeadlineOptions.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
       }
 
+      // Add auto-close settings
+      if (autoCloseMode !== 'none') {
+        pollData.auto_close_mode = autoCloseMode;
+        if (autoCloseMode === 'num_responses') {
+          pollData.auto_close_num = autoCloseNum;
+        }
+      }
+
       // Add min/max participants for participation polls
       if (dbPollType === 'participation') {
         // Min is always required
@@ -1185,6 +1201,43 @@ function CreatePollContent() {
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Auto-close settings */}
+          <div>
+            <label htmlFor="autoClose" className="block text-sm font-medium mb-2">
+              Auto-close
+            </label>
+            <select
+              id="autoClose"
+              value={autoCloseMode}
+              onChange={(e) => setAutoCloseMode(e.target.value as 'none' | 'previous_respondents' | 'num_responses')}
+              disabled={isLoading}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="none">No</option>
+              {(followUpTo || duplicateOf) && (
+                <option value="previous_respondents">Previous Respondents</option>
+              )}
+              <option value="num_responses">Num Responses</option>
+            </select>
+          </div>
+
+          {autoCloseMode === 'num_responses' && (
+            <div className="-mt-2">
+              <label htmlFor="autoCloseNum" className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                Close after this many responses
+              </label>
+              <input
+                type="number"
+                id="autoCloseNum"
+                value={autoCloseNum}
+                onChange={(e) => setAutoCloseNum(Math.max(1, parseInt(e.target.value) || 1))}
+                disabled={isLoading}
+                min={1}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              />
             </div>
           )}
 
