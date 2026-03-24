@@ -23,7 +23,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
 import VoteOnItModal from "@/components/VoteOnItModal";
-import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAccess";
+import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -384,9 +384,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setPollUrl(window.location.href.split('?')[0]);
     }
     
-    // Check if this browser created the poll
+    // Auto-created follow-up polls share the parent's creator_secret.
+    // Propagate so close/reopen work on the child too.
+    if (!getCreatorSecret(poll.id) && poll.follow_up_to) {
+      const parentSecret = getCreatorSecret(poll.follow_up_to);
+      if (parentSecret) recordPollCreation(poll.id, parentSecret);
+    }
     setIsCreator(isCreatedByThisBrowser(poll.id));
-    
+
     // Check if browser has any data for this poll
     setHasPollDataState(hasPollData(poll.id));
     
@@ -716,6 +721,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           try {
             const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
             if (followUp && !followUp.is_closed) {
+              if (creatorSecret) recordPollCreation(followUp.id, creatorSecret);
               const shortId = followUp.short_id || followUp.id;
               router.push(`/p/${shortId}`);
             }
@@ -1987,6 +1993,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         isOpen={showFollowUpModal}
         poll={poll}
         onClose={() => setShowFollowUpModal(false)}
+        totalVotes={pollResults?.total_votes}
       />
 
       {/* Vote on It Modal */}

@@ -20,6 +20,7 @@ export interface Poll {
   short_id?: string;
   auto_create_preferences?: boolean;
   auto_preferences_deadline_minutes?: number;
+  auto_close_after?: number;
 }
 
 export interface Vote {

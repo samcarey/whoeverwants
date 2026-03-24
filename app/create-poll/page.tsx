@@ -57,6 +57,7 @@ function CreatePollContent() {
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
+  const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -391,6 +392,11 @@ function CreatePollContent() {
           if (forkData.creator_name) {
             setCreatorName(forkData.creator_name);
           }
+          if (forkData.auto_close_after != null) {
+            setAutoCloseAfter(forkData.auto_close_after);
+          } else if (forkData.total_votes) {
+            setAutoCloseAfter(forkData.total_votes);
+          }
         } catch (error) {
           console.error('Error loading fork data:', error);
         }
@@ -463,6 +469,11 @@ function CreatePollContent() {
           }
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
+          }
+          if (duplicateData.auto_close_after != null) {
+            setAutoCloseAfter(duplicateData.auto_close_after);
+          } else if (duplicateData.total_votes) {
+            setAutoCloseAfter(duplicateData.total_votes);
           }
 
           // Don't clean up the duplicate data yet - keep it until poll is created
@@ -872,6 +883,10 @@ function CreatePollContent() {
         }
       }
 
+      // Add auto-close after N respondents
+      if (autoCloseAfter !== null && autoCloseAfter > 0) {
+        pollData.auto_close_after = autoCloseAfter;
+      }
 
       // Check for duplicate follow-up poll before creating
       if (followUpTo) {
@@ -1187,6 +1202,39 @@ function CreatePollContent() {
               </div>
             </div>
           )}
+
+          {/* Auto-close after N responses */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Auto-close</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">After</span>
+              <input
+                type="number"
+                min="1"
+                value={autoCloseAfter ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
+                }}
+                disabled={isLoading}
+                placeholder="—"
+                className="w-16 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">responses</span>
+              {autoCloseAfter !== null && (
+                <button
+                  type="button"
+                  onClick={() => setAutoCloseAfter(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1"
+                  title="Disable auto-close"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* Auto-create preferences poll checkbox - nomination polls only */}
           {pollType === 'nomination' && (

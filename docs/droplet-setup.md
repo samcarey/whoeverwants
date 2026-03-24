@@ -143,6 +143,7 @@ Cron jobs:
 | `/var/log/whoeverwants-health.log` | Health check log |
 | `/root/whoeverwants/` | Repository clone |
 | `/root/whoeverwants/docker-compose.yml` | Docker Compose config (db + api only) |
+| `/root/.local/bin/uv` | uv Python package manager (required by dev servers, installed via astral.sh) |
 | `/root/whoeverwants/server/` | FastAPI application source (uses uv for dependency management) |
 | `/root/whoeverwants/database/migrations/` | SQL migration files |
 | `/root/previews/` | Git worktrees for preview environments |

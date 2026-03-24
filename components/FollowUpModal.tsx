@@ -8,12 +8,25 @@ interface FollowUpModalProps {
   isOpen: boolean;
   poll: Poll;
   onClose: () => void;
+  totalVotes?: number;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: FollowUpModalProps) {
   const router = useRouter();
 
   if (!isOpen) return null;
+
+  const pollSnapshot = {
+    title: poll.title,
+    poll_type: poll.poll_type,
+    options: poll.options,
+    response_deadline: poll.response_deadline,
+    creator_name: poll.creator_name,
+    min_participants: poll.min_participants,
+    max_participants: poll.max_participants,
+    auto_close_after: poll.auto_close_after,
+    total_votes: totalVotes,
+  };
 
   return (
     <ModalPortal>
@@ -42,17 +55,7 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
 
             <button
               onClick={() => {
-                // Store poll data for duplication
-                const duplicateData = {
-                  title: poll.title,
-                  poll_type: poll.poll_type,
-                  options: poll.options,
-                  response_deadline: poll.response_deadline,
-                  creator_name: poll.creator_name,
-                  min_participants: poll.min_participants,
-                  max_participants: poll.max_participants
-                };
-                localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(duplicateData));
+                localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(pollSnapshot));
                 router.push(`/create-poll?duplicate=${poll.id}`);
                 onClose();
               }}
@@ -67,17 +70,7 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
 
             <button
               onClick={() => {
-                // Store poll data for fork
-                const forkData = {
-                  title: poll.title,
-                  poll_type: poll.poll_type,
-                  options: poll.options,
-                  response_deadline: poll.response_deadline,
-                  creator_name: poll.creator_name,
-                  min_participants: poll.min_participants,
-                  max_participants: poll.max_participants
-                };
-                localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(forkData));
+                localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(pollSnapshot));
                 router.push(`/create-poll?fork=${poll.id}`);
                 onClose();
               }}

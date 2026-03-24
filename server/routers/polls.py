@@ -33,27 +33,52 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
 def _check_auto_close(conn, poll_id: str) -> None:
-    """Auto-close a participation poll if yes votes >= max_participants."""
+    """Auto-close a poll based on auto_close_after (respondent count) or max_participants."""
     poll = conn.execute(
-        "SELECT poll_type, is_closed, max_participants FROM polls WHERE id = %(poll_id)s",
+        """SELECT poll_type, is_closed, auto_close_after, max_participants, auto_create_preferences
+           FROM polls WHERE id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()
-    if not poll:
+    if not poll or poll["is_closed"]:
         return
-    yes_count = conn.execute(
-        """SELECT COUNT(*) as cnt FROM votes
-           WHERE poll_id = %(poll_id)s
-             AND vote_type = 'participation'
-             AND yes_no_choice = 'yes'""",
-        {"poll_id": poll_id},
-    ).fetchone()["cnt"]
-    if should_auto_close(
-        poll["poll_type"], poll["is_closed"], poll["max_participants"], yes_count
-    ):
-        conn.execute(
-            "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+
+    closed = False
+
+    # Check auto_close_after (works for all poll types)
+    if poll["auto_close_after"] is not None:
+        respondent_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
             {"poll_id": poll_id},
-        )
+        ).fetchone()["cnt"]
+        if respondent_count >= poll["auto_close_after"]:
+            conn.execute(
+                "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            )
+            closed = True
+
+    # Check max_participants (participation polls only)
+    if not closed and poll["poll_type"] == "participation" and poll["max_participants"] is not None:
+        yes_count = conn.execute(
+            """SELECT COUNT(*) as cnt FROM votes
+               WHERE poll_id = %(poll_id)s
+                 AND vote_type = 'participation'
+                 AND yes_no_choice = 'yes'""",
+            {"poll_id": poll_id},
+        ).fetchone()["cnt"]
+        if should_auto_close(
+            poll["poll_type"], poll["is_closed"], poll["max_participants"], yes_count
+        ):
+            conn.execute(
+                "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            )
+            closed = True
+
+    # If we just closed a nomination poll, activate the reserved preferences poll
+    if closed and poll.get("auto_create_preferences"):
+        now = datetime.now(timezone.utc)
+        _activate_reserved_preferences_poll(conn, dict(poll), now)
 
 
 def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
@@ -148,6 +173,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         short_id=row.get("short_id"),
         auto_create_preferences=row.get("auto_create_preferences", False),
         auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
+        auto_close_after=row.get("auto_close_after"),
     )
 
 
@@ -183,11 +209,13 @@ def create_poll(req: CreatePollRequest):
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
                                auto_create_preferences, auto_preferences_deadline_minutes,
+                               auto_close_after,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
                     %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
+                    %(auto_close_after)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -204,6 +232,7 @@ def create_poll(req: CreatePollRequest):
                 "max_participants": req.max_participants,
                 "auto_create_preferences": req.auto_create_preferences,
                 "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
+                "auto_close_after": req.auto_close_after,
                 "now": now,
             },
         ).fetchone()

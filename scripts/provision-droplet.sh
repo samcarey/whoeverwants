@@ -158,13 +158,22 @@ systemctl daemon-reload
 systemctl enable --now cmd-api
 
 # ── 5. Install Node.js (for per-user dev servers) ────────────────────
-echo "=== 5/15 Installing Node.js ==="
+echo "=== 5a/15 Installing Node.js ==="
 if ! command -v node &>/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -qq nodejs
   echo "Node.js installed: $(node --version)"
 else
   echo "Node.js already installed: $(node --version)"
+fi
+
+# ── 5b. Install uv (Python package manager, needed by dev servers) ──
+echo "=== 5b/15 Installing uv ==="
+if ! command -v /root/.local/bin/uv &>/dev/null; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  echo "uv installed: $(/root/.local/bin/uv --version)"
+else
+  echo "uv already installed: $(/root/.local/bin/uv --version)"
 fi
 
 # ── 6. Add swap ──────────────────────────────────────────────────────
