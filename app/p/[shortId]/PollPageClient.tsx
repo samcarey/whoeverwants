@@ -350,19 +350,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setOptionsInitialized(true);
         return;
       }
-      
+
       // Parse options if they're stored as JSON string
-      const parsedOptions = typeof poll.options === 'string' 
-        ? JSON.parse(poll.options) 
+      const parsedOptions = typeof poll.options === 'string'
+        ? JSON.parse(poll.options)
         : poll.options;
-      
+
+      // For 2-option polls, start with no selection (user must choose)
+      if (parsedOptions.length === 2) {
+        setOptionsInitialized(true);
+        return;
+      }
+
       // Randomize the order of options for voters (Fisher-Yates shuffle)
       const shuffledOptions = [...parsedOptions];
       for (let i = shuffledOptions.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
       }
-      
+
       setRankedChoices(shuffledOptions);
       setOptionsInitialized(true);
     }
@@ -635,6 +641,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (!poll.options) return [];
     return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
   }, [poll.options]);
+
+  // Randomize display order for 2-option polls (stable per mount)
+  const twoOptionDisplayOrder = useMemo(() => {
+    if (pollOptions.length !== 2) return pollOptions;
+    return Math.random() < 0.5 ? [pollOptions[0], pollOptions[1]] : [pollOptions[1], pollOptions[0]];
+  }, [pollOptions]);
 
   const handleYesNoVote = (choice: 'yes' | 'no') => {
     setYesNoChoice(choice);
@@ -1816,7 +1828,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           Select your preference
                         </h4>
                         <div className="flex gap-2">
-                          {pollOptions.map((option: string) => (
+                          {twoOptionDisplayOrder.map((option: string) => (
                             <button
                               key={option}
                               onClick={() => {
@@ -1824,7 +1836,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                                 handleRankingChange([option, other]);
                                 setIsAbstaining(false);
                               }}
-                              disabled={isSubmitting || isAbstaining}
+                              disabled={isSubmitting}
                               className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                 rankedChoices[0] === option
                                   ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
