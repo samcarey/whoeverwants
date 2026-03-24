@@ -216,9 +216,10 @@ start_nextjs() {
   git_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
   # PYTHON_API_URL tells next.config.ts where to proxy /api/polls requests.
-  # NEXT_PUBLIC_API_URL tells lib/api.ts where to make server-side requests.
+  # Do NOT set NEXT_PUBLIC_API_URL — it leaks into the client bundle and
+  # the browser can't reach localhost on the server. Client uses relative
+  # /api/polls path, proxied by Next.js rewrites via PYTHON_API_URL.
   PYTHON_API_URL="http://localhost:${api_port}" \
-  NEXT_PUBLIC_API_URL="http://localhost:${api_port}/api/polls" \
   NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA="$git_sha" \
   NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF="$git_branch" \
   HOSTNAME=0.0.0.0 \
