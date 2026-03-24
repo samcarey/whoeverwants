@@ -20,7 +20,8 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
       response_deadline: poll.response_deadline,
       creator_name: poll.creator_name,
       min_participants: poll.min_participants,
-      max_participants: poll.max_participants
+      max_participants: poll.max_participants,
+      auto_close_after: poll.auto_close_after,
     };
     
     debugLog.logObject('Duplicate button clicked', { pollId: poll.id, duplicateData }, 'DuplicateButton');

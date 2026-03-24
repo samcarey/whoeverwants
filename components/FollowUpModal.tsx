@@ -8,9 +8,10 @@ interface FollowUpModalProps {
   isOpen: boolean;
   poll: Poll;
   onClose: () => void;
+  totalVotes?: number;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: FollowUpModalProps) {
   const router = useRouter();
 
   if (!isOpen) return null;
@@ -50,7 +51,9 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                   response_deadline: poll.response_deadline,
                   creator_name: poll.creator_name,
                   min_participants: poll.min_participants,
-                  max_participants: poll.max_participants
+                  max_participants: poll.max_participants,
+                  auto_close_after: poll.auto_close_after,
+                  total_votes: totalVotes,
                 };
                 localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(duplicateData));
                 router.push(`/create-poll?duplicate=${poll.id}`);
@@ -75,7 +78,9 @@ export default function FollowUpModal({ isOpen, poll, onClose }: FollowUpModalPr
                   response_deadline: poll.response_deadline,
                   creator_name: poll.creator_name,
                   min_participants: poll.min_participants,
-                  max_participants: poll.max_participants
+                  max_participants: poll.max_participants,
+                  auto_close_after: poll.auto_close_after,
+                  total_votes: totalVotes,
                 };
                 localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(forkData));
                 router.push(`/create-poll?fork=${poll.id}`);

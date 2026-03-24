@@ -156,6 +156,7 @@ export async function apiCreatePoll(params: {
   max_participants?: number;
   auto_create_preferences?: boolean;
   auto_preferences_deadline_minutes?: number;
+  auto_close_after?: number;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',

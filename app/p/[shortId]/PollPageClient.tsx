@@ -1987,6 +1987,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         isOpen={showFollowUpModal}
         poll={poll}
         onClose={() => setShowFollowUpModal(false)}
+        totalVotes={pollResults?.total_votes}
       />
 
       {/* Vote on It Modal */}
