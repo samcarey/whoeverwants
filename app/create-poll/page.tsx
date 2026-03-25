@@ -15,6 +15,7 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions from "@/components/ParticipationConditions";
+import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -65,13 +66,11 @@ function CreatePollContent() {
   const [locationOptions, setLocationOptions] = useState<string[]>(['', '']);
   const [locationSuggestionsDeadline, setLocationSuggestionsDeadline] = useState('10min');
   const [locationPreferencesDeadline, setLocationPreferencesDeadline] = useState('10min');
-  const [showLocationOptionsModal, setShowLocationOptionsModal] = useState(false);
   const [timeMode, setTimeMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [timeValue, setTimeValue] = useState('');
   const [timeOptions, setTimeOptions] = useState<string[]>(['', '']);
   const [timeSuggestionsDeadline, setTimeSuggestionsDeadline] = useState('10min');
   const [timePreferencesDeadline, setTimePreferencesDeadline] = useState('10min');
-  const [showTimeOptionsModal, setShowTimeOptionsModal] = useState(false);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -1153,133 +1152,36 @@ function CreatePollContent() {
           {/* Location/Time fields for participation polls */}
           {pollType === 'participation' && (
             <div className="space-y-3">
-              {/* Location field */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Location{' '}
-                  <span className="text-gray-500 font-normal">(optional)</span>
-                </label>
-                <select
-                  value={locationMode}
-                  onChange={(e) => setLocationMode(e.target.value as any)}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  <option value="none">None</option>
-                  <option value="suggestions">Ask for Suggestions</option>
-                  <option value="preferences">
-                    Ask for Preferences{locationOptions.filter(o => o.trim()).length >= 2 ? ` (${locationOptions.filter(o => o.trim()).length})` : ''}
-                  </option>
-                  <option value="set">Set</option>
-                </select>
-                {locationMode === 'set' && (
-                  <input
-                    type="text"
-                    value={locationValue}
-                    onChange={(e) => setLocationValue(e.target.value)}
-                    disabled={isLoading}
-                    placeholder="Enter location..."
-                    className="w-full mt-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  />
-                )}
-                {locationMode === 'preferences' && (
-                  <div className="mt-2 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowLocationOptionsModal(true)}
-                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      Edit options ({locationOptions.filter(o => o.trim()).length})
-                    </button>
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Preferences deadline</label>
-                      <select value={locationPreferencesDeadline} onChange={(e) => setLocationPreferencesDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-                {locationMode === 'suggestions' && (
-                  <div className="mt-2 space-y-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Suggestions phase deadline</label>
-                      <select value={locationSuggestionsDeadline} onChange={(e) => setLocationSuggestionsDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Preferences phase deadline</label>
-                      <select value={locationPreferencesDeadline} onChange={(e) => setLocationPreferencesDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Time field */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Time{' '}
-                  <span className="text-gray-500 font-normal">(optional)</span>
-                </label>
-                <select
-                  value={timeMode}
-                  onChange={(e) => setTimeMode(e.target.value as any)}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  <option value="none">None</option>
-                  <option value="suggestions">Ask for Suggestions</option>
-                  <option value="preferences">
-                    Ask for Preferences{timeOptions.filter(o => o.trim()).length >= 2 ? ` (${timeOptions.filter(o => o.trim()).length})` : ''}
-                  </option>
-                  <option value="set">Set</option>
-                </select>
-                {timeMode === 'set' && (
-                  <input
-                    type="text"
-                    value={timeValue}
-                    onChange={(e) => setTimeValue(e.target.value)}
-                    disabled={isLoading}
-                    placeholder="Enter time..."
-                    className="w-full mt-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  />
-                )}
-                {timeMode === 'preferences' && (
-                  <div className="mt-2 space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowTimeOptionsModal(true)}
-                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      Edit options ({timeOptions.filter(o => o.trim()).length})
-                    </button>
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Preferences deadline</label>
-                      <select value={timePreferencesDeadline} onChange={(e) => setTimePreferencesDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-                {timeMode === 'suggestions' && (
-                  <div className="mt-2 space-y-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Suggestions phase deadline</label>
-                      <select value={timeSuggestionsDeadline} onChange={(e) => setTimeSuggestionsDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Preferences phase deadline</label>
-                      <select value={timePreferencesDeadline} onChange={(e) => setTimePreferencesDeadline(e.target.value)} disabled={isLoading} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm">
-                        {baseDeadlineOptions.filter(o => o.value !== 'custom').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <LocationTimeFieldConfig
+                label="Location"
+                mode={locationMode}
+                onModeChange={setLocationMode}
+                value={locationValue}
+                onValueChange={setLocationValue}
+                options={locationOptions}
+                onOptionsChange={setLocationOptions}
+                suggestionsDeadline={locationSuggestionsDeadline}
+                onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
+                preferencesDeadline={locationPreferencesDeadline}
+                onPreferencesDeadlineChange={setLocationPreferencesDeadline}
+                deadlineOptions={baseDeadlineOptions}
+                isLoading={isLoading}
+              />
+              <LocationTimeFieldConfig
+                label="Time"
+                mode={timeMode}
+                onModeChange={setTimeMode}
+                value={timeValue}
+                onValueChange={setTimeValue}
+                options={timeOptions}
+                onOptionsChange={setTimeOptions}
+                suggestionsDeadline={timeSuggestionsDeadline}
+                onSuggestionsDeadlineChange={setTimeSuggestionsDeadline}
+                preferencesDeadline={timePreferencesDeadline}
+                onPreferencesDeadlineChange={setTimePreferencesDeadline}
+                deadlineOptions={baseDeadlineOptions}
+                isLoading={isLoading}
+              />
             </div>
           )}
 
@@ -1577,42 +1479,6 @@ function CreatePollContent() {
         confirmText="Create"
         cancelText="Cancel"
       />
-
-      {/* Location options modal */}
-      {showLocationOptionsModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowLocationOptionsModal(false)}>
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-4 w-full max-w-md max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-medium mb-3">Location Options</h3>
-            <OptionsInput
-              options={locationOptions}
-              setOptions={setLocationOptions}
-              isLoading={isLoading}
-              placeholder="Add a location option..."
-            />
-            <button type="button" onClick={() => setShowLocationOptionsModal(false)} className="mt-3 w-full py-2 bg-gray-100 dark:bg-gray-800 rounded-md text-sm hover:bg-gray-200 dark:hover:bg-gray-700">
-              Done
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Time options modal */}
-      {showTimeOptionsModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowTimeOptionsModal(false)}>
-          <div className="bg-white dark:bg-gray-900 rounded-lg p-4 w-full max-w-md max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-medium mb-3">Time Options</h3>
-            <OptionsInput
-              options={timeOptions}
-              setOptions={setTimeOptions}
-              isLoading={isLoading}
-              placeholder="Add a time option..."
-            />
-            <button type="button" onClick={() => setShowTimeOptionsModal(false)} className="mt-3 w-full py-2 bg-gray-100 dark:bg-gray-800 rounded-md text-sm hover:bg-gray-200 dark:hover:bg-gray-700">
-              Done
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );

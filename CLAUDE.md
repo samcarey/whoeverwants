@@ -816,6 +816,19 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 **Time-saving tip**: Don't guess at the problem. Add logging, get the exact error, then fix the specific constraint.
 
+### Migration Constraint Naming
+
+- **Use consistent constraint names across migrations.** If migration 043 creates `vote_type_check` and migration 048 drops/recreates `votes_vote_type_check` (different name!), both constraints coexist. New migrations that only update one name leave the other stale. Always `DROP CONSTRAINT IF EXISTS` for ALL known aliases before creating the updated constraint.
+- **When adding new enum values to CHECK constraints**, search all migrations for every constraint on that column (names may vary) and drop all of them before adding the new one. Use `SELECT conname FROM pg_constraint WHERE conrelid = 'table'::regclass` to audit.
+
+### Sub-Poll Architecture (Location/Time Fields)
+
+- **Participation polls support optional Location and Time fields** with three modes: `set` (static value), `preferences` (creator-provided options → ranked choice sub-poll), `suggestions` (nomination sub-poll → auto-created ranked choice).
+- **Sub-polls are hidden from the main poll list** via `is_sub_poll = true` and filtered in `get_accessible_polls`. They're only accessible from the parent poll via `SubPollField` component.
+- **Sub-poll resolution**: When a ranked choice sub-poll with `sub_poll_role` closes, `_resolve_sub_poll_winner()` computes the IRV winner and writes it to the parent's `resolved_location` or `resolved_time` column.
+- **Creator secret propagation**: Sub-polls share the parent's `creator_secret`. The browser propagates it via `SubPollField` on page load since localStorage only stores secrets for directly-created polls.
+- **Column whitelist**: `_resolve_sub_poll_winner` uses an f-string for the column name — the field value MUST be validated against `("location", "time")` before interpolation.
+
 ### PWA / Pull-to-Refresh
 
 - **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone === true` — do NOT use UA sniffing).

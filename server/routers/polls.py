@@ -343,6 +343,8 @@ def _resolve_sub_poll_winner(conn, poll_row: dict) -> None:
 
     # Determine which field to resolve
     field = sub_poll_role.replace("_preferences", "")  # "location" or "time"
+    if field not in ("location", "time"):
+        return
     resolved_column = f"resolved_{field}"
 
     # Get the winner from the ranked choice results

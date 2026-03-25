@@ -25,7 +25,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
     apiGetSubPolls(poll.id)
       .then((polls) => {
         setSubPolls(polls);
-        // Propagate creator secret from parent to sub-polls
         const parentSecret = getCreatorSecret(poll.id);
         if (parentSecret) {
           for (const sp of polls) {
@@ -44,7 +43,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
   const renderField = (label: string, mode: string | null | undefined, resolvedValue: string | null | undefined, staticValue: string | null | undefined, role: string) => {
     if (!mode) return null;
 
-    // 'set' mode - show static value
     if (mode === 'set' && staticValue) {
       return (
         <div className="flex items-center gap-2 text-sm">
@@ -54,7 +52,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
       );
     }
 
-    // Resolved value (sub-poll chain completed)
     if (resolvedValue) {
       const prefsPoll = subPolls.find(sp => sp.sub_poll_role === `${role}_preferences`);
       return (
@@ -71,7 +68,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
       );
     }
 
-    // Sub-poll still active
     if (loading) {
       return (
         <div className="flex items-center gap-2 text-sm">
@@ -81,7 +77,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
       );
     }
 
-    // Find active sub-poll
     const suggestionsPoll = subPolls.find(sp => sp.sub_poll_role === `${role}_suggestions` && !sp.is_closed);
     const prefsPoll = subPolls.find(sp => sp.sub_poll_role === `${role}_preferences` && !sp.is_closed);
     const activePoll = suggestionsPoll || prefsPoll;
@@ -103,7 +98,6 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
       );
     }
 
-    // Between phases or pending
     return (
       <div className="flex items-center gap-2 text-sm">
         <span className="font-medium text-gray-600 dark:text-gray-400">{label}:</span>
