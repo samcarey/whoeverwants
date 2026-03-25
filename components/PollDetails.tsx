@@ -32,38 +32,21 @@ export default function PollDetails({ details }: PollDetailsProps) {
   return (
     <div className="mb-4">
       <div className="relative">
-        {/* Content area */}
+        {/* Content area — mask fades out the bottom line when collapsed */}
         <div
           ref={collapsedRef}
           className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words overflow-hidden"
           style={{
             maxHeight: expanded ? expandedHeight : collapsedHeight,
             overflowY: expanded ? 'auto' : 'hidden',
+            ...(needsTruncation && !expanded ? {
+              maskImage: `linear-gradient(to bottom, black ${collapsedHeight - lineHeight}px, transparent ${collapsedHeight}px)`,
+              WebkitMaskImage: `linear-gradient(to bottom, black ${collapsedHeight - lineHeight}px, transparent ${collapsedHeight}px)`,
+            } : {}),
           }}
         >
           <div ref={contentRef}>{details}</div>
         </div>
-
-        {/* Fade overlay on 4th line when collapsed */}
-        {needsTruncation && !expanded && (
-          <div
-            className="absolute bottom-0 left-0 right-0 pointer-events-none"
-            style={{
-              height: lineHeight,
-              background: 'linear-gradient(to bottom, transparent, var(--fade-color, white))',
-            }}
-          >
-            <style>{`
-              @media (prefers-color-scheme: dark) {
-                .poll-details-fade { --fade-color: rgb(17, 24, 39) !important; }
-              }
-              .poll-details-fade { --fade-color: white; }
-            `}</style>
-            <div className="poll-details-fade w-full h-full" style={{
-              background: 'linear-gradient(to bottom, transparent, var(--fade-color))',
-            }} />
-          </div>
-        )}
       </div>
 
       {/* Expand/collapse arrow */}
