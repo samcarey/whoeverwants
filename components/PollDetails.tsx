@@ -6,26 +6,23 @@ interface PollDetailsProps {
   details: string;
 }
 
+// text-sm line-height = 1.25rem = 20px
+const LINE_HEIGHT = 20;
+const COLLAPSED_LINES = 3;
+const EXPANDED_LINES = 20;
+const COLLAPSED_HEIGHT = COLLAPSED_LINES * LINE_HEIGHT;
+const EXPANDED_HEIGHT = EXPANDED_LINES * LINE_HEIGHT;
+
 export default function PollDetails({ details }: PollDetailsProps) {
   const [expanded, setExpanded] = useState(false);
   const [needsTruncation, setNeedsTruncation] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
   const collapsedRef = useRef<HTMLDivElement>(null);
-
-  // Line height in px (text-sm = 1.25rem line-height = 20px)
-  const lineHeight = 20;
-  const collapsedLines = 3;
-  const expandedLines = 20;
-  const collapsedHeight = collapsedLines * lineHeight;
-  const expandedHeight = expandedLines * lineHeight;
 
   useEffect(() => {
     if (collapsedRef.current) {
-      // Check if content exceeds 3 lines
-      const scrollHeight = collapsedRef.current.scrollHeight;
-      setNeedsTruncation(scrollHeight > collapsedHeight + 2);
+      setNeedsTruncation(collapsedRef.current.scrollHeight > COLLAPSED_HEIGHT + 2);
     }
-  }, [details, collapsedHeight]);
+  }, [details]);
 
   if (!details) return null;
 
@@ -37,15 +34,15 @@ export default function PollDetails({ details }: PollDetailsProps) {
           ref={collapsedRef}
           className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words overflow-hidden"
           style={{
-            maxHeight: expanded ? expandedHeight : collapsedHeight,
+            maxHeight: expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT,
             overflowY: expanded ? 'auto' : 'hidden',
             ...(needsTruncation && !expanded ? {
-              maskImage: `linear-gradient(to bottom, black ${collapsedHeight - lineHeight}px, transparent ${collapsedHeight}px)`,
-              WebkitMaskImage: `linear-gradient(to bottom, black ${collapsedHeight - lineHeight}px, transparent ${collapsedHeight}px)`,
+              maskImage: `linear-gradient(to bottom, black ${COLLAPSED_HEIGHT - LINE_HEIGHT}px, transparent ${COLLAPSED_HEIGHT}px)`,
+              WebkitMaskImage: `linear-gradient(to bottom, black ${COLLAPSED_HEIGHT - LINE_HEIGHT}px, transparent ${COLLAPSED_HEIGHT}px)`,
             } : {}),
           }}
         >
-          <div ref={contentRef}>{details}</div>
+          {details}
         </div>
       </div>
 
