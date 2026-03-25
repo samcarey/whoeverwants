@@ -1075,10 +1075,17 @@ function CreatePollContent() {
             <textarea
               id="details"
               value={details}
-              onChange={(e) => setDetails(e.target.value)}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                const el = e.target;
+                el.style.height = 'auto';
+                const maxH = 5 * 20 + 16; // 5 lines + padding
+                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+              }}
               disabled={isLoading}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-y text-sm"
+              rows={1}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none text-sm overflow-hidden"
               placeholder="Add more context or instructions..."
             />
           </div>
