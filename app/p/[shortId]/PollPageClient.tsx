@@ -29,6 +29,7 @@ import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
 import PollDetails from "@/components/PollDetails";
+import SubPollField from "@/components/SubPollField";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -1136,6 +1137,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
 
+        {/* Sub-poll back navigation */}
+        {poll.is_sub_poll && poll.parent_participation_poll_id && (
+          <div className="mb-3 text-center">
+            <Link href={`/p/${poll.parent_participation_poll_id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+              Back to main poll
+            </Link>
+          </div>
+        )}
+
         {/* Poll status card - show expired, expiring, or manually closed */}
         {(() => {
           const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
@@ -1478,6 +1488,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             </div>
           ) : poll.poll_type === 'participation' ? (
             <div>
+              {(poll.location_mode || poll.time_mode) && (
+                <SubPollField poll={poll} />
+              )}
               {isPollClosed ? (
                 <div className="py-6">
                   {loadingResults ? (

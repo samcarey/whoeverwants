@@ -76,10 +76,21 @@ def _check_auto_close(conn, poll_id: str) -> None:
             )
             closed = True
 
-    # If we just closed a nomination poll, activate the reserved preferences poll
-    if closed and poll.get("auto_create_preferences"):
-        now = datetime.now(timezone.utc)
-        _activate_reserved_preferences_poll(conn, dict(poll), now)
+    if closed:
+        # If we just closed a nomination poll, activate the reserved preferences poll
+        if poll.get("auto_create_preferences"):
+            now = datetime.now(timezone.utc)
+            _activate_reserved_preferences_poll(conn, dict(poll), now)
+
+        # If we just closed a ranked_choice sub-poll, resolve the winner to parent
+        if poll["poll_type"] == "ranked_choice" and poll.get("sub_poll_role"):
+            # Re-fetch to get full row for resolution
+            full_poll = conn.execute(
+                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()
+            if full_poll:
+                _resolve_sub_poll_winner(conn, dict(full_poll))
 
 
 def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
@@ -134,14 +145,17 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
     from datetime import timedelta
     deadline = now + timedelta(minutes=deadline_minutes)
 
-    # Activate the reserved poll
+    # Activate the reserved poll (propagate sub-poll metadata if present)
     conn.execute(
         """
         UPDATE polls
         SET options = %(options)s::jsonb,
             response_deadline = %(deadline)s,
             is_closed = false,
-            updated_at = %(now)s
+            updated_at = %(now)s,
+            is_sub_poll = COALESCE(%(is_sub_poll)s, is_sub_poll),
+            sub_poll_role = COALESCE(%(sub_poll_role)s, sub_poll_role),
+            parent_participation_poll_id = COALESCE(%(parent_id)s, parent_participation_poll_id)
         WHERE id = %(reserved_id)s
         """,
         {
@@ -149,6 +163,9 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
             "deadline": deadline.isoformat(),
             "now": now,
             "reserved_id": str(reserved["id"]),
+            "is_sub_poll": parent_row.get("is_sub_poll") or None,
+            "sub_poll_role": None,  # Already set at creation for sub-polls
+            "parent_id": str(parent_row["parent_participation_poll_id"]) if parent_row.get("parent_participation_poll_id") else None,
         },
     )
 
@@ -176,6 +193,21 @@ def _row_to_poll(row: dict) -> PollResponse:
         auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
         auto_close_after=row.get("auto_close_after"),
         details=row.get("details"),
+        location_mode=row.get("location_mode"),
+        location_value=row.get("location_value"),
+        location_options=row.get("location_options"),
+        resolved_location=row.get("resolved_location"),
+        time_mode=row.get("time_mode"),
+        time_value=row.get("time_value"),
+        time_options=row.get("time_options"),
+        resolved_time=row.get("resolved_time"),
+        is_sub_poll=row.get("is_sub_poll", False),
+        sub_poll_role=row.get("sub_poll_role"),
+        parent_participation_poll_id=str(row["parent_participation_poll_id"]) if row.get("parent_participation_poll_id") else None,
+        location_suggestions_deadline_minutes=row.get("location_suggestions_deadline_minutes"),
+        location_preferences_deadline_minutes=row.get("location_preferences_deadline_minutes"),
+        time_suggestions_deadline_minutes=row.get("time_suggestions_deadline_minutes"),
+        time_preferences_deadline_minutes=row.get("time_preferences_deadline_minutes"),
     )
 
 
@@ -197,6 +229,152 @@ def _row_to_vote(row: dict) -> VoteResponse:
     )
 
 
+def _create_sub_polls_for_field(
+    conn, now, parent_id, parent_title, creator_secret, creator_name,
+    field: str, mode: str | None, options: list[str] | None,
+    suggestions_deadline_minutes: int | None,
+    preferences_deadline_minutes: int | None,
+) -> None:
+    """Create sub-polls for a location or time field on a participation poll."""
+    import json
+    from datetime import timedelta
+
+    if not mode or mode == "set":
+        return
+
+    label = "Location" if field == "location" else "Time"
+    sub_title = f"{label} for {parent_title}"
+
+    if mode == "preferences":
+        # Create a ranked_choice sub-poll with creator-provided options
+        deadline_mins = preferences_deadline_minutes or 10
+        deadline = now + timedelta(minutes=deadline_mins)
+        conn.execute(
+            """
+            INSERT INTO polls (title, poll_type, options, response_deadline,
+                               creator_secret, creator_name,
+                               is_sub_poll, sub_poll_role,
+                               parent_participation_poll_id,
+                               is_closed, created_at, updated_at)
+            VALUES (%(title)s, 'ranked_choice', %(options)s::jsonb, %(deadline)s,
+                    %(creator_secret)s, %(creator_name)s,
+                    true, %(sub_poll_role)s,
+                    %(parent_id)s,
+                    false, %(now)s, %(now)s)
+            """,
+            {
+                "title": sub_title,
+                "options": json.dumps(options),
+                "deadline": deadline.isoformat(),
+                "creator_secret": creator_secret,
+                "creator_name": creator_name,
+                "sub_poll_role": f"{field}_preferences",
+                "parent_id": parent_id,
+                "now": now,
+            },
+        )
+
+    elif mode == "suggestions":
+        # Create a nomination sub-poll
+        sug_deadline_mins = suggestions_deadline_minutes or 10
+        sug_deadline = now + timedelta(minutes=sug_deadline_mins)
+        nom_row = conn.execute(
+            """
+            INSERT INTO polls (title, poll_type, response_deadline,
+                               creator_secret, creator_name,
+                               is_sub_poll, sub_poll_role,
+                               parent_participation_poll_id,
+                               auto_create_preferences,
+                               auto_preferences_deadline_minutes,
+                               is_closed, created_at, updated_at)
+            VALUES (%(title)s, 'nomination', %(deadline)s,
+                    %(creator_secret)s, %(creator_name)s,
+                    true, %(sub_poll_role)s,
+                    %(parent_id)s,
+                    true, %(pref_deadline_mins)s,
+                    false, %(now)s, %(now)s)
+            RETURNING id
+            """,
+            {
+                "title": sub_title,
+                "deadline": sug_deadline.isoformat(),
+                "creator_secret": creator_secret,
+                "creator_name": creator_name,
+                "sub_poll_role": f"{field}_suggestions",
+                "parent_id": parent_id,
+                "pref_deadline_mins": preferences_deadline_minutes or 10,
+                "now": now,
+            },
+        ).fetchone()
+
+        # Create a reserved ranked_choice sub-poll (placeholder)
+        conn.execute(
+            """
+            INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
+                               creator_secret, creator_name,
+                               is_sub_poll, sub_poll_role,
+                               parent_participation_poll_id,
+                               created_at, updated_at)
+            VALUES (%(title)s, 'ranked_choice', true, %(nom_id)s,
+                    %(creator_secret)s, %(creator_name)s,
+                    true, %(sub_poll_role)s,
+                    %(parent_id)s,
+                    %(now)s, %(now)s)
+            """,
+            {
+                "title": sub_title,
+                "nom_id": str(nom_row["id"]),
+                "creator_secret": creator_secret,
+                "creator_name": creator_name,
+                "sub_poll_role": f"{field}_preferences",
+                "parent_id": parent_id,
+                "now": now,
+            },
+        )
+
+
+def _resolve_sub_poll_winner(conn, poll_row: dict) -> None:
+    """When a ranked_choice sub-poll with sub_poll_role closes, resolve the winner
+    back to the parent participation poll."""
+    sub_poll_role = poll_row.get("sub_poll_role")
+    parent_id = poll_row.get("parent_participation_poll_id")
+    if not sub_poll_role or not parent_id or not sub_poll_role.endswith("_preferences"):
+        return
+
+    # Determine which field to resolve
+    field = sub_poll_role.replace("_preferences", "")  # "location" or "time"
+    resolved_column = f"resolved_{field}"
+
+    # Get the winner from the ranked choice results
+    from algorithms.ranked_choice import calculate_ranked_choice_winner
+    import json
+
+    poll_id = str(poll_row["id"])
+    votes = conn.execute(
+        "SELECT * FROM votes WHERE poll_id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchall()
+
+    raw_options = poll_row.get("options")
+    poll_options = []
+    if raw_options:
+        poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+    if not poll_options or not votes:
+        return
+
+    result = calculate_ranked_choice_winner([dict(v) for v in votes], poll_options)
+    if result.winner:
+        conn.execute(
+            f"UPDATE polls SET {resolved_column} = %(winner)s, updated_at = %(now)s WHERE id = %(parent_id)s",
+            {
+                "winner": result.winner,
+                "now": datetime.now(timezone.utc),
+                "parent_id": str(parent_id),
+            },
+        )
+
+
 # --- Poll CRUD ---
 
 
@@ -204,7 +382,26 @@ def _row_to_vote(row: dict) -> VoteResponse:
 def create_poll(req: CreatePollRequest):
     """Create a new poll."""
     now = datetime.now(timezone.utc)
+
+    # Validation for location/time fields
+    if req.location_mode or req.time_mode:
+        if req.poll_type != PollType.participation:
+            raise HTTPException(status_code=400, detail="Location/time modes are only valid for participation polls")
+
+    if req.location_mode == "set" and not req.location_value:
+        raise HTTPException(status_code=400, detail="Location value is required for 'set' mode")
+    if req.time_mode == "set" and not req.time_value:
+        raise HTTPException(status_code=400, detail="Time value is required for 'set' mode")
+    if req.location_mode == "preferences" and (not req.location_options or len(req.location_options) < 2):
+        raise HTTPException(status_code=400, detail="At least 2 location options are required for 'preferences' mode")
+    if req.time_mode == "preferences" and (not req.time_options or len(req.time_options) < 2):
+        raise HTTPException(status_code=400, detail="At least 2 time options are required for 'preferences' mode")
+
     with get_db() as conn:
+        # Determine resolved values for 'set' mode
+        resolved_location = req.location_value if req.location_mode == "set" else None
+        resolved_time = req.time_value if req.time_mode == "set" else None
+
         row = conn.execute(
             """
             INSERT INTO polls (title, poll_type, options, response_deadline,
@@ -212,12 +409,26 @@ def create_poll(req: CreatePollRequest):
                                fork_of, min_participants, max_participants,
                                auto_create_preferences, auto_preferences_deadline_minutes,
                                auto_close_after, details,
+                               location_mode, location_value, resolved_location,
+                               time_mode, time_value, resolved_time,
+                               location_options, time_options,
+                               location_suggestions_deadline_minutes,
+                               location_preferences_deadline_minutes,
+                               time_suggestions_deadline_minutes,
+                               time_preferences_deadline_minutes,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
                     %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
                     %(auto_close_after)s, %(details)s,
+                    %(location_mode)s, %(location_value)s, %(resolved_location)s,
+                    %(time_mode)s, %(time_value)s, %(resolved_time)s,
+                    %(location_options)s, %(time_options)s,
+                    %(location_suggestions_deadline_minutes)s,
+                    %(location_preferences_deadline_minutes)s,
+                    %(time_suggestions_deadline_minutes)s,
+                    %(time_preferences_deadline_minutes)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -236,9 +447,23 @@ def create_poll(req: CreatePollRequest):
                 "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
                 "auto_close_after": req.auto_close_after,
                 "details": req.details,
+                "location_mode": req.location_mode,
+                "location_value": req.location_value,
+                "resolved_location": resolved_location,
+                "time_mode": req.time_mode,
+                "time_value": req.time_value,
+                "resolved_time": resolved_time,
+                "location_options": req.location_options,
+                "time_options": req.time_options,
+                "location_suggestions_deadline_minutes": req.location_suggestions_deadline_minutes,
+                "location_preferences_deadline_minutes": req.location_preferences_deadline_minutes,
+                "time_suggestions_deadline_minutes": req.time_suggestions_deadline_minutes,
+                "time_preferences_deadline_minutes": req.time_preferences_deadline_minutes,
                 "now": now,
             },
         ).fetchone()
+
+        parent_id = str(row["id"])
 
         # If this is a nomination poll with auto_create_preferences, reserve a
         # placeholder ranked_choice follow-up poll so no one else can create a
@@ -255,14 +480,39 @@ def create_poll(req: CreatePollRequest):
                 """,
                 {
                     "title": req.title,
-                    "parent_id": str(row["id"]),
+                    "parent_id": parent_id,
                     "creator_secret": req.creator_secret,
                     "creator_name": req.creator_name,
                     "now": now,
                 },
             )
 
+        # Create sub-polls for location/time fields
+        _create_sub_polls_for_field(
+            conn, now, parent_id, req.title, req.creator_secret, req.creator_name,
+            "location", req.location_mode, req.location_options,
+            req.location_suggestions_deadline_minutes,
+            req.location_preferences_deadline_minutes,
+        )
+        _create_sub_polls_for_field(
+            conn, now, parent_id, req.title, req.creator_secret, req.creator_name,
+            "time", req.time_mode, req.time_options,
+            req.time_suggestions_deadline_minutes,
+            req.time_preferences_deadline_minutes,
+        )
+
     return _row_to_poll(row)
+
+
+@router.get("/{poll_id}/sub-polls", response_model=list[PollResponse])
+def get_sub_polls(poll_id: str):
+    """Get all sub-polls for a participation poll."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM polls WHERE parent_participation_poll_id = %(poll_id)s ORDER BY created_at",
+            {"poll_id": poll_id},
+        ).fetchall()
+    return [_row_to_poll(r) for r in rows]
 
 
 @router.get("/find-duplicate", response_model=PollResponse)
@@ -474,6 +724,22 @@ def get_results(poll_id: str):
             if result.rowcount == 1:
                 _activate_reserved_preferences_poll(conn, dict(poll), now)
 
+        # Auto-close ranked_choice sub-polls when deadline passes, and resolve winner
+        if (
+            poll["poll_type"] == "ranked_choice"
+            and poll.get("sub_poll_role")
+            and not poll["is_closed"]
+            and poll.get("response_deadline")
+            and poll["response_deadline"] <= now
+        ):
+            result = conn.execute(
+                """UPDATE polls SET is_closed = true, close_reason = 'deadline', updated_at = %(now)s
+                   WHERE id = %(poll_id)s AND is_closed = false""",
+                {"poll_id": poll_id, "now": now},
+            )
+            if result.rowcount == 1:
+                _resolve_sub_poll_winner(conn, dict(poll))
+
         votes = conn.execute(
             "SELECT * FROM votes WHERE poll_id = %(poll_id)s",
             {"poll_id": poll_id},
@@ -669,6 +935,10 @@ def close_poll(poll_id: str, req: ClosePollRequest):
         if row["poll_type"] == "nomination" and row.get("auto_create_preferences"):
             _activate_reserved_preferences_poll(conn, row, now)
 
+        # If this is a ranked_choice sub-poll, resolve the winner to parent
+        if row["poll_type"] == "ranked_choice" and row.get("sub_poll_role"):
+            _resolve_sub_poll_winner(conn, dict(row))
+
     return _row_to_poll(row)
 
 
@@ -706,7 +976,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
         return []
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM polls WHERE id = ANY(%(poll_ids)s) ORDER BY created_at DESC",
+            "SELECT * FROM polls WHERE id = ANY(%(poll_ids)s) AND (is_sub_poll = false OR is_sub_poll IS NULL) ORDER BY created_at DESC",
             {"poll_ids": req.poll_ids},
         ).fetchall()
     return [_row_to_poll(r) for r in rows]
