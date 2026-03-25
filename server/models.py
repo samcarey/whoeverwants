@@ -36,6 +36,7 @@ class CreatePollRequest(BaseModel):
     auto_create_preferences: bool = False
     auto_preferences_deadline_minutes: int | None = None
     auto_close_after: int | None = None
+    details: str | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -105,6 +106,7 @@ class PollResponse(BaseModel):
     auto_create_preferences: bool = False
     auto_preferences_deadline_minutes: int | None = None
     auto_close_after: int | None = None
+    details: str | None = None
 
 
 class VoteResponse(BaseModel):

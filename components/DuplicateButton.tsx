@@ -22,6 +22,7 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
       min_participants: poll.min_participants,
       max_participants: poll.max_participants,
       auto_close_after: poll.auto_close_after,
+      details: poll.details,
     };
     
     debugLog.logObject('Duplicate button clicked', { pollId: poll.id, duplicateData }, 'DuplicateButton');
