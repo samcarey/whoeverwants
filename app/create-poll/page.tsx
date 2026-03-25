@@ -982,10 +982,10 @@ function CreatePollContent() {
                   hasLoadedPollType ? 'transition-all duration-200 ease-in-out' : ''
                 } ${
                   pollType === 'nomination'
-                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                    ? 'bg-blue-100 dark:bg-blue-700/50'
                     : pollType === 'poll'
-                    ? 'bg-green-100 dark:bg-green-900/30'
-                    : 'bg-purple-100 dark:bg-purple-900/30'
+                    ? 'bg-green-100 dark:bg-green-700/50'
+                    : 'bg-purple-100 dark:bg-purple-700/50'
                 }`}
                 style={{
                   width: 'calc(33.333% - 4px)',
