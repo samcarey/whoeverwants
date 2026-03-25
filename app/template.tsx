@@ -513,7 +513,7 @@ export default function Template({ children }: AppTemplateProps) {
                     <h1
                       className="text-2xl font-bold mb-1 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
-                    >Whoever Wants?</h1>
+                    >Whoever Wants</h1>
                     <div className="h-7 flex items-center justify-center mb-4" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
                     </div>
