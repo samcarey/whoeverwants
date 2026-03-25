@@ -314,7 +314,7 @@ apply_dev_migrations() {
   fi
 
   log "  Applying migrations to $db_name..."
-  bash "$(dirname "$0")/apply-dev-migrations.sh" "$db_name" "$migrations_dir"
+  bash "$(dirname "$0")/apply-migrations.sh" "$db_name" "$migrations_dir"
 }
 
 # Drop a dev database
