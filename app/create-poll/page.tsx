@@ -58,6 +58,7 @@ function CreatePollContent() {
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
+  const [details, setDetails] = useState("");
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -83,6 +84,7 @@ function CreatePollContent() {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
+        details,
         options,
         deadlineOption,
         customDate,
@@ -91,7 +93,7 @@ function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -133,6 +135,7 @@ function CreatePollContent() {
         try {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
+          setDetails(formState.details || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -346,6 +349,7 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
+          setDetails(forkData.details || "");
 
           // Set poll type and options based on forked poll
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
@@ -424,6 +428,7 @@ function CreatePollContent() {
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
+          setDetails(duplicateData.details || "");
 
           // Set poll type based on duplicated poll
           if (duplicateData.poll_type === 'ranked_choice') {
@@ -844,6 +849,11 @@ function CreatePollContent() {
         pollData.creator_name = creatorName.trim();
       }
 
+      // Add details if provided
+      if (details.trim()) {
+        pollData.details = details.trim();
+      }
+
       // Add follow-up reference if this is a follow-up poll
       if (followUpTo) {
         pollData.follow_up_to = followUpTo;
@@ -1053,6 +1063,30 @@ function CreatePollContent() {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder="Enter your title..."
               required
+            />
+          </div>
+
+          {/* Optional details field */}
+          <div>
+            <label htmlFor="details" className="block text-sm font-medium mb-2">
+              Details{' '}
+              <span className="text-gray-500 font-normal">(optional)</span>
+            </label>
+            <textarea
+              id="details"
+              value={details}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                const el = e.target;
+                el.style.height = 'auto';
+                const maxH = 5 * 20 + 16; // 5 lines + padding
+                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+              }}
+              disabled={isLoading}
+              rows={1}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none text-sm overflow-hidden"
+              placeholder="Add more context or instructions..."
             />
           </div>
 

@@ -175,6 +175,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         auto_create_preferences=row.get("auto_create_preferences", False),
         auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
         auto_close_after=row.get("auto_close_after"),
+        details=row.get("details"),
     )
 
 
@@ -210,13 +211,13 @@ def create_poll(req: CreatePollRequest):
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
                                auto_create_preferences, auto_preferences_deadline_minutes,
-                               auto_close_after,
+                               auto_close_after, details,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
                     %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
-                    %(auto_close_after)s,
+                    %(auto_close_after)s, %(details)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -234,6 +235,7 @@ def create_poll(req: CreatePollRequest):
                 "auto_create_preferences": req.auto_create_preferences,
                 "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
                 "auto_close_after": req.auto_close_after,
+                "details": req.details,
                 "now": now,
             },
         ).fetchone()

@@ -105,6 +105,7 @@ function toPoll(data: any): Poll {
     short_id: data.short_id ?? undefined,
     auto_create_preferences: data.auto_create_preferences ?? undefined,
     auto_preferences_deadline_minutes: data.auto_preferences_deadline_minutes ?? undefined,
+    details: data.details ?? undefined,
   };
 }
 
@@ -157,6 +158,7 @@ export async function apiCreatePoll(params: {
   auto_create_preferences?: boolean;
   auto_preferences_deadline_minutes?: number;
   auto_close_after?: number;
+  details?: string;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',

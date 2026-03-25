@@ -25,6 +25,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
     min_participants: poll.min_participants,
     max_participants: poll.max_participants,
     auto_close_after: poll.auto_close_after,
+    details: poll.details,
     total_votes: totalVotes,
   };
 

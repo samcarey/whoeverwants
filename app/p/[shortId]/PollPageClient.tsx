@@ -28,6 +28,7 @@ import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
+import PollDetails from "@/components/PollDetails";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -1131,6 +1132,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             <>Created {createdDate}</>
           )}
         </div>
+
+        {/* Poll details (expandable) */}
+        {poll.details && <PollDetails details={poll.details} />}
 
         {/* Poll status card - show expired, expiring, or manually closed */}
         {(() => {
