@@ -35,7 +35,8 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 def _check_auto_close(conn, poll_id: str) -> None:
     """Auto-close a poll based on auto_close_after (respondent count) or max_participants."""
     poll = conn.execute(
-        """SELECT poll_type, is_closed, auto_close_after, max_participants, auto_create_preferences
+        """SELECT id, poll_type, is_closed, auto_close_after, max_participants,
+                  auto_create_preferences, auto_preferences_deadline_minutes
            FROM polls WHERE id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()

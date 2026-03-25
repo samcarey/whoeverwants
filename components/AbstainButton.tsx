@@ -22,7 +22,7 @@ export default function AbstainButton({
             : 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 border-2 border-transparent active:bg-yellow-300 dark:active:bg-yellow-700'
         }`}
       >
-        {isAbstaining ? 'Abstaining (click to cancel)' : 'Abstain from this vote'}
+        Abstain
       </button>
     </div>
   );
