@@ -178,8 +178,10 @@ def deploy_production():
 
         # 3. Apply any new database migrations
         log.info("--- Checking for new migrations ---")
+        migrations_dir = os.path.join(REPO_DIR, "database", "migrations")
         result = subprocess.run(
-            ["bash", os.path.join(REPO_DIR, "scripts", "apply-migrations.sh")],
+            ["bash", os.path.join(REPO_DIR, "scripts", "apply-migrations.sh"),
+             "whoeverwants", migrations_dir],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,

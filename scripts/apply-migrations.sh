@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Apply all *_up.sql migrations to a dev database.
-# Usage: apply-dev-migrations.sh <db_name> <migrations_dir>
+# Apply all *_up.sql migrations to a database.
+# Usage: apply-migrations.sh <db_name> <migrations_dir>
 #
 # Creates the _migrations table if it doesn't exist, then applies any
 # migration files not yet recorded, in filename order.
 
 set -euo pipefail
 
-DB_NAME="${1:?Usage: apply-dev-migrations.sh <db_name> <migrations_dir>}"
-MIGRATIONS_DIR="${2:?Usage: apply-dev-migrations.sh <db_name> <migrations_dir>}"
+DB_NAME="${1:?Usage: apply-migrations.sh <db_name> <migrations_dir>}"
+MIGRATIONS_DIR="${2:?Usage: apply-migrations.sh <db_name> <migrations_dir>}"
 CONTAINER="whoeverwants-db-1"
 DB_USER="whoeverwants"
 
