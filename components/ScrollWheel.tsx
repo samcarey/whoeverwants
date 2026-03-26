@@ -86,14 +86,24 @@ export default function ScrollWheel({
     }
   }, [itemHeight, padding, centerOffset, visibleItems]);
 
-  // On mount: jump to initial position before first paint
+  // On mount: position scroll before first paint.
+  // Temporarily disable scroll-snap and hide content to prevent
+  // the browser from animating to the snap point on initial render.
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (el) {
+      el.style.visibility = 'hidden';
+      el.style.scrollSnapType = 'none';
       el.scrollTop = selectedToScroll(selectedIndex);
+      updateItemStyles();
+      // Re-enable snap and show after the scroll position is set.
+      // Use rAF to ensure the browser has applied the scrollTop.
+      requestAnimationFrame(() => {
+        el.style.scrollSnapType = 'y mandatory';
+        el.style.visibility = '';
+      });
     }
     didMount.current = true;
-    updateItemStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
