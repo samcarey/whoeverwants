@@ -71,11 +71,12 @@ export default function TimeSlotRoundsDisplay({
     });
   };
 
-  const formatTime = (timeStr: string): string => {
+  const formatTime = (timeStr: string, showNextDay?: boolean): string => {
     const [hours, minutes] = timeStr.split(':').map(Number);
     const period = hours >= 12 ? 'PM' : 'AM';
     const displayHours = hours % 12 || 12;
-    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    const suffix = showNextDay ? ' +1' : '';
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}${suffix}`;
   };
 
   const formatDuration = (hours: number): string => {
@@ -148,7 +149,7 @@ export default function TimeSlotRoundsDisplay({
           >
             <div className="flex items-center justify-between mb-2">
               <div className="font-semibold text-gray-900 dark:text-gray-100">
-                {formatDate(slot.slot_date)} @ {formatTime(slot.slot_start_time)}-{formatTime(slot.slot_end_time)}
+                {formatDate(slot.slot_date)} @ {formatTime(slot.slot_start_time)}-{formatTime(slot.slot_end_time, slot.slot_end_time < slot.slot_start_time)}
               </div>
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 ({formatDuration(slot.duration_hours)})

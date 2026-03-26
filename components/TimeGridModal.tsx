@@ -95,34 +95,13 @@ export default function TimeGridModal({
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
 
-  // Enforce min < max: when min changes, push max forward if needed
+  // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
   const handleMinChange = useCallback((newMin: string | null) => {
-    if (!newMin) { setLocalMinTime(newMin); return; }
     setLocalMinTime(newMin);
-    setLocalMaxTime((prev: string | null) => {
-      if (!prev) return prev;
-      const minMins = timeToMinutes(newMin);
-      const maxMins = timeToMinutes(prev);
-      if (maxMins <= minMins) {
-        return minutesToTime(minMins + MIN_DURATION);
-      }
-      return prev;
-    });
   }, []);
 
-  // Enforce min < max: when max changes, push min backward if needed
   const handleMaxChange = useCallback((newMax: string | null) => {
-    if (!newMax) { setLocalMaxTime(newMax); return; }
     setLocalMaxTime(newMax);
-    setLocalMinTime((prev: string | null) => {
-      if (!prev) return prev;
-      const maxMins = timeToMinutes(newMax);
-      const minMins = timeToMinutes(prev);
-      if (minMins >= maxMins) {
-        return minutesToTime(maxMins - MIN_DURATION);
-      }
-      return prev;
-    });
   }, []);
 
   // Enable transitions after first render so the duration bar doesn't animate on open
@@ -149,14 +128,21 @@ export default function TimeGridModal({
     onClose();
   };
 
-  // Validation: both times must be set and min must be less than max
-  const isValid = localMinTime !== null && localMaxTime !== null && localMinTime < localMaxTime;
+  // Validation: both times must be set and they can't be identical
+  const isValid = localMinTime !== null && localMaxTime !== null && localMinTime !== localMaxTime;
 
-  // Duration bar calculations
+  // Cross-midnight detection: max < min means the range wraps past midnight
+  const crossesMidnight = isValid && timeToMinutes(localMaxTime!) < timeToMinutes(localMinTime!);
+
+  // Duration bar calculations — handle cross-midnight ranges
   let durationMinutes = 0;
   let durationLabel = '';
   if (localMinTime && localMaxTime && isValid) {
-    durationMinutes = timeToMinutes(localMaxTime) - timeToMinutes(localMinTime);
+    const minMins = timeToMinutes(localMinTime);
+    const maxMins = timeToMinutes(localMaxTime);
+    durationMinutes = crossesMidnight
+      ? (MAX_DURATION - minMins) + maxMins
+      : maxMins - minMins;
     const hours = Math.floor(durationMinutes / 60);
     const mins = durationMinutes % 60;
     if (hours > 0 && mins > 0) {
@@ -198,7 +184,7 @@ export default function TimeGridModal({
 
         {/* Duration bar */}
         {durationMinutes > 0 && (
-          <div className="px-6 pt-4 flex justify-center">
+          <div className="px-6 pt-4 flex flex-col items-center gap-1">
             <div
               className={`h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
               style={{ width: `${widthPct}%` }}
@@ -207,6 +193,11 @@ export default function TimeGridModal({
                 {durationLabel}
               </span>
             </div>
+            {crossesMidnight && (
+              <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                Crosses midnight (+1 day)
+              </span>
+            )}
           </div>
         )}
 
