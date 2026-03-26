@@ -115,7 +115,9 @@ export default function ScrollWheel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When selectedIndex changes externally, sync scroll
+  // When selectedIndex changes externally, sync scroll.
+  // Suppress the scroll handler during programmatic scrolls so intermediate
+  // positions during the smooth animation don't fire onChange with stale indices.
   useEffect(() => {
     if (!didMount.current) return;
     if (suppressScrollHandler.current) return;
@@ -124,9 +126,16 @@ export default function ScrollWheel({
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
+      suppressScrollHandler.current = true;
       el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
+      // Re-enable after the smooth scroll settles
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        suppressScrollHandler.current = false;
+        updateItemStyles();
+      }, 300);
     }
-  }, [selectedIndex, selectedToScroll, items]);
+  }, [selectedIndex, selectedToScroll, items, updateItemStyles]);
 
   // Re-center the loop scroll position silently after scrolling stops
   const recenterLoop = useCallback(() => {
