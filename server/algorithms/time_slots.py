@@ -71,7 +71,10 @@ def _minutes_to_time(minutes: int) -> str:
 
 
 def _window_effective_end(w_start: int, w_end: int) -> int:
-    """Return effective end minutes, adding 24h if the window crosses midnight."""
+    """Return effective end minutes, adding 24h if the window crosses midnight.
+
+    Equal start/end means a full 24-hour window.
+    """
     if w_end <= w_start:
         return w_end + 24 * 60
     return w_end
