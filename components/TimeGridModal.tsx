@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
 
 interface TimeGridModalProps {
@@ -29,7 +29,9 @@ export default function TimeGridModal({
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
 
-  // Prevent background scrolling when modal is open
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  // Prevent background scrolling and pull-to-refresh when modal is open
   useEffect(() => {
     if (!isOpen) return;
 
@@ -46,7 +48,20 @@ export default function TimeGridModal({
     body.style.overscrollBehavior = 'none';
     html.style.overscrollBehavior = 'none';
 
+    // Block pull-to-refresh by preventing touchmove on the backdrop
+    // (must be non-passive to allow preventDefault)
+    const backdrop = backdropRef.current;
+    const preventRefresh = (e: TouchEvent) => {
+      // Allow scrolling inside scroll wheels, block everything else
+      const target = e.target as HTMLElement;
+      if (!target.closest('.scrollbar-hide')) {
+        e.preventDefault();
+      }
+    };
+    backdrop?.addEventListener('touchmove', preventRefresh, { passive: false });
+
     return () => {
+      backdrop?.removeEventListener('touchmove', preventRefresh);
       // Restore scroll position
       body.style.position = '';
       body.style.top = '';
@@ -94,6 +109,7 @@ export default function TimeGridModal({
 
   return (
     <div
+      ref={backdropRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={handleCancel}
       style={{ touchAction: 'none' }}
@@ -101,6 +117,7 @@ export default function TimeGridModal({
       <div
         className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 flex flex-col"
         onClick={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
