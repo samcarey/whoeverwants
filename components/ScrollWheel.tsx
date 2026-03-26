@@ -9,11 +9,14 @@ interface ScrollWheelProps {
   itemHeight?: number;
   visibleItems?: number;
   width?: number;
+  loop?: boolean;
 }
 
-const MIN_FONT_SIZE = 14;  // px at edge
-const MAX_FONT_SIZE = 18;  // px at center
+const MIN_FONT_SIZE = 14;
+const MAX_FONT_SIZE = 18;
 const MIN_OPACITY = 0.35;
+const LOOP_REPEATS = 40; // total copies of the item list when looping
+const LOOP_CENTER = Math.floor(LOOP_REPEATS / 2); // which repetition to center on
 
 export default function ScrollWheel({
   items,
@@ -22,6 +25,7 @@ export default function ScrollWheel({
   itemHeight = 40,
   visibleItems = 5,
   width,
+  loop = false,
 }: ScrollWheelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -30,48 +34,63 @@ export default function ScrollWheel({
   const lastReportedIndex = useRef(selectedIndex);
   const didMount = useRef(false);
   const rAFId = useRef<number | null>(null);
+  const suppressScrollHandler = useRef(false);
 
   const padding = Math.floor(visibleItems / 2) * itemHeight;
   const containerHeight = visibleItems * itemHeight;
-  const centerOffset = padding; // distance from container top to center of highlight band
+  const centerOffset = padding;
 
-  // Update item styles based on scroll position — called via rAF, no React re-renders
+  const totalItems = loop ? items.length * LOOP_REPEATS : items.length;
+
+  // Convert a selectedIndex (0..items.length-1) to the scroll position in the center repetition
+  const selectedToScroll = useCallback((idx: number) => {
+    if (loop) {
+      return (LOOP_CENTER * items.length + idx) * itemHeight;
+    }
+    return idx * itemHeight;
+  }, [loop, items.length, itemHeight]);
+
+  // Convert a raw scroll index (in the repeated list) to the real item index
+  const rawToReal = useCallback((rawIndex: number) => {
+    if (!loop) return rawIndex;
+    return ((rawIndex % items.length) + items.length) % items.length;
+  }, [loop, items.length]);
+
+  // Update item styles based on scroll position
   const updateItemStyles = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const scrollTop = el.scrollTop;
+    const visibleCenter = scrollTop + centerOffset + itemHeight / 2;
+    const maxDistance = Math.floor(visibleItems / 2);
 
-    for (let i = 0; i < items.length; i++) {
+    for (let i = 0; i < itemRefs.current.length; i++) {
       const itemEl = itemRefs.current[i];
       if (!itemEl) continue;
 
-      // Item's center position relative to container top (accounting for top padding)
       const itemCenter = padding + i * itemHeight + itemHeight / 2;
-      // Visible center = scrollTop + centerOffset + itemHeight/2
-      const visibleCenter = scrollTop + centerOffset + itemHeight / 2;
-      // Distance from center in item-heights (0 = perfectly centered, 1 = one slot away)
       const distance = Math.abs(itemCenter - visibleCenter) / itemHeight;
-      // Proximity: 1 at center, 0 at edge (clamped to visible range)
-      const maxDistance = Math.floor(visibleItems / 2);
-      const proximity = Math.max(0, 1 - distance / maxDistance);
 
+      // Skip styling items far from viewport
+      if (distance > maxDistance + 1) continue;
+
+      const proximity = Math.max(0, 1 - distance / maxDistance);
       const fontSize = MIN_FONT_SIZE + (MAX_FONT_SIZE - MIN_FONT_SIZE) * proximity;
       const opacity = MIN_OPACITY + (1 - MIN_OPACITY) * proximity;
-      // font-weight: interpolate 400-600 based on proximity
       const fontWeight = Math.round(400 + 200 * proximity);
 
       itemEl.style.fontSize = `${fontSize}px`;
       itemEl.style.opacity = String(opacity);
       itemEl.style.fontWeight = String(fontWeight);
     }
-  }, [items.length, itemHeight, padding, centerOffset, visibleItems]);
+  }, [itemHeight, padding, centerOffset, visibleItems]);
 
-  // On mount: jump to initial position and style items
+  // On mount: jump to initial position
   useEffect(() => {
     const el = containerRef.current;
     if (el) {
-      el.scrollTop = selectedIndex * itemHeight;
+      el.scrollTop = selectedToScroll(selectedIndex);
     }
     didMount.current = true;
     updateItemStyles();
@@ -86,11 +105,35 @@ export default function ScrollWheel({
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
-      el.scrollTo({ top: selectedIndex * itemHeight, behavior: 'smooth' });
+      el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
     }
-  }, [selectedIndex, itemHeight]);
+  }, [selectedIndex, selectedToScroll]);
+
+  // Re-center the loop scroll position silently after scrolling stops
+  const recenterLoop = useCallback(() => {
+    if (!loop) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const rawIndex = Math.round(el.scrollTop / itemHeight);
+    const realIndex = rawToReal(rawIndex);
+    const centerScroll = selectedToScroll(realIndex);
+
+    // Only re-center if we've drifted far from center
+    if (Math.abs(el.scrollTop - centerScroll) > items.length * itemHeight * 2) {
+      suppressScrollHandler.current = true;
+      el.scrollTop = centerScroll;
+      // Allow the scroll handler to fire again after the jump settles
+      requestAnimationFrame(() => {
+        suppressScrollHandler.current = false;
+        updateItemStyles();
+      });
+    }
+  }, [loop, itemHeight, rawToReal, selectedToScroll, items.length, updateItemStyles]);
 
   const handleScroll = useCallback(() => {
+    if (suppressScrollHandler.current) return;
+
     // Update styles every frame during scroll
     if (rAFId.current === null) {
       rAFId.current = requestAnimationFrame(() => {
@@ -104,14 +147,17 @@ export default function ScrollWheel({
     scrollTimeout.current = setTimeout(() => {
       const el = containerRef.current;
       if (!el) return;
-      const index = Math.round(el.scrollTop / itemHeight);
-      const clamped = Math.max(0, Math.min(items.length - 1, index));
-      if (clamped !== lastReportedIndex.current) {
-        lastReportedIndex.current = clamped;
-        onChange(clamped);
+      const rawIndex = Math.round(el.scrollTop / itemHeight);
+      const realIndex = loop
+        ? rawToReal(rawIndex)
+        : Math.max(0, Math.min(items.length - 1, rawIndex));
+      if (realIndex !== lastReportedIndex.current) {
+        lastReportedIndex.current = realIndex;
+        onChange(realIndex);
       }
+      recenterLoop();
     }, 150);
-  }, [itemHeight, items.length, onChange, updateItemStyles]);
+  }, [itemHeight, items.length, onChange, updateItemStyles, loop, rawToReal, recenterLoop]);
 
   // Track touch state
   useEffect(() => {
@@ -138,6 +184,20 @@ export default function ScrollWheel({
       if (rAFId.current !== null) cancelAnimationFrame(rAFId.current);
     };
   }, []);
+
+  // Build the rendered item list
+  const renderedItems: { label: string; realIndex: number }[] = [];
+  if (loop) {
+    for (let rep = 0; rep < LOOP_REPEATS; rep++) {
+      for (let i = 0; i < items.length; i++) {
+        renderedItems.push({ label: items[i], realIndex: i });
+      }
+    }
+  } else {
+    for (let i = 0; i < items.length; i++) {
+      renderedItems.push({ label: items[i], realIndex: i });
+    }
+  }
 
   return (
     <div className="relative" style={{ height: containerHeight, width }}>
@@ -169,7 +229,7 @@ export default function ScrollWheel({
       >
         {/* Top padding */}
         <div style={{ height: padding }} />
-        {items.map((item, i) => (
+        {renderedItems.map((item, i) => (
           <div
             key={i}
             ref={(el) => { itemRefs.current[i] = el; }}
@@ -179,15 +239,15 @@ export default function ScrollWheel({
               scrollSnapAlign: 'center',
             }}
             onClick={() => {
-              lastReportedIndex.current = i;
-              onChange(i);
+              lastReportedIndex.current = item.realIndex;
+              onChange(item.realIndex);
               const el = containerRef.current;
               if (el) {
                 el.scrollTo({ top: i * itemHeight, behavior: 'smooth' });
               }
             }}
           >
-            {item}
+            {item.label}
           </div>
         ))}
         {/* Bottom padding */}

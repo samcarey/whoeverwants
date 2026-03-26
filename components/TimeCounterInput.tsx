@@ -80,6 +80,7 @@ export default function TimeCounterInput({
         selectedIndex={hourIndex}
         onChange={(i) => handleChange(i, minuteIndex, periodIndex)}
         width={45}
+        loop
       />
       <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
       <ScrollWheel
@@ -87,6 +88,7 @@ export default function TimeCounterInput({
         selectedIndex={minuteIndex}
         onChange={(i) => handleChange(hourIndex, i, periodIndex)}
         width={45}
+        loop
       />
       <div className="w-1" />
       <ScrollWheel
