@@ -87,20 +87,23 @@ export default function ScrollWheel({
   }, [itemHeight, padding, centerOffset, visibleItems]);
 
   // On mount: position scroll before first paint.
-  // Temporarily disable scroll-snap and hide content to prevent
-  // the browser from animating to the snap point on initial render.
+  // Suppress the scroll handler so the initial scrollTop assignment
+  // doesn't fire onChange with a stale index mid-positioning.
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (el) {
+      suppressScrollHandler.current = true;
       el.style.visibility = 'hidden';
       el.style.scrollSnapType = 'none';
       el.scrollTop = selectedToScroll(selectedIndex);
       updateItemStyles();
-      // Re-enable snap and show after the scroll position is set.
-      // Use rAF to ensure the browser has applied the scrollTop.
       requestAnimationFrame(() => {
         el.style.scrollSnapType = 'y mandatory';
         el.style.visibility = '';
+        // Allow scroll handler after position is stable
+        requestAnimationFrame(() => {
+          suppressScrollHandler.current = false;
+        });
       });
     }
     didMount.current = true;
