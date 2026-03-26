@@ -193,11 +193,9 @@ export default function TimeGridModal({
                 {durationLabel}
               </span>
             </div>
-            {crossesMidnight && (
-              <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                Crosses midnight (+1 day)
-              </span>
-            )}
+            <span className={`text-xs font-medium ${crossesMidnight ? 'text-amber-600 dark:text-amber-400' : 'text-transparent'}`}>
+              Crosses midnight (+1 day)
+            </span>
           </div>
         )}
 
