@@ -106,7 +106,6 @@ export default function ScrollWheel({
           el.scrollTop = targetScroll;
         }
         el.style.scrollSnapType = 'y mandatory';
-        el.style.visibility = '';
         requestAnimationFrame(() => {
           console.log(`[ScrollWheel] rAF2: scrollTop=${el.scrollTop}, enabling scroll handler`);
           suppressScrollHandler.current = false;
@@ -120,9 +119,13 @@ export default function ScrollWheel({
   // When selectedIndex changes externally, sync scroll
   useEffect(() => {
     if (!didMount.current) return;
+    if (suppressScrollHandler.current) {
+      console.log(`[ScrollWheel] externalSync SKIPPED (suppressed): items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}`);
+      return;
+    }
     if (isTouching.current) return;
     if (selectedIndex === lastReportedIndex.current) return;
-    console.log(`[ScrollWheel] externalSync: items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}, suppress=${suppressScrollHandler.current}`);
+    console.log(`[ScrollWheel] externalSync: items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}`);
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
@@ -250,7 +253,6 @@ export default function ScrollWheel({
         className="h-full overflow-y-auto scrollbar-hide"
         style={{
           WebkitOverflowScrolling: 'touch',
-          visibility: 'hidden',
         }}
       >
         {/* Top padding */}
