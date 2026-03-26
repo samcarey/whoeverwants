@@ -98,20 +98,19 @@ export default function TimeGridModal({
   // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
   const handleMinChange = useCallback((newMin: string | null) => {
     setLocalMinTime(newMin);
+    setTransitionsEnabled(true);
   }, []);
 
   const handleMaxChange = useCallback((newMax: string | null) => {
     setLocalMaxTime(newMax);
+    setTransitionsEnabled(true);
   }, []);
 
-  // Enable transitions after first render so the duration bar doesn't animate on open
+  // Reset transitions when modal reopens so the duration bar doesn't animate on open
   useEffect(() => {
     if (!isOpen) {
       setTransitionsEnabled(false);
-      return;
     }
-    const id = requestAnimationFrame(() => setTransitionsEnabled(true));
-    return () => cancelAnimationFrame(id);
   }, [isOpen]);
 
   if (!isOpen) return null;
