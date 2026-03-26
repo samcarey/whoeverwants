@@ -42,8 +42,6 @@ export default function ScrollWheel({
   const containerHeight = visibleItems * itemHeight;
   const centerOffset = padding;
 
-  const totalItems = loop ? items.length * LOOP_REPEATS : items.length;
-
   // Convert a selectedIndex (0..items.length-1) to the scroll position in the center repetition
   const selectedToScroll = useCallback((idx: number) => {
     if (loop) {
@@ -96,29 +94,21 @@ export default function ScrollWheel({
     if (el) {
       suppressScrollHandler.current = true;
       const targetScroll = selectedToScroll(selectedIndex);
-      console.log(`[ScrollWheel] mount: items[0]=${items[0]}, selectedIndex=${selectedIndex}, targetScroll=${targetScroll}, loop=${loop}`);
       el.scrollTop = targetScroll;
-      console.log(`[ScrollWheel] mount: scrollTop after set=${el.scrollTop}`);
       updateItemStyles();
-      // Enable scroll-snap and scroll handler after position is stable
       requestAnimationFrame(() => {
-        console.log(`[ScrollWheel] rAF1: scrollTop=${el.scrollTop}, target was ${targetScroll}`);
         if (el.scrollTop !== targetScroll) {
-          console.log(`[ScrollWheel] rAF1: scrollTop drifted! re-setting`);
           el.scrollTop = targetScroll;
         }
         el.style.scrollSnapType = 'y mandatory';
         requestAnimationFrame(() => {
           suppressScrollHandler.current = false;
-          // Check if selectedIndex changed while suppressed and sync if needed
           const currentIdx = selectedIndexRef.current;
           if (currentIdx !== lastReportedIndex.current) {
-            console.log(`[ScrollWheel] rAF2: pending sync items[0]=${items[0]}, selectedIndex=${currentIdx}, lastReported=${lastReportedIndex.current}`);
             lastReportedIndex.current = currentIdx;
             el.scrollTop = selectedToScroll(currentIdx);
             updateItemStyles();
           }
-          console.log(`[ScrollWheel] rAF2: scrollTop=${el.scrollTop}, enabled`);
         });
       });
     }
@@ -129,13 +119,9 @@ export default function ScrollWheel({
   // When selectedIndex changes externally, sync scroll
   useEffect(() => {
     if (!didMount.current) return;
-    if (suppressScrollHandler.current) {
-      console.log(`[ScrollWheel] externalSync SKIPPED (suppressed): items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}`);
-      return;
-    }
+    if (suppressScrollHandler.current) return;
     if (isTouching.current) return;
     if (selectedIndex === lastReportedIndex.current) return;
-    console.log(`[ScrollWheel] externalSync: items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}`);
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
