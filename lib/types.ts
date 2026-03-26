@@ -22,6 +22,22 @@ export interface Poll {
   auto_preferences_deadline_minutes?: number;
   auto_close_after?: number;
   details?: string;
+  // Location/time fields for participation polls
+  location_mode?: 'set' | 'preferences' | 'suggestions' | null;
+  location_value?: string | null;
+  location_options?: string[] | null;
+  resolved_location?: string | null;
+  time_mode?: 'set' | 'preferences' | 'suggestions' | null;
+  time_value?: string | null;
+  time_options?: string[] | null;
+  resolved_time?: string | null;
+  is_sub_poll?: boolean;
+  sub_poll_role?: string | null;
+  parent_participation_poll_id?: string | null;
+  location_suggestions_deadline_minutes?: number | null;
+  location_preferences_deadline_minutes?: number | null;
+  time_suggestions_deadline_minutes?: number | null;
+  time_preferences_deadline_minutes?: number | null;
 }
 
 export interface Vote {

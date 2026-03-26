@@ -106,6 +106,21 @@ function toPoll(data: any): Poll {
     auto_create_preferences: data.auto_create_preferences ?? undefined,
     auto_preferences_deadline_minutes: data.auto_preferences_deadline_minutes ?? undefined,
     details: data.details ?? undefined,
+    location_mode: data.location_mode ?? undefined,
+    location_value: data.location_value ?? undefined,
+    location_options: data.location_options ?? undefined,
+    resolved_location: data.resolved_location ?? undefined,
+    time_mode: data.time_mode ?? undefined,
+    time_value: data.time_value ?? undefined,
+    time_options: data.time_options ?? undefined,
+    resolved_time: data.resolved_time ?? undefined,
+    is_sub_poll: data.is_sub_poll ?? undefined,
+    sub_poll_role: data.sub_poll_role ?? undefined,
+    parent_participation_poll_id: data.parent_participation_poll_id ?? undefined,
+    location_suggestions_deadline_minutes: data.location_suggestions_deadline_minutes ?? undefined,
+    location_preferences_deadline_minutes: data.location_preferences_deadline_minutes ?? undefined,
+    time_suggestions_deadline_minutes: data.time_suggestions_deadline_minutes ?? undefined,
+    time_preferences_deadline_minutes: data.time_preferences_deadline_minutes ?? undefined,
   };
 }
 
@@ -159,12 +174,27 @@ export async function apiCreatePoll(params: {
   auto_preferences_deadline_minutes?: number;
   auto_close_after?: number;
   details?: string;
+  location_mode?: string;
+  location_value?: string;
+  location_options?: string[];
+  time_mode?: string;
+  time_value?: string;
+  time_options?: string[];
+  location_suggestions_deadline_minutes?: number;
+  location_preferences_deadline_minutes?: number;
+  time_suggestions_deadline_minutes?: number;
+  time_preferences_deadline_minutes?: number;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
     body: JSON.stringify(params),
   });
   return toPoll(data);
+}
+
+export async function apiGetSubPolls(pollId: string): Promise<Poll[]> {
+  const data: any[] = await apiFetch(`/${encodeURIComponent(pollId)}/sub-polls`);
+  return data.map(toPoll);
 }
 
 export async function apiGetPollByShortId(shortId: string): Promise<Poll> {

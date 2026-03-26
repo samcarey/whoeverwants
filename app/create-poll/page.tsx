@@ -15,6 +15,7 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions from "@/components/ParticipationConditions";
+import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -59,6 +60,17 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
+  // Location/time fields for participation polls
+  const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
+  const [locationValue, setLocationValue] = useState('');
+  const [locationOptions, setLocationOptions] = useState<string[]>(['', '']);
+  const [locationSuggestionsDeadline, setLocationSuggestionsDeadline] = useState('10min');
+  const [locationPreferencesDeadline, setLocationPreferencesDeadline] = useState('10min');
+  const [timeMode, setTimeMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
+  const [timeValue, setTimeValue] = useState('');
+  const [timeOptions, setTimeOptions] = useState<string[]>(['', '']);
+  const [timeSuggestionsDeadline, setTimeSuggestionsDeadline] = useState('10min');
+  const [timePreferencesDeadline, setTimePreferencesDeadline] = useState('10min');
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -893,6 +905,35 @@ function CreatePollContent() {
         }
       }
 
+      // Add location/time fields for participation polls
+      if (dbPollType === 'participation') {
+        const addFieldData = (
+          fieldName: 'location' | 'time',
+          mode: string,
+          fieldValue: string,
+          fieldOptions: string[],
+          sugDeadline: string,
+          prefDeadline: string,
+        ) => {
+          if (mode === 'none') return;
+          pollData[`${fieldName}_mode`] = mode;
+          if (mode === 'set') {
+            pollData[`${fieldName}_value`] = fieldValue.trim();
+          } else if (mode === 'preferences') {
+            pollData[`${fieldName}_options`] = fieldOptions.filter(o => o.trim() !== '');
+            pollData[`${fieldName}_preferences_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+          } else if (mode === 'suggestions') {
+            pollData[`${fieldName}_suggestions_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === sugDeadline)?.minutes || 10;
+            pollData[`${fieldName}_preferences_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+          }
+        };
+        addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
+        addFieldData('time', timeMode, timeValue, timeOptions, timeSuggestionsDeadline, timePreferencesDeadline);
+      }
+
       // Add auto-close after N respondents
       if (autoCloseAfter !== null && autoCloseAfter > 0) {
         pollData.auto_close_after = autoCloseAfter;
@@ -1101,6 +1142,42 @@ function CreatePollContent() {
               onMaxEnabledChange={setMaxEnabled}
               disabled={isLoading}
             />
+          )}
+
+          {/* Location/Time fields for participation polls */}
+          {pollType === 'participation' && (
+            <div className="space-y-3">
+              <LocationTimeFieldConfig
+                label="Location"
+                mode={locationMode}
+                onModeChange={setLocationMode}
+                value={locationValue}
+                onValueChange={setLocationValue}
+                options={locationOptions}
+                onOptionsChange={setLocationOptions}
+                suggestionsDeadline={locationSuggestionsDeadline}
+                onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
+                preferencesDeadline={locationPreferencesDeadline}
+                onPreferencesDeadlineChange={setLocationPreferencesDeadline}
+                deadlineOptions={baseDeadlineOptions}
+                isLoading={isLoading}
+              />
+              <LocationTimeFieldConfig
+                label="Time"
+                mode={timeMode}
+                onModeChange={setTimeMode}
+                value={timeValue}
+                onValueChange={setTimeValue}
+                options={timeOptions}
+                onOptionsChange={setTimeOptions}
+                suggestionsDeadline={timeSuggestionsDeadline}
+                onSuggestionsDeadlineChange={setTimeSuggestionsDeadline}
+                preferencesDeadline={timePreferencesDeadline}
+                onPreferencesDeadlineChange={setTimePreferencesDeadline}
+                deadlineOptions={baseDeadlineOptions}
+                isLoading={isLoading}
+              />
+            </div>
           )}
 
           {/* Hide options field for nomination and participation polls */}
@@ -1397,7 +1474,7 @@ function CreatePollContent() {
         confirmText="Create"
         cancelText="Cancel"
       />
-      
+
     </div>
   );
 }

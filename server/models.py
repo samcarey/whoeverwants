@@ -37,6 +37,17 @@ class CreatePollRequest(BaseModel):
     auto_preferences_deadline_minutes: int | None = None
     auto_close_after: int | None = None
     details: str | None = None
+    # Location/time fields for participation polls
+    location_mode: str | None = None
+    location_value: str | None = None
+    location_options: list[str] | None = None
+    time_mode: str | None = None
+    time_value: str | None = None
+    time_options: list[str] | None = None
+    location_suggestions_deadline_minutes: int | None = None
+    location_preferences_deadline_minutes: int | None = None
+    time_suggestions_deadline_minutes: int | None = None
+    time_preferences_deadline_minutes: int | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -107,6 +118,22 @@ class PollResponse(BaseModel):
     auto_preferences_deadline_minutes: int | None = None
     auto_close_after: int | None = None
     details: str | None = None
+    # Location/time fields
+    location_mode: str | None = None
+    location_value: str | None = None
+    location_options: list[str] | None = None
+    resolved_location: str | None = None
+    time_mode: str | None = None
+    time_value: str | None = None
+    time_options: list[str] | None = None
+    resolved_time: str | None = None
+    is_sub_poll: bool = False
+    sub_poll_role: str | None = None
+    parent_participation_poll_id: str | None = None
+    location_suggestions_deadline_minutes: int | None = None
+    location_preferences_deadline_minutes: int | None = None
+    time_suggestions_deadline_minutes: int | None = None
+    time_preferences_deadline_minutes: int | None = None
 
 
 class VoteResponse(BaseModel):
