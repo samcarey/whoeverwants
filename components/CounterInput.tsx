@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useEffect } from 'react';
+
 interface CounterInputProps {
   value: number | null;
   onChange: (value: number | null) => void;
@@ -10,6 +12,7 @@ interface CounterInputProps {
   placeholder?: string;
   className?: string;
   arrowPosition?: 'left' | 'right';
+  formatValue?: (value: number) => string;
 }
 
 export default function CounterInput({
@@ -21,31 +24,68 @@ export default function CounterInput({
   disabled = false,
   placeholder = '',
   className = '',
-  arrowPosition = 'left'
+  arrowPosition = 'left',
+  formatValue
 }: CounterInputProps) {
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setEditingValue(null);
+    }
+  }, [value, isFocused]);
+
   const handleIncrement = () => {
+    setEditingValue(null);
     const currentValue = value ?? min;
-    const newValue = currentValue + increment;
+
+    const remainder = currentValue % increment;
+    const isOnIncrement = Math.abs(remainder) < 0.0001;
+
+    let newValue;
+    if (isOnIncrement) {
+      newValue = currentValue + increment;
+    } else {
+      newValue = Math.ceil(currentValue / increment) * increment;
+    }
+
+    newValue = Math.round(newValue / increment) * increment;
+
     if (max === undefined || newValue <= max) {
       onChange(newValue);
     }
   };
 
   const handleDecrement = () => {
+    setEditingValue(null);
     const currentValue = value ?? min;
-    const newValue = currentValue - increment;
+
+    const remainder = currentValue % increment;
+    const isOnIncrement = Math.abs(remainder) < 0.0001;
+
+    let newValue;
+    if (isOnIncrement) {
+      newValue = currentValue - increment;
+    } else {
+      newValue = Math.floor(currentValue / increment) * increment;
+    }
+
+    newValue = Math.round(newValue / increment) * increment;
+
     if (newValue >= min) {
       onChange(newValue);
     }
   };
 
   const handleInputChange = (inputValue: string) => {
+    setEditingValue(inputValue);
+
     if (inputValue === '') {
       onChange(null);
-    } else if (/^\d+$/.test(inputValue)) {
-      const newValue = parseInt(inputValue);
+    } else if (/^\d*\.?\d*$/.test(inputValue)) {
+      const newValue = parseFloat(inputValue);
       if (!isNaN(newValue)) {
-        // Only update if within bounds
         if ((max === undefined || newValue <= max) && newValue >= min) {
           onChange(newValue);
         }
@@ -54,11 +94,20 @@ export default function CounterInput({
   };
 
   const handleBlur = () => {
-    // Reset to min if empty or invalid on blur
+    setIsFocused(false);
+    setEditingValue(null);
+
     if (value === null || value < min) {
       onChange(min);
     } else if (max !== undefined && value > max) {
       onChange(max);
+    }
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+    if (value !== null) {
+      setEditingValue(formatValue ? formatValue(value) : value.toString());
     }
   };
 
@@ -90,16 +139,21 @@ export default function CounterInput({
     </div>
   );
 
+  const displayValue = isFocused && editingValue !== null
+    ? editingValue
+    : (value !== null && formatValue ? formatValue(value) : (value ?? ''));
+
   const input = (
     <input
       type="text"
-      inputMode="numeric"
-      value={value ?? ''}
+      inputMode="decimal"
+      value={displayValue}
       onChange={(e) => handleInputChange(e.target.value)}
+      onFocus={handleFocus}
       onBlur={handleBlur}
       disabled={disabled}
       placeholder={placeholder}
-      className="w-16 px-3 py-2 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+      className="w-16 px-0.5 py-1.5 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
     />
   );
 

@@ -28,6 +28,7 @@ import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
+import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 
@@ -95,6 +96,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(poll.min_participants ?? 1);
   const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(poll.max_participants ?? null);
   const [voterMaxEnabled, setVoterMaxEnabled] = useState(poll.max_participants !== null && poll.max_participants !== undefined);
+  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<any[]>(poll.day_time_windows || []);
+  const [durationMinValue, setDurationMinValue] = useState<number | null>(poll.duration_window?.minValue ?? 1);
+  const [durationMaxValue, setDurationMaxValue] = useState<number | null>(poll.duration_window?.maxValue ?? 2);
+  const [durationMinEnabled, setDurationMinEnabled] = useState(poll.duration_window?.minEnabled ?? false);
+  const [durationMaxEnabled, setDurationMaxEnabled] = useState(poll.duration_window?.maxEnabled ?? false);
 
   const isPollExpired = useMemo(() => {
     // Use server-safe check
@@ -457,6 +463,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 setVoterMaxEnabled(true);
               } else {
                 setVoterMaxEnabled(false);
+              }
+              // Load voter's time window conditions
+              if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
+                setVoterDayTimeWindows(voteData.voter_day_time_windows);
+              }
+              if (voteData.voter_duration) {
+                const { minValue, maxValue, minEnabled, maxEnabled } = voteData.voter_duration;
+                if (minValue !== undefined) setDurationMinValue(minValue);
+                if (maxValue !== undefined) setDurationMaxValue(maxValue);
+                if (minEnabled !== undefined) setDurationMinEnabled(minEnabled);
+                if (maxEnabled !== undefined) setDurationMaxEnabled(maxEnabled);
               }
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
@@ -925,7 +942,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null,
           min_participants: voterMinParticipants,
-          max_participants: voterMaxEnabled ? voterMaxParticipants : null
+          max_participants: voterMaxEnabled ? voterMaxParticipants : null,
+          voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
+          voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          } : null,
         };
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
@@ -997,7 +1021,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const updateData = poll.poll_type === 'yes_no'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'participation'
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null }
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : { nominations: voteData.nominations, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
@@ -1226,7 +1250,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </svg>
               </div>
             ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+              <>
+                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                {pollResults.time_slot_rounds && pollResults.time_slot_rounds.length > 0 && (
+                  <div className="mt-4">
+                    <TimeSlotRoundsDisplay
+                      allRounds={pollResults.time_slot_rounds}
+                      allVoters={[]}
+                      currentUserVoteId={userVoteData?.id || null}
+                    />
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-1.5">
                 <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -1614,6 +1649,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       disabled={isSubmitting}
                       pollMinParticipants={poll.min_participants}
                       pollMaxParticipants={poll.max_participants}
+                      durationMinValue={durationMinValue}
+                      durationMaxValue={durationMaxValue}
+                      durationMinEnabled={durationMinEnabled}
+                      durationMaxEnabled={durationMaxEnabled}
+                      onDurationMinChange={setDurationMinValue}
+                      onDurationMaxChange={setDurationMaxValue}
+                      onDurationMinEnabledChange={setDurationMinEnabled}
+                      onDurationMaxEnabledChange={setDurationMaxEnabled}
+                      dayTimeWindows={voterDayTimeWindows}
+                      onDayTimeWindowsChange={setVoterDayTimeWindows}
+                      pollDayTimeWindows={poll.day_time_windows || undefined}
+                      pollDurationWindow={poll.duration_window || undefined}
                     />
                   </div>
 

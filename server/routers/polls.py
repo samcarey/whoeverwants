@@ -19,6 +19,7 @@ from models import (
     RelatedPollsResponse,
     ReopenPollRequest,
     SubmitVoteRequest,
+    TimeSlotResponse,
     VoteResponse,
 )
 from algorithms.nomination import count_nomination_votes
@@ -203,6 +204,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         location_preferences_deadline_minutes=row.get("location_preferences_deadline_minutes"),
         time_suggestions_deadline_minutes=row.get("time_suggestions_deadline_minutes"),
         time_preferences_deadline_minutes=row.get("time_preferences_deadline_minutes"),
+        day_time_windows=row.get("day_time_windows"),
+        duration_window=row.get("duration_window"),
     )
 
 
@@ -219,6 +222,8 @@ def _row_to_vote(row: dict) -> VoteResponse:
         voter_name=row.get("voter_name"),
         min_participants=row.get("min_participants"),
         max_participants=row.get("max_participants"),
+        voter_day_time_windows=row.get("voter_day_time_windows"),
+        voter_duration=row.get("voter_duration"),
         created_at=row["created_at"].isoformat() if isinstance(row["created_at"], datetime) else str(row["created_at"]),
         updated_at=row["updated_at"].isoformat() if isinstance(row["updated_at"], datetime) else str(row["updated_at"]),
     )
@@ -378,6 +383,7 @@ def _resolve_sub_poll_winner(conn, poll_row: dict) -> None:
 @router.post("", response_model=PollResponse, status_code=201)
 def create_poll(req: CreatePollRequest):
     """Create a new poll."""
+    import json
     now = datetime.now(timezone.utc)
 
     # Validation for location/time fields
@@ -413,6 +419,7 @@ def create_poll(req: CreatePollRequest):
                                location_preferences_deadline_minutes,
                                time_suggestions_deadline_minutes,
                                time_preferences_deadline_minutes,
+                               day_time_windows, duration_window,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -426,6 +433,7 @@ def create_poll(req: CreatePollRequest):
                     %(location_preferences_deadline_minutes)s,
                     %(time_suggestions_deadline_minutes)s,
                     %(time_preferences_deadline_minutes)s,
+                    %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -456,6 +464,8 @@ def create_poll(req: CreatePollRequest):
                 "location_preferences_deadline_minutes": req.location_preferences_deadline_minutes,
                 "time_suggestions_deadline_minutes": req.time_suggestions_deadline_minutes,
                 "time_preferences_deadline_minutes": req.time_preferences_deadline_minutes,
+                "day_time_windows": json.dumps(req.day_time_windows) if req.day_time_windows else None,
+                "duration_window": json.dumps(req.duration_window) if req.duration_window else None,
                 "now": now,
             },
         ).fetchone()
@@ -588,15 +598,18 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         except VoteValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        import json
         row = conn.execute(
             """
             INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
                                nominations, is_abstain, voter_name,
                                min_participants, max_participants,
+                               voter_day_time_windows, voter_duration,
                                created_at, updated_at)
             VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
                     %(nominations)s, %(is_abstain)s, %(voter_name)s,
                     %(min_participants)s, %(max_participants)s,
+                    %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -610,6 +623,8 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
+                "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
+                "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
                 "now": now,
             },
         ).fetchone()
@@ -657,6 +672,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
         if poll and poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
 
+        import json
         row = conn.execute(
             """
             UPDATE votes
@@ -667,6 +683,8 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 voter_name = %(voter_name)s,
                 min_participants = %(min_participants)s,
                 max_participants = %(max_participants)s,
+                voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
+                voter_duration = %(voter_duration)s::jsonb,
                 updated_at = %(now)s
             WHERE id = %(vote_id)s AND poll_id = %(poll_id)s
             RETURNING *
@@ -679,6 +697,8 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
+                "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
+                "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
                 "now": now,
                 "vote_id": vote_id,
                 "poll_id": poll_id,
@@ -845,6 +865,27 @@ def get_results(poll_id: str):
         participating = calculate_participating_voters(vote_dicts)
         participating_count = len(participating)
 
+        # Calculate time slot rounds if poll has day_time_windows
+        time_slot_rounds_data = None
+        if poll.get("day_time_windows"):
+            from algorithms.time_slots import calculate_time_slot_rounds
+            ts_rounds = calculate_time_slot_rounds(dict(poll), vote_dicts)
+            if ts_rounds:
+                time_slot_rounds_data = [
+                    TimeSlotResponse(
+                        round_number=r.round_number,
+                        slot_date=r.slot_date,
+                        slot_start_time=r.slot_start_time,
+                        slot_end_time=r.slot_end_time,
+                        duration_hours=r.duration_hours,
+                        participant_count=r.participant_count,
+                        participant_vote_ids=r.participant_vote_ids,
+                        participant_names=r.participant_names,
+                        is_winner=r.is_winner,
+                    )
+                    for r in ts_rounds
+                ]
+
         return PollResultsResponse(
             poll_id=str(poll["id"]),
             title=poll["title"],
@@ -858,6 +899,7 @@ def get_results(poll_id: str):
             total_votes=len(votes),
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),
+            time_slot_rounds=time_slot_rounds_data,
         )
 
     # For other poll types, return basic structure (to be extended in later phases)

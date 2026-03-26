@@ -48,6 +48,9 @@ class CreatePollRequest(BaseModel):
     location_preferences_deadline_minutes: int | None = None
     time_suggestions_deadline_minutes: int | None = None
     time_preferences_deadline_minutes: int | None = None
+    # Time windows for participation polls
+    day_time_windows: list[dict] | None = None
+    duration_window: dict | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -59,6 +62,8 @@ class SubmitVoteRequest(BaseModel):
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
+    voter_day_time_windows: list[dict] | None = None
+    voter_duration: dict | None = None
 
 
 class EditVoteRequest(BaseModel):
@@ -69,6 +74,8 @@ class EditVoteRequest(BaseModel):
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
+    voter_day_time_windows: list[dict] | None = None
+    voter_duration: dict | None = None
 
 
 class ClosePollRequest(BaseModel):
@@ -134,6 +141,8 @@ class PollResponse(BaseModel):
     location_preferences_deadline_minutes: int | None = None
     time_suggestions_deadline_minutes: int | None = None
     time_preferences_deadline_minutes: int | None = None
+    day_time_windows: list[dict] | None = None
+    duration_window: dict | None = None
 
 
 class VoteResponse(BaseModel):
@@ -147,6 +156,8 @@ class VoteResponse(BaseModel):
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
+    voter_day_time_windows: list[dict] | None = None
+    voter_duration: dict | None = None
     created_at: str
     updated_at: str
 
@@ -154,6 +165,18 @@ class VoteResponse(BaseModel):
 class NominationCountResponse(BaseModel):
     option: str
     count: int
+
+
+class TimeSlotResponse(BaseModel):
+    round_number: int
+    slot_date: str
+    slot_start_time: str
+    slot_end_time: str
+    duration_hours: float
+    participant_count: int
+    participant_vote_ids: list[str]
+    participant_names: list[str]
+    is_winner: bool
 
 
 class PollResultsResponse(BaseModel):
@@ -175,6 +198,7 @@ class PollResultsResponse(BaseModel):
     nomination_counts: list[NominationCountResponse] | None = None
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
     ranked_choice_winner: str | None = None
+    time_slot_rounds: list[TimeSlotResponse] | None = None
 
 
 class ParticipantResponse(BaseModel):

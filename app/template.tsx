@@ -295,6 +295,12 @@ export default function Template({ children }: AppTemplateProps) {
         return;
       }
 
+      // Skip pull-to-refresh when a modal is open (e.g. time picker)
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-modal]')) {
+        return;
+      }
+
       const rawDelta = e.touches[0].clientY - startY;
 
       // Log first few touchmove events to diagnose gesture capture
