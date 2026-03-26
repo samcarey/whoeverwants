@@ -35,6 +35,8 @@ export default function ScrollWheel({
   const didMount = useRef(false);
   const rAFId = useRef<number | null>(null);
   const suppressScrollHandler = useRef(false);
+  const selectedIndexRef = useRef(selectedIndex); // always tracks latest prop
+  selectedIndexRef.current = selectedIndex;
 
   const padding = Math.floor(visibleItems / 2) * itemHeight;
   const containerHeight = visibleItems * itemHeight;
@@ -107,8 +109,16 @@ export default function ScrollWheel({
         }
         el.style.scrollSnapType = 'y mandatory';
         requestAnimationFrame(() => {
-          console.log(`[ScrollWheel] rAF2: scrollTop=${el.scrollTop}, enabling scroll handler`);
           suppressScrollHandler.current = false;
+          // Check if selectedIndex changed while suppressed and sync if needed
+          const currentIdx = selectedIndexRef.current;
+          if (currentIdx !== lastReportedIndex.current) {
+            console.log(`[ScrollWheel] rAF2: pending sync items[0]=${items[0]}, selectedIndex=${currentIdx}, lastReported=${lastReportedIndex.current}`);
+            lastReportedIndex.current = currentIdx;
+            el.scrollTop = selectedToScroll(currentIdx);
+            updateItemStyles();
+          }
+          console.log(`[ScrollWheel] rAF2: scrollTop=${el.scrollTop}, enabled`);
         });
       });
     }
