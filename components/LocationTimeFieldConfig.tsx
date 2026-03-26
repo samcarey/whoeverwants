@@ -47,7 +47,7 @@ export default function LocationTimeFieldConfig({
   const selectClass = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm";
   const filteredDeadlineOptions = deadlineOptions.filter(o => o.value !== 'custom');
 
-  const DeadlineSelect = ({ dlLabel, dlValue, onChange }: { dlLabel: string; dlValue: string; onChange: (v: string) => void }) => (
+  const renderDeadlineSelect = (dlLabel: string, dlValue: string, onChange: (v: string) => void) => (
     <div>
       <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{dlLabel}</label>
       <select value={dlValue} onChange={(e) => onChange(e.target.value)} disabled={isLoading} className={selectClass}>
@@ -97,14 +97,14 @@ export default function LocationTimeFieldConfig({
             >
               Edit options ({validOptionCount})
             </button>
-            <DeadlineSelect dlLabel="Preferences deadline" dlValue={preferencesDeadline} onChange={onPreferencesDeadlineChange} />
+            {renderDeadlineSelect("Preferences deadline", preferencesDeadline, onPreferencesDeadlineChange)}
           </div>
         )}
 
         {mode === 'suggestions' && (
           <div className="mt-2 space-y-2">
-            <DeadlineSelect dlLabel="Suggestions phase deadline" dlValue={suggestionsDeadline} onChange={onSuggestionsDeadlineChange} />
-            <DeadlineSelect dlLabel="Preferences phase deadline" dlValue={preferencesDeadline} onChange={onPreferencesDeadlineChange} />
+            {renderDeadlineSelect("Suggestions phase deadline", suggestionsDeadline, onSuggestionsDeadlineChange)}
+            {renderDeadlineSelect("Preferences phase deadline", preferencesDeadline, onPreferencesDeadlineChange)}
           </div>
         )}
       </div>
