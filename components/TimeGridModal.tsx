@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
 
 // Duration bar width scaling constants
@@ -8,6 +8,20 @@ const MIN_DURATION = 15; // minutes
 const MAX_DURATION = 24 * 60;
 const MIN_WIDTH_PCT = 10;
 const MAX_WIDTH_PCT = 100;
+
+/** Convert "HH:MM" to total minutes since midnight */
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/** Convert total minutes since midnight to "HH:MM" */
+function minutesToTime(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 45, totalMinutes));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+}
 
 interface TimeGridModalProps {
   isOpen: boolean;
@@ -81,6 +95,36 @@ export default function TimeGridModal({
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
 
+  // Enforce min < max: when min changes, push max forward if needed
+  const handleMinChange = useCallback((newMin: string | null) => {
+    if (!newMin) { setLocalMinTime(newMin); return; }
+    setLocalMinTime(newMin);
+    setLocalMaxTime((prev: string | null) => {
+      if (!prev) return prev;
+      const minMins = timeToMinutes(newMin);
+      const maxMins = timeToMinutes(prev);
+      if (maxMins <= minMins) {
+        return minutesToTime(minMins + MIN_DURATION);
+      }
+      return prev;
+    });
+  }, []);
+
+  // Enforce min < max: when max changes, push min backward if needed
+  const handleMaxChange = useCallback((newMax: string | null) => {
+    if (!newMax) { setLocalMaxTime(newMax); return; }
+    setLocalMaxTime(newMax);
+    setLocalMinTime((prev: string | null) => {
+      if (!prev) return prev;
+      const maxMins = timeToMinutes(newMax);
+      const minMins = timeToMinutes(prev);
+      if (minMins >= maxMins) {
+        return minutesToTime(maxMins - MIN_DURATION);
+      }
+      return prev;
+    });
+  }, []);
+
   // Enable transitions after first render so the duration bar doesn't animate on open
   useEffect(() => {
     if (!isOpen) {
@@ -112,9 +156,7 @@ export default function TimeGridModal({
   let durationMinutes = 0;
   let durationLabel = '';
   if (localMinTime && localMaxTime && isValid) {
-    const [minH, minM] = localMinTime.split(':').map(Number);
-    const [maxH, maxM] = localMaxTime.split(':').map(Number);
-    durationMinutes = (maxH * 60 + maxM) - (minH * 60 + minM);
+    durationMinutes = timeToMinutes(localMaxTime) - timeToMinutes(localMinTime);
     const hours = Math.floor(durationMinutes / 60);
     const mins = durationMinutes % 60;
     if (hours > 0 && mins > 0) {
@@ -173,8 +215,8 @@ export default function TimeGridModal({
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
-            onMinChange={setLocalMinTime}
-            onMaxChange={setLocalMaxTime}
+            onMinChange={handleMinChange}
+            onMaxChange={handleMaxChange}
             increment={15}
           />
         </div>

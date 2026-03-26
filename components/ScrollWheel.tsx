@@ -17,6 +17,7 @@ const MAX_FONT_SIZE = 18;
 const MIN_OPACITY = 0.35;
 const LOOP_REPEATS = 40; // total copies of the item list when looping
 const LOOP_CENTER = Math.floor(LOOP_REPEATS / 2); // which repetition to center on
+const SMOOTH_SCROLL_SETTLE_MS = 300;
 
 export default function ScrollWheel({
   items,
@@ -115,7 +116,9 @@ export default function ScrollWheel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When selectedIndex changes externally, sync scroll
+  // When selectedIndex changes externally, sync scroll.
+  // Suppress the scroll handler during programmatic scrolls so intermediate
+  // positions during the smooth animation don't fire onChange with stale indices.
   useEffect(() => {
     if (!didMount.current) return;
     if (suppressScrollHandler.current) return;
@@ -124,9 +127,18 @@ export default function ScrollWheel({
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
+      suppressScrollHandler.current = true;
       el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        suppressScrollHandler.current = false;
+        updateItemStyles();
+      }, SMOOTH_SCROLL_SETTLE_MS);
     }
-  }, [selectedIndex, selectedToScroll, items]);
+    return () => {
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    };
+  }, [selectedIndex, selectedToScroll, items, updateItemStyles]);
 
   // Re-center the loop scroll position silently after scrolling stops
   const recenterLoop = useCallback(() => {
