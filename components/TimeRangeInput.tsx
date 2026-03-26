@@ -1,5 +1,7 @@
 "use client";
 
+import TimeWindowButton from './TimeWindowButton';
+
 interface TimeRangeInputProps {
   minValue: string | null;
   maxValue: string | null;
@@ -35,187 +37,49 @@ export default function TimeRangeInput({
   hideCheckboxes = false,
   testId
 }: TimeRangeInputProps) {
-  // Helper: Add minutes to a time string
-  const addMinutes = (timeStr: string, minutes: number): string => {
-    const [hours, mins] = timeStr.split(':').map(Number);
-    const totalMinutes = hours * 60 + mins + minutes;
-    const newHours = Math.floor(totalMinutes / 60) % 24;
-    const newMins = totalMinutes % 60;
-    return `${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`;
-  };
+  const handleUpdate = (
+    min: string | null,
+    max: string | null,
+    minEn: boolean,
+    maxEn: boolean
+  ) => {
+    // Apply limits if specified
+    let finalMin = min;
+    let finalMax = max;
 
-  // Helper: Calculate time difference in minutes (time2 - time1)
-  const getMinutesDifference = (time1: string, time2: string): number => {
-    const [h1, m1] = time1.split(':').map(Number);
-    const [h2, m2] = time2.split(':').map(Number);
-    return (h2 * 60 + m2) - (h1 * 60 + m1);
-  };
-
-  const MINIMUM_DURATION_MINUTES = 15; // Minimum time span of 15 minutes
-
-  // Helper: Validate and format time string (HH:MM)
-  const validateTimeFormat = (value: string): string | null => {
-    if (!value) return null;
-
-    // Remove any non-digit characters except colon
-    const cleaned = value.replace(/[^\d:]/g, '');
-
-    // Try to parse as HH:MM
-    const match = cleaned.match(/^(\d{1,2}):?(\d{0,2})$/);
-    if (!match) return null;
-
-    const hours = parseInt(match[1], 10);
-    const mins = match[2] ? parseInt(match[2], 10) : 0;
-
-    // Validate ranges
-    if (hours < 0 || hours > 23 || mins < 0 || mins > 59) return null;
-
-    // Format as HH:MM
-    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-  };
-
-  const handleMinChange = (value: string) => {
-    if (!value) {
-      onMinChange(null);
-      return;
+    if (minLimit && min && min < minLimit) {
+      finalMin = minLimit;
+    }
+    if (maxLimit && min && min > maxLimit) {
+      finalMin = maxLimit;
+    }
+    if (minLimit && max && max < minLimit) {
+      finalMax = minLimit;
+    }
+    if (maxLimit && max && max > maxLimit) {
+      finalMax = maxLimit;
     }
 
-    // Validate format first
-    const formatted = validateTimeFormat(value);
-    if (!formatted) return; // Invalid format, ignore
+    // Update all values
+    onMinChange(finalMin);
+    onMaxChange(finalMax);
 
-    // Clamp to minLimit/maxLimit range (for iOS and other browsers that don't respect min/max)
-    let clampedValue = formatted;
-    if (minLimit && formatted < minLimit) {
-      clampedValue = minLimit;
-    }
-    if (maxLimit && formatted > maxLimit) {
-      clampedValue = maxLimit;
-    }
-
-    onMinChange(clampedValue);
-
-    // If max is enabled, ensure max is at least MINIMUM_DURATION_MINUTES after min
-    if (maxEnabled && maxValue && clampedValue) {
-      const gapMinutes = getMinutesDifference(clampedValue, maxValue);
-      if (gapMinutes < MINIMUM_DURATION_MINUTES) {
-        // Gap is too small - push max forward
-        let newMax = addMinutes(clampedValue, MINIMUM_DURATION_MINUTES);
-        // Also respect maxLimit
-        if (maxLimit && newMax > maxLimit) {
-          newMax = maxLimit;
-        }
-        onMaxChange(newMax);
-      }
-    }
-  };
-
-  const handleMaxChange = (value: string) => {
-    if (!value) {
-      onMaxChange(null);
-      return;
-    }
-
-    // Validate format first
-    const formatted = validateTimeFormat(value);
-    if (!formatted) return; // Invalid format, ignore
-
-    // Clamp to minLimit/maxLimit range (for iOS and other browsers that don't respect min/max)
-    let clampedValue = formatted;
-    if (minLimit && formatted < minLimit) {
-      clampedValue = minLimit;
-    }
-    if (maxLimit && formatted > maxLimit) {
-      clampedValue = maxLimit;
-    }
-
-    // Ensure max is at least MINIMUM_DURATION_MINUTES after min
-    if (minEnabled && minValue) {
-      const gapMinutes = getMinutesDifference(minValue, clampedValue);
-      if (gapMinutes < MINIMUM_DURATION_MINUTES) {
-        clampedValue = addMinutes(minValue, MINIMUM_DURATION_MINUTES);
-        // Also respect maxLimit
-        if (maxLimit && clampedValue > maxLimit) {
-          clampedValue = maxLimit;
-        }
-      }
-    }
-
-    onMaxChange(clampedValue);
+    // Respect required flags
+    onMinEnabledChange(minRequired ? true : minEn);
+    onMaxEnabledChange(maxRequired ? true : maxEn);
   };
 
   return (
     <div data-testid={testId}>
-      <div className={hideCheckboxes ? "flex justify-center items-center" : "relative flex justify-center items-center"}>
-        {/* Min checkbox - positioned absolutely on the left */}
-        {!hideCheckboxes && (
-          <input
-            type="checkbox"
-            checked={minEnabled}
-            onChange={(e) => onMinEnabledChange(e.target.checked)}
-            disabled={disabled || minRequired}
-            className="absolute left-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
-          />
-        )}
-
-        <div className="flex items-center gap-3">
-          {/* Min time input */}
-          <div className={!minEnabled ? 'opacity-40' : ''}>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{2}:[0-9]{2}"
-              placeholder="HH:MM"
-              value={minEnabled ? (minValue || '') : ''}
-              onChange={(e) => handleMinChange(e.target.value)}
-              onBlur={(e) => {
-                // Format on blur if valid
-                const formatted = validateTimeFormat(e.target.value);
-                if (formatted && minEnabled) {
-                  onMinChange(formatted);
-                }
-              }}
-              disabled={disabled || !minEnabled}
-              className="w-28 px-2 py-2 text-center text-lg font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-          </div>
-
-          {/* Hyphen separator */}
-          <span className="text-xl text-gray-500 dark:text-gray-400">—</span>
-
-          {/* Max time input */}
-          <div className={!maxEnabled ? 'opacity-40' : ''}>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{2}:[0-9]{2}"
-              placeholder="HH:MM"
-              value={maxEnabled ? (maxValue || '') : ''}
-              onChange={(e) => handleMaxChange(e.target.value)}
-              onBlur={(e) => {
-                // Format on blur if valid
-                const formatted = validateTimeFormat(e.target.value);
-                if (formatted && maxEnabled) {
-                  onMaxChange(formatted);
-                }
-              }}
-              disabled={disabled || !maxEnabled}
-              className="w-28 px-2 py-2 text-center text-lg font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-          </div>
-        </div>
-
-        {/* Max checkbox - positioned absolutely on the right */}
-        {!hideCheckboxes && (
-          <input
-            type="checkbox"
-            checked={maxEnabled}
-            onChange={(e) => onMaxEnabledChange(e.target.checked)}
-            disabled={disabled || maxRequired}
-            className="absolute right-0 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:border-gray-600 dark:focus:ring-blue-600 cursor-pointer disabled:opacity-50"
-          />
-        )}
-      </div>
+      <TimeWindowButton
+        minValue={minValue}
+        maxValue={maxValue}
+        minEnabled={minEnabled}
+        maxEnabled={maxEnabled}
+        onUpdate={handleUpdate}
+        label="" // No label, parent components add their own
+        disabled={disabled}
+      />
     </div>
   );
 }

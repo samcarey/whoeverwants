@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface DaysSelectorProps {
   selectedDays: string[];
@@ -9,11 +9,13 @@ interface DaysSelectorProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   allowedDays?: string[];  // If provided, only these days are selectable (others greyed out)
+  hideButton?: boolean;  // If true, only show modal (no clickable button with day list)
 }
 
-export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen, onOpenChange, allowedDays }: DaysSelectorProps) {
+export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen, onOpenChange, allowedDays, hideButton = false }: DaysSelectorProps) {
   const [tempSelectedDays, setTempSelectedDays] = useState<string[]>(selectedDays);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const modalContentRef = useRef<HTMLDivElement>(null);
 
   const handleToggleDay = (date: string) => {
     setTempSelectedDays(prev => {
@@ -57,14 +59,37 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
   // When opening, validate days and set temp state
   useEffect(() => {
-    if (isOpen) {
-      const validDays = removePastDates(selectedDays);
-      if (validDays.length !== selectedDays.length) {
-        onChange(validDays);
-      }
-      setTempSelectedDays(validDays);
-      setCurrentMonth(new Date());
+    if (!isOpen) return;
+
+    const validDays = removePastDates(selectedDays);
+    if (validDays.length !== selectedDays.length) {
+      onChange(validDays);
     }
+    setTempSelectedDays(validDays);
+    setCurrentMonth(new Date());
+
+    const body = document.body;
+    const html = document.documentElement;
+
+    // Store current scroll position
+    const scrollY = window.scrollY;
+
+    // Prevent background scrolling
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overscrollBehavior = 'none';
+    html.style.overscrollBehavior = 'none';
+
+    return () => {
+      // Restore scroll position
+      body.style.position = '';
+      body.style.top = '';
+      body.style.width = '';
+      body.style.overscrollBehavior = '';
+      html.style.overscrollBehavior = '';
+      window.scrollTo(0, scrollY);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -190,34 +215,36 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   return (
     <div>
       {/* Clickable selected days list */}
-      <button
-        type="button"
-        onClick={() => onOpenChange(true)}
-        disabled={disabled}
-        className="w-full text-left p-2 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:bg-transparent"
-      >
-        {selectedDays.length > 0 ? (
-          <div className="flex flex-wrap gap-2 items-start">
-            {selectedDays.map(date => {
-              const { label, dayNumber } = formatDate(date);
-              return (
-                <div
-                  key={date}
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full text-sm border border-blue-200 dark:border-blue-800"
-                >
-                  <span className="text-gray-700 dark:text-gray-200">{label}</span>
-                  <span className="w-px h-3 bg-blue-300 dark:bg-blue-700"></span>
-                  <span className="font-semibold text-blue-700 dark:text-blue-300 min-w-[1.25rem] text-center">{dayNumber}</span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Click to select days
-          </div>
-        )}
-      </button>
+      {!hideButton && (
+        <button
+          type="button"
+          onClick={() => onOpenChange(true)}
+          disabled={disabled}
+          className="w-full text-left p-2 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 dark:disabled:hover:border-gray-700 disabled:hover:bg-transparent"
+        >
+          {selectedDays.length > 0 ? (
+            <div className="flex flex-wrap gap-2 items-start">
+              {selectedDays.map(date => {
+                const { label, dayNumber } = formatDate(date);
+                return (
+                  <div
+                    key={date}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full text-sm border border-blue-200 dark:border-blue-800"
+                  >
+                    <span className="text-gray-700 dark:text-gray-200">{label}</span>
+                    <span className="w-px h-3 bg-blue-300 dark:bg-blue-700"></span>
+                    <span className="font-semibold text-blue-700 dark:text-blue-300 min-w-[1.25rem] text-center">{dayNumber}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Click to select days
+            </div>
+          )}
+        </button>
+      )}
 
       {isOpen && (
         <>
@@ -225,12 +252,19 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-40"
             onClick={handleCancel}
+            style={{ touchAction: 'none' }}
           />
 
           {/* Modal */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
-              <div className="p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ touchAction: 'none' }}>
+            <div
+              ref={modalContentRef}
+              className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full modal-scrollable overflow-auto"
+              style={{
+                maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 120px)'
+              }}
+            >
+              <div className="p-4 modal-scrollable">
                 {/* Month navigation */}
                 <div className="flex items-center justify-between mb-4">
                   <button

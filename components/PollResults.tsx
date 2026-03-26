@@ -440,18 +440,25 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   }, [results.poll_id]);
 
   // Determine if the event is happening based on participant count being in range
-  let isHappening = yesCount > 0;
+  // For participation polls, use the actual participant list from the algorithm
+  let isHappening = participants.length > 0;
   let statusMessage = '';
 
+  // If no one can participate (algorithm found no valid subset), event isn't happening
+  if (participants.length === 0 && yesCount > 0) {
+    isHappening = false;
+    statusMessage = `No compatible participant subset found`;
+  }
+
   if (minParticipants !== undefined && minParticipants !== null) {
-    if (yesCount < minParticipants) {
+    if (participants.length < minParticipants) {
       isHappening = false;
       statusMessage = `Need at least ${minParticipants} participants`;
     }
   }
 
   if (maxParticipants !== undefined && maxParticipants !== null) {
-    if (yesCount > maxParticipants) {
+    if (participants.length > maxParticipants) {
       isHappening = false;
       statusMessage = `Maximum ${maxParticipants} participants exceeded`;
     }

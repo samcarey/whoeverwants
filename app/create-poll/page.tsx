@@ -14,7 +14,7 @@ import { getUserName, saveUserName } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
-import ParticipationConditions from "@/components/ParticipationConditions";
+import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -45,11 +45,7 @@ function CreatePollContent() {
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
-  const [timeMinValue, setTimeMinValue] = useState<string | null>('09:00');
-  const [timeMaxValue, setTimeMaxValue] = useState<string | null>('17:00');
-  const [timeMinEnabled, setTimeMinEnabled] = useState(true);
-  const [timeMaxEnabled, setTimeMaxEnabled] = useState(true);
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -103,15 +99,11 @@ function CreatePollContent() {
         durationMaxValue,
         durationMinEnabled,
         durationMaxEnabled,
-        timeMinValue,
-        timeMaxValue,
-        timeMinEnabled,
-        timeMaxEnabled,
-        selectedDays
+        dayTimeWindows
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled, selectedDays]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -167,18 +159,16 @@ function CreatePollContent() {
           if (formState.durationMaxValue !== undefined) setDurationMaxValue(formState.durationMaxValue);
           if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
           if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
-          if (formState.timeMinValue !== undefined) setTimeMinValue(formState.timeMinValue);
-          if (formState.timeMaxValue !== undefined) setTimeMaxValue(formState.timeMaxValue);
-          // Don't restore time enabled states from localStorage - always true for participation polls
-          // if (formState.timeMinEnabled !== undefined) setTimeMinEnabled(formState.timeMinEnabled);
-          // if (formState.timeMaxEnabled !== undefined) setTimeMaxEnabled(formState.timeMaxEnabled);
-          if (formState.selectedDays !== undefined) setSelectedDays(formState.selectedDays);
+          if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
+
+          return formState;
         } catch (error) {
           console.error('Failed to load form state:', error);
+          return null;
         }
-      } else {
       }
     }
+    return null;
   };
 
   // Clear saved form state
@@ -294,7 +284,7 @@ function CreatePollContent() {
     }
 
     // For participation polls, at least one day must be selected
-    if (pollType === 'participation' && selectedDays.length === 0) {
+    if (pollType === 'participation' && dayTimeWindows.length === 0) {
       return "Please select at least one possible day.";
     }
 
@@ -334,26 +324,26 @@ function CreatePollContent() {
   useEffect(() => {
     setIsClient(true);
 
-    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
-    // (these special cases load their own data from URL params)
-    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
-      loadFormState();
-    }
-
-    // Initialize selectedDays with today if empty and no saved form state
-    if (selectedDays.length === 0) {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const todayStr = `${year}-${month}-${day}`;
-      setSelectedDays([todayStr]);
-    }
-
     // Load saved user name
     const savedName = getUserName();
     if (savedName) {
       setCreatorName(savedName);
+    }
+
+    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
+    // (these special cases load their own data from URL params)
+    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
+      const savedFormState = loadFormState();
+
+      // Initialize dayTimeWindows with today ONLY if there's no saved form state
+      if (!savedFormState || !savedFormState.dayTimeWindows || savedFormState.dayTimeWindows.length === 0) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+        setDayTimeWindows([{ day: todayStr, windows: [] }]);
+      }
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
@@ -589,7 +579,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -922,12 +912,9 @@ function CreatePollContent() {
           pollData.max_participants = maxParticipants;
         }
 
-        // Store participation poll conditions (the universe of possible conditions)
-        // Voters can only select a subset of these conditions
-
-        // Store possible days if any are selected
-        if (selectedDays.length > 0) {
-          pollData.possible_days = selectedDays;
+        // Store day_time_windows (new structure)
+        if (dayTimeWindows.length > 0) {
+          pollData.day_time_windows = dayTimeWindows;
         }
 
         // Store duration window if either min or max is enabled
@@ -937,16 +924,6 @@ function CreatePollContent() {
             maxValue: durationMaxValue,
             minEnabled: durationMinEnabled,
             maxEnabled: durationMaxEnabled
-          };
-        }
-
-        // Store time window if either min or max is enabled
-        if (timeMinEnabled || timeMaxEnabled) {
-          pollData.time_window = {
-            minValue: timeMinValue,
-            maxValue: timeMaxValue,
-            minEnabled: timeMinEnabled,
-            maxEnabled: timeMaxEnabled
           };
         }
       }
@@ -1149,16 +1126,8 @@ function CreatePollContent() {
               onDurationMaxChange={setDurationMaxValue}
               onDurationMinEnabledChange={setDurationMinEnabled}
               onDurationMaxEnabledChange={setDurationMaxEnabled}
-              timeMinValue={timeMinValue}
-              timeMaxValue={timeMaxValue}
-              timeMinEnabled={timeMinEnabled}
-              timeMaxEnabled={timeMaxEnabled}
-              onTimeMinChange={setTimeMinValue}
-              onTimeMaxChange={setTimeMaxValue}
-              onTimeMinEnabledChange={setTimeMinEnabled}
-              onTimeMaxEnabledChange={setTimeMaxEnabled}
-              selectedDays={selectedDays}
-              onDaysChange={setSelectedDays}
+              dayTimeWindows={dayTimeWindows}
+              onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
             />
           )}

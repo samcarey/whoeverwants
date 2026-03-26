@@ -24,7 +24,7 @@ import { isCreatedByThisBrowser, getCreatorSecret } from "@/lib/browserPollAcces
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
-import ParticipationConditions from "@/components/ParticipationConditions";
+import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import ParticipationConditionsCard from "@/components/ParticipationConditionsCard";
 
 interface PollPageClientProps {
@@ -117,14 +117,43 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
 
-  // Time conditions for participation polls
-  const [timeMinValue, setTimeMinValue] = useState<string | null>(null);
-  const [timeMaxValue, setTimeMaxValue] = useState<string | null>(null);
-  const [timeMinEnabled, setTimeMinEnabled] = useState(false);
-  const [timeMaxEnabled, setTimeMaxEnabled] = useState(false);
+  // Day time windows for participation polls (replaces selectedDays + time window)
+  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<DayTimeWindow[]>([]);
 
-  // Days for participation polls
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  // TEST API: Expose form setters for automated testing
+  useEffect(() => {
+    if (typeof window !== 'undefined' && poll.poll_type === 'participation') {
+      (window as any).__testAPI = {
+        setVoterMinParticipants,
+        setVoterMaxParticipants,
+        setVoterMaxEnabled,
+        setVoterDayTimeWindows,
+        setYesNoChoice,
+        setVoterName,
+        setDurationMinValue,
+        setDurationMaxValue,
+        setDurationMinEnabled,
+        setDurationMaxEnabled,
+        getFormState: () => ({
+          voterMinParticipants,
+          voterMaxParticipants,
+          voterMaxEnabled,
+          voterDayTimeWindows,
+          yesNoChoice,
+          voterName,
+          durationMinValue,
+          durationMaxValue,
+          durationMinEnabled,
+          durationMaxEnabled,
+        }),
+      };
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).__testAPI;
+      }
+    };
+  }, [voterMinParticipants, voterMaxParticipants, voterMaxEnabled, voterDayTimeWindows, yesNoChoice, voterName, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled]);
 
   const isPollExpired = useMemo(() => {
     // Use server-safe check
@@ -164,15 +193,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         voterMinParticipants,
         voterMaxParticipants,
         voterMaxEnabled,
-        selectedDays,
+        voterDayTimeWindows,
         durationMinValue,
         durationMaxValue,
         durationMinEnabled,
         durationMaxEnabled,
-        timeMinValue,
-        timeMaxValue,
-        timeMinEnabled,
-        timeMaxEnabled,
         savedAt: new Date().toISOString()
       };
 
@@ -180,7 +205,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     } catch (error) {
       console.error('Error saving draft form state:', error);
     }
-  }, [poll.poll_type, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, selectedDays, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
+  }, [poll.poll_type, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, voterDayTimeWindows, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled]);
 
   // Load draft participation poll form state from localStorage
   const loadDraftFormState = useCallback((pollId: string) => {
@@ -297,7 +322,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Fetch all votes by these IDs
       const { data: userVotes, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants, voter_days, voter_duration, voter_time')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, created_at, min_participants, max_participants, voter_day_time_windows, voter_duration')
         .in('id', voteIds)
         .eq('poll_id', pollId);
 
@@ -339,7 +364,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     try {
       const { data, error } = await supabase
         .from('votes')
-        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants, voter_days, voter_duration, voter_time')
+        .select('id, poll_id, vote_type, yes_no_choice, ranked_choices, nominations, is_abstain, min_participants, max_participants, voter_day_time_windows, voter_duration')
         .eq('id', voteId)
         .single();
 
@@ -394,10 +419,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Initialize voter conditions from poll conditions (participation polls only)
   useEffect(() => {
     if (poll.poll_type === 'participation') {
-      // Initialize days from poll's possible_days
-      if (poll.possible_days && poll.possible_days.length > 0) {
-        // Start with all poll days selected (voter can narrow down)
-        setSelectedDays(poll.possible_days);
+      // Initialize day time windows from poll's day_time_windows
+      if (poll.day_time_windows && poll.day_time_windows.length > 0) {
+        // Start with all poll day/time windows (voter can narrow down)
+        setVoterDayTimeWindows(poll.day_time_windows);
       }
 
       // Initialize duration from poll's duration_window
@@ -408,17 +433,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setDurationMinEnabled(minEnabled);
         setDurationMaxEnabled(maxEnabled);
       }
-
-      // Initialize time from poll's time_window
-      if (poll.time_window) {
-        const { minValue, maxValue, minEnabled, maxEnabled } = poll.time_window;
-        if (minValue !== null) setTimeMinValue(minValue);
-        if (maxValue !== null) setTimeMaxValue(maxValue);
-        setTimeMinEnabled(minEnabled);
-        setTimeMaxEnabled(maxEnabled);
-      }
     }
-  }, [poll.poll_type, poll.possible_days, poll.duration_window, poll.time_window]);
+  }, [poll.poll_type, poll.day_time_windows, poll.duration_window]);
 
   // Set hydration ready indicator for test automation
   useEffect(() => {
@@ -590,9 +606,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 setVoterMaxEnabled(false);
               }
 
-              // Load voter's days
-              if (voteData.voter_days && Array.isArray(voteData.voter_days)) {
-                setSelectedDays(voteData.voter_days);
+              // Load voter's day time windows
+              if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
+                setVoterDayTimeWindows(voteData.voter_day_time_windows);
               }
 
               // Load voter's duration conditions
@@ -602,15 +618,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 if (maxValue !== null && maxValue !== undefined) setDurationMaxValue(maxValue);
                 if (minEnabled !== undefined) setDurationMinEnabled(minEnabled);
                 if (maxEnabled !== undefined) setDurationMaxEnabled(maxEnabled);
-              }
-
-              // Load voter's time window conditions
-              if (voteData.voter_time) {
-                const { minValue, maxValue, minEnabled, maxEnabled } = voteData.voter_time;
-                if (minValue !== null && minValue !== undefined) setTimeMinValue(minValue);
-                if (maxValue !== null && maxValue !== undefined) setTimeMaxValue(maxValue);
-                if (minEnabled !== undefined) setTimeMinEnabled(minEnabled);
-                if (maxEnabled !== undefined) setTimeMaxEnabled(maxEnabled);
               }
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
@@ -643,15 +650,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (draft.voterMinParticipants !== undefined) setVoterMinParticipants(draft.voterMinParticipants);
         if (draft.voterMaxParticipants !== undefined) setVoterMaxParticipants(draft.voterMaxParticipants);
         if (draft.voterMaxEnabled !== undefined) setVoterMaxEnabled(draft.voterMaxEnabled);
-        if (draft.selectedDays !== undefined) setSelectedDays(draft.selectedDays);
         if (draft.durationMinValue !== undefined) setDurationMinValue(draft.durationMinValue);
         if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
         if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
         if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
-        if (draft.timeMinValue !== undefined) setTimeMinValue(draft.timeMinValue);
-        if (draft.timeMaxValue !== undefined) setTimeMaxValue(draft.timeMaxValue);
-        if (draft.timeMinEnabled !== undefined) setTimeMinEnabled(draft.timeMinEnabled);
-        if (draft.timeMaxEnabled !== undefined) setTimeMaxEnabled(draft.timeMaxEnabled);
+        if (draft.voterDayTimeWindows !== undefined) setVoterDayTimeWindows(draft.voterDayTimeWindows);
       }
     }
   }, [poll.id, poll.poll_type, hasVoted, isLoadingVoteData, loadDraftFormState]);
@@ -666,7 +669,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [poll.id, poll.poll_type, hasVoted, saveDraftFormState, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, selectedDays, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, timeMinValue, timeMaxValue, timeMinEnabled, timeMaxEnabled]);
+  }, [poll.id, poll.poll_type, hasVoted, saveDraftFormState, yesNoChoice, isAbstaining, voterMinParticipants, voterMaxParticipants, voterMaxEnabled, voterDayTimeWindows, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled]);
 
   // Separate effect to fetch results when poll closes or for participation polls
   useEffect(() => {
@@ -1188,17 +1191,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           }
 
           // Validate days: at least one day must be selected
-          if (selectedDays.length === 0) {
+          if (voterDayTimeWindows.length === 0) {
             setVoteError('Please select at least one possible day');
             setIsSubmitting(false);
             return;
           }
 
           // Validate days: voter days must be subset of poll days
-          if (selectedDays.length > 0 && poll.possible_days) {
-            const invalidDays = selectedDays.filter(day => !poll.possible_days?.includes(day));
+          if (voterDayTimeWindows.length > 0 && poll.day_time_windows) {
+            const pollDays = poll.day_time_windows.map(dtw => dtw.day);
+            const voterDays = voterDayTimeWindows.map(dtw => dtw.day);
+            const invalidDays = voterDays.filter(day => !pollDays.includes(day));
             if (invalidDays.length > 0) {
-              setVoteError(`Invalid dates selected. Please choose from: ${poll.possible_days.join(', ')}`);
+              setVoteError(`Invalid dates selected. Please choose from: ${pollDays.join(', ')}`);
               setIsSubmitting(false);
               return;
             }
@@ -1221,24 +1226,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               }
             }
           }
-
-          // Validate time window: voter time must be within poll time window
-          if ((timeMinEnabled || timeMaxEnabled) && poll.time_window) {
-            if (timeMinEnabled && poll.time_window.minEnabled) {
-              if (timeMinValue < poll.time_window.minValue) {
-                setVoteError(`Start time must be at or after ${poll.time_window.minValue}`);
-                setIsSubmitting(false);
-                return;
-              }
-            }
-            if (timeMaxEnabled && poll.time_window.maxEnabled) {
-              if (timeMaxValue > poll.time_window.maxValue) {
-                setVoteError(`End time cannot be later than ${poll.time_window.maxValue}`);
-                setIsSubmitting(false);
-                return;
-              }
-            }
-          }
         }
 
         voteData = {
@@ -1250,18 +1237,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           min_participants: voterMinParticipants,
           max_participants: voterMaxEnabled ? voterMaxParticipants : null,
           // Save voter's condition details
-          voter_days: selectedDays.length > 0 ? selectedDays : null,
+          voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
           voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
             minValue: durationMinValue,
             maxValue: durationMaxValue,
             minEnabled: durationMinEnabled,
             maxEnabled: durationMaxEnabled
-          } : null,
-          voter_time: (timeMinEnabled || timeMaxEnabled) ? {
-            minValue: timeMinValue,
-            maxValue: timeMaxValue,
-            minEnabled: timeMinEnabled,
-            maxEnabled: timeMaxEnabled
           } : null
         };
       } else if (poll.poll_type === 'ranked_choice') {
@@ -1903,14 +1884,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           isAbstaining={userVoteData.is_abstain || false}
                           voterMinParticipants={userVoteData.min_participants}
                           voterMaxParticipants={userVoteData.max_participants}
-                          voterDays={userVoteData.voter_days}
+                          voterDayTimeWindows={userVoteData.voter_day_time_windows}
                           voterDuration={userVoteData.voter_duration}
-                          voterTime={userVoteData.voter_time}
                           pollMinParticipants={poll.min_participants}
                           pollMaxParticipants={poll.max_participants}
-                          pollPossibleDays={poll.possible_days}
+                          pollDayTimeWindows={poll.day_time_windows}
                           pollDurationWindow={poll.duration_window}
-                          pollTimeWindow={poll.time_window}
                           isPollClosed={true}
                           isEventHappening={pollResults.is_happening}
                           isUserParticipating={areVoterConditionsMet ?? false}
@@ -1975,14 +1954,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             isAbstaining={userVoteData.is_abstain || false}
                             voterMinParticipants={userVoteData.min_participants}
                             voterMaxParticipants={userVoteData.max_participants}
-                            voterDays={userVoteData.voter_days}
+                            voterDayTimeWindows={userVoteData.voter_day_time_windows}
                             voterDuration={userVoteData.voter_duration}
-                            voterTime={userVoteData.voter_time}
                             pollMinParticipants={poll.min_participants}
                             pollMaxParticipants={poll.max_participants}
-                            pollPossibleDays={poll.possible_days}
+                            pollDayTimeWindows={poll.day_time_windows}
                             pollDurationWindow={poll.duration_window}
-                            pollTimeWindow={poll.time_window}
                             isPollClosed={false}
                           />
                         )}
@@ -2046,19 +2023,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onDurationMaxChange={setDurationMaxValue}
                       onDurationMinEnabledChange={setDurationMinEnabled}
                       onDurationMaxEnabledChange={setDurationMaxEnabled}
-                      timeMinValue={timeMinValue}
-                      timeMaxValue={timeMaxValue}
-                      timeMinEnabled={timeMinEnabled}
-                      timeMaxEnabled={timeMaxEnabled}
-                      onTimeMinChange={setTimeMinValue}
-                      onTimeMaxChange={setTimeMaxValue}
-                      onTimeMinEnabledChange={setTimeMinEnabled}
-                      onTimeMaxEnabledChange={setTimeMaxEnabled}
-                      selectedDays={selectedDays}
-                      onDaysChange={setSelectedDays}
-                      pollPossibleDays={poll.possible_days}
+                      dayTimeWindows={voterDayTimeWindows}
+                      onDayTimeWindowsChange={setVoterDayTimeWindows}
+                      pollDayTimeWindows={poll.day_time_windows}
                       pollDurationWindow={poll.duration_window}
-                      pollTimeWindow={poll.time_window}
                     />
                   </div>
 

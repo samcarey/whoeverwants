@@ -25,10 +25,6 @@ export default function Template({ children }: AppTemplateProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
-
-  // Pull-to-refresh state
-  const [isPulling, setIsPulling] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
   
   // Check if referrer is from a different domain or if this is a new tab/external entry
   // Also determine if back button should show home icon instead
@@ -264,112 +260,12 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh functionality
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    let startY = 0;
-    let startX = 0;
-    let currentY = 0;
-    let currentX = 0;
-    let isAtTop = true;
-    let isDragging = false;
-    let currentPullDistance = 0;
-
-    const handleTouchStart = (e: TouchEvent) => {
-      startY = e.touches[0].clientY;
-      startX = e.touches[0].clientX;
-      const scrollContainer = scrollContainerRef.current;
-      isAtTop = scrollContainer ? scrollContainer.scrollTop <= 5 : true;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isAtTop) return;
-
-      currentY = e.touches[0].clientY;
-      currentX = e.touches[0].clientX;
-      const deltaY = currentY - startY;
-      const deltaX = Math.abs(currentX - startX);
-
-      // Start dragging if vertical drag is significantly larger than horizontal drag
-      if (!isDragging && deltaY > 10 && deltaY > deltaX * 1.5) {
-        isDragging = true;
-      }
-
-      // Once dragging started, continuously update state based on current position
-      if (isDragging) {
-        // Update pull distance (use max of 0 to handle dragging back above start)
-        currentPullDistance = Math.max(0, deltaY);
-        setPullDistance(currentPullDistance);
-        setIsPulling(currentPullDistance > 60);
-
-        // Only prevent default when actually pulling down
-        if (deltaY > 0) {
-          e.preventDefault();
-        }
-      }
-    };
-
-    const handleTouchEnd = () => {
-      if (isDragging && currentPullDistance > 60) {
-        // Trigger page reload for all pages
-        window.location.reload();
-      }
-
-      // Reset state
-      isDragging = false;
-      currentPullDistance = 0;
-      setIsPulling(false);
-      setPullDistance(0);
-    };
-
-    // Add to document body to capture all touch events
-    document.body.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.body.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.body.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      document.body.removeEventListener('touchstart', handleTouchStart);
-      document.body.removeEventListener('touchmove', handleTouchMove);
-      document.body.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, []);
-
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
 
   return (
     <>
-      {/* Pull-to-refresh indicator */}
-      {isPulling && (
-        <div
-          className="fixed top-0 left-0 right-0 z-50 flex justify-center items-center transition-all duration-200"
-          style={{
-            transform: `translateY(${Math.min(pullDistance - 60, 40)}px)`,
-            opacity: pullDistance > 30 ? 1 : pullDistance / 30
-          }}
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2 mt-4">
-            <svg
-              className={`w-6 h-6 text-blue-600 dark:text-blue-400 ${
-                pullDistance > 60 ? 'animate-spin' : ''
-              }`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-          </div>
-        </div>
-      )}
-
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
       {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
@@ -426,7 +322,7 @@ export default function Template({ children }: AppTemplateProps) {
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1 className="text-2xl font-bold text-center whitespace-nowrap">
-                    Ask for{' '}
+                    Ask! for{' '}
                     <span
                       className="text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}

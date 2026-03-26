@@ -166,7 +166,7 @@ export default function CounterInput({
       onBlur={handleBlur}
       disabled={disabled}
       placeholder={placeholder}
-      className="w-16 px-1 py-2 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+      className="w-16 px-0.5 py-1.5 text-center text-xl font-medium border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
     />
   );
 

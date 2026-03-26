@@ -1,3 +1,8 @@
+interface DayTimeWindow {
+  day: string;
+  windows: { min: string; max: string }[];
+}
+
 interface ParticipationConditionsCardProps {
   // Voter's vote
   voterChoice: 'yes' | 'no' | null;
@@ -6,16 +11,14 @@ interface ParticipationConditionsCardProps {
   // Voter's conditions (from vote data)
   voterMinParticipants: number | null;
   voterMaxParticipants: number | null;
-  voterDays?: string[];
+  voterDayTimeWindows?: DayTimeWindow[];
   voterDuration?: { minValue: number | null; maxValue: number | null; minEnabled: boolean; maxEnabled: boolean };
-  voterTime?: { minValue: string | null; maxValue: string | null; minEnabled: boolean; maxEnabled: boolean };
 
   // Poll's requirements
   pollMinParticipants: number | null;
   pollMaxParticipants: number | null;
-  pollPossibleDays?: string[];
+  pollDayTimeWindows?: DayTimeWindow[];
   pollDurationWindow?: { minValue: number | null; maxValue: number | null; minEnabled: boolean; maxEnabled: boolean };
-  pollTimeWindow?: { minValue: string | null; maxValue: string | null; minEnabled: boolean; maxEnabled: boolean };
 
   // Results (when poll is closed)
   isPollClosed: boolean;
@@ -28,14 +31,12 @@ export default function ParticipationConditionsCard({
   isAbstaining,
   voterMinParticipants,
   voterMaxParticipants,
-  voterDays,
+  voterDayTimeWindows,
   voterDuration,
-  voterTime,
   pollMinParticipants,
   pollMaxParticipants,
-  pollPossibleDays,
+  pollDayTimeWindows,
   pollDurationWindow,
-  pollTimeWindow,
   isPollClosed,
   isEventHappening,
   isUserParticipating,
@@ -78,43 +79,35 @@ export default function ParticipationConditionsCard({
     return null;
   };
 
-  // Format time window
-  const formatTimeWindow = (time?: { minValue: string | null; maxValue: string | null; minEnabled: boolean; maxEnabled: boolean }) => {
-    if (!time) return null;
-
-    const formatTime = (timeStr: string) => {
-      const [hours, minutes] = timeStr.split(':');
-      const h = parseInt(hours);
-      const ampm = h >= 12 ? 'PM' : 'AM';
-      const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      return minutes === '00' ? `${displayHour}${ampm}` : `${displayHour}:${minutes}${ampm}`;
-    };
-
-    if (!time.minEnabled && !time.maxEnabled) return null;
-    if (time.minEnabled && time.maxEnabled && time.minValue && time.maxValue) {
-      return `${formatTime(time.minValue)}-${formatTime(time.maxValue)}`;
-    }
-    if (time.minEnabled && time.minValue) return `After ${formatTime(time.minValue)}`;
-    if (time.maxEnabled && time.maxValue) return `Before ${formatTime(time.maxValue)}`;
-    return null;
+  // Format time (12-hour format, compact)
+  const formatTime = (timeStr: string) => {
+    const [hours, minutes] = timeStr.split(':');
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return minutes === '00' ? `${displayHour}${ampm}` : `${displayHour}:${minutes}${ampm}`;
   };
 
-  // Format days
-  const formatDays = (days?: string[]) => {
-    if (!days || days.length === 0) return null;
-    if (days.length === 7) return 'Any day';
+  // Format day-time-windows
+  const formatDayTimeWindows = (dayTimeWindows?: DayTimeWindow[]) => {
+    if (!dayTimeWindows || dayTimeWindows.length === 0) return null;
 
-    const dayAbbr: Record<string, string> = {
-      'Monday': 'Mon',
-      'Tuesday': 'Tue',
-      'Wednesday': 'Wed',
-      'Thursday': 'Thu',
-      'Friday': 'Fri',
-      'Saturday': 'Sat',
-      'Sunday': 'Sun'
+    // Format day (short date format)
+    const formatDay = (dayStr: string) => {
+      const date = new Date(dayStr + 'T00:00:00');
+      const month = date.toLocaleDateString('en-US', { month: 'short' });
+      const day = date.getDate();
+      return `${month} ${day}`;
     };
 
-    return days.map(d => dayAbbr[d] || d).join(', ');
+    return dayTimeWindows.map(dtw => {
+      const dayStr = formatDay(dtw.day);
+      if (dtw.windows.length === 0) {
+        return dayStr; // Just the day, no time windows
+      }
+      const windowsStr = dtw.windows.map(w => `${formatTime(w.min)}-${formatTime(w.max)}`).join(', ');
+      return `${dayStr} (${windowsStr})`;
+    }).join('; ');
   };
 
   const voterParticipants = formatParticipantsRange(voterMinParticipants, voterMaxParticipants);
@@ -123,11 +116,8 @@ export default function ParticipationConditionsCard({
   const voterDurationStr = formatDuration(voterDuration);
   const pollDurationStr = formatDuration(pollDurationWindow);
 
-  const voterTimeStr = formatTimeWindow(voterTime);
-  const pollTimeStr = formatTimeWindow(pollTimeWindow);
-
-  const voterDaysStr = formatDays(voterDays);
-  const pollDaysStr = formatDays(pollPossibleDays);
+  const voterDayTimeWindowsStr = formatDayTimeWindows(voterDayTimeWindows);
+  const pollDayTimeWindowsStr = formatDayTimeWindows(pollDayTimeWindows);
 
   return (
     <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -149,33 +139,16 @@ export default function ParticipationConditionsCard({
           </div>
         </div>
 
-        {/* Days */}
-        {voterDaysStr && (
+        {/* Days & Time Windows */}
+        {voterDayTimeWindowsStr && (
           <div className="flex items-start">
             <span className="mr-2 text-blue-600 dark:text-blue-400">✓</span>
             <div className="flex-1">
               <span className="text-gray-700 dark:text-gray-300">
-                <strong className="text-blue-700 dark:text-blue-300">{voterDaysStr}</strong>
-                {pollDaysStr && pollDaysStr !== voterDaysStr && (
+                <strong className="text-blue-700 dark:text-blue-300">{voterDayTimeWindowsStr}</strong>
+                {pollDayTimeWindowsStr && pollDayTimeWindowsStr !== voterDayTimeWindowsStr && (
                   <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
-                    (poll: {pollDaysStr})
-                  </span>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Time Window */}
-        {voterTimeStr && (
-          <div className="flex items-start">
-            <span className="mr-2 text-blue-600 dark:text-blue-400">✓</span>
-            <div className="flex-1">
-              <span className="text-gray-700 dark:text-gray-300">
-                <strong className="text-blue-700 dark:text-blue-300">{voterTimeStr}</strong>
-                {pollTimeStr && pollTimeStr !== voterTimeStr && (
-                  <span className="text-gray-500 dark:text-gray-400 text-xs ml-1">
-                    (poll: {pollTimeStr})
+                    (poll: {pollDayTimeWindowsStr})
                   </span>
                 )}
               </span>

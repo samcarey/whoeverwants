@@ -1,7 +1,17 @@
 import { useState } from 'react';
 import MinMaxCounter from './MinMaxCounter';
-import TimeRangeInput from './TimeRangeInput';
 import DaysSelector from './DaysSelector';
+import DayTimeWindowsInput from './DayTimeWindowsInput';
+
+export interface TimeWindow {
+  min: string;
+  max: string;
+}
+
+export interface DayTimeWindow {
+  day: string; // YYYY-MM-DD format
+  windows: TimeWindow[];
+}
 
 interface ParticipationConditionsProps {
   minValue: number | null;
@@ -22,34 +32,19 @@ interface ParticipationConditionsProps {
   onDurationMaxChange?: (value: number | null) => void;
   onDurationMinEnabledChange?: (enabled: boolean) => void;
   onDurationMaxEnabledChange?: (enabled: boolean) => void;
-  // Time props
-  timeMinValue?: string | null;
-  timeMaxValue?: string | null;
-  timeMinEnabled?: boolean;
-  timeMaxEnabled?: boolean;
-  onTimeMinChange?: (value: string | null) => void;
-  onTimeMaxChange?: (value: string | null) => void;
-  onTimeMinEnabledChange?: (enabled: boolean) => void;
-  onTimeMaxEnabledChange?: (enabled: boolean) => void;
-  // Days props
-  selectedDays?: string[];
-  onDaysChange?: (days: string[]) => void;
+  // Day time windows props (replaces separate days + time window)
+  dayTimeWindows?: DayTimeWindow[];
+  onDayTimeWindowsChange?: (dayTimeWindows: DayTimeWindow[]) => void;
   // Poll-level condition restrictions (for voting form)
-  pollPossibleDays?: string[];
+  pollDayTimeWindows?: DayTimeWindow[];
   pollDurationWindow?: {
     minValue: number | null;
     maxValue: number | null;
     minEnabled: boolean;
     maxEnabled: boolean;
   };
-  pollTimeWindow?: {
-    minValue: string | null;
-    maxValue: string | null;
-    minEnabled: boolean;
-    maxEnabled: boolean;
-  };
   // Control flags
-  isCreationForm?: boolean;  // True when creating poll (hides time checkboxes)
+  isCreationForm?: boolean;  // True when creating poll
 }
 
 export default function ParticipationConditions({
@@ -70,19 +65,10 @@ export default function ParticipationConditions({
   onDurationMaxChange,
   onDurationMinEnabledChange,
   onDurationMaxEnabledChange,
-  timeMinValue = null,
-  timeMaxValue = null,
-  timeMinEnabled = false,
-  timeMaxEnabled = false,
-  onTimeMinChange,
-  onTimeMaxChange,
-  onTimeMinEnabledChange,
-  onTimeMaxEnabledChange,
-  selectedDays = [],
-  onDaysChange,
-  pollPossibleDays,
+  dayTimeWindows = [],
+  onDayTimeWindowsChange,
+  pollDayTimeWindows,
   pollDurationWindow,
-  pollTimeWindow,
   isCreationForm = false,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
@@ -102,196 +88,63 @@ export default function ParticipationConditions({
     return parseFloat(value.toFixed(2)).toString();
   };
 
-  // Helper: Parse time string to decimal hours
-  const timeToHours = (time: string): number => {
-    const [hours, minutes] = time.split(':').map(Number);
-    return hours + minutes / 60;
+  // Handle adding days from the days selector
+  const handleDaysSelected = (newDays: string[]) => {
+    if (!onDayTimeWindowsChange) return;
+
+    // Find which days were added
+    const existingDays = dayTimeWindows.map(dtw => dtw.day);
+    const addedDays = newDays.filter(day => !existingDays.includes(day));
+
+    // Create new DayTimeWindow entries for added days (with empty windows)
+    const newEntries: DayTimeWindow[] = addedDays.map(day => ({
+      day,
+      windows: []
+    }));
+
+    // Find which days were removed
+    const removedDays = existingDays.filter(day => !newDays.includes(day));
+
+    // Filter out removed days and add new entries
+    const updated = [
+      ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
+      ...newEntries
+    ];
+
+    // Sort by date
+    updated.sort((a, b) => a.day.localeCompare(b.day));
+
+    onDayTimeWindowsChange(updated);
   };
 
-  // Helper: Convert decimal hours to time string
-  const hoursToTime = (hours: number): string => {
-    const totalMinutes = Math.round(hours * 60);
-    const h = Math.floor(totalMinutes / 60) % 24;
-    const m = totalMinutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  // Handle updating windows for a specific day
+  const handleDayWindowsChange = (day: string, windows: TimeWindow[]) => {
+    if (!onDayTimeWindowsChange) return;
+
+    const updated = dayTimeWindows.map(dtw =>
+      dtw.day === day ? { ...dtw, windows } : dtw
+    );
+
+    onDayTimeWindowsChange(updated);
   };
 
-  // Calculate time window span in hours (always positive, wraps to next day if needed)
-  const calculateTimeSpan = (minTime: string | null, maxTime: string | null): number | null => {
-    if (!minTime || !maxTime) return null;
+  // Handle deleting an entire day
+  const handleDeleteDay = (day: string) => {
+    if (!onDayTimeWindowsChange) return;
 
-    const minHours = timeToHours(minTime);
-    const maxHours = timeToHours(maxTime);
-
-    // If max < min, it wraps to next day
-    if (maxHours >= minHours) {
-      return maxHours - minHours;
-    } else {
-      return (24 - minHours) + maxHours;
-    }
+    const updated = dayTimeWindows.filter(dtw => dtw.day !== day);
+    onDayTimeWindowsChange(updated);
   };
 
-  // Handle duration changes with time window validation
-  const handleDurationMinChange = (newDurationMin: number | null) => {
-    if (!onDurationMinChange || !onTimeMaxChange) return;
+  // Get currently selected days for the DaysSelector
+  const selectedDays = dayTimeWindows.map(dtw => dtw.day);
 
-    onDurationMinChange(newDurationMin);
-
-    // If both time bounds are enabled and duration exceeds window, expand time max
-    if (timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && newDurationMin) {
-      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (currentSpan !== null && newDurationMin > currentSpan) {
-        // Expand time max to accommodate duration min
-        const minHours = timeToHours(timeMinValue);
-        const newMaxHours = (minHours + newDurationMin) % 24;
-        onTimeMaxChange(hoursToTime(newMaxHours));
-      }
-    }
-  };
-
-  const handleDurationMaxChange = (newDurationMax: number | null) => {
-    if (!onDurationMaxChange || !onTimeMaxChange) return;
-
-    onDurationMaxChange(newDurationMax);
-
-    // If both time bounds are enabled and duration exceeds window, expand time max
-    if (timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && newDurationMax) {
-      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (currentSpan !== null && newDurationMax > currentSpan) {
-        // Expand time max to accommodate duration max
-        const minHours = timeToHours(timeMinValue);
-        const newMaxHours = (minHours + newDurationMax) % 24;
-        onTimeMaxChange(hoursToTime(newMaxHours));
-      }
-    }
-  };
-
-  // Handle time changes with duration validation
-  const handleTimeMinChange = (newTimeMin: string | null) => {
-    if (!onTimeMinChange) return;
-
-    onTimeMinChange(newTimeMin);
-
-    // If both time bounds are enabled, check if duration needs adjustment
-    if (timeMinEnabled && timeMaxEnabled && newTimeMin && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
-      const newSpan = calculateTimeSpan(newTimeMin, timeMaxValue);
-      if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
-        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
-        }
-        // Reduce duration max if it exceeds new span
-        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
-        }
-      }
-    }
-  };
-
-  const handleTimeMaxChange = (newTimeMax: string | null) => {
-    if (!onTimeMaxChange) return;
-
-    onTimeMaxChange(newTimeMax);
-
-    // If both time bounds are enabled, check if duration needs adjustment
-    if (timeMinEnabled && timeMaxEnabled && timeMinValue && newTimeMax && onDurationMinChange && onDurationMaxChange) {
-      const newSpan = calculateTimeSpan(timeMinValue, newTimeMax);
-      if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
-        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
-        }
-        // Reduce duration max if it exceeds new span
-        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
-        }
-      }
-    }
-  };
-
-  // Handle duration checkbox changes with time window validation
-  const handleDurationMinEnabledChange = (enabled: boolean) => {
-    if (!onDurationMinEnabledChange) return;
-
-    onDurationMinEnabledChange(enabled);
-
-    // If duration is now enabled and exceeds time window, expand time max
-    if (enabled && timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && durationMinValue && onTimeMaxChange) {
-      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (currentSpan !== null && durationMinValue > currentSpan) {
-        const minHours = timeToHours(timeMinValue);
-        const newMaxHours = (minHours + durationMinValue) % 24;
-        onTimeMaxChange(hoursToTime(newMaxHours));
-      }
-    }
-  };
-
-  const handleDurationMaxEnabledChange = (enabled: boolean) => {
-    if (!onDurationMaxEnabledChange) return;
-
-    onDurationMaxEnabledChange(enabled);
-
-    // If duration is now enabled and exceeds time window, expand time max
-    if (enabled && timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue && durationMaxValue && onTimeMaxChange) {
-      const currentSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (currentSpan !== null && durationMaxValue > currentSpan) {
-        const minHours = timeToHours(timeMinValue);
-        const newMaxHours = (minHours + durationMaxValue) % 24;
-        onTimeMaxChange(hoursToTime(newMaxHours));
-      }
-    }
-  };
-
-  // Handle time checkbox changes with duration validation
-  const handleTimeMinEnabledChange = (enabled: boolean) => {
-    if (!onTimeMinEnabledChange) return;
-
-    onTimeMinEnabledChange(enabled);
-
-    // If both time bounds are now enabled, check if duration needs adjustment
-    if (enabled && timeMaxEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
-      const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
-        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
-        }
-        // Reduce duration max if it exceeds new span
-        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
-        }
-      }
-    }
-  };
-
-  const handleTimeMaxEnabledChange = (enabled: boolean) => {
-    if (!onTimeMaxEnabledChange) return;
-
-    onTimeMaxEnabledChange(enabled);
-
-    // If both time bounds are now enabled, check if duration needs adjustment
-    if (enabled && timeMinEnabled && timeMinValue && timeMaxValue && onDurationMinChange && onDurationMaxChange) {
-      const newSpan = calculateTimeSpan(timeMinValue, timeMaxValue);
-      if (newSpan !== null) {
-        // Reduce duration min if it exceeds new span
-        if (durationMinEnabled && durationMinValue && durationMinValue > newSpan) {
-          onDurationMinChange(newSpan);
-        }
-        // Reduce duration max if it exceeds new span
-        if (durationMaxEnabled && durationMaxValue && durationMaxValue > newSpan) {
-          onDurationMaxChange(newSpan);
-        }
-      }
-    }
-  };
-
-  // Calculate current time window for display
-  const timeWindow = timeMinEnabled && timeMaxEnabled && timeMinValue && timeMaxValue
-    ? calculateTimeSpan(timeMinValue, timeMaxValue)
-    : null;
+  // Get allowed days from poll constraints (for voting form)
+  const allowedDays = pollDayTimeWindows?.map(dtw => dtw.day);
 
   return (
     <div className="space-y-3" data-testid="participation-conditions">
+      {/* Participants */}
       <div className="-mt-2 mb-1">
         <label className="block text-sm font-medium mb-1">
           Participants
@@ -315,47 +168,7 @@ export default function ParticipationConditions({
         </div>
       </div>
 
-      {onDaysChange && (
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Possible Days
-          </label>
-          <DaysSelector
-            selectedDays={selectedDays}
-            onChange={onDaysChange}
-            disabled={disabled}
-            isOpen={isDaysPickerOpen}
-            onOpenChange={setIsDaysPickerOpen}
-            allowedDays={pollPossibleDays}
-          />
-        </div>
-      )}
-
-      {onTimeMinChange && onTimeMaxChange && onTimeMinEnabledChange && onTimeMaxEnabledChange && (
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Time Window{timeWindow !== null ? ` (${formatDurationValue(timeWindow)} hours)` : ''}
-          </label>
-          <TimeRangeInput
-            minValue={timeMinValue}
-            maxValue={timeMaxValue}
-            minEnabled={timeMinEnabled}
-            maxEnabled={timeMaxEnabled}
-            onMinChange={handleTimeMinChange}
-            onMaxChange={handleTimeMaxChange}
-            onMinEnabledChange={handleTimeMinEnabledChange}
-            onMaxEnabledChange={handleTimeMaxEnabledChange}
-            disabled={disabled}
-            minLimit={pollTimeWindow?.minEnabled ? pollTimeWindow.minValue ?? undefined : undefined}
-            maxLimit={pollTimeWindow?.maxEnabled ? pollTimeWindow.maxValue ?? undefined : undefined}
-            minRequired={pollTimeWindow?.minEnabled ?? isCreationForm}
-            maxRequired={pollTimeWindow?.maxEnabled ?? isCreationForm}
-            hideCheckboxes={isCreationForm}
-            testId="time-range-input"
-          />
-        </div>
-      )}
-
+      {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>
           <label className="block text-sm font-medium mb-2">
@@ -365,9 +178,9 @@ export default function ParticipationConditions({
             minValue={durationMinValue}
             maxValue={durationMaxValue}
             maxEnabled={durationMaxEnabled}
-            onMinChange={handleDurationMinChange}
-            onMaxChange={handleDurationMaxChange}
-            onMaxEnabledChange={handleDurationMaxEnabledChange}
+            onMinChange={onDurationMinChange}
+            onMaxChange={onDurationMaxChange}
+            onMaxEnabledChange={onDurationMaxEnabledChange}
             increment={0.25}
             minLimit={pollDurationWindow?.minEnabled ? pollDurationWindow.minValue ?? 0.25 : 0.25}
             maxLimit={pollDurationWindow?.maxEnabled ? pollDurationWindow.maxValue : undefined}
@@ -376,9 +189,54 @@ export default function ParticipationConditions({
             disabled={disabled}
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
-            onMinCheckboxChange={handleDurationMinEnabledChange}
+            onMinCheckboxChange={onDurationMinEnabledChange}
             deferValidation={true}
             testId="duration-counter"
+          />
+        </div>
+      )}
+
+      {/* Day Time Windows (list of days with their time windows) */}
+      {onDayTimeWindowsChange && (
+        <div className="space-y-2">
+          {dayTimeWindows.length > 0 && (
+            <label className="block text-sm font-medium mb-2">
+              Time Windows
+            </label>
+          )}
+
+          {dayTimeWindows.map((dayTimeWindow) => (
+            <DayTimeWindowsInput
+              key={dayTimeWindow.day}
+              day={dayTimeWindow.day}
+              windows={dayTimeWindow.windows}
+              onChange={(windows) => handleDayWindowsChange(dayTimeWindow.day, windows)}
+              onDelete={() => handleDeleteDay(dayTimeWindow.day)}
+              disabled={disabled}
+            />
+          ))}
+
+          {/* Select Days Button */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setIsDaysPickerOpen(true)}
+              disabled={disabled}
+              className="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
+            </button>
+          </div>
+
+          {/* Days Selector Modal */}
+          <DaysSelector
+            selectedDays={selectedDays}
+            onChange={handleDaysSelected}
+            disabled={disabled}
+            isOpen={isDaysPickerOpen}
+            onOpenChange={setIsDaysPickerOpen}
+            allowedDays={allowedDays}
+            hideButton={true}
           />
         </div>
       )}

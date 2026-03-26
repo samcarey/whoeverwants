@@ -34,19 +34,26 @@ export interface Poll {
   min_participants?: number;
   max_participants?: number;
   // Participation poll conditions (universe of possible conditions for voters)
-  possible_days?: string[];
+  possible_days?: string[]; // Deprecated - use day_time_windows
   duration_window?: {
     minValue: number | null;
     maxValue: number | null;
     minEnabled: boolean;
     maxEnabled: boolean;
   };
-  time_window?: {
+  time_window?: { // Deprecated - use day_time_windows
     minValue: string | null;
     maxValue: string | null;
     minEnabled: boolean;
     maxEnabled: boolean;
   };
+  day_time_windows?: Array<{
+    day: string; // YYYY-MM-DD format
+    windows: Array<{
+      min: string; // HH:MM format
+      max: string; // HH:MM format
+    }>;
+  }>;
 }
 
 export interface Vote {
