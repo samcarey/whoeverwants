@@ -61,7 +61,14 @@ export default function TimeCounterInput({
       <input
         type="time"
         value={value || ''}
-        onChange={(e) => onChange(e.target.value || null)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (!raw) { onChange(null); return; }
+          const mins = timeToMinutes(raw);
+          const rounded = Math.round(mins / increment) * increment;
+          const clamped = Math.max(minMinutes, Math.min(maxMinutes, rounded));
+          onChange(minutesToTime(clamped));
+        }}
         min={min}
         max={max}
         step={increment * 60}
