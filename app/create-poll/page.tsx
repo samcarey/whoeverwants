@@ -14,7 +14,7 @@ import { getUserName, saveUserName } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
-import ParticipationConditions from "@/components/ParticipationConditions";
+import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +40,11 @@ function CreatePollContent() {
   const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
   const [minEnabled, setMinEnabled] = useState(true);
   const [maxEnabled, setMaxEnabled] = useState(false);
+  const [durationMinValue, setDurationMinValue] = useState<number | null>(1);
+  const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
+  const [durationMinEnabled, setDurationMinEnabled] = useState(true);
+  const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
+  const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -101,11 +106,19 @@ function CreatePollContent() {
         deadlineOption,
         customDate,
         customTime,
-        creatorName
+        creatorName,
+        minParticipants,
+        maxParticipants,
+        maxEnabled,
+        durationMinValue,
+        durationMaxValue,
+        durationMinEnabled,
+        durationMaxEnabled,
+        dayTimeWindows
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -153,12 +166,25 @@ function CreatePollContent() {
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
+
+          // Restore participation poll conditions
+          if (formState.minParticipants !== undefined) setMinParticipants(formState.minParticipants);
+          if (formState.maxParticipants !== undefined) setMaxParticipants(formState.maxParticipants);
+          if (formState.maxEnabled !== undefined) setMaxEnabled(formState.maxEnabled);
+          if (formState.durationMinValue !== undefined) setDurationMinValue(formState.durationMinValue);
+          if (formState.durationMaxValue !== undefined) setDurationMaxValue(formState.durationMaxValue);
+          if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
+          if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
+          if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
+
+          return formState;
         } catch (error) {
           console.error('Failed to load form state:', error);
+          return null;
         }
-      } else {
       }
     }
+    return null;
   };
 
   // Clear saved form state
@@ -312,14 +338,24 @@ function CreatePollContent() {
 
     // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
     // (these special cases load their own data from URL params)
-    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
-      loadFormState();
-    }
-
     // Load saved user name
     const savedName = getUserName();
     if (savedName) {
       setCreatorName(savedName);
+    }
+
+    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
+      const savedFormState = loadFormState();
+
+      // Initialize dayTimeWindows with today if no saved form state has them
+      if (!savedFormState || !savedFormState.dayTimeWindows || savedFormState.dayTimeWindows.length === 0) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+        setDayTimeWindows([{ day: todayStr, windows: [] }]);
+      }
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
@@ -559,7 +595,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -903,12 +939,27 @@ function CreatePollContent() {
         if (maxEnabled && maxParticipants !== null) {
           pollData.max_participants = maxParticipants;
         }
+
+        // Add day_time_windows
+        if (dayTimeWindows.length > 0) {
+          pollData.day_time_windows = dayTimeWindows;
+        }
+
+        // Add duration_window if either min or max is enabled
+        if (durationMinEnabled || durationMaxEnabled) {
+          pollData.duration_window = {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          };
+        }
       }
 
-      // Add location/time fields for participation polls
+      // Add location field for participation polls
       if (dbPollType === 'participation') {
         const addFieldData = (
-          fieldName: 'location' | 'time',
+          fieldName: 'location',
           mode: string,
           fieldValue: string,
           fieldOptions: string[],
@@ -931,7 +982,6 @@ function CreatePollContent() {
           }
         };
         addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
-        addFieldData('time', timeMode, timeValue, timeOptions, timeSuggestionsDeadline, timePreferencesDeadline);
       }
 
       // Add auto-close after N respondents
@@ -1141,10 +1191,21 @@ function CreatePollContent() {
               onMaxChange={setMaxParticipants}
               onMaxEnabledChange={setMaxEnabled}
               disabled={isLoading}
+              durationMinValue={durationMinValue}
+              durationMaxValue={durationMaxValue}
+              durationMinEnabled={durationMinEnabled}
+              durationMaxEnabled={durationMaxEnabled}
+              onDurationMinChange={setDurationMinValue}
+              onDurationMaxChange={setDurationMaxValue}
+              onDurationMinEnabledChange={setDurationMinEnabled}
+              onDurationMaxEnabledChange={setDurationMaxEnabled}
+              dayTimeWindows={dayTimeWindows}
+              onDayTimeWindowsChange={setDayTimeWindows}
+              isCreationForm={true}
             />
           )}
 
-          {/* Location/Time fields for participation polls */}
+          {/* Location field for participation polls */}
           {pollType === 'participation' && (
             <div className="space-y-3">
               <LocationTimeFieldConfig
@@ -1159,21 +1220,6 @@ function CreatePollContent() {
                 onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
                 preferencesDeadline={locationPreferencesDeadline}
                 onPreferencesDeadlineChange={setLocationPreferencesDeadline}
-                deadlineOptions={baseDeadlineOptions}
-                isLoading={isLoading}
-              />
-              <LocationTimeFieldConfig
-                label="Time"
-                mode={timeMode}
-                onModeChange={setTimeMode}
-                value={timeValue}
-                onValueChange={setTimeValue}
-                options={timeOptions}
-                onOptionsChange={setTimeOptions}
-                suggestionsDeadline={timeSuggestionsDeadline}
-                onSuggestionsDeadlineChange={setTimeSuggestionsDeadline}
-                preferencesDeadline={timePreferencesDeadline}
-                onPreferencesDeadlineChange={setTimePreferencesDeadline}
                 deadlineOptions={baseDeadlineOptions}
                 isLoading={isLoading}
               />

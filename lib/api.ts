@@ -46,6 +46,8 @@ export interface ApiVote {
   voter_name: string | null;
   min_participants: number | null;
   max_participants: number | null;
+  voter_day_time_windows: any[] | null;
+  voter_duration: any | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,6 +123,8 @@ function toPoll(data: any): Poll {
     location_preferences_deadline_minutes: data.location_preferences_deadline_minutes ?? undefined,
     time_suggestions_deadline_minutes: data.time_suggestions_deadline_minutes ?? undefined,
     time_preferences_deadline_minutes: data.time_preferences_deadline_minutes ?? undefined,
+    day_time_windows: data.day_time_windows ?? undefined,
+    duration_window: data.duration_window ?? undefined,
   };
 }
 
@@ -143,6 +147,7 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     nomination_counts: data.nomination_counts ?? undefined,
     ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
     ranked_choice_winner: data.ranked_choice_winner ?? undefined,
+    time_slot_rounds: data.time_slot_rounds ?? undefined,
   };
 }
 
@@ -184,6 +189,8 @@ export async function apiCreatePoll(params: {
   location_preferences_deadline_minutes?: number;
   time_suggestions_deadline_minutes?: number;
   time_preferences_deadline_minutes?: number;
+  day_time_windows?: any[];
+  duration_window?: any;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -231,6 +238,8 @@ export async function apiSubmitVote(pollId: string, params: {
   voter_name?: string | null;
   min_participants?: number | null;
   max_participants?: number | null;
+  voter_day_time_windows?: any[] | null;
+  voter_duration?: any | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
     method: 'POST',
@@ -250,6 +259,8 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
   voter_name?: string | null;
   min_participants?: number | null;
   max_participants?: number | null;
+  voter_day_time_windows?: any[] | null;
+  voter_duration?: any | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`, {
     method: 'PUT',

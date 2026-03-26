@@ -38,6 +38,25 @@ export interface Poll {
   location_preferences_deadline_minutes?: number | null;
   time_suggestions_deadline_minutes?: number | null;
   time_preferences_deadline_minutes?: number | null;
+  day_time_windows?: DayTimeWindow[] | null;
+  duration_window?: DurationWindow | null;
+}
+
+export interface TimeWindow {
+  min: string; // HH:MM format
+  max: string; // HH:MM format
+}
+
+export interface DayTimeWindow {
+  day: string; // YYYY-MM-DD format
+  windows: TimeWindow[];
+}
+
+export interface DurationWindow {
+  minValue: number | null;
+  maxValue: number | null;
+  minEnabled: boolean;
+  maxEnabled: boolean;
 }
 
 export interface Vote {
@@ -71,6 +90,19 @@ export interface PollResults {
   participants_in_count?: number;
   is_happening?: boolean;
   nomination_counts?: NominationCount[];
+  time_slot_rounds?: TimeSlotResult[];
+}
+
+export interface TimeSlotResult {
+  round_number: number;
+  slot_date: string;
+  slot_start_time: string;
+  slot_end_time: string;
+  duration_hours: number;
+  participant_count: number;
+  participant_vote_ids: string[];
+  participant_names: string[];
+  is_winner: boolean;
 }
 
 export interface RankedChoiceRound {
