@@ -3,16 +3,18 @@
 import { useState, useEffect, useRef } from 'react';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
 
+// Duration bar width scaling constants
+const MIN_DURATION = 15; // minutes
+const MAX_DURATION = 24 * 60;
+const MIN_WIDTH_PCT = 10;
+const MAX_WIDTH_PCT = 100;
+
 interface TimeGridModalProps {
   isOpen: boolean;
   onClose: () => void;
   minValue: string | null;
   maxValue: string | null;
-  minEnabled: boolean;
-  maxEnabled: boolean;
-  onApply: (min: string | null, max: string | null, minEnabled: boolean, maxEnabled: boolean) => void;
-  absoluteMin?: string; // HH:MM - hard lower bound for voter constraint
-  absoluteMax?: string; // HH:MM - hard upper bound for voter constraint
+  onApply: (min: string | null, max: string | null) => void;
 }
 
 export default function TimeGridModal({
@@ -20,11 +22,7 @@ export default function TimeGridModal({
   onClose,
   minValue,
   maxValue,
-  minEnabled,
-  maxEnabled,
   onApply,
-  absoluteMin,
-  absoluteMax,
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
@@ -95,16 +93,8 @@ export default function TimeGridModal({
 
   if (!isOpen) return null;
 
-  const handleMinTimeChange = (time: string | null) => {
-    setLocalMinTime(time);
-  };
-
-  const handleMaxTimeChange = (time: string | null) => {
-    setLocalMaxTime(time);
-  };
-
   const handleApply = () => {
-    onApply(localMinTime, localMaxTime, true, true);
+    onApply(localMinTime, localMaxTime);
     onClose();
   };
 
@@ -135,11 +125,6 @@ export default function TimeGridModal({
       durationLabel = `${mins}m`;
     }
   }
-  // Width: 15 min → ~42px (AM/PM wheel width), 24h (1440 min) → 100%
-  const MIN_DURATION = 15;
-  const MAX_DURATION = 24 * 60;
-  const MIN_WIDTH_PCT = 10; // % — roughly AM/PM wheel width relative to modal
-  const MAX_WIDTH_PCT = 100;
   const widthPct = durationMinutes > 0
     ? MIN_WIDTH_PCT + (MAX_WIDTH_PCT - MIN_WIDTH_PCT) * ((durationMinutes - MIN_DURATION) / (MAX_DURATION - MIN_DURATION))
     : 0;
@@ -188,11 +173,9 @@ export default function TimeGridModal({
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
-            onMinChange={handleMinTimeChange}
-            onMaxChange={handleMaxTimeChange}
+            onMinChange={setLocalMinTime}
+            onMaxChange={setLocalMaxTime}
             increment={15}
-            absoluteMin={absoluteMin}
-            absoluteMax={absoluteMax}
           />
         </div>
 

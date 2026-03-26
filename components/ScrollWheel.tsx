@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 
 interface ScrollWheelProps {
   items: string[];
@@ -40,7 +40,6 @@ export default function ScrollWheel({
 
   const padding = Math.floor(visibleItems / 2) * itemHeight;
   const containerHeight = visibleItems * itemHeight;
-  const centerOffset = padding;
 
   // Convert a selectedIndex (0..items.length-1) to the scroll position in the center repetition
   const selectedToScroll = useCallback((idx: number) => {
@@ -62,7 +61,7 @@ export default function ScrollWheel({
     if (!el) return;
 
     const scrollTop = el.scrollTop;
-    const visibleCenter = scrollTop + centerOffset + itemHeight / 2;
+    const visibleCenter = scrollTop + padding + itemHeight / 2;
     const maxDistance = Math.floor(visibleItems / 2);
 
     for (let i = 0; i < itemRefs.current.length; i++) {
@@ -84,7 +83,7 @@ export default function ScrollWheel({
       itemEl.style.opacity = String(opacity);
       itemEl.style.fontWeight = String(fontWeight);
     }
-  }, [itemHeight, padding, centerOffset, visibleItems]);
+  }, [itemHeight, padding, visibleItems]);
 
   // On mount: position scroll before first paint.
   // Suppress the scroll handler so the initial scrollTop assignment
@@ -203,26 +202,24 @@ export default function ScrollWheel({
     };
   }, []);
 
-  // Cleanup rAF on unmount
+  // Cleanup rAF and scroll timeout on unmount
   useEffect(() => {
     return () => {
       if (rAFId.current !== null) cancelAnimationFrame(rAFId.current);
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     };
   }, []);
 
-  // Build the rendered item list
-  const renderedItems: { label: string; realIndex: number }[] = [];
-  if (loop) {
-    for (let rep = 0; rep < LOOP_REPEATS; rep++) {
+  const renderedItems = useMemo(() => {
+    const result: { label: string; realIndex: number }[] = [];
+    const repeats = loop ? LOOP_REPEATS : 1;
+    for (let rep = 0; rep < repeats; rep++) {
       for (let i = 0; i < items.length; i++) {
-        renderedItems.push({ label: items[i], realIndex: i });
+        result.push({ label: items[i], realIndex: i });
       }
     }
-  } else {
-    for (let i = 0; i < items.length; i++) {
-      renderedItems.push({ label: items[i], realIndex: i });
-    }
-  }
+    return result;
+  }, [items, loop]);
 
   return (
     <div className="relative" style={{ height: containerHeight, width }}>

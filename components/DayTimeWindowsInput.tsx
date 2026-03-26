@@ -37,23 +37,6 @@ function formatDayDisplay(dateStr: string): string {
   return `${weekday}, ${month} ${day}`;
 }
 
-// Find the poll window that contains a voter window (by overlap)
-function findContainingPollWindow(voterWindow: TimeWindow, pollWindows: TimeWindow[]): TimeWindow | undefined {
-  const vMin = timeToMinutes(voterWindow.min);
-  const vMax = timeToMinutes(voterWindow.max);
-  return pollWindows.find(pw => {
-    const pMin = timeToMinutes(pw.min);
-    const pMax = timeToMinutes(pw.max);
-    return pMin <= vMin && vMax <= pMax;
-  });
-}
-
-// Convert HH:MM to minutes since midnight
-function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
 export default function DayTimeWindowsInput({
   day,
   windows,
@@ -177,15 +160,7 @@ export default function DayTimeWindowsInput({
         }}
         minValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].min : "09:00"}
         maxValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].max : "17:00"}
-        minEnabled={true}
-        maxEnabled={true}
         onApply={handleModalApply}
-        absoluteMin={pollWindows && editingIndex !== null && windows[editingIndex]
-          ? findContainingPollWindow(windows[editingIndex], pollWindows)?.min
-          : undefined}
-        absoluteMax={pollWindows && editingIndex !== null && windows[editingIndex]
-          ? findContainingPollWindow(windows[editingIndex], pollWindows)?.max
-          : undefined}
       />
     </div>
   );

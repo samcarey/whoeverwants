@@ -1,14 +1,12 @@
 "use client";
 
-import { useRef } from 'react';
+import { useRef, useMemo } from 'react';
 import ScrollWheel from './ScrollWheel';
 
 interface TimeCounterInputProps {
   value: string | null; // HH:MM format (24-hour)
   onChange: (value: string | null) => void;
   increment?: number; // minutes (used to generate minute options)
-  min?: string; // HH:MM format
-  max?: string; // HH:MM format
   disabled?: boolean;
 }
 
@@ -41,8 +39,8 @@ export default function TimeCounterInput({
   increment = 15,
   disabled = false,
 }: TimeCounterInputProps) {
-  const minuteOptions = getMinuteOptions(increment);
-  const minuteLabels = minuteOptions.map(m => m.toString().padStart(2, '0'));
+  const minuteOptions = useMemo(() => getMinuteOptions(increment), [increment]);
+  const minuteLabels = useMemo(() => minuteOptions.map(m => m.toString().padStart(2, '0')), [minuteOptions]);
 
   const prevHourIndex = useRef<number | null>(null);
   const prevMinuteIndex = useRef<number | null>(null);
