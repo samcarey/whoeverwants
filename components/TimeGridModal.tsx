@@ -48,13 +48,13 @@ export default function TimeGridModal({
     body.style.overscrollBehavior = 'none';
     html.style.overscrollBehavior = 'none';
 
-    // Block pull-to-refresh by preventing touchmove on the backdrop
-    // (must be non-passive to allow preventDefault)
+    // Block pull-to-refresh by preventing touchmove everywhere in the modal
+    // except inside scroll wheels (which need touch scrolling to work).
+    // Must use non-passive listener to allow preventDefault.
     const backdrop = backdropRef.current;
     const preventRefresh = (e: TouchEvent) => {
-      // Allow scrolling inside scroll wheels, block everything else
       const target = e.target as HTMLElement;
-      if (!target.closest('.scrollbar-hide')) {
+      if (!target.closest('[data-scroll-wheel]')) {
         e.preventDefault();
       }
     };
@@ -117,7 +117,6 @@ export default function TimeGridModal({
       <div
         className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 flex flex-col"
         onClick={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">

@@ -70,6 +70,7 @@ export default function ScrollWheel({
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        data-scroll-wheel
         className="h-full overflow-y-auto scrollbar-hide"
         style={{
           scrollSnapType: 'y mandatory',
