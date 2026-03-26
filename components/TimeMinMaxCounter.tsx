@@ -20,14 +20,14 @@ export default function TimeMinMaxCounter({
   disabled = false,
 }: TimeMinMaxCounterProps) {
   return (
-    <div className="flex justify-center items-center gap-3">
+    <div className="flex justify-center items-center gap-1.5">
       <TimeCounterInput
         value={minValue}
         onChange={onMinChange}
         increment={increment}
         disabled={disabled}
       />
-      <span className="text-xl text-gray-500 dark:text-gray-400">—</span>
+      <span className="text-base text-gray-400 dark:text-gray-500">–</span>
       <TimeCounterInput
         value={maxValue}
         onChange={onMaxChange}

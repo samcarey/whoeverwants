@@ -161,7 +161,7 @@ export default function TimeGridModal({
     <div
       ref={backdropRef}
       data-modal
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center pb-[25vh] sm:pb-0 sm:pt-20 bg-black/50"
       onClick={handleCancel}
       style={{ touchAction: 'none' }}
     >
