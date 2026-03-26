@@ -907,36 +907,31 @@ function CreatePollContent() {
 
       // Add location/time fields for participation polls
       if (dbPollType === 'participation') {
-        if (locationMode !== 'none') {
-          pollData.location_mode = locationMode;
-          if (locationMode === 'set') {
-            pollData.location_value = locationValue.trim();
-          } else if (locationMode === 'preferences') {
-            pollData.location_options = locationOptions.filter(o => o.trim() !== '');
-            pollData.location_preferences_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === locationPreferencesDeadline)?.minutes || 10;
-          } else if (locationMode === 'suggestions') {
-            pollData.location_suggestions_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === locationSuggestionsDeadline)?.minutes || 10;
-            pollData.location_preferences_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === locationPreferencesDeadline)?.minutes || 10;
+        const addFieldData = (
+          fieldName: 'location' | 'time',
+          mode: string,
+          fieldValue: string,
+          fieldOptions: string[],
+          sugDeadline: string,
+          prefDeadline: string,
+        ) => {
+          if (mode === 'none') return;
+          pollData[`${fieldName}_mode`] = mode;
+          if (mode === 'set') {
+            pollData[`${fieldName}_value`] = fieldValue.trim();
+          } else if (mode === 'preferences') {
+            pollData[`${fieldName}_options`] = fieldOptions.filter(o => o.trim() !== '');
+            pollData[`${fieldName}_preferences_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+          } else if (mode === 'suggestions') {
+            pollData[`${fieldName}_suggestions_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === sugDeadline)?.minutes || 10;
+            pollData[`${fieldName}_preferences_deadline_minutes`] =
+              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
           }
-        }
-        if (timeMode !== 'none') {
-          pollData.time_mode = timeMode;
-          if (timeMode === 'set') {
-            pollData.time_value = timeValue.trim();
-          } else if (timeMode === 'preferences') {
-            pollData.time_options = timeOptions.filter(o => o.trim() !== '');
-            pollData.time_preferences_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === timePreferencesDeadline)?.minutes || 10;
-          } else if (timeMode === 'suggestions') {
-            pollData.time_suggestions_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === timeSuggestionsDeadline)?.minutes || 10;
-            pollData.time_preferences_deadline_minutes =
-              baseDeadlineOptions.find(o => o.value === timePreferencesDeadline)?.minutes || 10;
-          }
-        }
+        };
+        addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
+        addFieldData('time', timeMode, timeValue, timeOptions, timeSuggestionsDeadline, timePreferencesDeadline);
       }
 
       // Add auto-close after N respondents

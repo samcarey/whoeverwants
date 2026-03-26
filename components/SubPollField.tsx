@@ -14,10 +14,9 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
   const [subPolls, setSubPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const hasLocationField = poll.location_mode && poll.location_mode !== 'set';
-  const hasTimeField = poll.time_mode && poll.time_mode !== 'set';
-
   useEffect(() => {
+    const hasLocationField = poll.location_mode && poll.location_mode !== 'set';
+    const hasTimeField = poll.time_mode && poll.time_mode !== 'set';
     if (!hasLocationField && !hasTimeField) {
       setLoading(false);
       return;
@@ -36,7 +35,8 @@ export default function SubPollField({ poll }: SubPollFieldProps) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [poll.id, hasLocationField, hasTimeField]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poll.id]);
 
   if (!poll.location_mode && !poll.time_mode) return null;
 
