@@ -142,11 +142,9 @@ export default function ScrollWheel({
       });
     }
 
-    // Debounced selection change
-    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-    scrollTimeout.current = setTimeout(() => {
-      const el = containerRef.current;
-      if (!el) return;
+    // Immediately report nearest index as it changes (no debounce)
+    const el = containerRef.current;
+    if (el) {
       const rawIndex = Math.round(el.scrollTop / itemHeight);
       const realIndex = loop
         ? rawToReal(rawIndex)
@@ -155,8 +153,15 @@ export default function ScrollWheel({
         lastReportedIndex.current = realIndex;
         onChange(realIndex);
       }
-      recenterLoop();
-    }, 150);
+    }
+
+    // Debounced loop re-centering (only needed for loop mode)
+    if (loop) {
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        recenterLoop();
+      }, 150);
+    }
   }, [itemHeight, items.length, onChange, updateItemStyles, loop, rawToReal, recenterLoop]);
 
   // Track touch state
