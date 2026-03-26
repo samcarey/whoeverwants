@@ -143,7 +143,7 @@ export default function ScrollWheel({
     <div className="relative" style={{ height: containerHeight, width }}>
       {/* Selection highlight band */}
       <div
-        className="absolute left-0 right-0 pointer-events-none border-y border-blue-400 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 z-10"
+        className="absolute left-0 right-0 pointer-events-none border-y border-blue-400 dark:border-blue-500 z-10"
         style={{ top: padding, height: itemHeight }}
       />
       {/* Top fade */}
