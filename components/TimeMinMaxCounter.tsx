@@ -9,6 +9,8 @@ interface TimeMinMaxCounterProps {
   onMaxChange: (value: string | null) => void;
   increment?: number; // minutes
   disabled?: boolean;
+  absoluteMin?: string; // HH:MM - hard lower bound (voter can't go earlier)
+  absoluteMax?: string; // HH:MM - hard upper bound (voter can't go later)
 }
 
 export default function TimeMinMaxCounter({
@@ -17,7 +19,9 @@ export default function TimeMinMaxCounter({
   onMinChange,
   onMaxChange,
   increment = 15,
-  disabled = false
+  disabled = false,
+  absoluteMin,
+  absoluteMax,
 }: TimeMinMaxCounterProps) {
   return (
     <div>
@@ -28,6 +32,7 @@ export default function TimeMinMaxCounter({
             value={minValue}
             onChange={onMinChange}
             increment={increment}
+            min={absoluteMin}
             max={maxValue || undefined}
             disabled={disabled}
             arrowPosition="left"
@@ -42,6 +47,7 @@ export default function TimeMinMaxCounter({
             onChange={onMaxChange}
             increment={increment}
             min={minValue || undefined}
+            max={absoluteMax}
             disabled={disabled}
             arrowPosition="right"
           />

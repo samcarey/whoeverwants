@@ -14,6 +14,7 @@ interface DayTimeWindowsInputProps {
   onChange: (windows: TimeWindow[]) => void;
   onDelete: () => void; // Delete entire day
   disabled?: boolean;
+  pollWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
 }
 
 // Format time in 12-hour format (compact) - returns {time, period}
@@ -36,12 +37,30 @@ function formatDayDisplay(dateStr: string): string {
   return `${weekday}, ${month} ${day}`;
 }
 
+// Find the poll window that contains a voter window (by overlap)
+function findContainingPollWindow(voterWindow: TimeWindow, pollWindows: TimeWindow[]): TimeWindow | undefined {
+  const vMin = timeToMinutes(voterWindow.min);
+  const vMax = timeToMinutes(voterWindow.max);
+  return pollWindows.find(pw => {
+    const pMin = timeToMinutes(pw.min);
+    const pMax = timeToMinutes(pw.max);
+    return pMin <= vMin && vMax <= pMax;
+  });
+}
+
+// Convert HH:MM to minutes since midnight
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
 export default function DayTimeWindowsInput({
   day,
   windows,
   onChange,
   onDelete,
   disabled = false,
+  pollWindows,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -136,15 +155,17 @@ export default function DayTimeWindowsInput({
           </div>
         ))}
 
-        {/* Add button */}
-        <button
-          type="button"
-          onClick={handleAddWindow}
-          disabled={disabled}
-          className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          + Time
-        </button>
+        {/* Add button - hidden on voter ballots */}
+        {!pollWindows && (
+          <button
+            type="button"
+            onClick={handleAddWindow}
+            disabled={disabled}
+            className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            + Time
+          </button>
+        )}
       </div>
 
       {/* Time Grid Modal */}
@@ -159,6 +180,12 @@ export default function DayTimeWindowsInput({
         minEnabled={true}
         maxEnabled={true}
         onApply={handleModalApply}
+        absoluteMin={pollWindows && editingIndex !== null && windows[editingIndex]
+          ? findContainingPollWindow(windows[editingIndex], pollWindows)?.min
+          : undefined}
+        absoluteMax={pollWindows && editingIndex !== null && windows[editingIndex]
+          ? findContainingPollWindow(windows[editingIndex], pollWindows)?.max
+          : undefined}
       />
     </div>
   );

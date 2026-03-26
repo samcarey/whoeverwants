@@ -11,6 +11,8 @@ interface TimeGridModalProps {
   minEnabled: boolean;
   maxEnabled: boolean;
   onApply: (min: string | null, max: string | null, minEnabled: boolean, maxEnabled: boolean) => void;
+  absoluteMin?: string; // HH:MM - hard lower bound for voter constraint
+  absoluteMax?: string; // HH:MM - hard upper bound for voter constraint
 }
 
 export default function TimeGridModal({
@@ -21,6 +23,8 @@ export default function TimeGridModal({
   minEnabled,
   maxEnabled,
   onApply,
+  absoluteMin,
+  absoluteMax,
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
@@ -119,6 +123,8 @@ export default function TimeGridModal({
             onMinChange={handleMinTimeChange}
             onMaxChange={handleMaxTimeChange}
             increment={15}
+            absoluteMin={absoluteMin}
+            absoluteMax={absoluteMax}
           />
         </div>
 

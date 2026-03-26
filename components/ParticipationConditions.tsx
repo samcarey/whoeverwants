@@ -184,6 +184,7 @@ export default function ParticipationConditions({
               onChange={(windows) => handleDayWindowsChange(dayTimeWindow.day, windows)}
               onDelete={() => handleDeleteDay(dayTimeWindow.day)}
               disabled={disabled}
+              pollWindows={pollDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
             />
           ))}
 
