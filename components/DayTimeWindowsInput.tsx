@@ -103,14 +103,14 @@ export default function DayTimeWindowsInput({
 
   return (
     <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-      {/* Left half: Day display */}
-      <div className="flex flex-col items-center justify-center min-w-[100px]">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 text-center">
+      {/* Left: Day display */}
+      <div className="min-w-[100px]">
+        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayDisplay(day)}
         </div>
       </div>
 
-      {/* Right half: Time windows */}
+      {/* Right: Time windows */}
       <div className="flex-1 flex flex-wrap gap-2 items-center justify-end">
         {windows.map((window, index) => (
           <div
@@ -132,7 +132,7 @@ export default function DayTimeWindowsInput({
               type="button"
               onClick={() => handleEditWindow(index)}
               disabled={disabled}
-              className="px-3 py-1.5 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-sm font-medium border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-[168px] py-1.5 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-sm font-medium border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-center"
             >
               {(() => {
                 const minFormatted = formatTime12Hour(window.min);
@@ -161,7 +161,7 @@ export default function DayTimeWindowsInput({
             type="button"
             onClick={handleAddWindow}
             disabled={disabled}
-            className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-[168px] py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center"
           >
             + Time
           </button>
