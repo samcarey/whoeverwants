@@ -8,6 +8,7 @@ interface ScrollWheelProps {
   onChange: (index: number) => void;
   itemHeight?: number;
   visibleItems?: number;
+  width?: number;
 }
 
 export default function ScrollWheel({
@@ -16,6 +17,7 @@ export default function ScrollWheel({
   onChange,
   itemHeight = 40,
   visibleItems = 5,
+  width,
 }: ScrollWheelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolling = useRef(false);
@@ -48,7 +50,7 @@ export default function ScrollWheel({
   }, [itemHeight, items.length, selectedIndex, onChange]);
 
   return (
-    <div className="relative" style={{ height: containerHeight }}>
+    <div className="relative" style={{ height: containerHeight, width }}>
       {/* Selection highlight band */}
       <div
         className="absolute left-0 right-0 pointer-events-none border-y border-blue-400 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 z-10"
