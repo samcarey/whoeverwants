@@ -20,21 +20,39 @@ export default function ScrollWheel({
   width,
 }: ScrollWheelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isUserScrolling = useRef(false);
+  const isTouching = useRef(false);
   const scrollTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+  const lastReportedIndex = useRef(selectedIndex);
+  const didMount = useRef(false);
 
   const padding = Math.floor(visibleItems / 2) * itemHeight;
   const containerHeight = visibleItems * itemHeight;
 
-  // Scroll to selected index (only when not user-initiated)
+  // On mount only: jump to the initial selected index
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || isUserScrolling.current) return;
-    el.scrollTop = selectedIndex * itemHeight;
+    if (el) {
+      el.scrollTop = selectedIndex * itemHeight;
+    }
+    didMount.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When selectedIndex changes externally (e.g. from click), sync scroll —
+  // but NOT while the user is actively touching/scrolling.
+  useEffect(() => {
+    if (!didMount.current) return;
+    if (isTouching.current) return;
+    // Only sync if the change came from outside (not from our own onScroll)
+    if (selectedIndex === lastReportedIndex.current) return;
+    lastReportedIndex.current = selectedIndex;
+    const el = containerRef.current;
+    if (el) {
+      el.scrollTo({ top: selectedIndex * itemHeight, behavior: 'smooth' });
+    }
   }, [selectedIndex, itemHeight]);
 
   const handleScroll = useCallback(() => {
-    isUserScrolling.current = true;
     if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
 
     scrollTimeout.current = setTimeout(() => {
@@ -42,12 +60,31 @@ export default function ScrollWheel({
       if (!el) return;
       const index = Math.round(el.scrollTop / itemHeight);
       const clamped = Math.max(0, Math.min(items.length - 1, index));
-      if (clamped !== selectedIndex) {
+      if (clamped !== lastReportedIndex.current) {
+        lastReportedIndex.current = clamped;
         onChange(clamped);
       }
-      isUserScrolling.current = false;
-    }, 80);
-  }, [itemHeight, items.length, selectedIndex, onChange]);
+    }, 150);
+  }, [itemHeight, items.length, onChange]);
+
+  // Track touch state with native listeners to reliably know when user is dragging
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onTouchStart = () => { isTouching.current = true; };
+    const onTouchEnd = () => { isTouching.current = false; };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, []);
 
   return (
     <div className="relative" style={{ height: containerHeight, width }}>
@@ -93,10 +130,10 @@ export default function ScrollWheel({
               fontSize: i === selectedIndex ? '1.25rem' : '1rem',
             }}
             onClick={() => {
+              lastReportedIndex.current = i;
               onChange(i);
               const el = containerRef.current;
               if (el) {
-                isUserScrolling.current = false;
                 el.scrollTo({ top: i * itemHeight, behavior: 'smooth' });
               }
             }}
