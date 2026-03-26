@@ -170,11 +170,19 @@ export default function ParticipationConditions({
       {/* Day Time Windows */}
       {onDayTimeWindowsChange && (
         <div className="space-y-2">
-          {dayTimeWindows.length > 0 && (
-            <label className="block text-sm font-medium mb-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">
               Time Windows
             </label>
-          )}
+            <button
+              type="button"
+              onClick={() => setIsDaysPickerOpen(true)}
+              disabled={disabled}
+              className="px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
+            </button>
+          </div>
 
           {dayTimeWindows.map((dayTimeWindow) => (
             <DayTimeWindowsInput
@@ -187,17 +195,6 @@ export default function ParticipationConditions({
               pollWindows={pollDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
             />
           ))}
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setIsDaysPickerOpen(true)}
-              disabled={disabled}
-              className="w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
-            </button>
-          </div>
 
           <DaysSelector
             selectedDays={selectedDays}
