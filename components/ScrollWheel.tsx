@@ -93,15 +93,22 @@ export default function ScrollWheel({
     const el = containerRef.current;
     if (el) {
       suppressScrollHandler.current = true;
-      el.style.visibility = 'hidden';
-      el.style.scrollSnapType = 'none';
-      el.scrollTop = selectedToScroll(selectedIndex);
+      const targetScroll = selectedToScroll(selectedIndex);
+      console.log(`[ScrollWheel] mount: items[0]=${items[0]}, selectedIndex=${selectedIndex}, targetScroll=${targetScroll}, loop=${loop}`);
+      el.scrollTop = targetScroll;
+      console.log(`[ScrollWheel] mount: scrollTop after set=${el.scrollTop}`);
       updateItemStyles();
+      // Enable scroll-snap and scroll handler after position is stable
       requestAnimationFrame(() => {
+        console.log(`[ScrollWheel] rAF1: scrollTop=${el.scrollTop}, target was ${targetScroll}`);
+        if (el.scrollTop !== targetScroll) {
+          console.log(`[ScrollWheel] rAF1: scrollTop drifted! re-setting`);
+          el.scrollTop = targetScroll;
+        }
         el.style.scrollSnapType = 'y mandatory';
         el.style.visibility = '';
-        // Allow scroll handler after position is stable
         requestAnimationFrame(() => {
+          console.log(`[ScrollWheel] rAF2: scrollTop=${el.scrollTop}, enabling scroll handler`);
           suppressScrollHandler.current = false;
         });
       });
@@ -115,12 +122,13 @@ export default function ScrollWheel({
     if (!didMount.current) return;
     if (isTouching.current) return;
     if (selectedIndex === lastReportedIndex.current) return;
+    console.log(`[ScrollWheel] externalSync: items[0]=${items[0]}, selectedIndex=${selectedIndex}, lastReported=${lastReportedIndex.current}, suppress=${suppressScrollHandler.current}`);
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
       el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
     }
-  }, [selectedIndex, selectedToScroll]);
+  }, [selectedIndex, selectedToScroll, items]);
 
   // Re-center the loop scroll position silently after scrolling stops
   const recenterLoop = useCallback(() => {
@@ -241,8 +249,8 @@ export default function ScrollWheel({
         data-scroll-wheel
         className="h-full overflow-y-auto scrollbar-hide"
         style={{
-          scrollSnapType: 'y mandatory',
           WebkitOverflowScrolling: 'touch',
+          visibility: 'hidden',
         }}
       >
         {/* Top padding */}
