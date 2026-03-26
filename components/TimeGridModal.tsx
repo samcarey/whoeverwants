@@ -166,7 +166,7 @@ export default function TimeGridModal({
       style={{ touchAction: 'none' }}
     >
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 flex flex-col"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
