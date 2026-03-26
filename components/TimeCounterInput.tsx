@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from 'react';
 import ScrollWheel from './ScrollWheel';
 
 interface TimeCounterInputProps {
@@ -43,6 +44,9 @@ export default function TimeCounterInput({
   const minuteOptions = getMinuteOptions(increment);
   const minuteLabels = minuteOptions.map(m => m.toString().padStart(2, '0'));
 
+  const prevHourIndex = useRef<number | null>(null);
+  const prevMinuteIndex = useRef<number | null>(null);
+
   // Parse current value
   let hourIndex = 8; // default 9 AM -> index 8 (9-1=8 in 0-based)
   let minuteIndex = 0;
@@ -54,7 +58,6 @@ export default function TimeCounterInput({
     hourIndex = hour12 - 1; // 1-12 -> 0-11
     minuteIndex = minuteOptions.indexOf(m);
     if (minuteIndex === -1) {
-      // Snap to nearest increment
       const nearest = minuteOptions.reduce((prev, curr) =>
         Math.abs(curr - m) < Math.abs(prev - m) ? curr : prev
       );
@@ -63,14 +66,68 @@ export default function TimeCounterInput({
     periodIndex = period === 'AM' ? 0 : 1;
   }
 
-  const handleChange = (newHourIndex: number, newMinuteIndex: number, newPeriodIndex: number) => {
+  // Keep refs in sync with current parsed values
+  if (prevHourIndex.current === null) prevHourIndex.current = hourIndex;
+  if (prevMinuteIndex.current === null) prevMinuteIndex.current = minuteIndex;
+
+  const emit = (h: number, m: number, p: number) => {
     if (disabled) return;
-    const hour12 = HOURS[newHourIndex];
-    const minute = minuteOptions[newMinuteIndex];
-    const period = PERIODS[newPeriodIndex] as 'AM' | 'PM';
+    const hour12 = HOURS[h];
+    const minute = minuteOptions[m];
+    const period = PERIODS[p] as 'AM' | 'PM';
     const hour24 = to24Hour(hour12, period);
     const timeStr = `${hour24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
     onChange(timeStr);
+  };
+
+  const handleHourChange = (newHourIndex: number) => {
+    const prev = prevHourIndex.current ?? hourIndex;
+    let newPeriod = periodIndex;
+
+    // Detect crossing the 11↔12 boundary (noon/midnight crossing)
+    // 11 is index 10, 12 is index 11
+    if (prev === 10 && newHourIndex === 11) {
+      // Scrolled from 11 → 12 (forward): toggle AM/PM
+      newPeriod = periodIndex === 0 ? 1 : 0;
+    } else if (prev === 11 && newHourIndex === 10) {
+      // Scrolled from 12 → 11 (backward): toggle AM/PM
+      newPeriod = periodIndex === 0 ? 1 : 0;
+    }
+
+    prevHourIndex.current = newHourIndex;
+    emit(newHourIndex, minuteIndex, newPeriod);
+  };
+
+  const handleMinuteChange = (newMinuteIndex: number) => {
+    const prev = prevMinuteIndex.current ?? minuteIndex;
+    const lastIdx = minuteOptions.length - 1;
+    let newHourIdx = hourIndex;
+    let newPeriod = periodIndex;
+
+    // Detect minute wraparound (e.g. 45→00 or 00→45)
+    if (prev === lastIdx && newMinuteIndex === 0) {
+      // Scrolled past last minute → wrap forward, increment hour
+      newHourIdx = (hourIndex + 1) % 12;
+      // If hour crosses 11→12 boundary, toggle AM/PM
+      if (hourIndex === 10 && newHourIdx === 11) {
+        newPeriod = periodIndex === 0 ? 1 : 0;
+      }
+    } else if (prev === 0 && newMinuteIndex === lastIdx) {
+      // Scrolled past first minute → wrap backward, decrement hour
+      newHourIdx = (hourIndex - 1 + 12) % 12;
+      // If hour crosses 12→11 boundary, toggle AM/PM
+      if (hourIndex === 11 && newHourIdx === 10) {
+        newPeriod = periodIndex === 0 ? 1 : 0;
+      }
+    }
+
+    prevMinuteIndex.current = newMinuteIndex;
+    prevHourIndex.current = newHourIdx;
+    emit(newHourIdx, newMinuteIndex, newPeriod);
+  };
+
+  const handlePeriodChange = (newPeriodIndex: number) => {
+    emit(hourIndex, minuteIndex, newPeriodIndex);
   };
 
   return (
@@ -78,7 +135,7 @@ export default function TimeCounterInput({
       <ScrollWheel
         items={HOUR_LABELS}
         selectedIndex={hourIndex}
-        onChange={(i) => handleChange(i, minuteIndex, periodIndex)}
+        onChange={handleHourChange}
         width={45}
         loop
       />
@@ -86,7 +143,7 @@ export default function TimeCounterInput({
       <ScrollWheel
         items={minuteLabels}
         selectedIndex={minuteIndex}
-        onChange={(i) => handleChange(hourIndex, i, periodIndex)}
+        onChange={handleMinuteChange}
         width={45}
         loop
       />
@@ -94,7 +151,7 @@ export default function TimeCounterInput({
       <ScrollWheel
         items={PERIODS}
         selectedIndex={periodIndex}
-        onChange={(i) => handleChange(hourIndex, minuteIndex, i)}
+        onChange={handlePeriodChange}
         width={42}
       />
     </div>
