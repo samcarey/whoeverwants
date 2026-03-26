@@ -107,6 +107,32 @@ export default function TimeGridModal({
   // Validation: both times must be set and min must be less than max
   const isValid = localMinTime !== null && localMaxTime !== null && localMinTime < localMaxTime;
 
+  // Duration bar calculations
+  let durationMinutes = 0;
+  let durationLabel = '';
+  if (localMinTime && localMaxTime && isValid) {
+    const [minH, minM] = localMinTime.split(':').map(Number);
+    const [maxH, maxM] = localMaxTime.split(':').map(Number);
+    durationMinutes = (maxH * 60 + maxM) - (minH * 60 + minM);
+    const hours = Math.floor(durationMinutes / 60);
+    const mins = durationMinutes % 60;
+    if (hours > 0 && mins > 0) {
+      durationLabel = `${hours}h ${mins}m`;
+    } else if (hours > 0) {
+      durationLabel = `${hours}h`;
+    } else {
+      durationLabel = `${mins}m`;
+    }
+  }
+  // Width: 15 min → ~42px (AM/PM wheel width), 24h (1440 min) → 100%
+  const MIN_DURATION = 15;
+  const MAX_DURATION = 24 * 60;
+  const MIN_WIDTH_PCT = 10; // % — roughly AM/PM wheel width relative to modal
+  const MAX_WIDTH_PCT = 100;
+  const widthPct = durationMinutes > 0
+    ? MIN_WIDTH_PCT + (MAX_WIDTH_PCT - MIN_WIDTH_PCT) * ((durationMinutes - MIN_DURATION) / (MAX_DURATION - MIN_DURATION))
+    : 0;
+
   return (
     <div
       ref={backdropRef}
@@ -132,8 +158,22 @@ export default function TimeGridModal({
           </button>
         </div>
 
+        {/* Duration bar */}
+        {durationMinutes > 0 && (
+          <div className="px-6 pt-4 flex justify-center">
+            <div
+              className="h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center transition-all duration-200"
+              style={{ width: `${widthPct}%` }}
+            >
+              <span className="text-xs font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                {durationLabel}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Time selector */}
-        <div className="p-6">
+        <div className="p-6 pt-3">
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
