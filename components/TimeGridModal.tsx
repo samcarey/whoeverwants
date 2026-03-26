@@ -156,9 +156,7 @@ export default function TimeGridModal({
   let durationMinutes = 0;
   let durationLabel = '';
   if (localMinTime && localMaxTime && isValid) {
-    const [minH, minM] = localMinTime.split(':').map(Number);
-    const [maxH, maxM] = localMaxTime.split(':').map(Number);
-    durationMinutes = (maxH * 60 + maxM) - (minH * 60 + minM);
+    durationMinutes = timeToMinutes(localMaxTime) - timeToMinutes(localMinTime);
     const hours = Math.floor(durationMinutes / 60);
     const mins = durationMinutes % 60;
     if (hours > 0 && mins > 0) {

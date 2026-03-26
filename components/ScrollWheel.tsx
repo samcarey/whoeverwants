@@ -17,6 +17,7 @@ const MAX_FONT_SIZE = 18;
 const MIN_OPACITY = 0.35;
 const LOOP_REPEATS = 40; // total copies of the item list when looping
 const LOOP_CENTER = Math.floor(LOOP_REPEATS / 2); // which repetition to center on
+const SMOOTH_SCROLL_SETTLE_MS = 300;
 
 export default function ScrollWheel({
   items,
@@ -128,13 +129,15 @@ export default function ScrollWheel({
     if (el) {
       suppressScrollHandler.current = true;
       el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
-      // Re-enable after the smooth scroll settles
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       scrollTimeout.current = setTimeout(() => {
         suppressScrollHandler.current = false;
         updateItemStyles();
-      }, 300);
+      }, SMOOTH_SCROLL_SETTLE_MS);
     }
+    return () => {
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    };
   }, [selectedIndex, selectedToScroll, items, updateItemStyles]);
 
   // Re-center the loop scroll position silently after scrolling stops
