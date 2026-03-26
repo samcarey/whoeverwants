@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 
 interface ScrollWheelProps {
   items: string[];
@@ -86,8 +86,8 @@ export default function ScrollWheel({
     }
   }, [itemHeight, padding, centerOffset, visibleItems]);
 
-  // On mount: jump to initial position
-  useEffect(() => {
+  // On mount: jump to initial position before first paint
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (el) {
       el.scrollTop = selectedToScroll(selectedIndex);
