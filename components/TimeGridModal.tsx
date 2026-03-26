@@ -28,6 +28,7 @@ export default function TimeGridModal({
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
+  const [transitionsEnabled, setTransitionsEnabled] = useState(false);
 
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -81,6 +82,16 @@ export default function TimeGridModal({
     setLocalMinTime(initMinTime);
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
+
+  // Enable transitions after first render so the duration bar doesn't animate on open
+  useEffect(() => {
+    if (!isOpen) {
+      setTransitionsEnabled(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => setTransitionsEnabled(true));
+    return () => cancelAnimationFrame(id);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -162,7 +173,7 @@ export default function TimeGridModal({
         {durationMinutes > 0 && (
           <div className="px-6 pt-4 flex justify-center">
             <div
-              className="h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center transition-all duration-200"
+              className={`h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
               style={{ width: `${widthPct}%` }}
             >
               <span className="text-xs font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
