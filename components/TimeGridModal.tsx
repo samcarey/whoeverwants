@@ -170,22 +170,22 @@ export default function TimeGridModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-3 pt-2">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Time Window</h3>
           <button
             onClick={handleApply}
-            className="p-1 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+            className="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
-            <svg className="w-7 h-7 text-green-500 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" />
-              <circle cx="12" cy="12" r="10" strokeWidth={2} />
+            <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
             </svg>
           </button>
         </div>
 
         {/* Duration bar */}
         {durationMinutes > 0 && (
-          <div className="px-6 pt-4 flex flex-col items-center gap-1">
+          <div className="px-3 pt-1 flex flex-col items-center gap-0.5">
             <div
               className={`h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
               style={{ width: `${widthPct}%` }}
@@ -201,7 +201,7 @@ export default function TimeGridModal({
         )}
 
         {/* Time selector */}
-        <div className="p-6 pt-3">
+        <div className="px-3 pt-1 pb-3">
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
@@ -210,9 +210,6 @@ export default function TimeGridModal({
             increment={15}
           />
         </div>
-
-        {/* Bottom padding to balance the layout */}
-        <div className="pb-4" />
       </div>
     </div>
   );
