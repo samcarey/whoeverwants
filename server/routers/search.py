@@ -28,30 +28,23 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-@router.get("/locations")
-async def search_locations(
-    q: str = Query(..., min_length=2, max_length=100),
-    lat: float | None = Query(None, description="Reference latitude for proximity bias"),
-    lon: float | None = Query(None, description="Reference longitude for proximity bias"),
-    max_distance: float = Query(25, description="Maximum distance in miles (0 = no limit)"),
-):
-    """Search for locations using OpenStreetMap Nominatim.
-
-    When lat/lon are provided, results are restricted to a bounding box
-    derived from max_distance, sorted by proximity, and include distance_miles.
-    """
+async def _nominatim_search(
+    query: str,
+    lat: float | None,
+    lon: float | None,
+    max_distance: float,
+) -> list[dict]:
+    """Run a Nominatim search and return processed results with distance."""
     has_ref = lat is not None and lon is not None
 
     params: dict = {
-        "q": q,
+        "q": query,
         "format": "jsonv2",
         "limit": 20,
         "addressdetails": 1,
     }
 
-    # Restrict search to bounding box around reference location
     if has_ref and max_distance > 0:
-        # 1 degree latitude ≈ 69 miles
         delta = max_distance / 69.0
         params["viewbox"] = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
         params["bounded"] = 1
@@ -91,7 +84,6 @@ async def search_locations(
             distance = round(
                 _haversine_miles(lat, lon, float(item_lat), float(item_lon)), 1
             )
-            # Hard filter: skip results beyond max_distance
             if max_distance > 0 and distance > max_distance:
                 continue
 
@@ -109,9 +101,42 @@ async def search_locations(
             entry["distance_miles"] = distance
         results.append(entry)
 
-    # Sort by distance when reference location provided
     if has_ref:
         results.sort(key=lambda r: r.get("distance_miles", float("inf")))
+
+    return results
+
+
+@router.get("/locations")
+async def search_locations(
+    q: str = Query(..., min_length=2, max_length=100),
+    lat: float | None = Query(None, description="Reference latitude for proximity bias"),
+    lon: float | None = Query(None, description="Reference longitude for proximity bias"),
+    max_distance: float = Query(25, description="Maximum distance in miles (0 = no limit)"),
+):
+    """Search for locations using OpenStreetMap Nominatim.
+
+    When lat/lon are provided, results are restricted to a bounding box
+    derived from max_distance, sorted by proximity, and include distance_miles.
+
+    Handles partial word matching: if "Burger K" returns no results,
+    retries with "Burger" and filters to results containing "K".
+    """
+    results = await _nominatim_search(q, lat, lon, max_distance)
+
+    # Partial word fallback: if no results and query has a trailing
+    # incomplete word, retry with just the complete words and filter
+    if not results and " " in q.strip():
+        complete_words = q.rsplit(" ", 1)[0].strip()
+        partial = q.rsplit(" ", 1)[1].strip().lower()
+        if len(complete_words) >= 2:
+            results = await _nominatim_search(complete_words, lat, lon, max_distance)
+            if partial:
+                # Boost results whose name contains the partial word
+                results.sort(key=lambda r: (
+                    0 if partial in r["label"].lower() else 1,
+                    r.get("distance_miles", float("inf")),
+                ))
 
     return results[:6]
 
