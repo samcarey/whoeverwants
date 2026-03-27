@@ -129,12 +129,13 @@ export default function ReferenceLocationInput({
           >
             {label}
           </button>
+          <div className="flex-1" />
           <button
             type="button"
             onClick={() => setShowRadiusModal(true)}
             className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
           >
-            {searchRadius} mi
+            Within {searchRadius} mi
           </button>
         </div>
       )}
