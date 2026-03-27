@@ -120,6 +120,7 @@ export default function DayTimeWindowsInput({
               {(() => {
                 const minFormatted = formatTime12Hour(window.min);
                 const maxFormatted = formatTime12Hour(window.max);
+                const isCrossMidnight = window.max <= window.min;
                 return (
                   <>
                     {minFormatted.time}
@@ -131,6 +132,11 @@ export default function DayTimeWindowsInput({
                     <span className={`ml-0.5 ${maxFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
                       {maxFormatted.period}
                     </span>
+                    {isCrossMidnight && (
+                      <span className="ml-0.5 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                        +1
+                      </span>
+                    )}
                   </>
                 );
               })()}

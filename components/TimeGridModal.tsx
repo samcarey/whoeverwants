@@ -95,44 +95,22 @@ export default function TimeGridModal({
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
 
-  // Enforce min < max: when min changes, push max forward if needed
+  // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
   const handleMinChange = useCallback((newMin: string | null) => {
-    if (!newMin) { setLocalMinTime(newMin); return; }
     setLocalMinTime(newMin);
-    setLocalMaxTime((prev: string | null) => {
-      if (!prev) return prev;
-      const minMins = timeToMinutes(newMin);
-      const maxMins = timeToMinutes(prev);
-      if (maxMins <= minMins) {
-        return minutesToTime(minMins + MIN_DURATION);
-      }
-      return prev;
-    });
+    setTransitionsEnabled(true);
   }, []);
 
-  // Enforce min < max: when max changes, push min backward if needed
   const handleMaxChange = useCallback((newMax: string | null) => {
-    if (!newMax) { setLocalMaxTime(newMax); return; }
     setLocalMaxTime(newMax);
-    setLocalMinTime((prev: string | null) => {
-      if (!prev) return prev;
-      const maxMins = timeToMinutes(newMax);
-      const minMins = timeToMinutes(prev);
-      if (minMins >= maxMins) {
-        return minutesToTime(maxMins - MIN_DURATION);
-      }
-      return prev;
-    });
+    setTransitionsEnabled(true);
   }, []);
 
-  // Enable transitions after first render so the duration bar doesn't animate on open
+  // Reset transitions when modal reopens so the duration bar doesn't animate on open
   useEffect(() => {
     if (!isOpen) {
       setTransitionsEnabled(false);
-      return;
     }
-    const id = requestAnimationFrame(() => setTransitionsEnabled(true));
-    return () => cancelAnimationFrame(id);
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -149,14 +127,21 @@ export default function TimeGridModal({
     onClose();
   };
 
-  // Validation: both times must be set and min must be less than max
-  const isValid = localMinTime !== null && localMaxTime !== null && localMinTime < localMaxTime;
+  // Validation: both times must be set (equal times = full 24h window)
+  const isValid = localMinTime !== null && localMaxTime !== null;
 
-  // Duration bar calculations
+  // Cross-midnight detection: max <= min means the range wraps past midnight (equal = 24h)
+  const crossesMidnight = isValid && timeToMinutes(localMaxTime!) <= timeToMinutes(localMinTime!);
+
+  // Duration bar calculations — handle cross-midnight ranges
   let durationMinutes = 0;
   let durationLabel = '';
   if (localMinTime && localMaxTime && isValid) {
-    durationMinutes = timeToMinutes(localMaxTime) - timeToMinutes(localMinTime);
+    const minMins = timeToMinutes(localMinTime);
+    const maxMins = timeToMinutes(localMaxTime);
+    durationMinutes = crossesMidnight
+      ? (MAX_DURATION - minMins) + maxMins
+      : maxMins - minMins;
     const hours = Math.floor(durationMinutes / 60);
     const mins = durationMinutes % 60;
     if (hours > 0 && mins > 0) {
@@ -175,30 +160,31 @@ export default function TimeGridModal({
     <div
       ref={backdropRef}
       data-modal
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center pb-[25vh] sm:pb-0 sm:pt-20 bg-black/50"
       onClick={handleCancel}
       style={{ touchAction: 'none' }}
     >
       <div
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 flex flex-col"
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-lg w-full mx-4 flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between px-3 pt-2">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Time Window</h3>
           <button
-            onClick={handleCancel}
-            className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            onClick={handleApply}
+            className="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg className="w-10 h-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4" />
+              <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
             </svg>
           </button>
         </div>
 
         {/* Duration bar */}
         {durationMinutes > 0 && (
-          <div className="px-6 pt-4 flex justify-center">
+          <div className="px-3 pt-1 flex flex-col items-center gap-0.5">
             <div
               className={`h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
               style={{ width: `${widthPct}%` }}
@@ -207,11 +193,14 @@ export default function TimeGridModal({
                 {durationLabel}
               </span>
             </div>
+            <span className={`text-xs font-medium ${crossesMidnight ? 'text-amber-600 dark:text-amber-400' : 'text-transparent'}`}>
+              Crosses midnight (+1 day)
+            </span>
           </div>
         )}
 
         {/* Time selector */}
-        <div className="p-6 pt-3">
+        <div className="px-3 pb-3">
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
@@ -219,23 +208,6 @@ export default function TimeGridModal({
             onMaxChange={handleMaxChange}
             increment={15}
           />
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 pt-0 flex justify-end gap-2">
-          <button
-            onClick={handleCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleApply}
-            disabled={!isValid}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-          >
-            OK
-          </button>
         </div>
       </div>
     </div>

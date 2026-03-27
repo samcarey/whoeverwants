@@ -105,7 +105,10 @@ export default function ParticipationConditionsCard({
       if (dtw.windows.length === 0) {
         return dayStr; // Just the day, no time windows
       }
-      const windowsStr = dtw.windows.map(w => `${formatTime(w.min)}-${formatTime(w.max)}`).join(', ');
+      const windowsStr = dtw.windows.map(w => {
+        const isCrossMidnight = w.max <= w.min;
+        return `${formatTime(w.min)}-${formatTime(w.max)}${isCrossMidnight ? ' +1' : ''}`;
+      }).join(', ');
       return `${dayStr} (${windowsStr})`;
     }).join('; ');
   };

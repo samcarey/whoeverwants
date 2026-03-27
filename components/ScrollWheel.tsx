@@ -10,6 +10,7 @@ interface ScrollWheelProps {
   visibleItems?: number;
   width?: number;
   loop?: boolean;
+  hideHighlight?: boolean;
 }
 
 const MIN_FONT_SIZE = 14;
@@ -27,6 +28,7 @@ export default function ScrollWheel({
   visibleItems = 5,
   width,
   loop = false,
+  hideHighlight = false,
 }: ScrollWheelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -128,7 +130,31 @@ export default function ScrollWheel({
     const el = containerRef.current;
     if (el) {
       suppressScrollHandler.current = true;
-      el.scrollTo({ top: selectedToScroll(selectedIndex), behavior: 'smooth' });
+      // For looping wheels, scroll to the nearest occurrence of the target index
+      // instead of always jumping to the center repetition. This prevents the
+      // wheel from scrolling the long way around (e.g., 12→1 going backwards).
+      let targetScroll = selectedToScroll(selectedIndex);
+      if (loop) {
+        const currentRawIndex = Math.round(el.scrollTop / itemHeight);
+        const currentRepStart = Math.floor(currentRawIndex / items.length) * items.length;
+        // Check the occurrence in the current, previous, and next repetitions
+        const candidates = [
+          currentRepStart - items.length + selectedIndex,
+          currentRepStart + selectedIndex,
+          currentRepStart + items.length + selectedIndex,
+        ];
+        let bestCandidate = candidates[1];
+        let bestDist = Math.abs(candidates[1] - currentRawIndex);
+        for (const c of candidates) {
+          const dist = Math.abs(c - currentRawIndex);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestCandidate = c;
+          }
+        }
+        targetScroll = bestCandidate * itemHeight;
+      }
+      el.scrollTo({ top: targetScroll, behavior: 'smooth' });
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       scrollTimeout.current = setTimeout(() => {
         suppressScrollHandler.current = false;
@@ -138,7 +164,7 @@ export default function ScrollWheel({
     return () => {
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     };
-  }, [selectedIndex, selectedToScroll, items, updateItemStyles]);
+  }, [selectedIndex, selectedToScroll, items, updateItemStyles, loop, itemHeight]);
 
   // Re-center the loop scroll position silently after scrolling stops
   const recenterLoop = useCallback(() => {
@@ -235,11 +261,13 @@ export default function ScrollWheel({
 
   return (
     <div className="relative" style={{ height: containerHeight, width }}>
-      {/* Selection highlight band */}
-      <div
-        className="absolute left-0 right-0 pointer-events-none border-y border-blue-400 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 z-0"
-        style={{ top: padding, height: itemHeight }}
-      />
+      {/* Selection highlight band (can be hidden when parent provides its own) */}
+      {!hideHighlight && (
+        <div
+          className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-lg"
+          style={{ top: padding, height: itemHeight }}
+        />
+      )}
       {/* Top fade */}
       <div
         className="absolute top-0 left-0 right-0 pointer-events-none z-20 bg-gradient-to-b from-white dark:from-gray-800 to-transparent"

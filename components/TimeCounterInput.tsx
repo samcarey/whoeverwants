@@ -128,14 +128,24 @@ export default function TimeCounterInput({
     emit(hourIndex, minuteIndex, newPeriodIndex);
   };
 
+  const itemHeight = 40;
+  const visibleItems = 5;
+  const highlightTop = Math.floor(visibleItems / 2) * itemHeight;
+
   return (
-    <div className={`flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+    <div className={`relative flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+      {/* Unified highlight band spanning all wheels */}
+      <div
+        className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
+        style={{ top: highlightTop, height: itemHeight }}
+      />
       <ScrollWheel
         items={HOUR_LABELS}
         selectedIndex={hourIndex}
         onChange={handleHourChange}
         width={45}
         loop
+        hideHighlight
       />
       <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
       <ScrollWheel
@@ -144,6 +154,7 @@ export default function TimeCounterInput({
         onChange={handleMinuteChange}
         width={45}
         loop
+        hideHighlight
       />
       <div className="w-1" />
       <ScrollWheel
@@ -151,6 +162,7 @@ export default function TimeCounterInput({
         selectedIndex={periodIndex}
         onChange={handlePeriodChange}
         width={42}
+        hideHighlight
       />
     </div>
   );

@@ -70,9 +70,24 @@ def _minutes_to_time(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 
+def _window_effective_end(w_start: int, w_end: int) -> int:
+    """Return effective end minutes, adding 24h if the window crosses midnight.
+
+    Equal start/end means a full 24-hour window.
+    """
+    if w_end <= w_start:
+        return w_end + 24 * 60
+    return w_end
+
+
 def _voter_available_at(voter_windows: list[dict], date: str,
                         start_min: int, end_min: int) -> bool:
-    """Check if a voter's day_time_windows cover the given slot."""
+    """Check if a voter's day_time_windows cover the given slot.
+
+    Handles cross-midnight windows (e.g., 22:00-02:00) where end < start.
+    For cross-midnight windows on the given date, the slot's start/end are
+    compared against the effective range [w_start, w_end+24h).
+    """
     for dtw in voter_windows:
         if dtw["day"] != date:
             continue
@@ -83,7 +98,8 @@ def _voter_available_at(voter_windows: list[dict], date: str,
         for w in windows:
             w_start = _time_to_minutes(w["min"])
             w_end = _time_to_minutes(w["max"])
-            if start_min >= w_start and end_min <= w_end:
+            eff_end = _window_effective_end(w_start, w_end)
+            if start_min >= w_start and end_min <= eff_end:
                 return True
     return False
 
@@ -166,13 +182,14 @@ def calculate_time_slot_rounds(
         for window in windows:
             w_start = _time_to_minutes(window["min"])
             w_end = _time_to_minutes(window["max"])
+            eff_end = _window_effective_end(w_start, w_end)
 
             # For each possible duration
             dur = min_duration_min
             while dur <= max_duration_min:
                 # For each possible start time within the window
                 start = w_start
-                while start + dur <= w_end:
+                while start + dur <= eff_end:
                     end = start + dur
 
                     # Find eligible voters for this slot
