@@ -333,6 +333,7 @@ export default function NominationVotingInterface({
             isLoading={isSubmitting}
             pollType="nomination"
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
+            contentType={poll.poll_content_type || 'custom'}
           />
         </div>
 

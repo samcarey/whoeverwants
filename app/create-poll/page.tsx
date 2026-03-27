@@ -65,6 +65,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
+  const [pollContentType, setPollContentType] = useState<'custom' | 'location' | 'movie'>('custom');
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [locationValue, setLocationValue] = useState('');
@@ -449,6 +450,9 @@ function CreatePollContent() {
           } else if (forkData.total_votes) {
             setAutoCloseAfter(forkData.total_votes);
           }
+          if (forkData.poll_content_type) {
+            setPollContentType(forkData.poll_content_type);
+          }
         } catch (error) {
           console.error('Error loading fork data:', error);
         }
@@ -527,6 +531,9 @@ function CreatePollContent() {
             setAutoCloseAfter(duplicateData.auto_close_after);
           } else if (duplicateData.total_votes) {
             setAutoCloseAfter(duplicateData.total_votes);
+          }
+          if (duplicateData.poll_content_type) {
+            setPollContentType(duplicateData.poll_content_type);
           }
 
           // Don't clean up the duplicate data yet - keep it until poll is created
@@ -916,6 +923,11 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
+      // Add content type for nomination and ranked_choice polls
+      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && pollContentType !== 'custom') {
+        pollData.poll_content_type = pollContentType;
+      }
+
       // Add options for ranked choice polls only
       // For nomination polls, initial options become the creator's vote (not poll content)
       if (dbPollType === 'ranked_choice') {
@@ -1181,6 +1193,36 @@ function CreatePollContent() {
             />
           </div>
 
+          {/* Content type selector for suggestion and poll types */}
+          {pollType !== 'participation' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Type
+              </label>
+              <div className="flex gap-2">
+                {([
+                  { value: 'custom' as const, label: 'Custom', icon: '✏️' },
+                  { value: 'location' as const, label: 'Location', icon: '📍' },
+                  { value: 'movie' as const, label: 'Movie', icon: '🎬' },
+                ]).map(({ value, label, icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setPollContentType(value)}
+                    disabled={isLoading}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all border ${
+                      pollContentType === value
+                        ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Participant counters for participation polls */}
           {pollType === 'participation' && (
             <ParticipationConditions
@@ -1226,78 +1268,16 @@ function CreatePollContent() {
             </div>
           )}
 
-          {/* Hide options field for nomination and participation polls */}
+          {/* Options field for poll type (ranked choice / yes-no) */}
           {pollType !== 'nomination' && pollType !== 'participation' && (
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Options{' '}
-                <span className="text-gray-500 font-normal">
-                  (blank for yes/no)
-                </span>
-              </label>
-              <div className="space-y-2">
-                {options.map((option, index) => {
-                  const isDuplicate = isDuplicateOption(index);
-                  return (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        ref={(el) => {
-                          optionRefs.current[index] = el;
-                        }}
-                        type="text"
-                        value={option}
-                        onChange={(e) => updateOption(index, e.target.value)}
-                        disabled={isLoading}
-                        maxLength={35}
-                        className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          isDuplicate 
-                            ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100' 
-                            : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
-                        }`}
-                      placeholder={
-                        (() => {
-                          const filledOptions = options.filter(opt => opt.trim() !== '');
-                          const isLastField = index === options.length - 1;
-                          
-                          if (isLastField) {
-                            return filledOptions.length === 0 ? "Add an option" : "Add another option...";
-                          }
-                          return `Option ${index + 1}`;
-                        })()
-                      }
-                    />
-                    {(() => {
-                      const filledOptions = options.filter(opt => opt.trim() !== '');
-                      const isLastField = index === options.length - 1;
-                      const canDelete = filledOptions.length >= 1;
-                      
-                      if (isLastField) {
-                        // Empty space for alignment on the last "Add another option" field
-                        return <div className="w-9 h-9"></div>;
-                      }
-                      
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => canDelete ? removeOption(index) : undefined}
-                          disabled={isLoading || !canDelete}
-                          className={`p-2 transition-colors ${
-                            canDelete 
-                              ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 cursor-pointer'
-                              : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                          } disabled:opacity-50`}
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      );
-                    })()}
-                  </div>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionsInput
+              options={options}
+              setOptions={setOptions}
+              isLoading={isLoading}
+              pollType="poll"
+              contentType={pollContentType}
+              label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
+            />
           )}
 
           <div>

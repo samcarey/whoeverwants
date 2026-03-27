@@ -24,8 +24,9 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
       max_participants: poll.max_participants,
       auto_close_after: poll.auto_close_after,
       details: poll.details,
+      poll_content_type: poll.poll_content_type,
     };
-    
+
     debugLog.logObject('Fork button clicked', { pollId: poll.id, forkData }, 'ForkButton');
     
     const storageKey = `fork-data-${poll.id}`;
