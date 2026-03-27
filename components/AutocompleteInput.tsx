@@ -144,6 +144,11 @@ export default function AutocompleteInput({
               </div>
             </li>
           ))}
+          <li className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
+            {contentType === 'movie'
+              ? 'Data from TMDB. Not endorsed by TMDB.'
+              : 'Data \u00A9 OpenStreetMap contributors'}
+          </li>
         </ul>
       )}
     </div>
