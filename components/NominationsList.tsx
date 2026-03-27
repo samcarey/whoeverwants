@@ -1,5 +1,7 @@
 "use client";
 
+import OptionLabel from "./OptionLabel";
+
 interface Nomination {
   option: string;
   count: number;
@@ -14,6 +16,7 @@ interface NominationsListProps {
   showEditButton?: boolean;
   onEditClick?: () => void;
   isEditDisabled?: boolean;
+  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
 }
 
 export default function NominationsList({
@@ -24,7 +27,8 @@ export default function NominationsList({
   className = "",
   showEditButton = false,
   onEditClick,
-  isEditDisabled = false
+  isEditDisabled = false,
+  optionsMetadata,
 }: NominationsListProps) {
   if (nominations.length === 0) {
     return (
@@ -86,7 +90,7 @@ export default function NominationsList({
                   ? 'text-blue-900 dark:text-blue-100'
                   : 'text-gray-900 dark:text-gray-100'
               }`}>
-                {nomination.option}
+                <OptionLabel text={nomination.option} metadata={optionsMetadata?.[nomination.option]} />
               </span>
               {showVoteCounts && (
                 <span className={`px-2.5 py-1 text-sm font-bold ${

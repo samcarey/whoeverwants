@@ -43,6 +43,7 @@ export interface Poll {
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
   poll_content_type?: PollContentType | null;
+  options_metadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
 }
 
 export interface TimeWindow {

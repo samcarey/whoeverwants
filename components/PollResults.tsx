@@ -11,9 +11,10 @@ interface PollResultsProps {
   isPollClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
+  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
     return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
@@ -23,11 +24,11 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   }
 
   if (results.poll_type === 'ranked_choice') {
-    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
   if (results.poll_type === 'nomination') {
-    return <NominationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+    return <NominationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
   return null;
@@ -508,7 +509,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null }) {
   // Use server-side nomination counts from the results endpoint
   const nominations = results.nomination_counts || [];
 
@@ -538,6 +539,7 @@ function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClic
             userNominations={userVoteData?.nominations || []}
             showVoteCounts={true}
             showUserIndicator={true}
+            optionsMetadata={optionsMetadata}
           />
         )}
       </div>

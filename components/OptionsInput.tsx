@@ -2,7 +2,10 @@
 
 import { useRef } from "react";
 import type { PollContentType } from "@/lib/types";
+import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
+
+export type OptionsMetadata = Record<string, { imageUrl?: string; infoUrl?: string }>;
 
 interface OptionsInputProps {
   options: string[];
@@ -12,6 +15,8 @@ interface OptionsInputProps {
   label?: React.ReactNode;
   placeholder?: string;
   contentType?: PollContentType;
+  optionsMetadata?: OptionsMetadata;
+  onMetadataChange?: (metadata: OptionsMetadata) => void;
 }
 
 export default function OptionsInput({
@@ -21,7 +26,9 @@ export default function OptionsInput({
   pollType = 'poll',
   label,
   placeholder,
-  contentType = 'custom'
+  contentType = 'custom',
+  optionsMetadata,
+  onMetadataChange,
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -66,6 +73,14 @@ export default function OptionsInput({
     }
 
     setOptions(newOptions);
+  };
+
+  const handleSelect = (result: SearchResult) => {
+    if (!onMetadataChange || (!result.imageUrl && !result.infoUrl)) return;
+    const entry: { imageUrl?: string; infoUrl?: string } = {};
+    if (result.imageUrl) entry.imageUrl = result.imageUrl;
+    if (result.infoUrl) entry.infoUrl = result.infoUrl;
+    onMetadataChange({ ...optionsMetadata, [result.label]: entry });
   };
 
   const removeOption = (index: number) => {
@@ -145,6 +160,7 @@ export default function OptionsInput({
                   <AutocompleteInput
                     value={option}
                     onChange={(value) => updateOption(index, value)}
+                    onSelect={handleSelect}
                     contentType={contentType as Exclude<PollContentType, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}

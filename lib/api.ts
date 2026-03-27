@@ -124,6 +124,7 @@ function toPoll(data: any): Poll {
     day_time_windows: data.day_time_windows ?? undefined,
     duration_window: data.duration_window ?? undefined,
     poll_content_type: data.poll_content_type ?? undefined,
+    options_metadata: data.options_metadata ?? undefined,
   };
 }
 
@@ -191,6 +192,7 @@ export async function apiCreatePoll(params: {
   day_time_windows?: any[];
   duration_window?: any;
   poll_content_type?: string;
+  options_metadata?: Record<string, { imageUrl?: string; infoUrl?: string }>;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -240,6 +242,7 @@ export async function apiSubmitVote(pollId: string, params: {
   max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
+  options_metadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
     method: 'POST',
@@ -335,6 +338,7 @@ export interface SearchResult {
   label: string;
   description?: string;
   imageUrl?: string;
+  infoUrl?: string;
   lat?: string;
   lon?: string;
 }
