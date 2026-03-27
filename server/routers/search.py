@@ -1,9 +1,12 @@
 """Search/autocomplete endpoints for poll content types."""
 
+import logging
 import os
 
 import httpx
 from fastapi import APIRouter, Query
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -71,21 +74,33 @@ async def search_movies(q: str = Query(..., min_length=2, max_length=100)):
     return results
 
 
+def _rawg_crop_image(url: str | None, width: int = 200, height: int = 200) -> str | None:
+    """Resize a RAWG media URL to a smaller thumbnail."""
+    if not url or "media.rawg.io" not in url:
+        return url
+    return url.replace("/media/", f"/media/resize/{width}/-/")
+
+
 @router.get("/video-games")
 async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
     """Search for video games using RAWG API."""
     if not RAWG_API_KEY:
         return []
 
-    resp = await _http_client.get(
-        "https://api.rawg.io/api/games",
-        params={
-            "key": RAWG_API_KEY,
-            "search": q,
-            "page_size": 6,
-        },
-    )
-    resp.raise_for_status()
+    try:
+        resp = await _http_client.get(
+            "https://api.rawg.io/api/games",
+            params={
+                "key": RAWG_API_KEY,
+                "search": q,
+                "page_size": 6,
+            },
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        logger.warning("RAWG API returned error for query %r", q)
+        return []
+
     data = resp.json()
 
     results = []
@@ -97,6 +112,6 @@ async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
         results.append({
             "label": label,
             "description": genres or None,
-            "imageUrl": game.get("background_image"),
+            "imageUrl": _rawg_crop_image(game.get("background_image")),
         })
     return results

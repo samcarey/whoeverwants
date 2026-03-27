@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import type { PollContentType } from "@/lib/types";
 import AutocompleteInput from "@/components/AutocompleteInput";
 
 interface OptionsInputProps {
@@ -10,7 +11,7 @@ interface OptionsInputProps {
   pollType?: 'poll' | 'nomination';
   label?: React.ReactNode;
   placeholder?: string;
-  contentType?: 'custom' | 'location' | 'movie' | 'video_game';
+  contentType?: PollContentType;
 }
 
 export default function OptionsInput({
@@ -144,7 +145,7 @@ export default function OptionsInput({
                   <AutocompleteInput
                     value={option}
                     onChange={(value) => updateOption(index, value)}
-                    contentType={contentType as 'location' | 'movie' | 'video_game'}
+                    contentType={contentType as Exclude<PollContentType, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}
                     placeholder={getPlaceholder(index)}

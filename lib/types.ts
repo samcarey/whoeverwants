@@ -1,6 +1,8 @@
 // Core type definitions for WhoeverWants
 // Extracted from lib/supabase.ts during Phase 3 cleanup
 
+export type PollContentType = 'custom' | 'location' | 'movie' | 'video_game';
+
 export interface Poll {
   id: string;
   title: string;
@@ -40,7 +42,7 @@ export interface Poll {
   time_preferences_deadline_minutes?: number | null;
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
-  poll_content_type?: 'custom' | 'location' | 'movie' | 'video_game' | null;
+  poll_content_type?: PollContentType | null;
 }
 
 export interface TimeWindow {

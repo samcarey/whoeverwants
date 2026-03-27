@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
+import type { PollContentType } from "@/lib/types";
 
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
-  contentType: 'location' | 'movie' | 'video_game';
+  contentType: Exclude<PollContentType, 'custom'>;
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
