@@ -200,7 +200,7 @@ export default function TimeGridModal({
         )}
 
         {/* Time selector */}
-        <div className="px-3 pt-1 pb-3">
+        <div className="px-3 pb-3">
           <TimeMinMaxCounter
             minValue={localMinTime}
             maxValue={localMaxTime}
