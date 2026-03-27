@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import AutocompleteInput from "@/components/AutocompleteInput";
 
 interface OptionsInputProps {
   options: string[];
@@ -9,15 +10,17 @@ interface OptionsInputProps {
   pollType?: 'poll' | 'nomination';
   label?: React.ReactNode;
   placeholder?: string;
+  contentType?: 'custom' | 'location' | 'movie';
 }
 
-export default function OptionsInput({ 
-  options, 
-  setOptions, 
+export default function OptionsInput({
+  options,
+  setOptions,
   isLoading = false,
   pollType = 'poll',
   label,
-  placeholder
+  placeholder,
+  contentType = 'custom'
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -25,7 +28,7 @@ export default function OptionsInput({
   const isDuplicateOption = (index: number): boolean => {
     const currentOption = options[index]?.trim().toLowerCase();
     if (!currentOption) return false;
-    
+
     for (let i = 0; i < options.length; i++) {
       if (i !== index && options[i]?.trim().toLowerCase() === currentOption) {
         return true;
@@ -37,17 +40,17 @@ export default function OptionsInput({
   const updateOption = (index: number, value: string) => {
     const newOptions = [...options];
     newOptions[index] = value;
-    
+
     // If typing in the last field and it now has content, add expansion field
     if (index === options.length - 1 && value.trim() !== '') {
       newOptions.push('');
     }
-    
+
     // Remove trailing empty fields but always keep at least 1 field
     while (newOptions.length > 1) {
       const lastIndex = newOptions.length - 1;
       const secondLastIndex = newOptions.length - 2;
-      
+
       // Only remove if last two fields are empty
       if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
         newOptions.pop();
@@ -55,33 +58,43 @@ export default function OptionsInput({
         break;
       }
     }
-    
+
     // Ensure we always have at least 1 field
     if (newOptions.length === 0) {
       newOptions.push('');
     }
-    
+
     setOptions(newOptions);
   };
 
   const removeOption = (index: number) => {
     const newOptions = options.filter((_, i) => i !== index);
-    
+
     // Ensure we always have at least 1 field
     if (newOptions.length === 0) {
       newOptions.push('');
     }
-    
+
     setOptions(newOptions);
   };
 
   const getPlaceholder = (index: number) => {
     if (placeholder) return placeholder;
-    
+
     const filledOptions = options.filter(opt => opt.trim() !== '');
     const isLastField = index === options.length - 1;
-    
-    if (pollType === 'nomination') {
+
+    if (contentType === 'location') {
+      if (isLastField) {
+        return filledOptions.length === 0 ? "Search for a location..." : "Add another location...";
+      }
+      return `Location ${index + 1}`;
+    } else if (contentType === 'movie') {
+      if (isLastField) {
+        return filledOptions.length === 0 ? "Search for a movie..." : "Add another movie...";
+      }
+      return `Movie ${index + 1}`;
+    } else if (pollType === 'nomination') {
       if (isLastField) {
         return filledOptions.length === 0 ? "Add a suggestion" : "Add another suggestion...";
       }
@@ -94,6 +107,14 @@ export default function OptionsInput({
     }
   };
 
+  const useAutocomplete = contentType === 'location' || contentType === 'movie';
+  const inputClassName = (isDuplicate: boolean) =>
+    `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
+      isDuplicate
+        ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
+        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
+    }`;
+
   return (
     <div>
       {label && (
@@ -102,30 +123,44 @@ export default function OptionsInput({
         </label>
       )}
       <div className="space-y-2">
+        {(() => {
+          const filledCount = options.filter(opt => opt.trim() !== '').length;
+          const hasDuplicates = options.some((_, idx) => isDuplicateOption(idx));
+          return (<>
         {options.map((option, index) => {
           const isDuplicate = isDuplicateOption(index);
-          const filledOptions = options.filter(opt => opt.trim() !== '');
           const isLastField = index === options.length - 1;
-          const canDelete = filledOptions.length >= 1;
-          
+          const canDelete = filledCount >= 1;
+
           return (
-            <div key={index} className="flex items-center gap-2">
-              <input
-                ref={(el) => {
-                  optionRefs.current[index] = el;
-                }}
-                type="text"
-                value={option}
-                onChange={(e) => updateOption(index, e.target.value)}
-                disabled={isLoading}
-                maxLength={35}
-                className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  isDuplicate 
-                    ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100' 
-                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
-                }`}
-                placeholder={getPlaceholder(index)}
-              />
+            <div key={index} className="flex items-start gap-2">
+              {useAutocomplete ? (
+                <div className="flex-1">
+                  <AutocompleteInput
+                    value={option}
+                    onChange={(value) => updateOption(index, value)}
+                    contentType={contentType as 'location' | 'movie'}
+                    disabled={isLoading}
+                    maxLength={100}
+                    placeholder={getPlaceholder(index)}
+                    className={inputClassName(isDuplicate) + ' w-full'}
+                    inputRef={(el) => { optionRefs.current[index] = el; }}
+                  />
+                </div>
+              ) : (
+                <input
+                  ref={(el) => {
+                    optionRefs.current[index] = el;
+                  }}
+                  type="text"
+                  value={option}
+                  onChange={(e) => updateOption(index, e.target.value)}
+                  disabled={isLoading}
+                  maxLength={35}
+                  className={inputClassName(isDuplicate)}
+                  placeholder={getPlaceholder(index)}
+                />
+              )}
               {isLastField ? (
                 // Empty space for alignment on the last field
                 <div className="w-9 h-9"></div>
@@ -135,8 +170,8 @@ export default function OptionsInput({
                   onClick={() => canDelete ? removeOption(index) : undefined}
                   disabled={isLoading || !canDelete}
                   className={`p-2 transition-colors ${
-                    canDelete 
-                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300' 
+                    canDelete
+                      ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300'
                       : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                   aria-label={canDelete ? "Remove option" : "Cannot remove last option"}
@@ -149,11 +184,13 @@ export default function OptionsInput({
             </div>
           );
         })}
-        {isDuplicateOption(options.findIndex(opt => isDuplicateOption(options.indexOf(opt)))) && (
+        {hasDuplicates && (
           <p className="text-sm text-red-600 dark:text-red-400 mt-1">
             Duplicate options are not allowed.
           </p>
         )}
+          </>);
+        })()}
       </div>
     </div>
   );

@@ -51,6 +51,8 @@ class CreatePollRequest(BaseModel):
     # Time windows for participation polls
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
+    # Content type for autocomplete (nomination/ranked_choice polls)
+    poll_content_type: str | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -143,6 +145,7 @@ class PollResponse(BaseModel):
     time_preferences_deadline_minutes: int | None = None
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
+    poll_content_type: str | None = None
 
 
 class VoteResponse(BaseModel):

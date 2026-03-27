@@ -40,6 +40,7 @@ export interface Poll {
   time_preferences_deadline_minutes?: number | null;
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
+  poll_content_type?: 'custom' | 'location' | 'movie' | null;
 }
 
 export interface TimeWindow {

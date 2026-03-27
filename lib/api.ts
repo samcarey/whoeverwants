@@ -11,27 +11,25 @@ import { branchToSlug } from './slug';
 // - Server-side: absolute URLs (no browser privacy concerns in SSR)
 // - Client-side: relative /api/polls path, proxied by Next.js rewrites
 //   (keeps requests same-origin, avoiding Safari ITP warnings)
-function getApiBase(): string {
+function getApiEndpoint(endpoint: string): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/polls\/?$/, `/api/${endpoint}`);
   }
-  // Server-side: use absolute URLs (no browser privacy concerns in SSR)
   if (typeof window === 'undefined') {
     if (process.env.NODE_ENV !== 'production') {
-      return 'http://localhost:8000/api/polls';
+      return `http://localhost:8000/api/${endpoint}`;
     }
     const branch = process.env.NEXT_PUBLIC_VERCEL_GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
     if (branch && branch !== 'main' && branch !== 'master') {
       const slug = branchToSlug(branch);
-      return `https://${slug}.api.whoeverwants.com/api/polls`;
+      return `https://${slug}.api.whoeverwants.com/api/${endpoint}`;
     }
-    return 'https://api.whoeverwants.com/api/polls';
+    return `https://api.whoeverwants.com/api/${endpoint}`;
   }
-  // Client-side (all environments): relative path, proxied by Next.js rewrites
-  return '/api/polls';
+  return `/api/${endpoint}`;
 }
 
-const API_BASE = getApiBase();
+const API_BASE = getApiEndpoint('polls');
 
 // --- Vote types matching the Python VoteResponse model ---
 
@@ -125,6 +123,7 @@ function toPoll(data: any): Poll {
     time_preferences_deadline_minutes: data.time_preferences_deadline_minutes ?? undefined,
     day_time_windows: data.day_time_windows ?? undefined,
     duration_window: data.duration_window ?? undefined,
+    poll_content_type: data.poll_content_type ?? undefined,
   };
 }
 
@@ -191,6 +190,7 @@ export async function apiCreatePoll(params: {
   time_preferences_deadline_minutes?: number;
   day_time_windows?: any[];
   duration_window?: any;
+  poll_content_type?: string;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -327,4 +327,30 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
     body: JSON.stringify({ poll_ids: pollIds }),
   });
   return data.map(toPoll);
+}
+
+// --- Search/autocomplete ---
+
+export interface SearchResult {
+  label: string;
+  description?: string;
+  imageUrl?: string;
+  lat?: string;
+  lon?: string;
+}
+
+const SEARCH_BASE = getApiEndpoint('search');
+
+export async function apiSearchLocations(query: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${SEARCH_BASE}/locations?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function apiSearchMovies(query: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${SEARCH_BASE}/movies?${params}`);
+  if (!res.ok) return [];
+  return res.json();
 }

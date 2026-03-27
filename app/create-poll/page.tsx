@@ -65,6 +65,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
+  const [pollContentType, setPollContentType] = useState<'custom' | 'location' | 'movie'>('custom');
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [locationValue, setLocationValue] = useState('');
@@ -217,19 +218,7 @@ function CreatePollContent() {
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
   };
 
-  // Check if an option is a duplicate
-  const isDuplicateOption = (index: number): boolean => {
-    const currentOption = options[index]?.trim().toLowerCase();
-    if (!currentOption) return false;
-    
-    // Check if this option appears elsewhere in the array
-    for (let i = 0; i < options.length; i++) {
-      if (i !== index && options[i]?.trim().toLowerCase() === currentOption) {
-        return true;
-      }
-    }
-    return false;
-  };
+
 
   // Validation for poll options with specific error messages
   const getValidationError = (): string | null => {
@@ -254,51 +243,47 @@ function CreatePollContent() {
       }
     }
 
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    const emptyOptions = options.filter(opt => opt.trim() === '');
-    const pollType = getPollType();
-    
-    // Check for options that exceed character limit
-    const longOptions = filledOptions.filter(opt => opt.length > 35);
-    if (longOptions.length > 0) {
-      return "Poll options must be 35 characters or less.";
-    }
-    
-    // If we have any filled options, check that there are no empty fields in between
-    if (filledOptions.length > 0) {
-      // Find the last filled option index
-      let lastFilledIndex = -1;
-      for (let i = options.length - 1; i >= 0; i--) {
-        if (options[i].trim() !== '') {
-          lastFilledIndex = i;
-          break;
+    const dbPollType = getPollType();
+
+    // Options validation only applies to ranked_choice (poll tab) — nomination
+    // and participation polls don't use the options array.
+    if (dbPollType !== 'nomination' && dbPollType !== 'participation') {
+      const filledOptions = options.filter(opt => opt.trim() !== '');
+
+      // Check for options that exceed character limit (relaxed for autocomplete types)
+      const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
+      const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
+      if (longOptions.length > 0) {
+        return `Poll options must be ${maxOptionLength} characters or less.`;
+      }
+
+      // If we have any filled options, check that there are no empty fields in between
+      if (filledOptions.length > 0) {
+        let lastFilledIndex = -1;
+        for (let i = options.length - 1; i >= 0; i--) {
+          if (options[i].trim() !== '') {
+            lastFilledIndex = i;
+            break;
+          }
+        }
+
+        for (let i = 0; i <= lastFilledIndex; i++) {
+          if (options[i].trim() === '') {
+            return "Please fill in all option fields or remove empty ones.";
+          }
         }
       }
-      
-      // Check if there are any empty fields before the last filled option
-      for (let i = 0; i <= lastFilledIndex; i++) {
-        if (options[i].trim() === '') {
-          return "Please fill in all option fields or remove empty ones.";
-        }
+
+      if (filledOptions.length === 1) {
+        return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
+      }
+
+      const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
+      if (uniqueOptions.size !== filledOptions.length) {
+        return "All poll options must be unique (no duplicates).";
       }
     }
-    
-    // If no options, that's valid for all poll types
-    if (filledOptions.length === 0) {
-      return null;
-    }
-    
-    // If there are options, must have at least 2 for ranked choice, at least 1 for nomination
-    if (filledOptions.length === 1 && pollType !== 'nomination') {
-      return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
-    }
-    
-    // No two options should be exactly the same
-    const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
-    if (uniqueOptions.size !== filledOptions.length) {
-      return "All poll options must be unique (no duplicates).";
-    }
-    
+
     return null;
   };
 
@@ -449,6 +434,9 @@ function CreatePollContent() {
           } else if (forkData.total_votes) {
             setAutoCloseAfter(forkData.total_votes);
           }
+          if (forkData.poll_content_type) {
+            setPollContentType(forkData.poll_content_type);
+          }
         } catch (error) {
           console.error('Error loading fork data:', error);
         }
@@ -527,6 +515,9 @@ function CreatePollContent() {
             setAutoCloseAfter(duplicateData.auto_close_after);
           } else if (duplicateData.total_votes) {
             setAutoCloseAfter(duplicateData.total_votes);
+          }
+          if (duplicateData.poll_content_type) {
+            setPollContentType(duplicateData.poll_content_type);
           }
 
           // Don't clean up the duplicate data yet - keep it until poll is created
@@ -662,49 +653,6 @@ function CreatePollContent() {
     }
   }, [options.length, shouldFocusNewOption]);
 
-
-  // Handle options for ranked choice polls
-  const updateOption = (index: number, value: string) => {
-    const newOptions = [...options];
-    newOptions[index] = value;
-    
-    // If typing in the last field and it now has content, add expansion field
-    if (index === options.length - 1 && value.trim() !== '') {
-      newOptions.push('');
-    }
-    
-    // Remove trailing empty fields but always keep at least 1 field
-    while (newOptions.length > 1) {
-      const lastIndex = newOptions.length - 1;
-      const secondLastIndex = newOptions.length - 2;
-      
-      // Only remove if last two fields are empty
-      if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
-        newOptions.pop();
-      } else {
-        break;
-      }
-    }
-    
-    // Ensure we always have at least 1 field
-    if (newOptions.length === 0) {
-      newOptions.push('');
-    }
-    
-    setOptions(newOptions);
-  };
-
-  const removeOption = (index: number) => {
-    // Remove the specific option and collapse array
-    const newOptions = options.filter((_, i) => i !== index);
-    
-    // Ensure we always have at least 1 field
-    if (newOptions.length === 0) {
-      newOptions.push('');
-    }
-    
-    setOptions(newOptions);
-  };
 
   const baseDeadlineOptions = [
     { value: "5min", label: "5 minutes", minutes: 5 },
@@ -914,6 +862,11 @@ function CreatePollContent() {
       // Add fork reference if this is a fork
       if (forkOf) {
         pollData.fork_of = forkOf;
+      }
+
+      // Add content type for nomination and ranked_choice polls
+      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && pollContentType !== 'custom') {
+        pollData.poll_content_type = pollContentType;
       }
 
       // Add options for ranked choice polls only
@@ -1181,6 +1134,26 @@ function CreatePollContent() {
             />
           </div>
 
+          {/* Content type selector for suggestion and poll types */}
+          {pollType !== 'participation' && (
+            <div>
+              <label htmlFor="contentType" className="block text-sm font-medium mb-2">
+                Type
+              </label>
+              <select
+                id="contentType"
+                value={pollContentType}
+                onChange={(e) => setPollContentType(e.target.value as 'custom' | 'location' | 'movie')}
+                disabled={isLoading}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="custom">Custom</option>
+                <option value="location">Location</option>
+                <option value="movie">Movie</option>
+              </select>
+            </div>
+          )}
+
           {/* Participant counters for participation polls */}
           {pollType === 'participation' && (
             <ParticipationConditions
@@ -1226,78 +1199,16 @@ function CreatePollContent() {
             </div>
           )}
 
-          {/* Hide options field for nomination and participation polls */}
+          {/* Options field for poll type (ranked choice / yes-no) */}
           {pollType !== 'nomination' && pollType !== 'participation' && (
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Options{' '}
-                <span className="text-gray-500 font-normal">
-                  (blank for yes/no)
-                </span>
-              </label>
-              <div className="space-y-2">
-                {options.map((option, index) => {
-                  const isDuplicate = isDuplicateOption(index);
-                  return (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        ref={(el) => {
-                          optionRefs.current[index] = el;
-                        }}
-                        type="text"
-                        value={option}
-                        onChange={(e) => updateOption(index, e.target.value)}
-                        disabled={isLoading}
-                        maxLength={35}
-                        className={`flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          isDuplicate 
-                            ? 'bg-red-50 dark:bg-red-900/30 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100' 
-                            : 'border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white'
-                        }`}
-                      placeholder={
-                        (() => {
-                          const filledOptions = options.filter(opt => opt.trim() !== '');
-                          const isLastField = index === options.length - 1;
-                          
-                          if (isLastField) {
-                            return filledOptions.length === 0 ? "Add an option" : "Add another option...";
-                          }
-                          return `Option ${index + 1}`;
-                        })()
-                      }
-                    />
-                    {(() => {
-                      const filledOptions = options.filter(opt => opt.trim() !== '');
-                      const isLastField = index === options.length - 1;
-                      const canDelete = filledOptions.length >= 1;
-                      
-                      if (isLastField) {
-                        // Empty space for alignment on the last "Add another option" field
-                        return <div className="w-9 h-9"></div>;
-                      }
-                      
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => canDelete ? removeOption(index) : undefined}
-                          disabled={isLoading || !canDelete}
-                          className={`p-2 transition-colors ${
-                            canDelete 
-                              ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 cursor-pointer'
-                              : 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                          } disabled:opacity-50`}
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      );
-                    })()}
-                  </div>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionsInput
+              options={options}
+              setOptions={setOptions}
+              isLoading={isLoading}
+              pollType="poll"
+              contentType={pollContentType}
+              label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
+            />
           )}
 
           <div>

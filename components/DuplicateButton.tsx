@@ -23,8 +23,9 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
       max_participants: poll.max_participants,
       auto_close_after: poll.auto_close_after,
       details: poll.details,
+      poll_content_type: poll.poll_content_type,
     };
-    
+
     debugLog.logObject('Duplicate button clicked', { pollId: poll.id, duplicateData }, 'DuplicateButton');
     
     // Store in localStorage for form auto-fill

@@ -58,6 +58,10 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         source: '/api/polls/:path*',
         destination: `${apiDest}/api/polls/:path*`,
       },
+      {
+        source: '/api/search/:path*',
+        destination: `${apiDest}/api/search/:path*`,
+      },
     ],
     afterFiles: [],
     fallback: [],

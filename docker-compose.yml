@@ -21,6 +21,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://whoeverwants:whoeverwants@db:5432/whoeverwants
+    env_file:
+      - .env.api
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
