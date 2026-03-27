@@ -88,7 +88,7 @@ export default function NominationsList({
           return (
             <div
               key={index}
-              className={`inline-flex items-center overflow-hidden ${
+              className={`flex items-center overflow-hidden ${
                 isLocation ? 'rounded-xl' : 'rounded-full'
               } ${
                 isUserNomination
@@ -96,7 +96,7 @@ export default function NominationsList({
                   : 'bg-gray-100 dark:bg-gray-700'
               }`}
             >
-              <span className={`px-3 py-1.5 text-sm font-medium min-w-0 flex-1 ${
+              <span className={`px-3 py-1.5 text-sm font-medium min-w-0 flex-1 overflow-hidden ${
                 isUserNomination
                   ? 'text-blue-900 dark:text-blue-100'
                   : 'text-gray-900 dark:text-gray-100'

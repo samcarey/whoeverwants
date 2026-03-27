@@ -67,9 +67,9 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     );
 
     const content = (
-      <span className={`inline-flex items-start gap-2 ${className}`}>
+      <span className={`flex items-start gap-2 overflow-hidden ${className}`}>
         {icon}
-        <span className="min-w-0">
+        <span className="min-w-0 overflow-hidden">
           <span className="flex items-baseline gap-1.5 flex-wrap">
             <span className="font-medium leading-tight">{name}</span>
             {distance !== undefined && (
