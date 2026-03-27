@@ -257,6 +257,12 @@ start_api() {
     "$UV_BIN" sync --quiet 2>&1 | tail -3 || true
   fi
 
+  # Source API secrets if available
+  local api_env_file="/root/whoeverwants/.env.api"
+  if [ -f "$api_env_file" ]; then
+    set -a; source "$api_env_file"; set +a
+  fi
+
   DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${db_name}" \
     "$UV_BIN" run uvicorn main:app --host 0.0.0.0 --port "$api_port" --workers 1 \
     >> "${dir}/api.log" 2>&1 200>&- &
