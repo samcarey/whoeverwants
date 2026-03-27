@@ -54,7 +54,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
   const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
-  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(optionsMetadataLocal ?? null);
+  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
