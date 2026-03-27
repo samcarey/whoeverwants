@@ -54,6 +54,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
   const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
+  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(optionsMetadataLocal ?? null);
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1088,10 +1089,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
-      
+
+      // Merge submitted metadata into local state so it's available immediately
+      if (nominationMetadata && Object.keys(nominationMetadata).length > 0) {
+        setOptionsMetadataLocal(prev => ({ ...prev, ...nominationMetadata }));
+      }
+
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
-      
+
       // Refresh nomination list for nomination polls with a small delay to ensure DB update is complete
       if (poll.poll_type === 'nomination') {
         // Add a small delay to ensure the database update is fully committed
@@ -1269,7 +1275,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </div>
             ) : pollResults ? (
               <>
-                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={poll.options_metadata} />
+                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
                 {pollResults.time_slot_rounds && pollResults.time_slot_rounds.length > 0 && (
                   <div className="mt-4">
                     <TimeSlotRoundsDisplay
@@ -1828,7 +1834,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
                               ✓
                             </span>
-                            <OptionLabel text={rankedChoices[0]} metadata={poll.options_metadata?.[rankedChoices[0]]} />
+                            <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
@@ -1836,7 +1842,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
                                 {index + 1}
                               </span>
-                              <OptionLabel text={choice} metadata={poll.options_metadata?.[choice]} />
+                              <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
                             </div>
                           ))
                         )}
@@ -1930,7 +1936,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                                   : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
                               }`}
                             >
-                              <OptionLabel text={option} metadata={poll.options_metadata?.[option]} />
+                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} />
                             </button>
                           ))}
                         </div>
@@ -1949,7 +1955,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             disabled={isSubmitting || isAbstaining}
                             storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                             initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                            optionsMetadata={poll.options_metadata}
+                            optionsMetadata={optionsMetadataLocal}
                           />
                         )}
                       </>
