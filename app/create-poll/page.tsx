@@ -218,19 +218,7 @@ function CreatePollContent() {
     return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
   };
 
-  // Check if an option is a duplicate
-  const isDuplicateOption = (index: number): boolean => {
-    const currentOption = options[index]?.trim().toLowerCase();
-    if (!currentOption) return false;
-    
-    // Check if this option appears elsewhere in the array
-    for (let i = 0; i < options.length; i++) {
-      if (i !== index && options[i]?.trim().toLowerCase() === currentOption) {
-        return true;
-      }
-    }
-    return false;
-  };
+
 
   // Validation for poll options with specific error messages
   const getValidationError = (): string | null => {
@@ -665,49 +653,6 @@ function CreatePollContent() {
     }
   }, [options.length, shouldFocusNewOption]);
 
-
-  // Handle options for ranked choice polls
-  const updateOption = (index: number, value: string) => {
-    const newOptions = [...options];
-    newOptions[index] = value;
-    
-    // If typing in the last field and it now has content, add expansion field
-    if (index === options.length - 1 && value.trim() !== '') {
-      newOptions.push('');
-    }
-    
-    // Remove trailing empty fields but always keep at least 1 field
-    while (newOptions.length > 1) {
-      const lastIndex = newOptions.length - 1;
-      const secondLastIndex = newOptions.length - 2;
-      
-      // Only remove if last two fields are empty
-      if (newOptions[lastIndex] === '' && newOptions[secondLastIndex] === '') {
-        newOptions.pop();
-      } else {
-        break;
-      }
-    }
-    
-    // Ensure we always have at least 1 field
-    if (newOptions.length === 0) {
-      newOptions.push('');
-    }
-    
-    setOptions(newOptions);
-  };
-
-  const removeOption = (index: number) => {
-    // Remove the specific option and collapse array
-    const newOptions = options.filter((_, i) => i !== index);
-    
-    // Ensure we always have at least 1 field
-    if (newOptions.length === 0) {
-      newOptions.push('');
-    }
-    
-    setOptions(newOptions);
-  };
 
   const baseDeadlineOptions = [
     { value: "5min", label: "5 minutes", minutes: 5 },

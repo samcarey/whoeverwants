@@ -123,11 +123,14 @@ export default function OptionsInput({
         </label>
       )}
       <div className="space-y-2">
+        {(() => {
+          const filledCount = options.filter(opt => opt.trim() !== '').length;
+          const hasDuplicates = options.some((_, idx) => isDuplicateOption(idx));
+          return (<>
         {options.map((option, index) => {
           const isDuplicate = isDuplicateOption(index);
-          const filledOptions = options.filter(opt => opt.trim() !== '');
           const isLastField = index === options.length - 1;
-          const canDelete = filledOptions.length >= 1;
+          const canDelete = filledCount >= 1;
 
           return (
             <div key={index} className="flex items-start gap-2">
@@ -181,11 +184,13 @@ export default function OptionsInput({
             </div>
           );
         })}
-        {isDuplicateOption(options.findIndex(opt => isDuplicateOption(options.indexOf(opt)))) && (
+        {hasDuplicates && (
           <p className="text-sm text-red-600 dark:text-red-400 mt-1">
             Duplicate options are not allowed.
           </p>
         )}
+          </>);
+        })()}
       </div>
     </div>
   );

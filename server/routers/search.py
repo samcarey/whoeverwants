@@ -9,34 +9,34 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 
+_http_client = httpx.AsyncClient(timeout=5.0)
+
 
 @router.get("/locations")
 async def search_locations(q: str = Query(..., min_length=2, max_length=100)):
     """Search for locations using OpenStreetMap Nominatim."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://nominatim.openstreetmap.org/search",
-            params={
-                "q": q,
-                "format": "jsonv2",
-                "limit": 6,
-                "addressdetails": 1,
-            },
-            headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
-            timeout=5.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    resp = await _http_client.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={
+            "q": q,
+            "format": "jsonv2",
+            "limit": 6,
+            "addressdetails": 1,
+        },
+        headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
-    results = []
-    for item in data:
-        results.append({
+    return [
+        {
             "label": item.get("display_name", ""),
             "description": item.get("type", "").replace("_", " ").title(),
             "lat": item.get("lat"),
             "lon": item.get("lon"),
-        })
-    return results
+        }
+        for item in data
+    ]
 
 
 @router.get("/movies")
@@ -45,18 +45,16 @@ async def search_movies(q: str = Query(..., min_length=2, max_length=100)):
     if not TMDB_API_KEY:
         return []
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.themoviedb.org/3/search/movie",
-            params={
-                "api_key": TMDB_API_KEY,
-                "query": q,
-                "page": 1,
-            },
-            timeout=5.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    resp = await _http_client.get(
+        "https://api.themoviedb.org/3/search/movie",
+        params={
+            "api_key": TMDB_API_KEY,
+            "query": q,
+            "page": 1,
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
 
     results = []
     for movie in data.get("results", [])[:6]:
