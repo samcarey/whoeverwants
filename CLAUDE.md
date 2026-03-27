@@ -837,6 +837,13 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Coalesce requestAnimationFrame calls.** On 120Hz displays, touchmove fires faster than rAF. Use a `rAFPending` flag to skip redundant frames and read the latest value at callback time (not call time).
 - **Touch listeners must go on the scroll container, not document.body.** `e.preventDefault()` on body touchmove doesn't suppress a child scroll container's native overscroll bounce. Attach listeners to the scrollable element directly.
 
+### Cross-Midnight Time Windows
+
+- **Time windows where `max <= min` represent cross-midnight ranges** (e.g., 10 PM–2 AM). Equal start/end means a full 24-hour window. Use `<=` consistently in all cross-midnight detection — `<` misses the equal-times-as-24h case.
+- **String comparison works for HH:MM cross-midnight detection** only because the format is always zero-padded. `"02:00" < "22:00"` is correct lexicographically. If the format ever loses zero-padding (e.g., `"2:00"`), all comparisons silently break.
+- **`_window_effective_end()` in `time_slots.py`** is the canonical backend helper — it adds 1440 minutes when `w_end <= w_start`. The frontend has no shared utility yet; cross-midnight checks are inline in `DayTimeWindowsInput`, `ParticipationConditionsCard`, `TimeSlotRoundsDisplay`, and `TimeGridModal`.
+- **Looping scroll wheels must scroll to the nearest occurrence** of the target index, not the center repetition. Otherwise wraparound (12→1) causes the wheel to scroll the long way around through all values.
+
 ### Service Worker Caching Strategy
 
 - **Never use `url.pathname.startsWith('/')` in service worker URL matching** — it matches ALL paths. Use exact equality (`===`) or more specific prefixes like `/create-poll`.
