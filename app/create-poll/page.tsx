@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
-import type { PollContentType } from "@/lib/types";
+import type { PollContentType, OptionsMetadata } from "@/lib/types";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -67,7 +67,7 @@ function CreatePollContent() {
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
   const [pollContentType, setPollContentType] = useState<PollContentType>('custom');
-  const [optionsMetadata, setOptionsMetadata] = useState<Record<string, { imageUrl?: string; infoUrl?: string }>>({});
+  const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [locationValue, setLocationValue] = useState('');

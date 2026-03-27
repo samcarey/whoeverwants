@@ -1,11 +1,11 @@
 "use client";
 
 import { useRef } from "react";
-import type { PollContentType } from "@/lib/types";
+import type { PollContentType, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
 
-export type OptionsMetadata = Record<string, { imageUrl?: string; infoUrl?: string }>;
+export type { OptionsMetadata };
 
 interface OptionsInputProps {
   options: string[];

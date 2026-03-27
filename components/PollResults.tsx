@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PollResults } from "@/lib/types";
+import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import NominationsList from "./NominationsList";
@@ -11,7 +11,7 @@ interface PollResultsProps {
   isPollClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
-  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: PollResultsProps) {
@@ -509,7 +509,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null }) {
+function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: OptionsMetadata | null }) {
   // Use server-side nomination counts from the results endpoint
   const nominations = results.nomination_counts || [];
 

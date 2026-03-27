@@ -21,7 +21,7 @@ import GradientBorderButton from "@/components/GradientBorderButton";
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
-import { Poll, PollResults } from "@/lib/types";
+import { Poll, PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
 import VoteOnItModal from "@/components/VoteOnItModal";
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -53,7 +53,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
-  const [nominationMetadata, setNominationMetadata] = useState<Record<string, { imageUrl?: string; infoUrl?: string }>>({});
+  const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);

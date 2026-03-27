@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ClientOnlyDragDrop } from './ClientOnly';
+import type { OptionsMetadata } from '@/lib/types';
 import OptionLabel from './OptionLabel';
 
 interface RankableOption {
@@ -16,7 +17,7 @@ interface RankableOptionsProps {
   disabled?: boolean;
   storageKey?: string; // Optional key for localStorage persistence
   initialRanking?: string[]; // Optional initial ranking to override saved state
-  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata }: RankableOptionsProps) {

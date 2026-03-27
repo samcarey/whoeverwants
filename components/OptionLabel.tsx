@@ -23,6 +23,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
           src={metadata.imageUrl}
           alt=""
           className="w-5 h-7 object-cover rounded flex-shrink-0"
+          loading="lazy"
         />
       )}
       <span>{text}</span>

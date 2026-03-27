@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { PollResults, RankedChoiceRound } from "@/lib/types";
+import { PollResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
 import OptionLabel from "./OptionLabel";
 
@@ -11,7 +11,7 @@ interface CompactRankedChoiceResultsProps {
   isPollClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
-  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 interface RoundVisualization {

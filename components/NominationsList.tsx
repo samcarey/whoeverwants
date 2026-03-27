@@ -1,5 +1,6 @@
 "use client";
 
+import type { OptionsMetadata } from "@/lib/types";
 import OptionLabel from "./OptionLabel";
 
 interface Nomination {
@@ -16,7 +17,7 @@ interface NominationsListProps {
   showEditButton?: boolean;
   onEditClick?: () => void;
   isEditDisabled?: boolean;
-  optionsMetadata?: Record<string, { imageUrl?: string; infoUrl?: string }> | null;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 export default function NominationsList({
