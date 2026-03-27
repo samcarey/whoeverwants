@@ -255,52 +255,47 @@ function CreatePollContent() {
       }
     }
 
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    const emptyOptions = options.filter(opt => opt.trim() === '');
-    const pollType = getPollType();
-    
-    // Check for options that exceed character limit (relaxed for autocomplete types)
-    const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
-    const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
-    if (longOptions.length > 0) {
-      return `Poll options must be ${maxOptionLength} characters or less.`;
-    }
-    
-    // If we have any filled options, check that there are no empty fields in between
-    if (filledOptions.length > 0) {
-      // Find the last filled option index
-      let lastFilledIndex = -1;
-      for (let i = options.length - 1; i >= 0; i--) {
-        if (options[i].trim() !== '') {
-          lastFilledIndex = i;
-          break;
+    const dbPollType = getPollType();
+
+    // Options validation only applies to ranked_choice (poll tab) — nomination
+    // and participation polls don't use the options array.
+    if (dbPollType !== 'nomination' && dbPollType !== 'participation') {
+      const filledOptions = options.filter(opt => opt.trim() !== '');
+
+      // Check for options that exceed character limit (relaxed for autocomplete types)
+      const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
+      const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
+      if (longOptions.length > 0) {
+        return `Poll options must be ${maxOptionLength} characters or less.`;
+      }
+
+      // If we have any filled options, check that there are no empty fields in between
+      if (filledOptions.length > 0) {
+        let lastFilledIndex = -1;
+        for (let i = options.length - 1; i >= 0; i--) {
+          if (options[i].trim() !== '') {
+            lastFilledIndex = i;
+            break;
+          }
+        }
+
+        for (let i = 0; i <= lastFilledIndex; i++) {
+          if (options[i].trim() === '') {
+            return "Please fill in all option fields or remove empty ones.";
+          }
         }
       }
-      
-      // Check if there are any empty fields before the last filled option
-      for (let i = 0; i <= lastFilledIndex; i++) {
-        if (options[i].trim() === '') {
-          return "Please fill in all option fields or remove empty ones.";
-        }
+
+      if (filledOptions.length === 1) {
+        return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
+      }
+
+      const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
+      if (uniqueOptions.size !== filledOptions.length) {
+        return "All poll options must be unique (no duplicates).";
       }
     }
-    
-    // If no options, that's valid for all poll types
-    if (filledOptions.length === 0) {
-      return null;
-    }
-    
-    // If there are options, must have at least 2 for ranked choice, at least 1 for nomination
-    if (filledOptions.length === 1 && pollType !== 'nomination') {
-      return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
-    }
-    
-    // No two options should be exactly the same
-    const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
-    if (uniqueOptions.size !== filledOptions.length) {
-      return "All poll options must be unique (no duplicates).";
-    }
-    
+
     return null;
   };
 
