@@ -168,7 +168,9 @@ export default function AutocompleteInput({
                 <img
                   src={result.imageUrl}
                   alt=""
-                  className="w-8 h-12 object-cover rounded flex-shrink-0 mt-0.5"
+                  className={`object-cover rounded flex-shrink-0 mt-0.5 ${
+                    result.name ? 'w-5 h-5' : 'w-8 h-12'
+                  }`}
                 />
               )}
               <div className="min-w-0 flex-1">

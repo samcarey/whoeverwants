@@ -38,11 +38,22 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     const address = getAddressFromLabel(text, metadata.name);
     const distance = metadata.distance_miles;
 
+    const icon = metadata.imageUrl ? (
+      <img
+        src={metadata.imageUrl}
+        alt=""
+        className="w-5 h-5 rounded flex-shrink-0 mt-0.5"
+        loading="lazy"
+      />
+    ) : (
+      <span className="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
+        <MapPinIcon className="w-4 h-4" />
+      </span>
+    );
+
     const content = (
       <span className={`inline-flex items-start gap-2 ${className}`}>
-        <span className="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
-          <MapPinIcon className="w-4 h-4" />
-        </span>
+        {icon}
         <span className="min-w-0">
           <span className="flex items-baseline gap-1.5 flex-wrap">
             <span className="font-medium leading-tight">{metadata.name}</span>
