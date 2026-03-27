@@ -96,13 +96,13 @@ export default function NominationsList({
                   : 'bg-gray-100 dark:bg-gray-700'
               }`}
             >
-              <span className={`px-3 py-1.5 text-sm font-medium min-w-0 flex-1 overflow-hidden ${
+              <div className={`px-3 py-1.5 text-sm font-medium min-w-0 flex-1 overflow-hidden ${
                 isUserNomination
                   ? 'text-blue-900 dark:text-blue-100'
                   : 'text-gray-900 dark:text-gray-100'
               }`}>
                 <OptionLabel text={nomination.option} metadata={meta} />
-              </span>
+              </div>
               {showVoteCounts && (
                 <span className={`px-2.5 self-stretch flex items-center text-sm font-bold ${
                   isUserNomination
