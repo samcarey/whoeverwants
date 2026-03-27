@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
+RAWG_API_KEY = os.environ.get("RAWG_API_KEY", "")
 
 _http_client = httpx.AsyncClient(timeout=5.0)
 
@@ -66,5 +67,36 @@ async def search_movies(q: str = Query(..., min_length=2, max_length=100)):
             "label": label,
             "description": (movie.get("overview", "") or "")[:120],
             "imageUrl": f"https://image.tmdb.org/t/p/w92{poster}" if poster else None,
+        })
+    return results
+
+
+@router.get("/video-games")
+async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
+    """Search for video games using RAWG API."""
+    if not RAWG_API_KEY:
+        return []
+
+    resp = await _http_client.get(
+        "https://api.rawg.io/api/games",
+        params={
+            "key": RAWG_API_KEY,
+            "search": q,
+            "page_size": 6,
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    results = []
+    for game in data.get("results", [])[:6]:
+        year = (game.get("released") or "")[:4]
+        name = game.get("name", "")
+        label = f"{name} ({year})" if year else name
+        genres = ", ".join(g["name"] for g in game.get("genres", [])[:3])
+        results.append({
+            "label": label,
+            "description": genres or None,
+            "imageUrl": game.get("background_image"),
         })
     return results

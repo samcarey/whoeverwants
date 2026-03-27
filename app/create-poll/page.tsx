@@ -65,7 +65,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
-  const [pollContentType, setPollContentType] = useState<'custom' | 'location' | 'movie'>('custom');
+  const [pollContentType, setPollContentType] = useState<'custom' | 'location' | 'movie' | 'video_game'>('custom');
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [locationValue, setLocationValue] = useState('');
@@ -1143,13 +1143,14 @@ function CreatePollContent() {
               <select
                 id="contentType"
                 value={pollContentType}
-                onChange={(e) => setPollContentType(e.target.value as 'custom' | 'location' | 'movie')}
+                onChange={(e) => setPollContentType(e.target.value as 'custom' | 'location' | 'movie' | 'video_game')}
                 disabled={isLoading}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="custom">Custom</option>
                 <option value="location">Location</option>
                 <option value="movie">Movie</option>
+                <option value="video_game">Video Game</option>
               </select>
             </div>
           )}

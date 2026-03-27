@@ -354,3 +354,10 @@ export async function apiSearchMovies(query: string): Promise<SearchResult[]> {
   if (!res.ok) return [];
   return res.json();
 }
+
+export async function apiSearchVideoGames(query: string): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${SEARCH_BASE}/video-games?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
