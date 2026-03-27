@@ -47,7 +47,10 @@ export default function NominationsList({
   );
 
   // Check if any nomination has location metadata for layout switching
-  const hasLocationMetadata = nominations.some(n => optionsMetadata?.[n.option]?.name);
+  const isLocationPoll = nominations.some(n => {
+    const meta = optionsMetadata?.[n.option];
+    return meta?.name || meta?.infoUrl?.includes("openstreetmap.org");
+  });
 
   return (
     <div className={className}>
@@ -76,11 +79,11 @@ export default function NominationsList({
         </div>
       </div>
 
-      <div className={`flex flex-wrap justify-center gap-2 ${hasLocationMetadata ? 'flex-col items-stretch' : ''}`}>
+      <div className={`flex flex-wrap justify-center gap-2 ${isLocationPoll ? 'flex-col items-stretch' : ''}`}>
         {sortedNominations.map((nomination, index) => {
           const isUserNomination = userNominations.includes(nomination.option);
           const meta = optionsMetadata?.[nomination.option];
-          const isLocation = !!meta?.name;
+          const isLocation = !!(meta?.name || meta?.infoUrl?.includes("openstreetmap.org"));
 
           return (
             <div

@@ -16,14 +16,28 @@ function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
+/** Detect if metadata represents a location (has OSM infoUrl or name). */
+function isLocationEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
+  if (!metadata) return false;
+  if (metadata.name) return true;
+  // Legacy entries: only have infoUrl pointing to OpenStreetMap
+  return !!metadata.infoUrl?.includes("openstreetmap.org");
+}
+
+/** Extract the place name from metadata or parse from Nominatim display_name. */
+function getLocationName(text: string, metadata: OptionMetadataEntry): string {
+  if (metadata.name) return metadata.name;
+  // Parse from Nominatim display_name: "Name, Street, City, ..."
+  const commaIdx = text.indexOf(", ");
+  return commaIdx >= 0 ? text.slice(0, commaIdx) : text;
+}
+
 function getAddressFromLabel(label: string, name: string): string {
-  // Remove the name prefix from the full label to get just the address
   if (label.startsWith(name + ", ")) {
     return label.slice(name.length + 2);
   }
-  // If name isn't at the start, return everything after first comma
   const commaIdx = label.indexOf(", ");
-  return commaIdx >= 0 ? label.slice(commaIdx + 2) : label;
+  return commaIdx >= 0 ? label.slice(commaIdx + 2) : "";
 }
 
 function formatDistance(miles: number): string {
@@ -33,14 +47,15 @@ function formatDistance(miles: number): string {
 }
 
 export default function OptionLabel({ text, metadata, className = "" }: OptionLabelProps) {
-  // Location with rich metadata: two-line display
-  if (metadata?.name) {
-    const address = getAddressFromLabel(text, metadata.name);
-    const distance = metadata.distance_miles;
+  // Location entry: two-line display with icon
+  if (isLocationEntry(metadata)) {
+    const name = getLocationName(text, metadata!);
+    const address = getAddressFromLabel(text, name);
+    const distance = metadata!.distance_miles;
 
-    const icon = metadata.imageUrl ? (
+    const icon = metadata!.imageUrl ? (
       <img
-        src={metadata.imageUrl}
+        src={metadata!.imageUrl}
         alt=""
         className="w-5 h-5 rounded flex-shrink-0 mt-0.5"
         loading="lazy"
@@ -56,24 +71,26 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
         {icon}
         <span className="min-w-0">
           <span className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="font-medium leading-tight">{metadata.name}</span>
+            <span className="font-medium leading-tight">{name}</span>
             {distance !== undefined && (
               <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
                 {formatDistance(distance)}
               </span>
             )}
           </span>
-          <span className="block text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
-            {address}
-          </span>
+          {address && (
+            <span className="block text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+              {address}
+            </span>
+          )}
         </span>
       </span>
     );
 
-    if (metadata.infoUrl) {
+    if (metadata!.infoUrl) {
       return (
         <a
-          href={metadata.infoUrl}
+          href={metadata!.infoUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
@@ -87,7 +104,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     return content;
   }
 
-  // Non-location or no rich metadata: original behavior
+  // Non-location or no metadata: original behavior
   if (!metadata || (!metadata.imageUrl && !metadata.infoUrl)) {
     return <span className={className}>{text}</span>;
   }
