@@ -46,6 +46,9 @@ export interface Poll {
   duration_window?: DurationWindow | null;
   poll_content_type?: PollContentType | null;
   options_metadata?: OptionsMetadata | null;
+  reference_latitude?: number | null;
+  reference_longitude?: number | null;
+  reference_location_label?: string | null;
 }
 
 export interface TimeWindow {

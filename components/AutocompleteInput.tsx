@@ -14,6 +14,9 @@ interface AutocompleteInputProps {
   maxLength?: number;
   className?: string;
   inputRef?: React.RefCallback<HTMLInputElement>;
+  referenceLatitude?: number;
+  referenceLongitude?: number;
+  searchRadius?: number;
 }
 
 export default function AutocompleteInput({
@@ -26,6 +29,9 @@ export default function AutocompleteInput({
   maxLength = 35,
   className,
   inputRef,
+  referenceLatitude,
+  referenceLongitude,
+  searchRadius,
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -34,26 +40,51 @@ export default function AutocompleteInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
 
-  const searchFn = contentType === 'location'
-    ? apiSearchLocations
-    : contentType === 'video_game'
-      ? apiSearchVideoGames
-      : apiSearchMovies;
+  const lastSuccessfulQueryRef = useRef("");
+  const lastResultsRef = useRef<SearchResult[]>([]);
 
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSuggestions([]);
+      lastSuccessfulQueryRef.current = "";
+      lastResultsRef.current = [];
       return;
     }
     try {
-      const results = await searchFn(query);
+      let results: SearchResult[];
+      if (contentType === 'location') {
+        results = await apiSearchLocations(query, referenceLatitude, referenceLongitude, searchRadius);
+      } else if (contentType === 'video_game') {
+        results = await apiSearchVideoGames(query);
+      } else {
+        results = await apiSearchMovies(query);
+      }
+      // When query extends previous, merge API results with client-side
+      // filtered cache (handles partial words like "Burger K" where Nominatim
+      // returns garbage but cached "Burger" results contain "Burger King")
+      if (lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
+        const words = query.toLowerCase().split(/\s+/);
+        const filtered = lastResultsRef.current.filter(r =>
+          words.every(w => r.label.toLowerCase().includes(w))
+        );
+        const seen = new Set(results.map(r => r.label));
+        for (const r of filtered) {
+          if (!seen.has(r.label)) {
+            results.push(r);
+          }
+        }
+      }
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
       setHighlightedIndex(-1);
+      if (results.length > 0) {
+        lastSuccessfulQueryRef.current = query;
+        lastResultsRef.current = results;
+      }
     } catch {
-      setSuggestions([]);
+      // On error, keep existing suggestions
     }
-  }, [searchFn]);
+  }, [contentType, referenceLatitude, referenceLongitude, searchRadius]);
 
   const handleChange = (newValue: string) => {
     onChange(newValue);
@@ -144,11 +175,18 @@ export default function AutocompleteInput({
                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {result.label}
                 </div>
-                {result.description && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                    {result.description}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {result.description && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                      {result.description}
+                    </span>
+                  )}
+                  {result.distance_miles !== undefined && (
+                    <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                      {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
+                    </span>
+                  )}
+                </div>
               </div>
             </li>
           ))}

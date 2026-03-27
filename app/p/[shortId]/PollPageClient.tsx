@@ -1168,6 +1168,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
 
+        {/* Reference location badge */}
+        {poll.reference_location_label && (
+          <div className="mb-3 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Near {poll.reference_location_label}</span>
+          </div>
+        )}
+
         {/* Sub-poll back navigation */}
         {poll.is_sub_poll && poll.parent_participation_poll_id && (
           <div className="mb-3 text-center">

@@ -125,6 +125,9 @@ function toPoll(data: any): Poll {
     duration_window: data.duration_window ?? undefined,
     poll_content_type: data.poll_content_type ?? undefined,
     options_metadata: data.options_metadata ?? undefined,
+    reference_latitude: data.reference_latitude ?? undefined,
+    reference_longitude: data.reference_longitude ?? undefined,
+    reference_location_label: data.reference_location_label ?? undefined,
   };
 }
 
@@ -193,6 +196,9 @@ export async function apiCreatePoll(params: {
   duration_window?: any;
   poll_content_type?: string;
   options_metadata?: OptionsMetadata;
+  reference_latitude?: number;
+  reference_longitude?: number;
+  reference_location_label?: string;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -341,14 +347,29 @@ export interface SearchResult {
   infoUrl?: string;
   lat?: string;
   lon?: string;
+  distance_miles?: number;
 }
 
 const SEARCH_BASE = getApiEndpoint('search');
 
-export async function apiSearchLocations(query: string): Promise<SearchResult[]> {
+export async function apiSearchLocations(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
+  if (refLat !== undefined && refLon !== undefined) {
+    params.set('lat', String(refLat));
+    params.set('lon', String(refLon));
+  }
+  if (maxDistance !== undefined) {
+    params.set('max_distance', String(maxDistance));
+  }
   const res = await fetch(`${SEARCH_BASE}/locations?${params}`);
   if (!res.ok) return [];
+  return res.json();
+}
+
+export async function apiGeocode(query: string): Promise<{ lat: string; lon: string; label: string } | null> {
+  const params = new URLSearchParams({ q: query });
+  const res = await fetch(`${SEARCH_BASE}/geocode?${params}`);
+  if (!res.ok) return null;
   return res.json();
 }
 

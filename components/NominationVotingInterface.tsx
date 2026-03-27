@@ -78,6 +78,7 @@ export default function NominationVotingInterface({
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
+  const [searchRadius, setSearchRadius] = useState(25);
 
   // Helper function to convert existingNominations to format expected by NominationsList
   const getNominationsWithCounts = () => {
@@ -333,6 +334,20 @@ export default function NominationVotingInterface({
 
         {/* Add new nominations using shared component */}
         <div className={filteredExistingNominations.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
+          {poll.poll_content_type === 'location' && poll.reference_latitude && (
+            <div className="mb-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>Search within</span>
+              <select
+                value={searchRadius}
+                onChange={(e) => setSearchRadius(Number(e.target.value))}
+                className="px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-800"
+              >
+                {[5, 10, 25, 50, 100, 250].map((r) => (
+                  <option key={r} value={r}>{r} mi</option>
+                ))}
+              </select>
+            </div>
+          )}
           <OptionsInput
             options={newNominations}
             setOptions={setNewNominations}
@@ -342,6 +357,9 @@ export default function NominationVotingInterface({
             contentType={poll.poll_content_type || 'custom'}
             optionsMetadata={nominationMetadata}
             onMetadataChange={onNominationMetadataChange}
+            referenceLatitude={poll.reference_latitude}
+            referenceLongitude={poll.reference_longitude}
+            searchRadius={searchRadius}
           />
         </div>
 

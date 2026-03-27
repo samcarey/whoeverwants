@@ -17,6 +17,9 @@ interface OptionsInputProps {
   contentType?: PollContentType;
   optionsMetadata?: OptionsMetadata;
   onMetadataChange?: (metadata: OptionsMetadata) => void;
+  referenceLatitude?: number;
+  referenceLongitude?: number;
+  searchRadius?: number;
 }
 
 export default function OptionsInput({
@@ -29,6 +32,9 @@ export default function OptionsInput({
   contentType = 'custom',
   optionsMetadata,
   onMetadataChange,
+  referenceLatitude,
+  referenceLongitude,
+  searchRadius,
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -167,6 +173,9 @@ export default function OptionsInput({
                     placeholder={getPlaceholder(index)}
                     className={inputClassName(isDuplicate) + ' w-full'}
                     inputRef={(el) => { optionRefs.current[index] = el; }}
+                    referenceLatitude={referenceLatitude}
+                    referenceLongitude={referenceLongitude}
+                    searchRadius={searchRadius}
                   />
                 </div>
               ) : (
