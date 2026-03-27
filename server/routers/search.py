@@ -89,6 +89,7 @@ async def _nominatim_search(
 
         entry: dict = {
             "label": item.get("display_name", ""),
+            "name": item.get("name") or "",
             "description": item.get("type", "").replace("_", " ").title(),
             "lat": item_lat,
             "lon": item_lon,

@@ -3,7 +3,16 @@
 
 export type PollContentType = 'custom' | 'location' | 'movie' | 'video_game';
 
-export type OptionsMetadata = Record<string, { imageUrl?: string; infoUrl?: string }>;
+export type OptionMetadataEntry = {
+  imageUrl?: string;
+  infoUrl?: string;
+  name?: string;
+  distance_miles?: number;
+  lat?: string;
+  lon?: string;
+};
+
+export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 
 export interface Poll {
   id: string;

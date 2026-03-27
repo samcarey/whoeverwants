@@ -172,21 +172,41 @@ export default function AutocompleteInput({
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {result.label}
-                </div>
-                <div className="flex items-center gap-2">
-                  {result.description && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                      {result.description}
-                    </span>
-                  )}
-                  {result.distance_miles !== undefined && (
-                    <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                      {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
-                    </span>
-                  )}
-                </div>
+                {result.name ? (
+                  <>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {result.name}
+                      </span>
+                      {result.distance_miles !== undefined && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap flex-shrink-0">
+                          {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {result.label.startsWith(result.name + ', ') ? result.label.slice(result.name.length + 2) : result.label}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                      {result.label}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {result.description && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                          {result.description}
+                        </span>
+                      )}
+                      {result.distance_miles !== undefined && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                          {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </li>
           ))}
