@@ -10,6 +10,7 @@ interface ScrollWheelProps {
   visibleItems?: number;
   width?: number;
   loop?: boolean;
+  hideHighlight?: boolean;
 }
 
 const MIN_FONT_SIZE = 14;
@@ -27,6 +28,7 @@ export default function ScrollWheel({
   visibleItems = 5,
   width,
   loop = false,
+  hideHighlight = false,
 }: ScrollWheelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -235,11 +237,13 @@ export default function ScrollWheel({
 
   return (
     <div className="relative" style={{ height: containerHeight, width }}>
-      {/* Selection highlight band */}
-      <div
-        className="absolute left-0 right-0 pointer-events-none bg-blue-50/50 dark:bg-blue-900/20 z-0"
-        style={{ top: padding, height: itemHeight }}
-      />
+      {/* Selection highlight band (can be hidden when parent provides its own) */}
+      {!hideHighlight && (
+        <div
+          className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-lg"
+          style={{ top: padding, height: itemHeight }}
+        />
+      )}
       {/* Top fade */}
       <div
         className="absolute top-0 left-0 right-0 pointer-events-none z-20 bg-gradient-to-b from-white dark:from-gray-800 to-transparent"
