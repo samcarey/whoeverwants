@@ -84,6 +84,7 @@ function CreatePollContent() {
   const [refLatitude, setRefLatitude] = useState<number | undefined>(undefined);
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
+  const [searchRadius, setSearchRadius] = useState(25);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -1191,6 +1192,8 @@ function CreatePollContent() {
                 setRefLongitude(lng);
                 setRefLocationLabel(lbl);
               }}
+              searchRadius={searchRadius}
+              onSearchRadiusChange={setSearchRadius}
               disabled={isLoading}
             />
           )}
@@ -1252,6 +1255,7 @@ function CreatePollContent() {
               onMetadataChange={setOptionsMetadata}
               referenceLatitude={refLatitude}
               referenceLongitude={refLongitude}
+              searchRadius={searchRadius}
               label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
             />
           )}

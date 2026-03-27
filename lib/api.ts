@@ -352,11 +352,14 @@ export interface SearchResult {
 
 const SEARCH_BASE = getApiEndpoint('search');
 
-export async function apiSearchLocations(query: string, refLat?: number, refLon?: number): Promise<SearchResult[]> {
+export async function apiSearchLocations(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (refLat !== undefined && refLon !== undefined) {
     params.set('lat', String(refLat));
     params.set('lon', String(refLon));
+  }
+  if (maxDistance !== undefined) {
+    params.set('max_distance', String(maxDistance));
   }
   const res = await fetch(`${SEARCH_BASE}/locations?${params}`);
   if (!res.ok) return [];

@@ -33,39 +33,68 @@ async def search_locations(
     q: str = Query(..., min_length=2, max_length=100),
     lat: float | None = Query(None, description="Reference latitude for proximity bias"),
     lon: float | None = Query(None, description="Reference longitude for proximity bias"),
+    max_distance: float = Query(25, description="Maximum distance in miles (0 = no limit)"),
 ):
     """Search for locations using OpenStreetMap Nominatim.
 
-    When lat/lon are provided, results are biased toward that area
-    and include a distance_miles field.
+    When lat/lon are provided, results are restricted to a bounding box
+    derived from max_distance, sorted by proximity, and include distance_miles.
     """
+    has_ref = lat is not None and lon is not None
+
     params: dict = {
         "q": q,
         "format": "jsonv2",
-        "limit": 10,
+        "limit": 20,
         "addressdetails": 1,
     }
 
-    # Bias search toward reference location using viewbox
-    if lat is not None and lon is not None:
-        # ~30 mile bounding box (~0.5 degrees)
-        delta = 0.5
+    # Restrict search to bounding box around reference location
+    if has_ref and max_distance > 0:
+        # 1 degree latitude ≈ 69 miles
+        delta = max_distance / 69.0
         params["viewbox"] = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
-        # bounded=0 means prefer but don't restrict to viewbox
-        params["bounded"] = 0
+        params["bounded"] = 1
+
+    headers = {
+        "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+        "Accept-Language": "en",
+    }
 
     resp = await _http_client.get(
         "https://nominatim.openstreetmap.org/search",
         params=params,
-        headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
+        headers=headers,
     )
     resp.raise_for_status()
     data = resp.json()
+
+    # If bounded search returned no results, retry unbounded
+    if not data and has_ref and max_distance > 0:
+        params.pop("bounded", None)
+        params.pop("viewbox", None)
+        params["limit"] = 10
+        resp = await _http_client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params=params,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
     results = []
     for item in data:
         item_lat = item.get("lat")
         item_lon = item.get("lon")
+        distance = None
+        if has_ref and item_lat and item_lon:
+            distance = round(
+                _haversine_miles(lat, lon, float(item_lat), float(item_lon)), 1
+            )
+            # Hard filter: skip results beyond max_distance
+            if max_distance > 0 and distance > max_distance:
+                continue
+
         entry: dict = {
             "label": item.get("display_name", ""),
             "description": item.get("type", "").replace("_", " ").title(),
@@ -76,14 +105,12 @@ async def search_locations(
                 if item_lat and item_lon else None
             ),
         }
-        if lat is not None and lon is not None and item_lat and item_lon:
-            entry["distance_miles"] = round(
-                _haversine_miles(lat, lon, float(item_lat), float(item_lon)), 1
-            )
+        if distance is not None:
+            entry["distance_miles"] = distance
         results.append(entry)
 
     # Sort by distance when reference location provided
-    if lat is not None and lon is not None:
+    if has_ref:
         results.sort(key=lambda r: r.get("distance_miles", float("inf")))
 
     return results[:6]
@@ -104,7 +131,10 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             "limit": 1,
             "addressdetails": 1,
         },
-        headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
+        headers={
+            "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+            "Accept-Language": "en",
+        },
     )
     resp.raise_for_status()
     data = resp.json()

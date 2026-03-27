@@ -16,6 +16,7 @@ interface AutocompleteInputProps {
   inputRef?: React.RefCallback<HTMLInputElement>;
   referenceLatitude?: number;
   referenceLongitude?: number;
+  searchRadius?: number;
 }
 
 export default function AutocompleteInput({
@@ -30,6 +31,7 @@ export default function AutocompleteInput({
   inputRef,
   referenceLatitude,
   referenceLongitude,
+  searchRadius,
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -46,7 +48,7 @@ export default function AutocompleteInput({
     try {
       let results: SearchResult[];
       if (contentType === 'location') {
-        results = await apiSearchLocations(query, referenceLatitude, referenceLongitude);
+        results = await apiSearchLocations(query, referenceLatitude, referenceLongitude, searchRadius);
       } else if (contentType === 'video_game') {
         results = await apiSearchVideoGames(query);
       } else {
@@ -58,7 +60,7 @@ export default function AutocompleteInput({
     } catch {
       setSuggestions([]);
     }
-  }, [contentType, referenceLatitude, referenceLongitude]);
+  }, [contentType, referenceLatitude, referenceLongitude, searchRadius]);
 
   const handleChange = (newValue: string) => {
     onChange(newValue);

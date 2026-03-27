@@ -19,6 +19,7 @@ interface OptionsInputProps {
   onMetadataChange?: (metadata: OptionsMetadata) => void;
   referenceLatitude?: number;
   referenceLongitude?: number;
+  searchRadius?: number;
 }
 
 export default function OptionsInput({
@@ -33,6 +34,7 @@ export default function OptionsInput({
   onMetadataChange,
   referenceLatitude,
   referenceLongitude,
+  searchRadius,
 }: OptionsInputProps) {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -173,6 +175,7 @@ export default function OptionsInput({
                     inputRef={(el) => { optionRefs.current[index] = el; }}
                     referenceLatitude={referenceLatitude}
                     referenceLongitude={referenceLongitude}
+                    searchRadius={searchRadius}
                   />
                 </div>
               ) : (
