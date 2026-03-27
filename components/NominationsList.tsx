@@ -79,43 +79,77 @@ export default function NominationsList({
         </div>
       </div>
 
-      <div className={`flex flex-wrap justify-center gap-2 ${isLocationPoll ? 'flex-col items-stretch' : ''}`}>
-        {sortedNominations.map((nomination, index) => {
-          const isUserNomination = userNominations.includes(nomination.option);
-          const meta = optionsMetadata?.[nomination.option];
-          const isLocation = !!(meta?.name || meta?.infoUrl?.includes("openstreetmap.org"));
+      {isLocationPoll ? (
+        <div className="space-y-2 overflow-hidden">
+          {sortedNominations.map((nomination, index) => {
+            const isUserNomination = userNominations.includes(nomination.option);
+            const meta = optionsMetadata?.[nomination.option];
 
-          return (
-            <div
-              key={index}
-              className={`flex items-center overflow-hidden ${
-                isLocation ? 'rounded-xl' : 'rounded-full'
-              } ${
-                isUserNomination
-                  ? 'bg-blue-100 dark:bg-blue-900/30'
-                  : 'bg-gray-100 dark:bg-gray-700'
-              }`}
-            >
-              <div className={`px-3 py-1.5 text-sm font-medium min-w-0 flex-1 overflow-hidden ${
-                isUserNomination
-                  ? 'text-blue-900 dark:text-blue-100'
-                  : 'text-gray-900 dark:text-gray-100'
-              }`}>
-                <OptionLabel text={nomination.option} metadata={meta} />
-              </div>
-              {showVoteCounts && (
-                <span className={`px-2.5 self-stretch flex items-center text-sm font-bold ${
+            return (
+              <div
+                key={index}
+                className={`flex items-center rounded-xl overflow-hidden ${
                   isUserNomination
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                    : 'bg-gray-100 dark:bg-gray-700'
+                }`}
+              >
+                <div className={`min-w-0 flex-1 px-3 py-1.5 text-sm font-medium overflow-hidden ${
+                  isUserNomination
+                    ? 'text-blue-900 dark:text-blue-100'
+                    : 'text-gray-900 dark:text-gray-100'
                 }`}>
-                  {nomination.count}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  <OptionLabel text={nomination.option} metadata={meta} />
+                </div>
+                {showVoteCounts && (
+                  <span className={`px-2.5 self-stretch flex items-center text-sm font-bold flex-shrink-0 ${
+                    isUserNomination
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                  }`}>
+                    {nomination.count}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-wrap justify-center gap-2">
+          {sortedNominations.map((nomination, index) => {
+            const isUserNomination = userNominations.includes(nomination.option);
+            const meta = optionsMetadata?.[nomination.option];
+
+            return (
+              <div
+                key={index}
+                className={`inline-flex items-center rounded-full overflow-hidden ${
+                  isUserNomination
+                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                    : 'bg-gray-100 dark:bg-gray-700'
+                }`}
+              >
+                <div className={`px-3 py-1 text-sm font-medium ${
+                  isUserNomination
+                    ? 'text-blue-900 dark:text-blue-100'
+                    : 'text-gray-900 dark:text-gray-100'
+                }`}>
+                  <OptionLabel text={nomination.option} metadata={meta} />
+                </div>
+                {showVoteCounts && (
+                  <span className={`px-2.5 py-1 text-sm font-bold ${
+                    isUserNomination
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
+                  }`}>
+                    {nomination.count}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
