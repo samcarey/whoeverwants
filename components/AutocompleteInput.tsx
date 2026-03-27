@@ -40,9 +40,12 @@ export default function AutocompleteInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
 
+  const lastSuccessfulQueryRef = useRef("");
+
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSuggestions([]);
+      lastSuccessfulQueryRef.current = "";
       return;
     }
     try {
@@ -54,11 +57,19 @@ export default function AutocompleteInput({
       } else {
         results = await apiSearchMovies(query);
       }
+      // If no results and query extends the previous successful query,
+      // keep showing old results (typing more should refine, not lose results)
+      if (results.length === 0 && lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
+        return;
+      }
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
       setHighlightedIndex(-1);
+      if (results.length > 0) {
+        lastSuccessfulQueryRef.current = query;
+      }
     } catch {
-      setSuggestions([]);
+      // On error, keep existing suggestions
     }
   }, [contentType, referenceLatitude, referenceLongitude, searchRadius]);
 
