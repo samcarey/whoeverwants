@@ -66,42 +66,44 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
       </span>
     );
 
-    const content = (
-      <span className={`flex items-start gap-2 overflow-hidden ${className}`}>
-        {icon}
-        <span className="min-w-0 overflow-hidden">
-          <span className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="font-medium leading-tight">{name}</span>
-            {distance !== undefined && (
-              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                {formatDistance(distance)}
-              </span>
-            )}
-          </span>
-          {address && (
-            <span className="block text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
-              {address}
+    const inner = (
+      <>
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          <span className="font-medium leading-tight">{name}</span>
+          {distance !== undefined && (
+            <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+              {formatDistance(distance)}
             </span>
           )}
-        </span>
-      </span>
+        </div>
+        {address && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+            {address}
+          </div>
+        )}
+      </>
     );
 
-    if (metadata!.infoUrl) {
-      return (
-        <a
-          href={metadata!.infoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="hover:underline"
-        >
-          {content}
-        </a>
-      );
-    }
+    const wrapper = metadata!.infoUrl ? (
+      <a
+        href={metadata!.infoUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="min-w-0 overflow-hidden block hover:underline"
+      >
+        {inner}
+      </a>
+    ) : (
+      <div className="min-w-0 overflow-hidden">{inner}</div>
+    );
 
-    return content;
+    return (
+      <div className={`flex items-start gap-2 ${className}`}>
+        {icon}
+        {wrapper}
+      </div>
+    );
   }
 
   // Non-location or no metadata: original behavior
