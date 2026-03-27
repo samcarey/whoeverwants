@@ -123,21 +123,6 @@ async def search_locations(
     retries with "Burger" and filters to results containing "K".
     """
     results = await _nominatim_search(q, lat, lon, max_distance)
-
-    # Partial word fallback: if no results and query has a trailing
-    # incomplete word, retry with just the complete words and filter
-    if not results and " " in q.strip():
-        complete_words = q.rsplit(" ", 1)[0].strip()
-        partial = q.rsplit(" ", 1)[1].strip().lower()
-        if len(complete_words) >= 2:
-            results = await _nominatim_search(complete_words, lat, lon, max_distance)
-            if partial:
-                # Boost results whose name contains the partial word
-                results.sort(key=lambda r: (
-                    0 if partial in r["label"].lower() else 1,
-                    r.get("distance_miles", float("inf")),
-                ))
-
     return results[:6]
 
 
