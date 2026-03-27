@@ -1196,30 +1196,20 @@ function CreatePollContent() {
           {/* Content type selector for suggestion and poll types */}
           {pollType !== 'participation' && (
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label htmlFor="contentType" className="block text-sm font-medium mb-2">
                 Type
               </label>
-              <div className="flex gap-2">
-                {([
-                  { value: 'custom' as const, label: 'Custom', icon: '✏️' },
-                  { value: 'location' as const, label: 'Location', icon: '📍' },
-                  { value: 'movie' as const, label: 'Movie', icon: '🎬' },
-                ]).map(({ value, label, icon }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setPollContentType(value)}
-                    disabled={isLoading}
-                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all border ${
-                      pollContentType === value
-                        ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
-                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
+              <select
+                id="contentType"
+                value={pollContentType}
+                onChange={(e) => setPollContentType(e.target.value as 'custom' | 'location' | 'movie')}
+                disabled={isLoading}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="custom">Custom</option>
+                <option value="location">Location</option>
+                <option value="movie">Movie</option>
+              </select>
             </div>
           )}
 
