@@ -59,16 +59,19 @@ export default function AutocompleteInput({
       } else {
         results = await apiSearchMovies(query);
       }
-      // When query extends previous, client-side filter cached results
-      // and use them if they match better (handles partial words like "Burger K"
-      // where Nominatim returns garbage but cached "Burger" results contain "Burger King")
+      // When query extends previous, merge API results with client-side
+      // filtered cache (handles partial words like "Burger K" where Nominatim
+      // returns garbage but cached "Burger" results contain "Burger King")
       if (lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
         const words = query.toLowerCase().split(/\s+/);
         const filtered = lastResultsRef.current.filter(r =>
           words.every(w => r.label.toLowerCase().includes(w))
         );
-        if (filtered.length >= results.length) {
-          results = filtered;
+        const seen = new Set(results.map(r => r.label));
+        for (const r of filtered) {
+          if (!seen.has(r.label)) {
+            results.push(r);
+          }
         }
       }
       setSuggestions(results);
