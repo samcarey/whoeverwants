@@ -1,0 +1,164 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { getUserLocation, saveUserLocation, type UserLocation } from "@/lib/userProfile";
+import { apiGeocode } from "@/lib/api";
+
+interface ReferenceLocationInputProps {
+  latitude: number | undefined;
+  longitude: number | undefined;
+  label: string;
+  onLocationChange: (lat: number, lng: number, label: string) => void;
+  disabled?: boolean;
+}
+
+export default function ReferenceLocationInput({
+  latitude,
+  longitude,
+  label,
+  onLocationChange,
+  disabled = false,
+}: ReferenceLocationInputProps) {
+  const [input, setInput] = useState("");
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isGeolocating, setIsGeolocating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Auto-fill from saved location on mount
+  useEffect(() => {
+    if (latitude !== undefined) return; // Already set
+    const saved = getUserLocation();
+    if (saved) {
+      onLocationChange(saved.latitude, saved.longitude, saved.label);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGeocode = async () => {
+    if (!input.trim()) return;
+    setIsGeocoding(true);
+    setError(null);
+    try {
+      const result = await apiGeocode(input.trim());
+      if (result && result.lat && result.lon) {
+        const lat = parseFloat(result.lat);
+        const lon = parseFloat(result.lon);
+        onLocationChange(lat, lon, result.label);
+        // Save for future use
+        saveUserLocation({ latitude: lat, longitude: lon, label: result.label });
+        setInput("");
+      } else {
+        setError("Location not found. Try a zip code or city name.");
+      }
+    } catch {
+      setError("Failed to look up location");
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
+
+  const handleDetect = () => {
+    if (!navigator.geolocation) {
+      setError("Geolocation not supported");
+      return;
+    }
+    setIsGeolocating(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude: lat, longitude: lon } = position.coords;
+          const result = await apiGeocode(`${lat}, ${lon}`);
+          const lbl = result?.label || `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+          onLocationChange(lat, lon, lbl);
+          saveUserLocation({ latitude: lat, longitude: lon, label: lbl });
+          setInput("");
+        } catch {
+          setError("Failed to determine location");
+        } finally {
+          setIsGeolocating(false);
+        }
+      },
+      () => {
+        setError("Location access denied");
+        setIsGeolocating(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000 }
+    );
+  };
+
+  const hasLocation = latitude !== undefined && longitude !== undefined;
+
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-2">
+        Your Location
+      </label>
+      {hasLocation && (
+        <div className="mb-2 flex items-center gap-2 text-sm">
+          <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span className="text-gray-700 dark:text-gray-300">{label}</span>
+          <button
+            type="button"
+            onClick={() => onLocationChange(undefined as any, undefined as any, "")}
+            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            Change
+          </button>
+        </div>
+      )}
+      {!hasLocation && (
+        <>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleGeocode(); } }}
+              placeholder="Zip code or city name..."
+              maxLength={200}
+              disabled={disabled || isGeocoding || isGeolocating}
+              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 text-sm"
+            />
+            <button
+              type="button"
+              onClick={handleGeocode}
+              disabled={disabled || isGeocoding || isGeolocating || !input.trim()}
+              className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              {isGeocoding ? "..." : "Set"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDetect}
+              disabled={disabled || isGeocoding || isGeolocating}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Detect my location"
+            >
+              {isGeolocating ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Search results will be sorted by distance from this location
+          </p>
+        </>
+      )}
+      {error && (
+        <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
+      )}
+    </div>
+  );
+}

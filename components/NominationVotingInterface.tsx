@@ -342,6 +342,8 @@ export default function NominationVotingInterface({
             contentType={poll.poll_content_type || 'custom'}
             optionsMetadata={nominationMetadata}
             onMetadataChange={onNominationMetadataChange}
+            referenceLatitude={poll.reference_latitude}
+            referenceLongitude={poll.reference_longitude}
           />
         </div>
 

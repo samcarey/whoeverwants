@@ -55,6 +55,10 @@ class CreatePollRequest(BaseModel):
     poll_content_type: str | None = None
     # Metadata for options (thumbnail URLs, info links) keyed by option label
     options_metadata: dict | None = None
+    # Reference location for proximity-based search
+    reference_latitude: float | None = None
+    reference_longitude: float | None = None
+    reference_location_label: str | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -151,6 +155,9 @@ class PollResponse(BaseModel):
     duration_window: dict | None = None
     poll_content_type: str | None = None
     options_metadata: dict | None = None
+    reference_latitude: float | None = None
+    reference_longitude: float | None = None
+    reference_location_label: str | None = None
 
 
 class VoteResponse(BaseModel):

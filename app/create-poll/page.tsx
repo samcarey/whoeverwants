@@ -17,6 +17,7 @@ import OptionsInput from "@/components/OptionsInput";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
+import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 export const dynamic = 'force-dynamic';
 
 function CreatePollContent() {
@@ -79,6 +80,10 @@ function CreatePollContent() {
   const [timeOptions, setTimeOptions] = useState<string[]>(['', '']);
   const [timeSuggestionsDeadline, setTimeSuggestionsDeadline] = useState('10min');
   const [timePreferencesDeadline, setTimePreferencesDeadline] = useState('10min');
+  // Reference location for proximity-based search
+  const [refLatitude, setRefLatitude] = useState<number | undefined>(undefined);
+  const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
+  const [refLocationLabel, setRefLocationLabel] = useState("");
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -877,6 +882,13 @@ function CreatePollContent() {
         pollData.poll_content_type = pollContentType;
       }
 
+      // Add reference location if set
+      if (refLatitude !== undefined && refLongitude !== undefined) {
+        pollData.reference_latitude = refLatitude;
+        pollData.reference_longitude = refLongitude;
+        pollData.reference_location_label = refLocationLabel;
+      }
+
       // Add options metadata (thumbnails & info links from autocomplete)
       if (Object.keys(optionsMetadata).length > 0) {
         pollData.options_metadata = optionsMetadata;
@@ -1168,6 +1180,21 @@ function CreatePollContent() {
             </div>
           )}
 
+          {/* Reference location for location polls */}
+          {(pollContentType === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+            <ReferenceLocationInput
+              latitude={refLatitude}
+              longitude={refLongitude}
+              label={refLocationLabel}
+              onLocationChange={(lat, lng, lbl) => {
+                setRefLatitude(lat);
+                setRefLongitude(lng);
+                setRefLocationLabel(lbl);
+              }}
+              disabled={isLoading}
+            />
+          )}
+
           {/* Participant counters for participation polls */}
           {pollType === 'participation' && (
             <ParticipationConditions
@@ -1223,6 +1250,8 @@ function CreatePollContent() {
               contentType={pollContentType}
               optionsMetadata={optionsMetadata}
               onMetadataChange={setOptionsMetadata}
+              referenceLatitude={refLatitude}
+              referenceLongitude={refLongitude}
               label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
             />
           )}

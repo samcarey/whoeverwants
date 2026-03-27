@@ -214,6 +214,9 @@ def _row_to_poll(row: dict) -> PollResponse:
         duration_window=row.get("duration_window"),
         poll_content_type=row.get("poll_content_type"),
         options_metadata=row.get("options_metadata"),
+        reference_latitude=row.get("reference_latitude"),
+        reference_longitude=row.get("reference_longitude"),
+        reference_location_label=row.get("reference_location_label"),
     )
 
 
@@ -429,6 +432,8 @@ def create_poll(req: CreatePollRequest):
                                time_preferences_deadline_minutes,
                                day_time_windows, duration_window,
                                poll_content_type, options_metadata,
+                               reference_latitude, reference_longitude,
+                               reference_location_label,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -444,6 +449,8 @@ def create_poll(req: CreatePollRequest):
                     %(time_preferences_deadline_minutes)s,
                     %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
                     %(poll_content_type)s, %(options_metadata)s::jsonb,
+                    %(reference_latitude)s, %(reference_longitude)s,
+                    %(reference_location_label)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -478,6 +485,9 @@ def create_poll(req: CreatePollRequest):
                 "duration_window": json.dumps(req.duration_window) if req.duration_window else None,
                 "poll_content_type": req.poll_content_type or "custom",
                 "options_metadata": json.dumps(req.options_metadata) if req.options_metadata else None,
+                "reference_latitude": req.reference_latitude,
+                "reference_longitude": req.reference_longitude,
+                "reference_location_label": req.reference_location_label,
                 "now": now,
             },
         ).fetchone()

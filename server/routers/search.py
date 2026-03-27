@@ -1,6 +1,7 @@
 """Search/autocomplete endpoints for poll content types."""
 
 import logging
+import math
 import os
 
 import httpx
@@ -16,15 +17,91 @@ RAWG_API_KEY = os.environ.get("RAWG_API_KEY", "")
 _http_client = httpx.AsyncClient(timeout=5.0)
 
 
+def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the great-circle distance between two points in miles."""
+    R = 3958.8  # Earth radius in miles
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 @router.get("/locations")
-async def search_locations(q: str = Query(..., min_length=2, max_length=100)):
-    """Search for locations using OpenStreetMap Nominatim."""
+async def search_locations(
+    q: str = Query(..., min_length=2, max_length=100),
+    lat: float | None = Query(None, description="Reference latitude for proximity bias"),
+    lon: float | None = Query(None, description="Reference longitude for proximity bias"),
+):
+    """Search for locations using OpenStreetMap Nominatim.
+
+    When lat/lon are provided, results are biased toward that area
+    and include a distance_miles field.
+    """
+    params: dict = {
+        "q": q,
+        "format": "jsonv2",
+        "limit": 10,
+        "addressdetails": 1,
+    }
+
+    # Bias search toward reference location using viewbox
+    if lat is not None and lon is not None:
+        # ~30 mile bounding box (~0.5 degrees)
+        delta = 0.5
+        params["viewbox"] = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
+        # bounded=0 means prefer but don't restrict to viewbox
+        params["bounded"] = 0
+
+    resp = await _http_client.get(
+        "https://nominatim.openstreetmap.org/search",
+        params=params,
+        headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    results = []
+    for item in data:
+        item_lat = item.get("lat")
+        item_lon = item.get("lon")
+        entry: dict = {
+            "label": item.get("display_name", ""),
+            "description": item.get("type", "").replace("_", " ").title(),
+            "lat": item_lat,
+            "lon": item_lon,
+            "infoUrl": (
+                f"https://www.openstreetmap.org/?mlat={item_lat}&mlon={item_lon}#map=15/{item_lat}/{item_lon}"
+                if item_lat and item_lon else None
+            ),
+        }
+        if lat is not None and lon is not None and item_lat and item_lon:
+            entry["distance_miles"] = round(
+                _haversine_miles(lat, lon, float(item_lat), float(item_lon)), 1
+            )
+        results.append(entry)
+
+    # Sort by distance when reference location provided
+    if lat is not None and lon is not None:
+        results.sort(key=lambda r: r.get("distance_miles", float("inf")))
+
+    return results[:6]
+
+
+@router.get("/geocode")
+async def geocode(q: str = Query(..., min_length=2, max_length=200)):
+    """Geocode an address or zip code to coordinates + label (city/zip).
+
+    Returns the first matching result with lat, lon, and a short label
+    suitable for display (city name or zip code).
+    """
     resp = await _http_client.get(
         "https://nominatim.openstreetmap.org/search",
         params={
             "q": q,
             "format": "jsonv2",
-            "limit": 6,
+            "limit": 1,
             "addressdetails": 1,
         },
         headers={"User-Agent": "WhoeverWants/1.0 (whoeverwants.com)"},
@@ -32,17 +109,32 @@ async def search_locations(q: str = Query(..., min_length=2, max_length=100)):
     resp.raise_for_status()
     data = resp.json()
 
-    return [
-        {
-            "label": item.get("display_name", ""),
-            "description": item.get("type", "").replace("_", " ").title(),
-            "lat": item.get("lat"),
-            "lon": item.get("lon"),
-            "infoUrl": f"https://www.openstreetmap.org/?mlat={item.get('lat')}&mlon={item.get('lon')}#map=15/{item.get('lat')}/{item.get('lon')}"
-            if item.get("lat") and item.get("lon") else None,
-        }
-        for item in data
-    ]
+    if not data:
+        return None
+
+    item = data[0]
+    addr = item.get("address", {})
+    # Build a short label: prefer city/town, fall back to postcode
+    label = (
+        addr.get("city")
+        or addr.get("town")
+        or addr.get("village")
+        or addr.get("hamlet")
+        or addr.get("county")
+    )
+    postcode = addr.get("postcode")
+    state = addr.get("state")
+    # Format: "City, ST" or "City, ST 12345" or just "12345"
+    if label and state:
+        label = f"{label}, {state}"
+    elif postcode:
+        label = postcode
+
+    return {
+        "lat": item.get("lat"),
+        "lon": item.get("lon"),
+        "label": label or item.get("display_name", ""),
+    }
 
 
 @router.get("/movies")
