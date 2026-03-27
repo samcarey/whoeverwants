@@ -41,13 +41,13 @@ export default function AutocompleteInput({
   const localInputRef = useRef<HTMLInputElement>(null);
 
   const lastSuccessfulQueryRef = useRef("");
-  const lastSuccessfulCountRef = useRef(0);
+  const lastResultsRef = useRef<SearchResult[]>([]);
 
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSuggestions([]);
       lastSuccessfulQueryRef.current = "";
-      lastSuccessfulCountRef.current = 0;
+      lastResultsRef.current = [];
       return;
     }
     try {
@@ -59,17 +59,24 @@ export default function AutocompleteInput({
       } else {
         results = await apiSearchMovies(query);
       }
-      // If query extends the previous successful query but returns fewer
-      // results, keep showing old results (typing more should refine, not lose results)
-      if (results.length < lastSuccessfulCountRef.current && lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
-        return;
+      // When query extends previous, client-side filter cached results
+      // and use them if they match better (handles partial words like "Burger K"
+      // where Nominatim returns garbage but cached "Burger" results contain "Burger King")
+      if (lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
+        const words = query.toLowerCase().split(/\s+/);
+        const filtered = lastResultsRef.current.filter(r =>
+          words.every(w => r.label.toLowerCase().includes(w))
+        );
+        if (filtered.length >= results.length) {
+          results = filtered;
+        }
       }
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
       setHighlightedIndex(-1);
       if (results.length > 0) {
         lastSuccessfulQueryRef.current = query;
-        lastSuccessfulCountRef.current = results.length;
+        lastResultsRef.current = results;
       }
     } catch {
       // On error, keep existing suggestions
