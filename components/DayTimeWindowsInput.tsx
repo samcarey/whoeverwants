@@ -120,8 +120,7 @@ export default function DayTimeWindowsInput({
               {(() => {
                 const minFormatted = formatTime12Hour(window.min);
                 const maxFormatted = formatTime12Hour(window.max);
-                // Cross-midnight: end time is earlier than start time (e.g., 10 PM - 2 AM)
-                const isCrossMidnight = window.max < window.min;
+                const isCrossMidnight = window.max <= window.min;
                 return (
                   <>
                     {minFormatted.time}

@@ -140,7 +140,7 @@ export default function TimeGridModal({
     const minMins = timeToMinutes(localMinTime);
     const maxMins = timeToMinutes(localMaxTime);
     durationMinutes = crossesMidnight
-      ? (MAX_DURATION - minMins) + maxMins || MAX_DURATION  // 0 means equal times = full 24h
+      ? (MAX_DURATION - minMins) + maxMins
       : maxMins - minMins;
     const hours = Math.floor(durationMinutes / 60);
     const mins = durationMinutes % 60;
