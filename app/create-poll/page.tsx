@@ -259,10 +259,11 @@ function CreatePollContent() {
     const emptyOptions = options.filter(opt => opt.trim() === '');
     const pollType = getPollType();
     
-    // Check for options that exceed character limit
-    const longOptions = filledOptions.filter(opt => opt.length > 35);
+    // Check for options that exceed character limit (relaxed for autocomplete types)
+    const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
+    const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
     if (longOptions.length > 0) {
-      return "Poll options must be 35 characters or less.";
+      return `Poll options must be ${maxOptionLength} characters or less.`;
     }
     
     // If we have any filled options, check that there are no empty fields in between
