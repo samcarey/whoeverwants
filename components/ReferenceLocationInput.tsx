@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getUserLocation, saveUserLocation, type UserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
-
-const RADIUS_OPTIONS = [5, 10, 25, 50, 100, 250];
 
 interface ReferenceLocationInputProps {
   latitude: number | undefined;
@@ -30,6 +28,8 @@ export default function ReferenceLocationInput({
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRadiusModal, setShowRadiusModal] = useState(false);
+  const [radiusInput, setRadiusInput] = useState(String(searchRadius));
+  const radiusInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-fill from saved location on mount
   useEffect(() => {
@@ -41,6 +41,14 @@ export default function ReferenceLocationInput({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Focus the radius input when modal opens
+  useEffect(() => {
+    if (showRadiusModal) {
+      setRadiusInput(String(searchRadius));
+      setTimeout(() => radiusInputRef.current?.select(), 0);
+    }
+  }, [showRadiusModal, searchRadius]);
+
   const handleGeocode = async () => {
     if (!input.trim()) return;
     setIsGeocoding(true);
@@ -51,7 +59,6 @@ export default function ReferenceLocationInput({
         const lat = parseFloat(result.lat);
         const lon = parseFloat(result.lon);
         onLocationChange(lat, lon, result.label);
-        // Save for future use
         saveUserLocation({ latitude: lat, longitude: lon, label: result.label });
         setInput("");
       } else {
@@ -94,6 +101,14 @@ export default function ReferenceLocationInput({
     );
   };
 
+  const applyRadius = () => {
+    const val = parseInt(radiusInput, 10);
+    if (val > 0) {
+      onSearchRadiusChange(val);
+    }
+    setShowRadiusModal(false);
+  };
+
   const hasLocation = latitude !== undefined && longitude !== undefined;
 
   return (
@@ -107,7 +122,13 @@ export default function ReferenceLocationInput({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <span className="text-gray-700 dark:text-gray-300">{label}</span>
+          <button
+            type="button"
+            onClick={() => onLocationChange(undefined as any, undefined as any, "")}
+            className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+          >
+            {label}
+          </button>
           <button
             type="button"
             onClick={() => setShowRadiusModal(true)}
@@ -115,35 +136,32 @@ export default function ReferenceLocationInput({
           >
             {searchRadius} mi
           </button>
-          <button
-            type="button"
-            onClick={() => onLocationChange(undefined as any, undefined as any, "")}
-            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            Change
-          </button>
         </div>
       )}
       {showRadiusModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowRadiusModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-64" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-56" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-medium mb-3 text-gray-900 dark:text-white">Search Radius</h3>
-            <div className="grid grid-cols-3 gap-2">
-              {RADIUS_OPTIONS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => { onSearchRadiusChange(r); setShowRadiusModal(false); }}
-                  className={`py-2 rounded-md text-sm font-medium transition-colors ${
-                    r === searchRadius
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {r} mi
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <input
+                ref={radiusInputRef}
+                type="number"
+                min="1"
+                max="10000"
+                value={radiusInput}
+                onChange={(e) => setRadiusInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') applyRadius(); }}
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+              />
+              <span className="text-sm text-gray-500 dark:text-gray-400">mi</span>
             </div>
+            <button
+              type="button"
+              onClick={applyRadius}
+              className="mt-3 w-full py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+            >
+              Apply
+            </button>
           </div>
         </div>
       )}
