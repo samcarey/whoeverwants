@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import type { PollContentType } from "@/lib/types";
 import AutocompleteInput from "@/components/AutocompleteInput";
 
 interface OptionsInputProps {
@@ -10,7 +11,7 @@ interface OptionsInputProps {
   pollType?: 'poll' | 'nomination';
   label?: React.ReactNode;
   placeholder?: string;
-  contentType?: 'custom' | 'location' | 'movie';
+  contentType?: PollContentType;
 }
 
 export default function OptionsInput({
@@ -94,6 +95,11 @@ export default function OptionsInput({
         return filledOptions.length === 0 ? "Search for a movie..." : "Add another movie...";
       }
       return `Movie ${index + 1}`;
+    } else if (contentType === 'video_game') {
+      if (isLastField) {
+        return filledOptions.length === 0 ? "Search for a video game..." : "Add another video game...";
+      }
+      return `Video game ${index + 1}`;
     } else if (pollType === 'nomination') {
       if (isLastField) {
         return filledOptions.length === 0 ? "Add a suggestion" : "Add another suggestion...";
@@ -107,7 +113,7 @@ export default function OptionsInput({
     }
   };
 
-  const useAutocomplete = contentType === 'location' || contentType === 'movie';
+  const useAutocomplete = contentType === 'location' || contentType === 'movie' || contentType === 'video_game';
   const inputClassName = (isDuplicate: boolean) =>
     `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
       isDuplicate
@@ -139,7 +145,7 @@ export default function OptionsInput({
                   <AutocompleteInput
                     value={option}
                     onChange={(value) => updateOption(index, value)}
-                    contentType={contentType as 'location' | 'movie'}
+                    contentType={contentType as Exclude<PollContentType, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}
                     placeholder={getPlaceholder(index)}

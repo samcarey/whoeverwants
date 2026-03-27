@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { apiSearchLocations, apiSearchMovies, type SearchResult } from "@/lib/api";
+import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
+import type { PollContentType } from "@/lib/types";
 
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
-  contentType: 'location' | 'movie';
+  contentType: Exclude<PollContentType, 'custom'>;
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
@@ -31,7 +32,11 @@ export default function AutocompleteInput({
   const containerRef = useRef<HTMLDivElement>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
 
-  const searchFn = contentType === 'location' ? apiSearchLocations : apiSearchMovies;
+  const searchFn = contentType === 'location'
+    ? apiSearchLocations
+    : contentType === 'video_game'
+      ? apiSearchVideoGames
+      : apiSearchMovies;
 
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
@@ -147,7 +152,9 @@ export default function AutocompleteInput({
           <li className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
             {contentType === 'movie'
               ? 'Data from TMDB. Not endorsed by TMDB.'
-              : 'Data \u00A9 OpenStreetMap contributors'}
+              : contentType === 'video_game'
+                ? 'Data from RAWG Video Games Database'
+                : 'Data \u00A9 OpenStreetMap contributors'}
           </li>
         </ul>
       )}
