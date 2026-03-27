@@ -8,7 +8,7 @@ interface ReferenceLocationInputProps {
   latitude: number | undefined;
   longitude: number | undefined;
   label: string;
-  onLocationChange: (lat: number, lng: number, label: string) => void;
+  onLocationChange: (lat: number | undefined, lng: number | undefined, label: string) => void;
   searchRadius: number;
   onSearchRadiusChange: (radius: number) => void;
   disabled?: boolean;
@@ -124,7 +124,7 @@ export default function ReferenceLocationInput({
           </svg>
           <button
             type="button"
-            onClick={() => onLocationChange(undefined as any, undefined as any, "")}
+            onClick={() => onLocationChange(undefined, undefined, "")}
             className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
           >
             {label}

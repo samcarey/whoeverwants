@@ -118,9 +118,6 @@ async def search_locations(
 
     When lat/lon are provided, results are restricted to a bounding box
     derived from max_distance, sorted by proximity, and include distance_miles.
-
-    Handles partial word matching: if "Burger K" returns no results,
-    retries with "Burger" and filters to results containing "K".
     """
     results = await _nominatim_search(q, lat, lon, max_distance)
     return results[:6]
