@@ -41,11 +41,13 @@ export default function AutocompleteInput({
   const localInputRef = useRef<HTMLInputElement>(null);
 
   const lastSuccessfulQueryRef = useRef("");
+  const lastSuccessfulCountRef = useRef(0);
 
   const doSearch = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSuggestions([]);
       lastSuccessfulQueryRef.current = "";
+      lastSuccessfulCountRef.current = 0;
       return;
     }
     try {
@@ -57,9 +59,9 @@ export default function AutocompleteInput({
       } else {
         results = await apiSearchMovies(query);
       }
-      // If no results and query extends the previous successful query,
-      // keep showing old results (typing more should refine, not lose results)
-      if (results.length === 0 && lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
+      // If query extends the previous successful query but returns fewer
+      // results, keep showing old results (typing more should refine, not lose results)
+      if (results.length < lastSuccessfulCountRef.current && lastSuccessfulQueryRef.current && query.startsWith(lastSuccessfulQueryRef.current)) {
         return;
       }
       setSuggestions(results);
@@ -67,6 +69,7 @@ export default function AutocompleteInput({
       setHighlightedIndex(-1);
       if (results.length > 0) {
         lastSuccessfulQueryRef.current = query;
+        lastSuccessfulCountRef.current = results.length;
       }
     } catch {
       // On error, keep existing suggestions
