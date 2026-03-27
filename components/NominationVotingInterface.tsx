@@ -42,6 +42,7 @@ interface NominationVotingInterfaceProps {
   autoCreatePreferences?: boolean;
   nominationMetadata?: OptionsMetadata;
   onNominationMetadataChange?: (metadata: OptionsMetadata) => void;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 export default function NominationVotingInterface({
@@ -75,6 +76,7 @@ export default function NominationVotingInterface({
   autoCreatePreferences,
   nominationMetadata,
   onNominationMetadataChange,
+  optionsMetadata,
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -214,7 +216,7 @@ export default function NominationVotingInterface({
               showEditButton={!isPollClosed}
               onEditClick={() => setIsEditingVote(true)}
               isEditDisabled={isLoadingVoteData}
-              optionsMetadata={poll.options_metadata}
+              optionsMetadata={optionsMetadata}
             />
           ) : (
             <div className="flex items-center justify-between">
@@ -324,7 +326,7 @@ export default function NominationVotingInterface({
                         : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
                     }`}
                   >
-                    <OptionLabel text={nomination} metadata={poll.options_metadata?.[nomination]} />
+                    <OptionLabel text={nomination} metadata={optionsMetadata?.[nomination]} />
                   </button>
                 );
               })}

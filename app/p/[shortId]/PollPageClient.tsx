@@ -1768,6 +1768,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               autoCreatePreferences={poll.auto_create_preferences}
               nominationMetadata={nominationMetadata}
               onNominationMetadataChange={setNominationMetadata}
+              optionsMetadata={optionsMetadataLocal}
             />
           ) : (
             <div>
