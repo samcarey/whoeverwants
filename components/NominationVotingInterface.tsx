@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
-import OptionsInput from "@/components/OptionsInput";
+import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import NominationsList from "@/components/NominationsList";
+import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
 import GradientBorderButton from "@/components/GradientBorderButton";
@@ -39,6 +40,8 @@ interface NominationVotingInterfaceProps {
   loadingNominations: boolean;
   onVoteOnNominationsClick: () => void;
   autoCreatePreferences?: boolean;
+  nominationMetadata?: OptionsMetadata;
+  onNominationMetadataChange?: (metadata: OptionsMetadata) => void;
 }
 
 export default function NominationVotingInterface({
@@ -69,7 +72,9 @@ export default function NominationVotingInterface({
   nominations,
   loadingNominations,
   onVoteOnNominationsClick,
-  autoCreatePreferences
+  autoCreatePreferences,
+  nominationMetadata,
+  onNominationMetadataChange,
 }: NominationVotingInterfaceProps) {
   const [newNominations, setNewNominations] = useState<string[]>([""]);
   const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
@@ -208,6 +213,7 @@ export default function NominationVotingInterface({
               showEditButton={!isPollClosed}
               onEditClick={() => setIsEditingVote(true)}
               isEditDisabled={isLoadingVoteData}
+              optionsMetadata={poll.options_metadata}
             />
           ) : (
             <div className="flex items-center justify-between">
@@ -317,7 +323,7 @@ export default function NominationVotingInterface({
                         : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
                     }`}
                   >
-                    {nomination}
+                    <OptionLabel text={nomination} metadata={poll.options_metadata?.[nomination]} />
                   </button>
                 );
               })}
@@ -334,6 +340,8 @@ export default function NominationVotingInterface({
             pollType="nomination"
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
             contentType={poll.poll_content_type || 'custom'}
+            optionsMetadata={nominationMetadata}
+            onMetadataChange={onNominationMetadataChange}
           />
         </div>
 

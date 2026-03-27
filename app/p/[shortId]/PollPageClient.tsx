@@ -18,9 +18,10 @@ import FollowUpModal from "@/components/FollowUpModal";
 import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import GradientBorderButton from "@/components/GradientBorderButton";
+import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
-import { Poll, PollResults } from "@/lib/types";
+import { Poll, PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
 import VoteOnItModal from "@/components/VoteOnItModal";
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -52,6 +53,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
+  const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -999,12 +1001,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Send null for nominations when abstaining, array with nominations when voting
         // Abstain if explicitly set OR if no nominations provided
         const finalAbstain = isAbstaining || willAbstain;
+        // Filter metadata to only include nominated options
+        const filteredMetadata = Object.keys(nominationMetadata).length > 0
+          ? Object.fromEntries(Object.entries(nominationMetadata).filter(([key]) => filteredNominations.includes(key)))
+          : null;
         voteData = {
           poll_id: poll.id,
           vote_type: 'nomination' as const,
           nominations: finalAbstain ? null : filteredNominations,
           is_abstain: finalAbstain,
-          voter_name: voterName.trim() || null
+          voter_name: voterName.trim() || null,
+          options_metadata: !finalAbstain && filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
         };
 
         await logToServer('nomination-vote', 'info', 'Nomination voteData created', voteData);
@@ -1251,7 +1258,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </div>
             ) : pollResults ? (
               <>
-                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} />
+                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={poll.options_metadata} />
                 {pollResults.time_slot_rounds && pollResults.time_slot_rounds.length > 0 && (
                   <div className="mt-4">
                     <TimeSlotRoundsDisplay
@@ -1742,6 +1749,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               loadingNominations={loadingNominations}
               onVoteOnNominationsClick={handleVoteOnNominationsClick}
               autoCreatePreferences={poll.auto_create_preferences}
+              nominationMetadata={nominationMetadata}
+              onNominationMetadataChange={setNominationMetadata}
             />
           ) : (
             <div>
@@ -1808,7 +1817,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
                               ✓
                             </span>
-                            <span>{rankedChoices[0]}</span>
+                            <OptionLabel text={rankedChoices[0]} metadata={poll.options_metadata?.[rankedChoices[0]]} />
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
@@ -1816,7 +1825,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
                                 {index + 1}
                               </span>
-                              <span>{choice}</span>
+                              <OptionLabel text={choice} metadata={poll.options_metadata?.[choice]} />
                             </div>
                           ))
                         )}
@@ -1910,7 +1919,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                                   : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
                               }`}
                             >
-                              {option}
+                              <OptionLabel text={option} metadata={poll.options_metadata?.[option]} />
                             </button>
                           ))}
                         </div>
@@ -1929,6 +1938,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             disabled={isSubmitting || isAbstaining}
                             storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                             initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
+                            optionsMetadata={poll.options_metadata}
                           />
                         )}
                       </>

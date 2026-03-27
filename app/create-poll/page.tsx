@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
-import type { PollContentType } from "@/lib/types";
+import type { PollContentType, OptionsMetadata } from "@/lib/types";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -67,6 +67,7 @@ function CreatePollContent() {
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
   const [pollContentType, setPollContentType] = useState<PollContentType>('custom');
+  const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
   const [locationValue, setLocationValue] = useState('');
@@ -438,6 +439,9 @@ function CreatePollContent() {
           if (forkData.poll_content_type) {
             setPollContentType(forkData.poll_content_type);
           }
+          if (forkData.options_metadata) {
+            setOptionsMetadata(forkData.options_metadata);
+          }
         } catch (error) {
           console.error('Error loading fork data:', error);
         }
@@ -519,6 +523,9 @@ function CreatePollContent() {
           }
           if (duplicateData.poll_content_type) {
             setPollContentType(duplicateData.poll_content_type);
+          }
+          if (duplicateData.options_metadata) {
+            setOptionsMetadata(duplicateData.options_metadata);
           }
 
           // Don't clean up the duplicate data yet - keep it until poll is created
@@ -870,6 +877,11 @@ function CreatePollContent() {
         pollData.poll_content_type = pollContentType;
       }
 
+      // Add options metadata (thumbnails & info links from autocomplete)
+      if (Object.keys(optionsMetadata).length > 0) {
+        pollData.options_metadata = optionsMetadata;
+      }
+
       // Add options for ranked choice polls only
       // For nomination polls, initial options become the creator's vote (not poll content)
       if (dbPollType === 'ranked_choice') {
@@ -1209,6 +1221,8 @@ function CreatePollContent() {
               isLoading={isLoading}
               pollType="poll"
               contentType={pollContentType}
+              optionsMetadata={optionsMetadata}
+              onMetadataChange={setOptionsMetadata}
               label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
             />
           )}

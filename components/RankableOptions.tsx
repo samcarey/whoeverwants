@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ClientOnlyDragDrop } from './ClientOnly';
+import type { OptionsMetadata } from '@/lib/types';
+import OptionLabel from './OptionLabel';
 
 interface RankableOption {
   id: string;
@@ -15,9 +17,10 @@ interface RankableOptionsProps {
   disabled?: boolean;
   storageKey?: string; // Optional key for localStorage persistence
   initialRanking?: string[]; // Optional initial ranking to override saved state
+  optionsMetadata?: OptionsMetadata | null;
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata }: RankableOptionsProps) {
 
   // Load saved state from localStorage
   const loadSavedState = useCallback(() => {
@@ -597,11 +600,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         style={getDraggedItemStyle()}
       >
         <div className="flex items-center justify-between h-full">
-          <div className="flex items-center">
+          <div className="flex items-center text-gray-900 dark:text-white">
             <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
               {rankNumber}
             </div>
-            <span className="font-medium leading-tight line-clamp-2 text-gray-900 dark:text-white">{draggedOption.text}</span>
+            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight line-clamp-2" />
           </div>
           <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
             <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
@@ -972,14 +975,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   </div>
                   
                   {/* Center content - not grabbable */}
-                  <div className="flex-1 flex items-center px-12">
-                    <span className={`font-medium leading-tight line-clamp-2 ${
-                      disabled 
-                        ? 'text-gray-500 dark:text-gray-400' 
-                        : 'text-gray-900 dark:text-white'
-                    }`}>
-                      {option.text}
-                    </span>
+                  <div className={`flex-1 flex items-center px-12 ${
+                    disabled
+                      ? 'text-gray-500 dark:text-gray-400'
+                      : 'text-gray-900 dark:text-white'
+                  }`}>
+                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="font-medium leading-tight line-clamp-2" />
                   </div>
                   
                   {/* Right drag handle with grabbable region */}

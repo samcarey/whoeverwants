@@ -3,6 +3,8 @@
 
 export type PollContentType = 'custom' | 'location' | 'movie' | 'video_game';
 
+export type OptionsMetadata = Record<string, { imageUrl?: string; infoUrl?: string }>;
+
 export interface Poll {
   id: string;
   title: string;
@@ -43,6 +45,7 @@ export interface Poll {
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
   poll_content_type?: PollContentType | null;
+  options_metadata?: OptionsMetadata | null;
 }
 
 export interface TimeWindow {

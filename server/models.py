@@ -53,6 +53,8 @@ class CreatePollRequest(BaseModel):
     duration_window: dict | None = None
     # Content type for autocomplete (nomination/ranked_choice polls)
     poll_content_type: str | None = None
+    # Metadata for options (thumbnail URLs, info links) keyed by option label
+    options_metadata: dict | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -66,6 +68,8 @@ class SubmitVoteRequest(BaseModel):
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    # Metadata for nominated options (merged into poll's options_metadata)
+    options_metadata: dict | None = None
 
 
 class EditVoteRequest(BaseModel):
@@ -146,6 +150,7 @@ class PollResponse(BaseModel):
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     poll_content_type: str | None = None
+    options_metadata: dict | None = None
 
 
 class VoteResponse(BaseModel):

@@ -141,6 +141,10 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
     from datetime import timedelta
     deadline = now + timedelta(minutes=deadline_minutes)
 
+    # Propagate options_metadata from parent for matching nominations
+    parent_metadata = parent_row.get("options_metadata") or {}
+    child_metadata = {nom: parent_metadata[nom] for nom in all_nominations if nom in parent_metadata} or None
+
     # Activate the reserved poll (propagate sub-poll metadata if present)
     conn.execute(
         """
@@ -149,6 +153,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
             response_deadline = %(deadline)s,
             is_closed = false,
             updated_at = %(now)s,
+            options_metadata = %(options_metadata)s::jsonb,
             is_sub_poll = COALESCE(%(is_sub_poll)s, is_sub_poll),
             sub_poll_role = COALESCE(%(sub_poll_role)s, sub_poll_role),
             parent_participation_poll_id = COALESCE(%(parent_id)s, parent_participation_poll_id)
@@ -159,6 +164,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
             "deadline": deadline.isoformat(),
             "now": now,
             "reserved_id": str(reserved["id"]),
+            "options_metadata": json.dumps(child_metadata) if child_metadata else None,
             "is_sub_poll": parent_row.get("is_sub_poll") or None,
             "sub_poll_role": None,  # Already set at creation for sub-polls
             "parent_id": str(parent_row["parent_participation_poll_id"]) if parent_row.get("parent_participation_poll_id") else None,
@@ -207,6 +213,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         day_time_windows=row.get("day_time_windows"),
         duration_window=row.get("duration_window"),
         poll_content_type=row.get("poll_content_type"),
+        options_metadata=row.get("options_metadata"),
     )
 
 
@@ -421,7 +428,7 @@ def create_poll(req: CreatePollRequest):
                                time_suggestions_deadline_minutes,
                                time_preferences_deadline_minutes,
                                day_time_windows, duration_window,
-                               poll_content_type,
+                               poll_content_type, options_metadata,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -436,7 +443,7 @@ def create_poll(req: CreatePollRequest):
                     %(time_suggestions_deadline_minutes)s,
                     %(time_preferences_deadline_minutes)s,
                     %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
-                    %(poll_content_type)s,
+                    %(poll_content_type)s, %(options_metadata)s::jsonb,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -470,6 +477,7 @@ def create_poll(req: CreatePollRequest):
                 "day_time_windows": json.dumps(req.day_time_windows) if req.day_time_windows else None,
                 "duration_window": json.dumps(req.duration_window) if req.duration_window else None,
                 "poll_content_type": req.poll_content_type or "custom",
+                "options_metadata": json.dumps(req.options_metadata) if req.options_metadata else None,
                 "now": now,
             },
         ).fetchone()
@@ -635,6 +643,21 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "now": now,
             },
         ).fetchone()
+
+        # Merge nomination metadata into poll's options_metadata
+        if req.options_metadata and req.nominations:
+            conn.execute(
+                """
+                UPDATE polls
+                SET options_metadata = COALESCE(options_metadata, '{}'::jsonb) || %(new_metadata)s::jsonb
+                WHERE id = %(poll_id)s
+                """,
+                {
+                    "poll_id": poll_id,
+                    "new_metadata": json.dumps(req.options_metadata),
+                },
+            )
+
         _check_auto_close(conn, poll_id)
     return _row_to_vote(row)
 

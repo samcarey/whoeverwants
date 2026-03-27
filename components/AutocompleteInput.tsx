@@ -7,6 +7,7 @@ import type { PollContentType } from "@/lib/types";
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
+  onSelect?: (result: SearchResult) => void;
   contentType: Exclude<PollContentType, 'custom'>;
   disabled?: boolean;
   placeholder?: string;
@@ -18,6 +19,7 @@ interface AutocompleteInputProps {
 export default function AutocompleteInput({
   value,
   onChange,
+  onSelect,
   contentType,
   disabled = false,
   placeholder,
@@ -61,6 +63,7 @@ export default function AutocompleteInput({
 
   const selectSuggestion = (result: SearchResult) => {
     onChange(result.label);
+    onSelect?.(result);
     setSuggestions([]);
     setShowSuggestions(false);
   };

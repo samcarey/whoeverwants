@@ -25,6 +25,7 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
       auto_close_after: poll.auto_close_after,
       details: poll.details,
       poll_content_type: poll.poll_content_type,
+      options_metadata: poll.options_metadata,
     };
 
     debugLog.logObject('Fork button clicked', { pollId: poll.id, forkData }, 'ForkButton');

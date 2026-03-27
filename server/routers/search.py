@@ -38,6 +38,8 @@ async def search_locations(q: str = Query(..., min_length=2, max_length=100)):
             "description": item.get("type", "").replace("_", " ").title(),
             "lat": item.get("lat"),
             "lon": item.get("lon"),
+            "infoUrl": f"https://www.openstreetmap.org/?mlat={item.get('lat')}&mlon={item.get('lon')}#map=15/{item.get('lat')}/{item.get('lon')}"
+            if item.get("lat") and item.get("lon") else None,
         }
         for item in data
     ]
@@ -66,10 +68,12 @@ async def search_movies(q: str = Query(..., min_length=2, max_length=100)):
         title = movie.get("title", "")
         label = f"{title} ({year})" if year else title
         poster = movie.get("poster_path")
+        movie_id = movie.get("id")
         results.append({
             "label": label,
             "description": (movie.get("overview", "") or "")[:120],
             "imageUrl": f"https://image.tmdb.org/t/p/w92{poster}" if poster else None,
+            "infoUrl": f"https://www.themoviedb.org/movie/{movie_id}" if movie_id else None,
         })
     return results
 
@@ -109,9 +113,11 @@ async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
         name = game.get("name", "")
         label = f"{name} ({year})" if year else name
         genres = ", ".join(g["name"] for g in game.get("genres", [])[:3])
+        slug = game.get("slug")
         results.append({
             "label": label,
             "description": genres or None,
             "imageUrl": _rawg_crop_image(game.get("background_image")),
+            "infoUrl": f"https://rawg.io/games/{slug}" if slug else None,
         })
     return results

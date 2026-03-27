@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { PollResults, RankedChoiceRound } from "@/lib/types";
+import { PollResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
+import OptionLabel from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
   isPollClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
+  optionsMetadata?: OptionsMetadata | null;
 }
 
 interface RoundVisualization {
@@ -29,7 +31,7 @@ interface RoundVisualization {
   roundEntries?: RankedChoiceRound[];
 }
 
-export default function CompactRankedChoiceResults({ results, isPollClosed, userVoteData, onFollowUpClick }: CompactRankedChoiceResultsProps) {
+export default function CompactRankedChoiceResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: CompactRankedChoiceResultsProps) {
   const router = useRouter();
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -425,7 +427,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                             ? 'text-green-900 dark:text-green-100 font-bold'
                             : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
                         }`}>
-                          {candidate.name}
+                          <OptionLabel text={candidate.name} metadata={optionsMetadata?.[candidate.name]} />
                         </div>
                         {/* Show user preference indicator under name */}
                         {userChoiceText && (
