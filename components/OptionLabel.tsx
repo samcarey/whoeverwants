@@ -1,11 +1,62 @@
 "use client";
 
+import { useRef, useCallback } from "react";
 import type { OptionMetadataEntry } from "@/lib/types";
 
 interface OptionLabelProps {
   text: string;
   metadata?: OptionMetadataEntry | null;
   className?: string;
+}
+
+const LONG_PRESS_MS = 500;
+
+/** Wrapper that opens a URL on long press instead of tap. */
+function LongPressLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firedRef = useRef(false);
+
+  const start = useCallback(() => {
+    firedRef.current = false;
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      window.open(href, "_blank", "noopener,noreferrer");
+    }, LONG_PRESS_MS);
+  }, [href]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  return (
+    <div
+      className={className}
+      onMouseDown={start}
+      onMouseUp={cancel}
+      onMouseLeave={cancel}
+      onTouchStart={start}
+      onTouchEnd={cancel}
+      onTouchCancel={cancel}
+      onClick={(e) => {
+        e.stopPropagation();
+        // Prevent any parent tap handlers from firing after long press
+        if (firedRef.current) e.preventDefault();
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -85,15 +136,12 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     );
 
     const wrapper = metadata!.infoUrl ? (
-      <a
+      <LongPressLink
         href={metadata!.infoUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        className="min-w-0 overflow-hidden block hover:underline"
+        className="min-w-0 overflow-hidden block cursor-default"
       >
         {inner}
-      </a>
+      </LongPressLink>
     ) : (
       <div className="min-w-0 overflow-hidden">{inner}</div>
     );
@@ -127,15 +175,12 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
 
   if (metadata.infoUrl) {
     return (
-      <a
+      <LongPressLink
         href={metadata.infoUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        className={`inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline ${className}`}
+        className={`inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 cursor-default ${className}`}
       >
         {content}
-      </a>
+      </LongPressLink>
     );
   }
 
