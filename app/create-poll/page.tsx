@@ -148,7 +148,14 @@ function CreatePollContent() {
         } else {
           // Retry with acronyms for multi-word options
           const abbreviated = filled.map(acronymize);
-          base = buildTitle(abbreviated).text;
+          const abbrev = buildTitle(abbreviated);
+          if (abbrev.allFit) {
+            base = abbrev.text;
+          } else {
+            // Fall back to "Which {category}?"
+            const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
+            base = `Which ${catLabel}?`;
+          }
         }
       }
       return icon ? `${icon} ${base}` : base;
