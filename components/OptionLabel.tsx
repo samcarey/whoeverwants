@@ -24,7 +24,7 @@ function LinkedIcon({ href, children }: { href: string; children: React.ReactNod
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      className="flex-shrink-0 rounded border border-blue-300 dark:border-blue-500 p-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/40 transition-colors"
+      className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded border border-blue-300 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/40 transition-colors"
     >
       {children}
     </a>
@@ -84,7 +84,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     const icon = metadata!.infoUrl ? (
       <LinkedIcon href={metadata!.infoUrl}>{iconContent}</LinkedIcon>
     ) : (
-      <span className="flex-shrink-0">{iconContent}</span>
+      <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{iconContent}</span>
     );
 
     return (
@@ -143,7 +143,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
 
   return (
     <span className={`inline-flex items-center gap-1.5 ${className}`}>
-      {imageEl && <span className="flex-shrink-0">{imageEl}</span>}
+      {imageEl && <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{imageEl}</span>}
       <span>{text}</span>
     </span>
   );
