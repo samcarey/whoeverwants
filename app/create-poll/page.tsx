@@ -1149,7 +1149,7 @@ function CreatePollContent() {
               onChange={(e) => {
                 setDetails(e.target.value);
                 const el = e.target;
-                el.style.height = 'auto';
+                el.style.height = '42px';
                 const maxH = 5 * 20 + 16; // 5 lines + padding
                 el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
                 el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
