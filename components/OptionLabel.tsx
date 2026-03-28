@@ -46,13 +46,15 @@ function formatDistance(miles: number): string {
   return `${Math.round(miles)} mi`;
 }
 
-function LocationIcon({ imageUrl }: { imageUrl?: string }) {
+function LocationIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "sm" | "lg" }) {
+  const imgClass = size === "lg" ? "w-10 h-10 rounded" : "w-5 h-5 rounded";
+  const pinClass = size === "lg" ? "w-8 h-8" : "w-4 h-4";
   if (imageUrl) {
-    return <img src={imageUrl} alt="" className="w-5 h-5 rounded" loading="lazy" />;
+    return <img src={imageUrl} alt="" className={imgClass} loading="lazy" />;
   }
   return (
     <span className="text-blue-500 dark:text-blue-400">
-      <MapPinIcon className="w-4 h-4" />
+      <MapPinIcon className={pinClass} />
     </span>
   );
 }
@@ -84,22 +86,22 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     if (layout === "stacked") {
       return (
         <div className={`min-w-0 overflow-hidden ${className}`}>
-          <div className="flex items-center gap-1.5">
-            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
-              <LocationIcon imageUrl={metadata!.imageUrl} />
+          <div className="flex justify-center">
+            <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
+              <LocationIcon imageUrl={metadata!.imageUrl} size="lg" />
             </span>
-            {distance !== undefined && (
-              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                {formatDistance(distance)}
-              </span>
-            )}
           </div>
-          <div className="line-clamp-2 leading-tight mt-0.5">
+          <div className="line-clamp-2 leading-tight mt-1 text-center">
             <LocationName name={name} infoUrl={metadata!.infoUrl} />
           </div>
           {address && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5">
+            <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5 text-center">
               {address}
+            </div>
+          )}
+          {distance !== undefined && (
+            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
+              {formatDistance(distance)}
             </div>
           )}
         </div>
