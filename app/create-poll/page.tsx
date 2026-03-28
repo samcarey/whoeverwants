@@ -66,6 +66,7 @@ function CreatePollContent() {
   const [creatorName, setCreatorName] = useState<string>("");
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
+  const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
@@ -90,6 +91,41 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
+
+  // Generate a title from the current form state
+  const generateTitle = useCallback(() => {
+    if (pollType === 'nomination') {
+      const labels: Record<string, string> = {
+        location: 'Place',
+        movie: 'Movie',
+        video_game: 'Video Game',
+      };
+      const prefix = labels[category] || (category !== 'custom' ? category : '');
+      return prefix ? `${prefix} Suggestions` : 'Suggestions';
+    }
+
+    if (pollType === 'poll') {
+      const filled = options.filter(o => o.trim());
+      if (filled.length === 0) return 'Quick Vote';
+      if (filled.length === 1) return filled[0];
+      if (filled.length === 2) return `${filled[0]} or ${filled[1]}?`;
+      return `${filled[0]}, ${filled[1]}, or ...?`;
+    }
+
+    // participation
+    if (locationMode === 'set' && locationValue.trim()) {
+      return `Who's going to ${locationValue.trim()}?`;
+    }
+    return "Who's in?";
+  }, [pollType, category, options, locationMode, locationValue]);
+
+  // Auto-update title when form fields change (if user hasn't manually edited)
+  useEffect(() => {
+    if (isAutoTitle) {
+      const generated = generateTitle();
+      setTitle(generated.slice(0, 50));
+    }
+  }, [isAutoTitle, generateTitle]);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -121,6 +157,7 @@ function CreatePollContent() {
         customDate,
         customTime,
         creatorName,
+        isAutoTitle,
         minParticipants,
         maxParticipants,
         maxEnabled,
@@ -132,7 +169,7 @@ function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -174,6 +211,7 @@ function CreatePollContent() {
         try {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
+          if (formState.isAutoTitle === false) setIsAutoTitle(false);
           setDetails(formState.details || '');
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
@@ -395,6 +433,7 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
+          if (forkData.title) setIsAutoTitle(false);
           setDetails(forkData.details || "");
 
           // Set poll type and options based on forked poll
@@ -480,6 +519,7 @@ function CreatePollContent() {
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
+          if (duplicateData.title) setIsAutoTitle(false);
           setDetails(duplicateData.details || "");
 
           // Set poll type based on duplicated poll
@@ -570,6 +610,7 @@ function CreatePollContent() {
 
           // Auto-fill form with preference poll type and nominated options
           setTitle(voteData.title || "");
+          if (voteData.title) setIsAutoTitle(false);
           setPollType('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
@@ -605,7 +646,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -1338,18 +1379,35 @@ function CreatePollContent() {
             <label htmlFor="title" className="block text-sm font-medium mb-1">
               Title
             </label>
-            <input
-              type="text"
-              id="title"
-              ref={titleInputRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={isLoading}
-              maxLength={50}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your title..."
-              required
-            />
+            <div className="relative">
+              <input
+                type="text"
+                id="title"
+                ref={titleInputRef}
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setIsAutoTitle(false);
+                }}
+                disabled={isLoading}
+                maxLength={50}
+                className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                placeholder="Enter your title..."
+                required
+              />
+              {!isAutoTitle && (
+                <button
+                  type="button"
+                  onClick={() => setIsAutoTitle(true)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  title="Auto-generate title"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Optional details field */}
