@@ -1,5 +1,7 @@
 // Utility functions for managing poll creator information in localStorage
 
+import type { Poll } from '@/lib/types';
+
 const POLL_CREATOR_STORAGE_KEY = 'poll_creator_data';
 const CLEANUP_INTERVAL_DAYS = 30; // Clean up polls older than 30 days
 
@@ -73,6 +75,24 @@ export function cleanupOldPolls(): void {
     localStorage.setItem(POLL_CREATOR_STORAGE_KEY, JSON.stringify(filteredData));
     console.log(`Cleaned up ${pollData.length - filteredData.length} old poll records`);
   }
+}
+
+// Build a snapshot of poll fields used for fork/duplicate/follow-up forms.
+// Centralized here to avoid drift when fields are added or renamed.
+export function buildPollSnapshot(poll: Poll) {
+  return {
+    title: poll.title,
+    poll_type: poll.poll_type,
+    options: poll.options,
+    response_deadline: poll.response_deadline,
+    creator_name: poll.creator_name,
+    min_participants: poll.min_participants,
+    max_participants: poll.max_participants,
+    auto_close_after: poll.auto_close_after,
+    details: poll.details,
+    category: poll.category,
+    options_metadata: poll.options_metadata,
+  };
 }
 
 // Initialize cleanup on module load (only in browser)

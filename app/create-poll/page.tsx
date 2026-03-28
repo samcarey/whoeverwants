@@ -21,6 +21,10 @@ import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 export const dynamic = 'force-dynamic';
 
+// Matches the rendered height of a single-line <input> with py-2 padding.
+// Used for the Details textarea initial height and auto-grow reset.
+const SINGLE_LINE_INPUT_HEIGHT = 42;
+
 function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -1149,13 +1153,14 @@ function CreatePollContent() {
               onChange={(e) => {
                 setDetails(e.target.value);
                 const el = e.target;
-                el.style.height = '42px';
+                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
                 const maxH = 5 * 20 + 16; // 5 lines + padding
                 el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
                 el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
               }}
               disabled={isLoading}
-              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden h-[42px]"
+              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
               placeholder="Add more context or instructions..."
             />
           </div>
