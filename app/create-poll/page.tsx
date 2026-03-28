@@ -117,7 +117,7 @@ function CreatePollContent() {
       if (filled.length === 0) base = 'Quick Vote';
       else if (filled.length === 1) base = filled[0];
       else {
-        const limit = 100 - (icon ? icon.length + 1 : 0);
+        const limit = 40 - (icon ? icon.length + 1 : 0);
         // Include as many options as fit within the limit
         const included = [filled[0]];
         for (let i = 1; i < filled.length; i++) {
