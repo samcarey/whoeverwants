@@ -598,7 +598,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setPollClosed(true);
           apiFindDuplicatePoll(poll.title, poll.id)
             .then((followUp) => {
-              if (followUp && !followUp.is_closed) {
+              if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
                 const shortId = followUp.short_id || followUp.id;
                 router.push(`/p/${shortId}`);
               }
@@ -758,7 +758,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (poll.poll_type === 'nomination' && poll.auto_create_preferences) {
           try {
             const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
-            if (followUp && !followUp.is_closed) {
+            if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
               if (creatorSecret) recordPollCreation(followUp.id, creatorSecret);
               const shortId = followUp.short_id || followUp.id;
               router.push(`/p/${shortId}`);

@@ -25,7 +25,7 @@ export interface Poll {
   creator_secret?: string;
   creator_name?: string;
   is_closed?: boolean;
-  close_reason?: 'manual' | 'deadline' | 'max_capacity';
+  close_reason?: 'manual' | 'deadline' | 'max_capacity' | 'uncontested';
   follow_up_to?: string;
   fork_of?: string;
   min_participants?: number;
