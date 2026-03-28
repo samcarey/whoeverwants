@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
-import TypeFieldInput from "@/components/TypeFieldInput";
+import TypeFieldInput, { getBuiltInType } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -94,22 +94,27 @@ function CreatePollContent() {
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
+    const builtIn = getBuiltInType(category);
+    const categoryLabel = builtIn?.label || '';
+
     if (pollType === 'nomination') {
-      const labels: Record<string, string> = {
+      const nominationLabels: Record<string, string> = {
         location: 'Place',
         movie: 'Movie',
         video_game: 'Video Game',
       };
-      const prefix = labels[category] || (category !== 'custom' ? category : '');
+      const prefix = nominationLabels[category] || (category !== 'custom' ? category : '');
       return prefix ? `${prefix} Suggestions` : 'Suggestions';
     }
 
     if (pollType === 'poll') {
       const filled = options.filter(o => o.trim());
-      if (filled.length === 0) return 'Quick Vote';
-      if (filled.length === 1) return filled[0];
-      if (filled.length === 2) return `${filled[0]} or ${filled[1]}?`;
-      return `${filled[0]}, ${filled[1]}, or ...?`;
+      if (filled.length === 0) return categoryLabel ? `${categoryLabel} Vote` : 'Quick Vote';
+      const optionsPart =
+        filled.length === 1 ? filled[0] :
+        filled.length === 2 ? `${filled[0]} or ${filled[1]}?` :
+        `${filled[0]}, ${filled[1]}, or ...?`;
+      return categoryLabel ? `${categoryLabel}: ${optionsPart}` : optionsPart;
     }
 
     // participation
