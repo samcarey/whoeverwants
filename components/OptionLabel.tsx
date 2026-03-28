@@ -57,11 +57,11 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
       <img
         src={metadata!.imageUrl}
         alt=""
-        className="w-5 h-5 rounded flex-shrink-0 mt-0.5"
+        className="w-5 h-5 rounded flex-shrink-0"
         loading="lazy"
       />
     ) : (
-      <span className="text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5">
+      <span className="text-blue-500 dark:text-blue-400 flex-shrink-0">
         <MapPinIcon className="w-4 h-4" />
       </span>
     );
@@ -99,7 +99,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     );
 
     return (
-      <div className={`flex items-start gap-2 ${className}`}>
+      <div className={`flex items-center gap-2 ${className}`}>
         {icon}
         {wrapper}
       </div>
