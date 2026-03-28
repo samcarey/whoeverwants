@@ -55,6 +55,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
   const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
   const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
+
+  // Sync local metadata when poll prop changes (e.g., navigating between polls)
+  useEffect(() => {
+    setOptionsMetadataLocal(poll.options_metadata ?? null);
+  }, [poll.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
