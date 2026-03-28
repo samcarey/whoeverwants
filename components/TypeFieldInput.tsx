@@ -169,13 +169,13 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
             !isOpen && isCustomValue ? "pr-24" : !isOpen && value !== "custom" ? "pr-8" : ""
           }`}
         />
-        {/* Custom badge */}
+        {/* Custom badge — left of the clear button */}
         {isCustomValue && !isOpen && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">
+          <span className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">
             Custom
           </span>
         )}
-        {/* Clear button when a value is set and not open */}
+        {/* Clear button — rightmost */}
         {value !== "custom" && !isOpen && (
           <button
             type="button"
@@ -184,9 +184,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
               onChange("custom");
               inputRef.current?.focus();
             }}
-            className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm ${
-              isCustomValue ? "right-[4.5rem]" : "right-3"
-            }`}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-sm"
           >
             ✕
           </button>
