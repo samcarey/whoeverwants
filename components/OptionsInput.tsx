@@ -82,10 +82,15 @@ export default function OptionsInput({
   };
 
   const handleSelect = (result: SearchResult) => {
-    if (!onMetadataChange || (!result.imageUrl && !result.infoUrl)) return;
-    const entry: { imageUrl?: string; infoUrl?: string } = {};
+    if (!onMetadataChange) return;
+    const entry: Record<string, unknown> = {};
     if (result.imageUrl) entry.imageUrl = result.imageUrl;
     if (result.infoUrl) entry.infoUrl = result.infoUrl;
+    if (result.name) entry.name = result.name;
+    if (result.distance_miles !== undefined) entry.distance_miles = result.distance_miles;
+    if (result.lat) entry.lat = result.lat;
+    if (result.lon) entry.lon = result.lon;
+    if (Object.keys(entry).length === 0) return;
     onMetadataChange({ ...optionsMetadata, [result.label]: entry });
   };
 

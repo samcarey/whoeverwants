@@ -115,9 +115,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
                 seen.add(lower)
                 all_nominations.append(nom.strip())
 
-    if len(all_nominations) < 2:
-        # Not enough nominations to create a meaningful ranked choice poll.
-        # Leave the reserved poll closed.
+    if len(all_nominations) == 0:
         return
 
     # Find the reserved placeholder poll
@@ -137,13 +135,47 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
     if not reserved:
         return  # No reserved poll found (shouldn't happen)
 
-    # Calculate deadline from now
-    from datetime import timedelta
-    deadline = now + timedelta(minutes=deadline_minutes)
-
     # Propagate options_metadata from parent for matching nominations
     parent_metadata = parent_row.get("options_metadata") or {}
     child_metadata = {nom: parent_metadata[nom] for nom in all_nominations if nom in parent_metadata} or None
+
+    if len(all_nominations) == 1:
+        # Single nomination: activate as already closed with uncontested winner
+        conn.execute(
+            """
+            UPDATE polls
+            SET options = %(options)s::jsonb,
+                is_closed = true,
+                close_reason = 'uncontested',
+                updated_at = %(now)s,
+                options_metadata = %(options_metadata)s::jsonb,
+                is_sub_poll = COALESCE(%(is_sub_poll)s, is_sub_poll),
+                sub_poll_role = COALESCE(%(sub_poll_role)s, sub_poll_role),
+                parent_participation_poll_id = COALESCE(%(parent_id)s, parent_participation_poll_id)
+            WHERE id = %(reserved_id)s
+            """,
+            {
+                "options": json.dumps(all_nominations),
+                "now": now,
+                "reserved_id": str(reserved["id"]),
+                "options_metadata": json.dumps(child_metadata) if child_metadata else None,
+                "is_sub_poll": parent_row.get("is_sub_poll") or None,
+                "sub_poll_role": None,
+                "parent_id": str(parent_row["parent_participation_poll_id"]) if parent_row.get("parent_participation_poll_id") else None,
+            },
+        )
+        # Resolve winner to parent if this is a sub-poll
+        reserved_poll = conn.execute(
+            "SELECT * FROM polls WHERE id = %(id)s",
+            {"id": str(reserved["id"])},
+        ).fetchone()
+        if reserved_poll and reserved_poll.get("sub_poll_role"):
+            _resolve_sub_poll_winner(conn, dict(reserved_poll))
+        return
+
+    # 2+ nominations: activate as open ranked choice poll
+    from datetime import timedelta
+    deadline = now + timedelta(minutes=deadline_minutes)
 
     # Activate the reserved poll (propagate sub-poll metadata if present)
     conn.execute(
@@ -373,11 +405,19 @@ def _resolve_sub_poll_winner(conn, poll_row: dict) -> None:
     if raw_options:
         poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
 
-    if not poll_options or not votes:
+    if not poll_options:
         return
 
-    result = calculate_ranked_choice_winner([dict(v) for v in votes], poll_options)
-    if result.winner:
+    # Uncontested: single option wins automatically without votes
+    if len(poll_options) == 1 and poll_row.get("close_reason") == "uncontested":
+        winner = poll_options[0]
+    elif not votes:
+        return
+    else:
+        result = calculate_ranked_choice_winner([dict(v) for v in votes], poll_options)
+        winner = result.winner
+
+    if winner:
         conn.execute(
             f"UPDATE polls SET {resolved_column} = %(winner)s, updated_at = %(now)s WHERE id = %(parent_id)s",
             {
@@ -856,6 +896,30 @@ def get_results(poll_id: str):
         poll_options = None
         if raw_options:
             poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        # Uncontested: single option wins automatically
+        if poll.get("close_reason") == "uncontested" and poll_options and len(poll_options) == 1:
+            return PollResultsResponse(
+                poll_id=str(poll["id"]),
+                title=poll["title"],
+                poll_type=poll_type,
+                created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
+                response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
+                options=poll_options,
+                total_votes=0,
+                min_participants=poll.get("min_participants"),
+                max_participants=poll.get("max_participants"),
+                winner=poll_options[0],
+                ranked_choice_winner=poll_options[0],
+                ranked_choice_rounds=[RankedChoiceRoundResponse(
+                    round_number=1,
+                    option_name=poll_options[0],
+                    vote_count=0,
+                    is_eliminated=False,
+                    borda_score=0.0,
+                    tie_broken_by_borda=False,
+                )],
+            )
 
         result = calculate_ranked_choice_winner(votes, poll_options or [])
 

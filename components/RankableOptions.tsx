@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
-import OptionLabel from './OptionLabel';
+import OptionLabel, { isLocationEntry } from './OptionLabel';
 
 interface RankableOption {
   id: string;
@@ -99,8 +99,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     noPreference: 0
   });
 
-  // Configuration
-  const itemHeight = 56;
+  // Configuration — taller items for location entries (two-line layout)
+  const hasLocationOptions = optionsMetadata && Object.values(optionsMetadata).some(m => isLocationEntry(m));
+  const itemHeight = hasLocationOptions ? 72 : 56;
   const gapSize = 8;
   const totalItemHeight = itemHeight + gapSize;
 
@@ -600,11 +601,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         style={getDraggedItemStyle()}
       >
         <div className="flex items-center justify-between h-full">
-          <div className="flex items-center text-gray-900 dark:text-white">
-            <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+          <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
+            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-1">
               {rankNumber}
             </div>
-            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight line-clamp-2" />
+            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
           </div>
           <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
             <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
@@ -961,7 +962,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     {/* Visual number circle - positioned within the grabbable area */}
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
                       <div 
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
+                        className={`w-6 h-6 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-medium ${
                           disabled 
                             ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
                             : listType === 'main'
@@ -975,12 +976,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   </div>
                   
                   {/* Center content - not grabbable */}
-                  <div className={`flex-1 flex items-center px-12 ${
+                  <div className={`flex-1 flex items-center pl-9 pr-12 min-w-0 ${
                     disabled
                       ? 'text-gray-500 dark:text-gray-400'
                       : 'text-gray-900 dark:text-white'
                   }`}>
-                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="font-medium leading-tight line-clamp-2" />
+                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                   </div>
                   
                   {/* Right drag handle with grabbable region */}

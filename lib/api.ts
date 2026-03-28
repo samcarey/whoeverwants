@@ -342,6 +342,7 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
 
 export interface SearchResult {
   label: string;
+  name?: string;
   description?: string;
   imageUrl?: string;
   infoUrl?: string;

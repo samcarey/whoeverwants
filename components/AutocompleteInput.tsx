@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
 import type { PollContentType } from "@/lib/types";
+import { formatDistance } from "./OptionLabel";
 
 interface AutocompleteInputProps {
   value: string;
@@ -168,25 +169,47 @@ export default function AutocompleteInput({
                 <img
                   src={result.imageUrl}
                   alt=""
-                  className="w-8 h-12 object-cover rounded flex-shrink-0 mt-0.5"
+                  className={`object-cover rounded flex-shrink-0 mt-0.5 ${
+                    result.name ? 'w-5 h-5' : 'w-8 h-12'
+                  }`}
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {result.label}
-                </div>
-                <div className="flex items-center gap-2">
-                  {result.description && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                      {result.description}
-                    </span>
-                  )}
-                  {result.distance_miles !== undefined && (
-                    <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                      {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
-                    </span>
-                  )}
-                </div>
+                {result.name ? (
+                  <>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {result.name}
+                      </span>
+                      {result.distance_miles !== undefined && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap flex-shrink-0">
+                          {formatDistance(result.distance_miles)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {result.label.startsWith(result.name + ', ') ? result.label.slice(result.name.length + 2) : result.label}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                      {result.label}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {result.description && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                          {result.description}
+                        </span>
+                      )}
+                      {result.distance_miles !== undefined && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                          {formatDistance(result.distance_miles)}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </li>
           ))}

@@ -54,6 +54,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [nominationChoices, setNominationChoices] = useState<string[]>([]);
   const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
+  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
+
+  // Sync local metadata when poll prop changes (e.g., navigating between polls)
+  useEffect(() => {
+    setOptionsMetadataLocal(poll.options_metadata ?? null);
+  }, [poll.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [existingNominations, setExistingNominations] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -597,7 +603,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setPollClosed(true);
           apiFindDuplicatePoll(poll.title, poll.id)
             .then((followUp) => {
-              if (followUp && !followUp.is_closed) {
+              if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
                 const shortId = followUp.short_id || followUp.id;
                 router.push(`/p/${shortId}`);
               }
@@ -757,7 +763,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         if (poll.poll_type === 'nomination' && poll.auto_create_preferences) {
           try {
             const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
-            if (followUp && !followUp.is_closed) {
+            if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
               if (creatorSecret) recordPollCreation(followUp.id, creatorSecret);
               const shortId = followUp.short_id || followUp.id;
               router.push(`/p/${shortId}`);
@@ -1088,10 +1094,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
-      
+
+      // Merge submitted metadata into local state so it's available immediately
+      if (nominationMetadata && Object.keys(nominationMetadata).length > 0) {
+        setOptionsMetadataLocal(prev => ({ ...prev, ...nominationMetadata }));
+      }
+
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
-      
+
       // Refresh nomination list for nomination polls with a small delay to ensure DB update is complete
       if (poll.poll_type === 'nomination') {
         // Add a small delay to ensure the database update is fully committed
@@ -1269,7 +1280,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </div>
             ) : pollResults ? (
               <>
-                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={poll.options_metadata} />
+                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
                 {pollResults.time_slot_rounds && pollResults.time_slot_rounds.length > 0 && (
                   <div className="mt-4">
                     <TimeSlotRoundsDisplay
@@ -1398,7 +1409,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
                             : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                       }`}>
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                        <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
                           userVoteData?.is_abstain || isAbstaining
                             ? 'bg-yellow-600 text-white'
                             : userVoteData?.yes_no_choice === 'yes'
@@ -1596,7 +1607,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
                               : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                         }`}>
-                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                          <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
                             userVoteData?.is_abstain || isAbstaining
                               ? 'bg-yellow-600 text-white'
                               : userVoteData?.yes_no_choice === 'yes'
@@ -1762,6 +1773,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               autoCreatePreferences={poll.auto_create_preferences}
               nominationMetadata={nominationMetadata}
               onNominationMetadataChange={setNominationMetadata}
+              optionsMetadata={optionsMetadataLocal}
             />
           ) : (
             <div>
@@ -1804,7 +1816,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="space-y-2">
                         {[1, 2, 3].map((num) => (
                           <div key={num} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
-                            <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                            <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-2">
                               <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -1819,24 +1831,28 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="space-y-2">
                         {userVoteData?.is_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                            <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
                         ) : pollOptions.length === 2 ? (
-                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                            <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                            <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
                               ✓
                             </span>
-                            <OptionLabel text={rankedChoices[0]} metadata={poll.options_metadata?.[rankedChoices[0]]} />
+                            <div className="min-w-0 overflow-hidden">
+                              <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
+                            </div>
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
-                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                              <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                              <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
                                 {index + 1}
                               </span>
-                              <OptionLabel text={choice} metadata={poll.options_metadata?.[choice]} />
+                              <div className="min-w-0 overflow-hidden">
+                                <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                              </div>
                             </div>
                           ))
                         )}
@@ -1924,13 +1940,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                                 setIsAbstaining(false);
                               }}
                               disabled={isSubmitting}
-                              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                 rankedChoices[0] === option
                                   ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
                                   : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
                               }`}
                             >
-                              <OptionLabel text={option} metadata={poll.options_metadata?.[option]} />
+                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} layout="stacked" />
                             </button>
                           ))}
                         </div>
@@ -1949,7 +1965,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             disabled={isSubmitting || isAbstaining}
                             storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                             initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                            optionsMetadata={poll.options_metadata}
+                            optionsMetadata={optionsMetadataLocal}
                           />
                         )}
                       </>

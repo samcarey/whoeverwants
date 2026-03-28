@@ -3,6 +3,7 @@
 import logging
 import math
 import os
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Query
@@ -42,6 +43,7 @@ async def _nominatim_search(
         "format": "jsonv2",
         "limit": 20,
         "addressdetails": 1,
+        "extratags": 1,
     }
 
     if has_ref and max_distance > 0:
@@ -87,11 +89,25 @@ async def _nominatim_search(
             if max_distance > 0 and distance > max_distance:
                 continue
 
+        # Extract website from extratags for favicon
+        extratags = item.get("extratags") or {}
+        website = extratags.get("website") or extratags.get("contact:website") or ""
+        image_url = None
+        if website:
+            try:
+                domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
+                if domain:
+                    image_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=32"
+            except Exception:
+                pass
+
         entry: dict = {
             "label": item.get("display_name", ""),
+            "name": item.get("name") or "",
             "description": item.get("type", "").replace("_", " ").title(),
             "lat": item_lat,
             "lon": item_lon,
+            "imageUrl": image_url,
             "infoUrl": (
                 f"https://www.openstreetmap.org/?mlat={item_lat}&mlon={item_lon}#map=15/{item_lat}/{item_lon}"
                 if item_lat and item_lon else None

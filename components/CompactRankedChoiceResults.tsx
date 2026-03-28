@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PollResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
-import OptionLabel from "./OptionLabel";
+import OptionLabel, { isLocationEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
@@ -184,7 +184,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
               return {
                 name: round.option_name,
                 votes: round.vote_count,
-                percentage: Math.round((round.vote_count / results.total_votes) * 100),
+                percentage: results.total_votes > 0 ? Math.round((round.vote_count / results.total_votes) * 100) : 0,
                 previousVotes: roundNum > 1 ? previousVotes : undefined,
                 donatedVotes: donatedVotes > 0 ? donatedVotes : undefined,
                 isEliminated: isEliminated,
@@ -349,6 +349,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
       ) : (
         <div className="text-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+          {results.total_votes === 0 && results.winner && results.winner !== 'tie' && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Uncontested</p>
+          )}
         </div>
       )}
 
@@ -405,10 +408,10 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                     ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
                     : 'bg-white dark:bg-gray-700'
                 }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 min-w-0 flex-1">
                       {/* Position number */}
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
                         isUserPreference 
                           ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white' 
                           : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
@@ -417,8 +420,12 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       </div>
                       
                       {/* Candidate name */}
-                      <div>
-                        <div className={`leading-tight line-clamp-2 ${
+                      <div className="min-w-0 overflow-hidden">
+                        <div className={`leading-tight ${
+                          isLocationEntry(optionsMetadata?.[candidate.name])
+                            ? 'overflow-hidden'
+                            : 'line-clamp-2'
+                        } ${
                           isTiedCandidate
                             ? 'text-green-900 dark:text-green-100 font-bold'
                             : candidate.isEliminated && !isTiedCandidate
@@ -440,28 +447,30 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       </div>
                     </div>
 
-                    {/* Vote count and percentage */}
-                    <div className="text-right">
-                      <div className={`text-lg font-bold ${
-                        isTiedCandidate
-                          ? 'text-green-800 dark:text-green-200'
-                          : candidate.isEliminated && !isTiedCandidate
-                          ? 'text-red-700 dark:text-red-300'
-                          : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                          ? 'text-green-800 dark:text-green-200'
-                          : 'text-gray-900 dark:text-white'
-                      }`}>
-                        {candidate.percentage}%
+                    {/* Vote count and percentage - hidden for uncontested polls */}
+                    {!(results.total_votes === 0 && currentRound.candidates.length === 1) && (
+                      <div className="text-right flex-shrink-0">
+                        <div className={`text-lg font-bold ${
+                          isTiedCandidate
+                            ? 'text-green-800 dark:text-green-200'
+                            : candidate.isEliminated && !isTiedCandidate
+                            ? 'text-red-700 dark:text-red-300'
+                            : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                            ? 'text-green-800 dark:text-green-200'
+                            : 'text-gray-900 dark:text-white'
+                        }`}>
+                          {candidate.percentage}%
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
+                          {candidate.donatedVotes && candidate.donatedVotes > 0 && (
+                            <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                              +{candidate.donatedVotes}
+                            </span>
+                          )}
+                          <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
-                        {candidate.donatedVotes && candidate.donatedVotes > 0 && (
-                          <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                            +{candidate.donatedVotes}
-                          </span>
-                        )}
-                        <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
