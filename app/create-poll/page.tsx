@@ -95,7 +95,7 @@ function CreatePollContent() {
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
-    const categoryLabel = builtIn?.label || '';
+    const icon = builtIn?.icon || '';
 
     if (pollType === 'nomination') {
       const nominationLabels: Record<string, string> = {
@@ -104,17 +104,18 @@ function CreatePollContent() {
         video_game: 'Video Game',
       };
       const prefix = nominationLabels[category] || (category !== 'custom' ? category : '');
-      return prefix ? `${prefix} Suggestions` : 'Suggestions';
+      const base = prefix ? `${prefix} Suggestions` : 'Suggestions';
+      return icon ? `${icon} ${base}` : base;
     }
 
     if (pollType === 'poll') {
       const filled = options.filter(o => o.trim());
-      if (filled.length === 0) return categoryLabel ? `${categoryLabel} Vote` : 'Quick Vote';
-      const optionsPart =
-        filled.length === 1 ? filled[0] :
-        filled.length === 2 ? `${filled[0]} or ${filled[1]}?` :
-        `${filled[0]}, ${filled[1]}, or ...?`;
-      return categoryLabel ? `${categoryLabel}: ${optionsPart}` : optionsPart;
+      let base: string;
+      if (filled.length === 0) base = 'Quick Vote';
+      else if (filled.length === 1) base = filled[0];
+      else if (filled.length === 2) base = `${filled[0]} or ${filled[1]}?`;
+      else base = `${filled[0]}, ${filled[1]}, or ...?`;
+      return icon ? `${icon} ${base}` : base;
     }
 
     // participation
