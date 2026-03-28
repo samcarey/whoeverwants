@@ -1,4 +1,4 @@
-"""Search/autocomplete endpoints for poll content types."""
+"""Search/autocomplete endpoints for poll categories."""
 
 import logging
 import math

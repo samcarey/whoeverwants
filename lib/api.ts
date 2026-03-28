@@ -123,7 +123,7 @@ function toPoll(data: any): Poll {
     time_preferences_deadline_minutes: data.time_preferences_deadline_minutes ?? undefined,
     day_time_windows: data.day_time_windows ?? undefined,
     duration_window: data.duration_window ?? undefined,
-    poll_content_type: data.poll_content_type ?? undefined,
+    category: data.category ?? undefined,
     options_metadata: data.options_metadata ?? undefined,
     reference_latitude: data.reference_latitude ?? undefined,
     reference_longitude: data.reference_longitude ?? undefined,
@@ -194,7 +194,7 @@ export async function apiCreatePoll(params: {
   time_preferences_deadline_minutes?: number;
   day_time_windows?: any[];
   duration_window?: any;
-  poll_content_type?: string;
+  category?: string;
   options_metadata?: OptionsMetadata;
   reference_latitude?: number;
   reference_longitude?: number;

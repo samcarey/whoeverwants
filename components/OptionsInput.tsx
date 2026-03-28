@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import type { PollContentType, OptionsMetadata } from "@/lib/types";
+import type { PollCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
 
@@ -14,7 +14,7 @@ interface OptionsInputProps {
   pollType?: 'poll' | 'nomination';
   label?: React.ReactNode;
   placeholder?: string;
-  contentType?: PollContentType;
+  category?: PollCategory;
   optionsMetadata?: OptionsMetadata;
   onMetadataChange?: (metadata: OptionsMetadata) => void;
   referenceLatitude?: number;
@@ -29,7 +29,7 @@ export default function OptionsInput({
   pollType = 'poll',
   label,
   placeholder,
-  contentType = 'custom',
+  category = 'custom',
   optionsMetadata,
   onMetadataChange,
   referenceLatitude,
@@ -111,17 +111,17 @@ export default function OptionsInput({
     const filledOptions = options.filter(opt => opt.trim() !== '');
     const isLastField = index === options.length - 1;
 
-    if (contentType === 'location') {
+    if (category === 'location') {
       if (isLastField) {
         return filledOptions.length === 0 ? "Search for a location..." : "Add another location...";
       }
       return `Location ${index + 1}`;
-    } else if (contentType === 'movie') {
+    } else if (category === 'movie') {
       if (isLastField) {
         return filledOptions.length === 0 ? "Search for a movie..." : "Add another movie...";
       }
       return `Movie ${index + 1}`;
-    } else if (contentType === 'video_game') {
+    } else if (category === 'video_game') {
       if (isLastField) {
         return filledOptions.length === 0 ? "Search for a video game..." : "Add another video game...";
       }
@@ -139,7 +139,7 @@ export default function OptionsInput({
     }
   };
 
-  const useAutocomplete = contentType === 'location' || contentType === 'movie' || contentType === 'video_game';
+  const useAutocomplete = category === 'location' || category === 'movie' || category === 'video_game';
   const inputClassName = (isDuplicate: boolean) =>
     `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
       isDuplicate
@@ -172,7 +172,7 @@ export default function OptionsInput({
                     value={option}
                     onChange={(value) => updateOption(index, value)}
                     onSelect={handleSelect}
-                    contentType={contentType as Exclude<PollContentType, 'custom'>}
+                    category={category as Exclude<PollCategory, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}
                     placeholder={getPlaceholder(index)}

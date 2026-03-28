@@ -68,7 +68,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
-  const [pollContentType, setPollContentType] = useState<string>('custom');
+  const [category, setCategory] = useState<string>('custom');
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
@@ -260,7 +260,7 @@ function CreatePollContent() {
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       // Check for options that exceed character limit (relaxed for autocomplete types)
-      const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
+      const maxOptionLength = category === 'custom' ? 35 : 200;
       const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
       if (longOptions.length > 0) {
         return `Poll options must be ${maxOptionLength} characters or less.`;
@@ -443,8 +443,8 @@ function CreatePollContent() {
           } else if (forkData.total_votes) {
             setAutoCloseAfter(forkData.total_votes);
           }
-          if (forkData.poll_content_type) {
-            setPollContentType(forkData.poll_content_type);
+          if (forkData.category) {
+            setCategory(forkData.category);
           }
           if (forkData.options_metadata) {
             setOptionsMetadata(forkData.options_metadata);
@@ -528,8 +528,8 @@ function CreatePollContent() {
           } else if (duplicateData.total_votes) {
             setAutoCloseAfter(duplicateData.total_votes);
           }
-          if (duplicateData.poll_content_type) {
-            setPollContentType(duplicateData.poll_content_type);
+          if (duplicateData.category) {
+            setCategory(duplicateData.category);
           }
           if (duplicateData.options_metadata) {
             setOptionsMetadata(duplicateData.options_metadata);
@@ -879,9 +879,9 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add content type for nomination and ranked_choice polls
-      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && pollContentType !== 'custom') {
-        pollData.poll_content_type = pollContentType;
+      // Add category for nomination and ranked_choice polls
+      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && category !== 'custom') {
+        pollData.category = category;
       }
 
       // Add reference location if set
@@ -1161,22 +1161,22 @@ function CreatePollContent() {
             />
           </div>
 
-          {/* Content type selector for suggestion and poll types */}
+          {/* Category selector for suggestion and poll types */}
           {pollType !== 'participation' && (
             <div>
-              <label htmlFor="contentType" className="block text-sm font-medium mb-2">
-                Type
+              <label htmlFor="category" className="block text-sm font-medium mb-2">
+                Category
               </label>
               <TypeFieldInput
-                value={pollContentType}
-                onChange={setPollContentType}
+                value={category}
+                onChange={setCategory}
                 disabled={isLoading}
               />
             </div>
           )}
 
           {/* Reference location for location polls */}
-          {(pollContentType === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+          {(category === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}
@@ -1244,7 +1244,7 @@ function CreatePollContent() {
               setOptions={setOptions}
               isLoading={isLoading}
               pollType="poll"
-              contentType={pollContentType}
+              category={category}
               optionsMetadata={optionsMetadata}
               onMetadataChange={setOptionsMetadata}
               referenceLatitude={refLatitude}
