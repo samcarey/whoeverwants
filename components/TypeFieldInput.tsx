@@ -107,7 +107,6 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
     onChange(type.value);
     setEditText(null);
     closeDropdown();
-    inputRef.current?.blur();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
