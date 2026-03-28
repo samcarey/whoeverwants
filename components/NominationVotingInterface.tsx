@@ -310,24 +310,31 @@ export default function NominationVotingInterface({
               {filteredExistingNominations.map((nomination, index) => {
                 const isSelected = nominationChoices.includes(nomination);
                 return (
-                  <button
+                  <div
                     key={index}
-                    onClick={() => {
-                      if (isSelected) {
-                        removeNomination(nomination);
-                      } else {
-                        addExistingNomination(nomination);
-                      }
-                    }}
-                    disabled={isSubmitting}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
                       isSelected
-                        ? 'bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/40 active:bg-green-300 dark:active:bg-green-900/50 text-green-900 dark:text-green-100 font-medium border border-green-300 dark:border-green-700'
-                        : 'bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-900 dark:text-green-100 font-medium border border-green-300 dark:border-green-700'
+                        : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
                     }`}
                   >
-                    <OptionLabel text={nomination} metadata={optionsMetadata?.[nomination]} />
-                  </button>
+                    <div className="min-w-0 flex-1">
+                      <OptionLabel text={nomination} metadata={optionsMetadata?.[nomination]} />
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isSubmitting}
+                      onChange={() => {
+                        if (isSelected) {
+                          removeNomination(nomination);
+                        } else {
+                          addExistingNomination(nomination);
+                        }
+                      }}
+                      className="w-5 h-5 flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                  </div>
                 );
               })}
             </div>

@@ -16,33 +16,16 @@ function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
-/** Icon wrapped in a clickable link with a visible border. */
-function LinkedIcon({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded border border-blue-300 dark:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/40 transition-colors"
-    >
-      {children}
-    </a>
-  );
-}
-
 /** Detect if metadata represents a location (has OSM infoUrl or name). */
 function isLocationEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
   if (!metadata) return false;
   if (metadata.name) return true;
-  // Legacy entries: only have infoUrl pointing to OpenStreetMap
   return !!metadata.infoUrl?.includes("openstreetmap.org");
 }
 
 /** Extract the place name from metadata or parse from Nominatim display_name. */
 function getLocationName(text: string, metadata: OptionMetadataEntry): string {
   if (metadata.name) return metadata.name;
-  // Parse from Nominatim display_name: "Name, Street, City, ..."
   const commaIdx = text.indexOf(", ");
   return commaIdx >= 0 ? text.slice(0, commaIdx) : text;
 }
@@ -68,7 +51,7 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     const address = getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
 
-    const iconContent = metadata!.imageUrl ? (
+    const icon = metadata!.imageUrl ? (
       <img
         src={metadata!.imageUrl}
         alt=""
@@ -81,18 +64,26 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
       </span>
     );
 
-    const icon = metadata!.infoUrl ? (
-      <LinkedIcon href={metadata!.infoUrl}>{iconContent}</LinkedIcon>
+    const nameEl = metadata!.infoUrl ? (
+      <a
+        href={metadata!.infoUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="font-medium leading-tight underline decoration-blue-400/50 hover:decoration-blue-500"
+      >
+        {name}
+      </a>
     ) : (
-      <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{iconContent}</span>
+      <span className="font-medium leading-tight">{name}</span>
     );
 
     return (
       <div className={`flex items-center gap-2 ${className}`}>
-        {icon}
+        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{icon}</span>
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="font-medium leading-tight">{name}</span>
+            {nameEl}
             {distance !== undefined && (
               <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
                 {formatDistance(distance)}
@@ -127,16 +118,16 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
   if (metadata.infoUrl) {
     return (
       <span className={`inline-flex items-center gap-1.5 ${className}`}>
-        {imageEl && <LinkedIcon href={metadata.infoUrl}>{imageEl}</LinkedIcon>}
-        {!imageEl && (
-          <LinkedIcon href={metadata.infoUrl}>
-            <svg className="w-4 h-4 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
-              <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
-            </svg>
-          </LinkedIcon>
-        )}
-        <span>{text}</span>
+        {imageEl && <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{imageEl}</span>}
+        <a
+          href={metadata.infoUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="underline decoration-blue-400/50 hover:decoration-blue-500"
+        >
+          {text}
+        </a>
       </span>
     );
   }
