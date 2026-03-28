@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { Poll } from "@/lib/types";
+import { buildPollSnapshot } from "@/lib/pollCreator";
 
 interface FollowUpModalProps {
   isOpen: boolean;
@@ -17,17 +18,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
   if (!isOpen) return null;
 
   const pollSnapshot = {
-    title: poll.title,
-    poll_type: poll.poll_type,
-    options: poll.options,
-    response_deadline: poll.response_deadline,
-    creator_name: poll.creator_name,
-    min_participants: poll.min_participants,
-    max_participants: poll.max_participants,
-    auto_close_after: poll.auto_close_after,
-    details: poll.details,
-    poll_content_type: poll.poll_content_type,
-    options_metadata: poll.options_metadata,
+    ...buildPollSnapshot(poll),
     total_votes: totalVotes,
   };
 

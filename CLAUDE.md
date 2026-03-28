@@ -885,7 +885,45 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **Auto-created polls share the parent's `creator_secret`**, but the browser only stores secrets for polls it created directly. When navigating to an auto-created follow-up poll (e.g., preferences poll from a nomination poll), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `poll.follow_up_to` and propagate if the parent's secret is known).
 - **Use `recordPollCreation()` from `lib/browserPollAccess.ts`** instead of calling `storeCreatorSecret()` + `addAccessiblePollId()` separately. The higher-level function already does both.
-- **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update all snapshot construction sites: `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`. Extract a shared object to avoid drift.
+- **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update `buildPollSnapshot()` in `lib/pollCreator.ts` — it's used by `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`.
+
+### Textarea Sizing & Inline-Block Gaps
+
+- **`<textarea>` defaults to `display: inline-block`** in most browsers, which causes a descender-space gap below it (based on parent `line-height`). Always add `display: block` (Tailwind `block` class) to textareas to eliminate this phantom spacing.
+- **The `rows` HTML attribute overrides CSS height** — browsers use `rows` to compute an intrinsic size that takes priority over `min-height` and can fight `height`. To control textarea height with CSS, omit `rows` and use `height`/`style.height` directly.
+- **Auto-grow textareas must reset to a fixed height, not `'auto'`** before reading `scrollHeight`. Resetting to `'auto'` lets the browser expand to its default intrinsic size (often taller than one line), causing the textarea to jump on first keystroke and never shrink back. Reset to the base height (e.g., `el.style.height = '42px'`) so `scrollHeight` only exceeds it when content actually overflows.
+- **`text-sm` on inputs/textareas causes height mismatches** — a `text-sm` input renders ~38px while a default-size input renders ~42px with the same `py-2` padding. When fields appear in a `space-y-*` form, the shorter field makes the gap below it appear larger. Use consistent font sizes across form fields.
+
+### Taking Render Screenshots (Claude Code Cloud)
+
+To visually verify UI changes from the Claude Code cloud environment:
+
+1. **Take screenshot on the droplet** using Playwright (installed in the repo's `node_modules`):
+   ```bash
+   bash scripts/remote.sh "cd /root/whoeverwants && node -e \"
+   const { chromium } = require('playwright');
+   (async () => {
+     const browser = await chromium.launch();
+     const page = await browser.newPage({ viewport: { width: 430, height: 932 } });
+     await page.goto('http://localhost:<dev-port>/path');
+     await page.waitForLoadState('networkidle');
+     await page.waitForTimeout(2000);
+     await page.screenshot({ path: '/tmp/screenshot.png' });
+     await browser.close();
+   })();
+   \"" /root 30
+   ```
+2. **Transfer via base64** and view with the Read tool:
+   ```bash
+   bash scripts/remote.sh "base64 /tmp/screenshot.png" | base64 -d > /tmp/screenshot.png
+   ```
+   Then use the Read tool on `/tmp/screenshot.png` — it renders images natively.
+3. **Share with the user** by copying to a dev server's `public/` directory:
+   ```bash
+   bash scripts/remote.sh "cp /tmp/screenshot.png /root/dev-servers/<slug>/public/image.png"
+   ```
+   The image is then accessible at `https://<slug>.dev.whoeverwants.com/image.png`.
+4. **Measure DOM spacing programmatically** using `page.evaluate()` with `getBoundingClientRect()` — but be aware that `getBoundingClientRect()` may not account for `inline-block` descender gaps. Cross-check by annotating screenshots with Pillow (`python3-pil` on the droplet).
 
 ### CI/GitHub Actions Pitfalls
 

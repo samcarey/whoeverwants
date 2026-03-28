@@ -1,7 +1,7 @@
 // Core type definitions for WhoeverWants
 // Extracted from lib/supabase.ts during Phase 3 cleanup
 
-export type PollContentType = string;
+export type PollCategory = string;
 
 export type OptionMetadataEntry = {
   imageUrl?: string;
@@ -53,7 +53,7 @@ export interface Poll {
   time_preferences_deadline_minutes?: number | null;
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
-  poll_content_type?: PollContentType | null;
+  category?: PollCategory | null;
   options_metadata?: OptionsMetadata | null;
   reference_latitude?: number | null;
   reference_longitude?: number | null;

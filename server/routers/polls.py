@@ -244,7 +244,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         time_preferences_deadline_minutes=row.get("time_preferences_deadline_minutes"),
         day_time_windows=row.get("day_time_windows"),
         duration_window=row.get("duration_window"),
-        poll_content_type=row.get("poll_content_type"),
+        category=row.get("category"),
         options_metadata=row.get("options_metadata"),
         reference_latitude=row.get("reference_latitude"),
         reference_longitude=row.get("reference_longitude"),
@@ -471,7 +471,7 @@ def create_poll(req: CreatePollRequest):
                                time_suggestions_deadline_minutes,
                                time_preferences_deadline_minutes,
                                day_time_windows, duration_window,
-                               poll_content_type, options_metadata,
+                               category, options_metadata,
                                reference_latitude, reference_longitude,
                                reference_location_label,
                                created_at, updated_at)
@@ -488,7 +488,7 @@ def create_poll(req: CreatePollRequest):
                     %(time_suggestions_deadline_minutes)s,
                     %(time_preferences_deadline_minutes)s,
                     %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
-                    %(poll_content_type)s, %(options_metadata)s::jsonb,
+                    %(category)s, %(options_metadata)s::jsonb,
                     %(reference_latitude)s, %(reference_longitude)s,
                     %(reference_location_label)s,
                     %(now)s, %(now)s)
@@ -523,7 +523,7 @@ def create_poll(req: CreatePollRequest):
                 "time_preferences_deadline_minutes": req.time_preferences_deadline_minutes,
                 "day_time_windows": json.dumps(req.day_time_windows) if req.day_time_windows else None,
                 "duration_window": json.dumps(req.duration_window) if req.duration_window else None,
-                "poll_content_type": req.poll_content_type or "custom",
+                "category": req.category or "custom",
                 "options_metadata": json.dumps(req.options_metadata) if req.options_metadata else None,
                 "reference_latitude": req.reference_latitude,
                 "reference_longitude": req.reference_longitude,
@@ -542,11 +542,11 @@ def create_poll(req: CreatePollRequest):
                 """
                 INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
                                    creator_secret, creator_name,
-                                   poll_content_type,
+                                   category,
                                    created_at, updated_at)
                 VALUES (%(title)s, 'ranked_choice', true, %(parent_id)s,
                         %(creator_secret)s, %(creator_name)s,
-                        %(poll_content_type)s,
+                        %(category)s,
                         %(now)s, %(now)s)
                 """,
                 {
@@ -554,7 +554,7 @@ def create_poll(req: CreatePollRequest):
                     "parent_id": parent_id,
                     "creator_secret": req.creator_secret,
                     "creator_name": req.creator_name,
-                    "poll_content_type": req.poll_content_type or "custom",
+                    "category": req.category or "custom",
                     "now": now,
                 },
             )

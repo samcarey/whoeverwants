@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
-import type { PollContentType } from "@/lib/types";
+import type { PollCategory } from "@/lib/types";
 import { formatDistance } from "./OptionLabel";
 
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (result: SearchResult) => void;
-  contentType: Exclude<PollContentType, 'custom'>;
+  category: Exclude<PollCategory, 'custom'>;
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
@@ -24,7 +24,7 @@ export default function AutocompleteInput({
   value,
   onChange,
   onSelect,
-  contentType,
+  category,
   disabled = false,
   placeholder,
   maxLength = 35,
@@ -53,9 +53,9 @@ export default function AutocompleteInput({
     }
     try {
       let results: SearchResult[];
-      if (contentType === 'location') {
+      if (category === 'location') {
         results = await apiSearchLocations(query, referenceLatitude, referenceLongitude, searchRadius);
-      } else if (contentType === 'video_game') {
+      } else if (category === 'video_game') {
         results = await apiSearchVideoGames(query);
       } else {
         results = await apiSearchMovies(query);
@@ -85,7 +85,7 @@ export default function AutocompleteInput({
     } catch {
       // On error, keep existing suggestions
     }
-  }, [contentType, referenceLatitude, referenceLongitude, searchRadius]);
+  }, [category, referenceLatitude, referenceLongitude, searchRadius]);
 
   const handleChange = (newValue: string) => {
     onChange(newValue);
@@ -214,9 +214,9 @@ export default function AutocompleteInput({
             </li>
           ))}
           <li className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
-            {contentType === 'movie'
+            {category === 'movie'
               ? 'Data from TMDB. Not endorsed by TMDB.'
-              : contentType === 'video_game'
+              : category === 'video_game'
                 ? 'Data from RAWG Video Games Database'
                 : 'Data \u00A9 OpenStreetMap contributors'}
           </li>

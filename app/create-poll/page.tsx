@@ -21,6 +21,10 @@ import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 export const dynamic = 'force-dynamic';
 
+// Matches the rendered height of a single-line <input> with py-2 padding.
+// Used for the Details textarea initial height and auto-grow reset.
+const SINGLE_LINE_INPUT_HEIGHT = 42;
+
 function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -68,7 +72,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
-  const [pollContentType, setPollContentType] = useState<string>('custom');
+  const [category, setCategory] = useState<string>('custom');
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
@@ -260,7 +264,7 @@ function CreatePollContent() {
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       // Check for options that exceed character limit (relaxed for autocomplete types)
-      const maxOptionLength = pollContentType === 'custom' ? 35 : 200;
+      const maxOptionLength = category === 'custom' ? 35 : 200;
       const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
       if (longOptions.length > 0) {
         return `Poll options must be ${maxOptionLength} characters or less.`;
@@ -443,8 +447,8 @@ function CreatePollContent() {
           } else if (forkData.total_votes) {
             setAutoCloseAfter(forkData.total_votes);
           }
-          if (forkData.poll_content_type) {
-            setPollContentType(forkData.poll_content_type);
+          if (forkData.category) {
+            setCategory(forkData.category);
           }
           if (forkData.options_metadata) {
             setOptionsMetadata(forkData.options_metadata);
@@ -528,8 +532,8 @@ function CreatePollContent() {
           } else if (duplicateData.total_votes) {
             setAutoCloseAfter(duplicateData.total_votes);
           }
-          if (duplicateData.poll_content_type) {
-            setPollContentType(duplicateData.poll_content_type);
+          if (duplicateData.category) {
+            setCategory(duplicateData.category);
           }
           if (duplicateData.options_metadata) {
             setOptionsMetadata(duplicateData.options_metadata);
@@ -879,9 +883,9 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add content type for nomination and ranked_choice polls
-      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && pollContentType !== 'custom') {
-        pollData.poll_content_type = pollContentType;
+      // Add category for nomination and ranked_choice polls
+      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && category !== 'custom') {
+        pollData.category = category;
       }
 
       // Add reference location if set
@@ -1120,7 +1124,7 @@ function CreatePollContent() {
           </div>
 
           <div className="-mt-4">
-            <label htmlFor="title" className="block text-sm font-medium mb-2">
+            <label htmlFor="title" className="block text-sm font-medium mb-1">
               Title
             </label>
             <input
@@ -1139,7 +1143,7 @@ function CreatePollContent() {
 
           {/* Optional details field */}
           <div>
-            <label htmlFor="details" className="block text-sm font-medium mb-2">
+            <label htmlFor="details" className="block text-sm font-medium mb-1">
               Details{' '}
               <span className="text-gray-500 font-normal">(optional)</span>
             </label>
@@ -1149,34 +1153,34 @@ function CreatePollContent() {
               onChange={(e) => {
                 setDetails(e.target.value);
                 const el = e.target;
-                el.style.height = 'auto';
+                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
                 const maxH = 5 * 20 + 16; // 5 lines + padding
                 el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
                 el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
               }}
               disabled={isLoading}
-              rows={1}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none text-sm overflow-hidden"
+              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
               placeholder="Add more context or instructions..."
             />
           </div>
 
-          {/* Content type selector for suggestion and poll types */}
+          {/* Category selector for suggestion and poll types */}
           {pollType !== 'participation' && (
             <div>
-              <label htmlFor="contentType" className="block text-sm font-medium mb-2">
-                Type
+              <label htmlFor="category" className="block text-sm font-medium mb-1">
+                Category
               </label>
               <TypeFieldInput
-                value={pollContentType}
-                onChange={setPollContentType}
+                value={category}
+                onChange={setCategory}
                 disabled={isLoading}
               />
             </div>
           )}
 
           {/* Reference location for location polls */}
-          {(pollContentType === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+          {(category === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}
@@ -1244,7 +1248,7 @@ function CreatePollContent() {
               setOptions={setOptions}
               isLoading={isLoading}
               pollType="poll"
-              contentType={pollContentType}
+              category={category}
               optionsMetadata={optionsMetadata}
               onMetadataChange={setOptionsMetadata}
               referenceLatitude={refLatitude}
@@ -1255,7 +1259,7 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="deadline" className="block text-sm font-medium mb-2">
+            <label htmlFor="deadline" className="block text-sm font-medium mb-1">
               Response Deadline
             </label>
             <select
@@ -1275,7 +1279,7 @@ function CreatePollContent() {
 
           {deadlineOption === "custom" && (
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium mb-1">
                 Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
               </label>
               <div className="flex justify-between gap-2">
@@ -1316,7 +1320,7 @@ function CreatePollContent() {
 
           {/* Auto-close after N responses */}
           <div>
-            <label className="block text-sm font-medium mb-2">Auto-close</label>
+            <label className="block text-sm font-medium mb-1">Auto-close</label>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600 dark:text-gray-400">After</span>
               <input
@@ -1388,7 +1392,7 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="creatorName" className="block text-sm font-medium mb-2">
+            <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
               Your Name (optional)
             </label>
             <input

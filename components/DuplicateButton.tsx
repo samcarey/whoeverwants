@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
+import { buildPollSnapshot } from "@/lib/pollCreator";
 import { debugLog } from "@/lib/debugLogger";
 
 interface DuplicateButtonProps {
@@ -12,20 +13,7 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
   const router = useRouter();
 
   const handleDuplicate = () => {
-    // Create duplicate data for follow-up with prefilled form data
-    const duplicateData = {
-      title: poll.title,
-      poll_type: poll.poll_type,
-      options: poll.options,
-      response_deadline: poll.response_deadline,
-      creator_name: poll.creator_name,
-      min_participants: poll.min_participants,
-      max_participants: poll.max_participants,
-      auto_close_after: poll.auto_close_after,
-      details: poll.details,
-      poll_content_type: poll.poll_content_type,
-      options_metadata: poll.options_metadata,
-    };
+    const duplicateData = buildPollSnapshot(poll);
 
     debugLog.logObject('Duplicate button clicked', { pollId: poll.id, duplicateData }, 'DuplicateButton');
     

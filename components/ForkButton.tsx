@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
+import { buildPollSnapshot } from "@/lib/pollCreator";
 import { debugLog } from "@/lib/debugLogger";
 
 interface ForkButtonProps {
@@ -13,20 +14,7 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
   const router = useRouter();
 
   const handleFork = () => {
-    // Store poll data in localStorage for the create-poll form to access
-    const forkData = {
-      title: poll.title,
-      poll_type: poll.poll_type,
-      options: poll.options,
-      response_deadline: poll.response_deadline,
-      creator_name: poll.creator_name,
-      min_participants: poll.min_participants,
-      max_participants: poll.max_participants,
-      auto_close_after: poll.auto_close_after,
-      details: poll.details,
-      poll_content_type: poll.poll_content_type,
-      options_metadata: poll.options_metadata,
-    };
+    const forkData = buildPollSnapshot(poll);
 
     debugLog.logObject('Fork button clicked', { pollId: poll.id, forkData }, 'ForkButton');
     

@@ -1520,7 +1520,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-2">
+                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
                       Your Name (optional)
                     </label>
                     <input
@@ -1709,7 +1709,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-2">
+                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
                       Your Name <span className="text-gray-500 font-normal">(optional)</span>
                     </label>
                     <input
@@ -1984,7 +1984,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mt-4">
-                    <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-2">
+                    <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-1">
                       Your Name (optional)
                     </label>
                     <input

@@ -98,7 +98,7 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
           </h3>
 
           <div className="mb-4">
-            <label htmlFor="vote-deadline" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+            <label htmlFor="vote-deadline" className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
               Response Deadline
             </label>
             <select
