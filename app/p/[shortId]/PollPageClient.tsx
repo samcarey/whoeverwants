@@ -1836,19 +1836,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
                         ) : pollOptions.length === 2 ? (
-                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                            <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
+                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                            <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
                               ✓
                             </span>
-                            <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
+                            <div className="min-w-0 overflow-hidden">
+                              <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
+                            </div>
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
-                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded">
-                              <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
+                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                              <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
                                 {index + 1}
                               </span>
-                              <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                              <div className="min-w-0 overflow-hidden">
+                                <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                              </div>
                             </div>
                           ))
                         )}
