@@ -349,6 +349,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
       ) : (
         <div className="text-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
+          {results.total_votes === 0 && results.winner && results.winner !== 'tie' && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Uncontested</p>
+          )}
         </div>
       )}
 
@@ -444,36 +447,30 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       </div>
                     </div>
 
-                    {/* Vote count and percentage */}
-                    <div className="text-right flex-shrink-0">
-                      {results.total_votes === 0 && currentRound.candidates.length === 1 ? (
-                        <div className="text-sm font-medium text-green-700 dark:text-green-300">
-                          Uncontested
+                    {/* Vote count and percentage - hidden for uncontested polls */}
+                    {!(results.total_votes === 0 && currentRound.candidates.length === 1) && (
+                      <div className="text-right flex-shrink-0">
+                        <div className={`text-lg font-bold ${
+                          isTiedCandidate
+                            ? 'text-green-800 dark:text-green-200'
+                            : candidate.isEliminated && !isTiedCandidate
+                            ? 'text-red-700 dark:text-red-300'
+                            : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                            ? 'text-green-800 dark:text-green-200'
+                            : 'text-gray-900 dark:text-white'
+                        }`}>
+                          {candidate.percentage}%
                         </div>
-                      ) : (
-                        <>
-                          <div className={`text-lg font-bold ${
-                            isTiedCandidate
-                              ? 'text-green-800 dark:text-green-200'
-                              : candidate.isEliminated && !isTiedCandidate
-                              ? 'text-red-700 dark:text-red-300'
-                              : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                              ? 'text-green-800 dark:text-green-200'
-                              : 'text-gray-900 dark:text-white'
-                          }`}>
-                            {candidate.percentage}%
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
-                            {candidate.donatedVotes && candidate.donatedVotes > 0 && (
-                              <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                                +{candidate.donatedVotes}
-                              </span>
-                            )}
-                            <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
+                          {candidate.donatedVotes && candidate.donatedVotes > 0 && (
+                            <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                              +{candidate.donatedVotes}
+                            </span>
+                          )}
+                          <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
