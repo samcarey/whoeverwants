@@ -1070,12 +1070,7 @@ function CreatePollContent() {
               <div className="relative flex w-full">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (titleInputRef.current) {
-                      titleInputRef.current.focus();
-                    }
-                    setPollType('nomination');
-                  }}
+                  onClick={() => setPollType('nomination')}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
                     pollType === 'nomination'
@@ -1087,12 +1082,7 @@ function CreatePollContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (titleInputRef.current) {
-                      titleInputRef.current.focus();
-                    }
-                    setPollType('poll');
-                  }}
+                  onClick={() => setPollType('poll')}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
                     pollType === 'poll'
@@ -1104,12 +1094,7 @@ function CreatePollContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (titleInputRef.current) {
-                      titleInputRef.current.focus();
-                    }
-                    setPollType('participation');
-                  }}
+                  onClick={() => setPollType('participation')}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
                     pollType === 'participation'
@@ -1121,48 +1106,6 @@ function CreatePollContent() {
                 </button>
               </div>
             </div>
-          </div>
-
-          <div className="-mt-4">
-            <label htmlFor="title" className="block text-sm font-medium mb-1">
-              Title
-            </label>
-            <input
-              type="text"
-              id="title"
-              ref={titleInputRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              disabled={isLoading}
-              maxLength={50}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your title..."
-              required
-            />
-          </div>
-
-          {/* Optional details field */}
-          <div>
-            <label htmlFor="details" className="block text-sm font-medium mb-1">
-              Details{' '}
-              <span className="text-gray-500 font-normal">(optional)</span>
-            </label>
-            <textarea
-              id="details"
-              value={details}
-              onChange={(e) => {
-                setDetails(e.target.value);
-                const el = e.target;
-                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                const maxH = 5 * 20 + 16; // 5 lines + padding
-                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-              }}
-              disabled={isLoading}
-              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-              placeholder="Add more context or instructions..."
-            />
           </div>
 
           {/* Category selector for suggestion and poll types */}
@@ -1390,6 +1333,48 @@ function CreatePollContent() {
               )}
             </div>
           )}
+
+          <div>
+            <label htmlFor="title" className="block text-sm font-medium mb-1">
+              Title
+            </label>
+            <input
+              type="text"
+              id="title"
+              ref={titleInputRef}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={isLoading}
+              maxLength={50}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder="Enter your title..."
+              required
+            />
+          </div>
+
+          {/* Optional details field */}
+          <div>
+            <label htmlFor="details" className="block text-sm font-medium mb-1">
+              Details{' '}
+              <span className="text-gray-500 font-normal">(optional)</span>
+            </label>
+            <textarea
+              id="details"
+              value={details}
+              onChange={(e) => {
+                setDetails(e.target.value);
+                const el = e.target;
+                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                const maxH = 5 * 20 + 16; // 5 lines + padding
+                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+              }}
+              disabled={isLoading}
+              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+              placeholder="Add more context or instructions..."
+            />
+          </div>
 
           <div>
             <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
