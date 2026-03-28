@@ -162,7 +162,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder="Enter built-in or custom category"
-          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm ${
+          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed ${
             builtIn && !isOpen ? "pl-9" : ""
           } ${
             !isOpen && isCustomValue ? "pr-24" : !isOpen && value !== "custom" ? "pr-8" : ""
