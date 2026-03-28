@@ -116,8 +116,7 @@ function CreatePollContent() {
       let base: string;
       if (filled.length === 0) base = 'Quick Vote';
       else if (filled.length === 1) base = filled[0];
-      else if (filled.length === 2) base = `${filled[0]} or ${filled[1]}?`;
-      else base = `${filled[0]}, ${filled[1]}, or ...?`;
+      else base = `${filled.slice(0, -1).join(', ')} or ${filled[filled.length - 1]}?`;
       return icon ? `${icon} ${base}` : base;
     }
 
