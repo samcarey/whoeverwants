@@ -40,7 +40,7 @@ function getAddressFromLabel(label: string, name: string): string {
   return commaIdx >= 0 ? label.slice(commaIdx + 2) : "";
 }
 
-function formatDistance(miles: number): string {
+export function formatDistance(miles: number): string {
   if (miles < 0.1) return "<0.1 mi";
   if (miles < 10) return `${miles.toFixed(1)} mi`;
   return `${Math.round(miles)} mi`;

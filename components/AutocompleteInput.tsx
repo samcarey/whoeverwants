@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
 import type { PollContentType } from "@/lib/types";
+import { formatDistance } from "./OptionLabel";
 
 interface AutocompleteInputProps {
   value: string;
@@ -182,7 +183,7 @@ export default function AutocompleteInput({
                       </span>
                       {result.distance_miles !== undefined && (
                         <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap flex-shrink-0">
-                          {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
+                          {formatDistance(result.distance_miles)}
                         </span>
                       )}
                     </div>
@@ -203,7 +204,7 @@ export default function AutocompleteInput({
                       )}
                       {result.distance_miles !== undefined && (
                         <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                          {result.distance_miles < 0.1 ? '<0.1' : result.distance_miles} mi
+                          {formatDistance(result.distance_miles)}
                         </span>
                       )}
                     </div>

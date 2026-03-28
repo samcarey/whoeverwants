@@ -1,7 +1,7 @@
 "use client";
 
 import type { OptionsMetadata } from "@/lib/types";
-import OptionLabel from "./OptionLabel";
+import OptionLabel, { isLocationEntry } from "./OptionLabel";
 
 interface Nomination {
   option: string;
@@ -46,11 +46,7 @@ export default function NominationsList({
     a.option.localeCompare(b.option)
   );
 
-  // Check if any nomination has location metadata for layout switching
-  const isLocationPoll = nominations.some(n => {
-    const meta = optionsMetadata?.[n.option];
-    return meta?.name || meta?.infoUrl?.includes("openstreetmap.org");
-  });
+  const isLocationPoll = nominations.some(n => isLocationEntry(optionsMetadata?.[n.option]));
 
   return (
     <div className={className}>
