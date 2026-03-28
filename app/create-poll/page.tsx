@@ -116,7 +116,24 @@ function CreatePollContent() {
       let base: string;
       if (filled.length === 0) base = 'Quick Vote';
       else if (filled.length === 1) base = filled[0];
-      else base = `${filled.slice(0, -1).join(', ')} or ${filled[filled.length - 1]}?`;
+      else {
+        const limit = 100 - (icon ? icon.length + 1 : 0);
+        // Include as many options as fit within the limit
+        const included = [filled[0]];
+        for (let i = 1; i < filled.length; i++) {
+          const isLast = i === filled.length - 1;
+          const candidate = isLast
+            ? `${included.join(', ')} or ${filled[i]}?`
+            : `${[...included, filled[i]].join(', ')} or ...?`;
+          if (candidate.length > limit && included.length >= 2) break;
+          included.push(filled[i]);
+        }
+        if (included.length === filled.length) {
+          base = `${included.slice(0, -1).join(', ')} or ${included[included.length - 1]}?`;
+        } else {
+          base = `${included.join(', ')}, or ...?`;
+        }
+      }
       return icon ? `${icon} ${base}` : base;
     }
 
