@@ -601,7 +601,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       >
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center text-gray-900 dark:text-white">
-            <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
               {rankNumber}
             </div>
             <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight overflow-hidden" />
@@ -961,7 +961,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     {/* Visual number circle - positioned within the grabbable area */}
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center">
                       <div 
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
+                        className={`w-6 h-6 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-medium ${
                           disabled 
                             ? 'bg-gray-300 text-gray-500 dark:bg-gray-600 dark:text-gray-400' 
                             : listType === 'main'

@@ -1409,7 +1409,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
                             : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                       }`}>
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                        <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
                           userVoteData?.is_abstain || isAbstaining
                             ? 'bg-yellow-600 text-white'
                             : userVoteData?.yes_no_choice === 'yes'
@@ -1607,7 +1607,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
                               : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
                         }`}>
-                          <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
+                          <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
                             userVoteData?.is_abstain || isAbstaining
                               ? 'bg-yellow-600 text-white'
                               : userVoteData?.yes_no_choice === 'yes'
@@ -1831,7 +1831,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="space-y-2">
                         {userVoteData?.is_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <span className="w-8 h-8 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                            <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
