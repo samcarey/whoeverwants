@@ -92,6 +92,9 @@ function CreatePollContent() {
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
 
+  // Strip parenthesized suffixes and colon suffixes from option text for titles
+  const shortenOption = (text: string) => text.split(/[:(]/)[0].trim();
+
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
@@ -109,7 +112,7 @@ function CreatePollContent() {
     }
 
     if (pollType === 'poll') {
-      const filled = options.filter(o => o.trim());
+      const filled = options.filter(o => o.trim()).map(shortenOption);
       let base: string;
       if (filled.length === 0) base = 'Quick Vote';
       else if (filled.length === 1) base = filled[0];
@@ -120,7 +123,7 @@ function CreatePollContent() {
 
     // participation
     if (locationMode === 'set' && locationValue.trim()) {
-      return `Who's going to ${locationValue.trim()}?`;
+      return `Who's going to ${shortenOption(locationValue)}?`;
     }
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue]);
