@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef, useCallback } from "react";
 import type { OptionMetadataEntry } from "@/lib/types";
 
 interface OptionLabelProps {
@@ -9,61 +8,26 @@ interface OptionLabelProps {
   className?: string;
 }
 
-const LONG_PRESS_MS = 500;
-
-/** Wrapper that opens a URL on long press instead of tap. */
-function LongPressLink({
-  href,
-  className,
-  children,
-}: {
-  href: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const firedRef = useRef(false);
-
-  const start = useCallback(() => {
-    firedRef.current = false;
-    timerRef.current = setTimeout(() => {
-      firedRef.current = true;
-      window.open(href, "_blank", "noopener,noreferrer");
-    }, LONG_PRESS_MS);
-  }, [href]);
-
-  const cancel = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  return (
-    <div
-      className={className}
-      onMouseDown={start}
-      onMouseUp={cancel}
-      onMouseLeave={cancel}
-      onTouchStart={start}
-      onTouchEnd={cancel}
-      onTouchCancel={cancel}
-      onClick={(e) => {
-        e.stopPropagation();
-        // Prevent any parent tap handlers from firing after long press
-        if (firedRef.current) e.preventDefault();
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
       <path fillRule="evenodd" clipRule="evenodd" d="M12 2C7.58 2 4 5.58 4 10c0 5.25 7.13 11.38 7.43 11.63a1 1 0 001.14 0C12.87 21.38 20 15.25 20 10c0-4.42-3.58-8-8-8zm0 11a3 3 0 110-6 3 3 0 010 6z" />
     </svg>
+  );
+}
+
+/** Icon wrapped in a clickable link with a visible border. */
+function LinkedIcon({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="flex-shrink-0 rounded border border-blue-300 dark:border-blue-500 p-0.5 hover:bg-blue-50 dark:hover:bg-blue-900/40 transition-colors"
+    >
+      {children}
+    </a>
   );
 }
 
@@ -104,52 +68,43 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     const address = getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
 
-    const icon = metadata!.imageUrl ? (
+    const iconContent = metadata!.imageUrl ? (
       <img
         src={metadata!.imageUrl}
         alt=""
-        className="w-5 h-5 rounded flex-shrink-0"
+        className="w-5 h-5 rounded"
         loading="lazy"
       />
     ) : (
-      <span className="text-blue-500 dark:text-blue-400 flex-shrink-0">
+      <span className="text-blue-500 dark:text-blue-400">
         <MapPinIcon className="w-4 h-4" />
       </span>
     );
 
-    const inner = (
-      <>
-        <div className="flex items-baseline gap-1.5 flex-wrap">
-          <span className="font-medium leading-tight">{name}</span>
-          {distance !== undefined && (
-            <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-              {formatDistance(distance)}
-            </span>
-          )}
-        </div>
-        {address && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
-            {address}
-          </div>
-        )}
-      </>
-    );
-
-    const wrapper = metadata!.infoUrl ? (
-      <LongPressLink
-        href={metadata!.infoUrl}
-        className="min-w-0 overflow-hidden block cursor-default"
-      >
-        {inner}
-      </LongPressLink>
+    const icon = metadata!.infoUrl ? (
+      <LinkedIcon href={metadata!.infoUrl}>{iconContent}</LinkedIcon>
     ) : (
-      <div className="min-w-0 overflow-hidden">{inner}</div>
+      <span className="flex-shrink-0">{iconContent}</span>
     );
 
     return (
       <div className={`flex items-center gap-2 ${className}`}>
         {icon}
-        {wrapper}
+        <div className="min-w-0 overflow-hidden">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="font-medium leading-tight">{name}</span>
+            {distance !== undefined && (
+              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                {formatDistance(distance)}
+              </span>
+            )}
+          </div>
+          {address && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+              {address}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -159,34 +114,37 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
     return <span className={className}>{text}</span>;
   }
 
-  const content = (
-    <>
-      {metadata.imageUrl && (
-        <img
-          src={metadata.imageUrl}
-          alt=""
-          className="w-5 h-7 object-cover rounded flex-shrink-0"
-          loading="lazy"
-        />
-      )}
-      <span>{text}</span>
-    </>
-  );
+  // Typed option with image and/or link (movies, video games, etc.)
+  const imageEl = metadata.imageUrl ? (
+    <img
+      src={metadata.imageUrl}
+      alt=""
+      className="w-5 h-7 object-cover rounded"
+      loading="lazy"
+    />
+  ) : null;
 
   if (metadata.infoUrl) {
     return (
-      <LongPressLink
-        href={metadata.infoUrl}
-        className={`inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 cursor-default ${className}`}
-      >
-        {content}
-      </LongPressLink>
+      <span className={`inline-flex items-center gap-1.5 ${className}`}>
+        {imageEl && <LinkedIcon href={metadata.infoUrl}>{imageEl}</LinkedIcon>}
+        {!imageEl && (
+          <LinkedIcon href={metadata.infoUrl}>
+            <svg className="w-4 h-4 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+              <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+            </svg>
+          </LinkedIcon>
+        )}
+        <span>{text}</span>
+      </span>
     );
   }
 
   return (
     <span className={`inline-flex items-center gap-1.5 ${className}`}>
-      {content}
+      {imageEl && <span className="flex-shrink-0">{imageEl}</span>}
+      <span>{text}</span>
     </span>
   );
 }
