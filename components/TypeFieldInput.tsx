@@ -8,22 +8,11 @@ export interface BuiltInType {
   icon: string;
 }
 
+// Only types with actual search/autocomplete backends
 const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "location", label: "Location", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
   { value: "video_game", label: "Video Game", icon: "🎮" },
-  { value: "food", label: "Food", icon: "🍕" },
-  { value: "restaurant", label: "Restaurant", icon: "🍽️" },
-  { value: "music", label: "Music", icon: "🎵" },
-  { value: "book", label: "Book", icon: "📚" },
-  { value: "tv_show", label: "TV Show", icon: "📺" },
-  { value: "sport", label: "Sport", icon: "⚽" },
-  { value: "activity", label: "Activity", icon: "🎯" },
-  { value: "travel", label: "Travel", icon: "✈️" },
-  { value: "gift", label: "Gift", icon: "🎁" },
-  { value: "drink", label: "Drink", icon: "🍹" },
-  { value: "board_game", label: "Board Game", icon: "🎲" },
-  { value: "date", label: "Date", icon: "📅" },
 ];
 
 export function getBuiltInType(value: string): BuiltInType | undefined {
