@@ -601,8 +601,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         style={getDraggedItemStyle()}
       >
         <div className="flex items-center justify-between h-full">
-          <div className="flex items-center text-gray-900 dark:text-white">
-            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
+          <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
+            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-1">
               {rankNumber}
             </div>
             <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
@@ -976,7 +976,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   </div>
                   
                   {/* Center content - not grabbable */}
-                  <div className={`flex-1 flex items-center pl-11 pr-12 ${
+                  <div className={`flex-1 flex items-center pl-9 pr-12 min-w-0 ${
                     disabled
                       ? 'text-gray-500 dark:text-gray-400'
                       : 'text-gray-900 dark:text-white'
