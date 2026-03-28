@@ -1940,13 +1940,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                                 setIsAbstaining(false);
                               }}
                               disabled={isSubmitting}
-                              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                              className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                 rankedChoices[0] === option
                                   ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
                                   : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
                               }`}
                             >
-                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} />
+                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} layout="stacked" />
                             </button>
                           ))}
                         </div>

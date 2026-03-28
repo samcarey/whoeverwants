@@ -6,6 +6,8 @@ interface OptionLabelProps {
   text: string;
   metadata?: OptionMetadataEntry | null;
   className?: string;
+  /** "inline" (default): icon left, text right. "stacked": icon+distance top, name, address vertically. */
+  layout?: "inline" | "stacked";
 }
 
 function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -44,29 +46,22 @@ function formatDistance(miles: number): string {
   return `${Math.round(miles)} mi`;
 }
 
-export default function OptionLabel({ text, metadata, className = "" }: OptionLabelProps) {
-  // Location entry: two-line display with icon
-  if (isLocationEntry(metadata)) {
-    const name = getLocationName(text, metadata!);
-    const address = getAddressFromLabel(text, name);
-    const distance = metadata!.distance_miles;
+function LocationIcon({ imageUrl }: { imageUrl?: string }) {
+  if (imageUrl) {
+    return <img src={imageUrl} alt="" className="w-5 h-5 rounded" loading="lazy" />;
+  }
+  return (
+    <span className="text-blue-500 dark:text-blue-400">
+      <MapPinIcon className="w-4 h-4" />
+    </span>
+  );
+}
 
-    const icon = metadata!.imageUrl ? (
-      <img
-        src={metadata!.imageUrl}
-        alt=""
-        className="w-5 h-5 rounded"
-        loading="lazy"
-      />
-    ) : (
-      <span className="text-blue-500 dark:text-blue-400">
-        <MapPinIcon className="w-4 h-4" />
-      </span>
-    );
-
-    const nameEl = metadata!.infoUrl ? (
+function LocationName({ name, infoUrl }: { name: string; infoUrl?: string }) {
+  if (infoUrl) {
+    return (
       <a
-        href={metadata!.infoUrl}
+        href={infoUrl}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
@@ -74,16 +69,52 @@ export default function OptionLabel({ text, metadata, className = "" }: OptionLa
       >
         {name}
       </a>
-    ) : (
-      <span className="font-medium leading-tight">{name}</span>
     );
+  }
+  return <span className="font-medium leading-tight">{name}</span>;
+}
 
+export default function OptionLabel({ text, metadata, className = "", layout = "inline" }: OptionLabelProps) {
+  // Location entry
+  if (isLocationEntry(metadata)) {
+    const name = getLocationName(text, metadata!);
+    const address = getAddressFromLabel(text, name);
+    const distance = metadata!.distance_miles;
+
+    if (layout === "stacked") {
+      return (
+        <div className={`min-w-0 overflow-hidden ${className}`}>
+          <div className="flex items-center gap-1.5">
+            <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+              <LocationIcon imageUrl={metadata!.imageUrl} />
+            </span>
+            {distance !== undefined && (
+              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                {formatDistance(distance)}
+              </span>
+            )}
+          </div>
+          <div className="line-clamp-2 leading-tight mt-0.5">
+            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+          </div>
+          {address && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5">
+              {address}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Default inline layout
     return (
       <div className={`flex items-center gap-2 ${className}`}>
-        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">{icon}</span>
+        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
+          <LocationIcon imageUrl={metadata!.imageUrl} />
+        </span>
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            {nameEl}
+            <LocationName name={name} infoUrl={metadata!.infoUrl} />
             {distance !== undefined && (
               <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
                 {formatDistance(distance)}
