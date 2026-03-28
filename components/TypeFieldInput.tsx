@@ -47,7 +47,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
       )
     : BUILT_IN_TYPES;
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click or focus loss
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -58,6 +58,14 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  function handleBlur(e: React.FocusEvent) {
+    // If focus moves outside the container, close dropdown
+    if (containerRef.current && !containerRef.current.contains(e.relatedTarget as Node)) {
+      setIsOpen(false);
+      setHighlightedIndex(-1);
+    }
+  }
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -151,11 +159,14 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
           value={inputText}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={handleFocus}
+          onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder="Enter built-in or custom type"
           className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm ${
             builtIn && !isOpen ? "pl-9" : ""
+          } ${
+            !isOpen && isCustomValue ? "pr-24" : !isOpen && value !== "custom" ? "pr-8" : ""
           }`}
         />
         {/* Custom badge */}
