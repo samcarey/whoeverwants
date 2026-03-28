@@ -143,7 +143,7 @@ export default function ParticipationConditions({
       {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>
-          <label className="block text-sm font-medium mb-2">
+          <label className="block text-sm font-medium mb-1">
             Duration (hours)
           </label>
           <MinMaxCounter

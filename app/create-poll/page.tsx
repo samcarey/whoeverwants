@@ -1120,7 +1120,7 @@ function CreatePollContent() {
           </div>
 
           <div className="-mt-4">
-            <label htmlFor="title" className="block text-sm font-medium mb-2">
+            <label htmlFor="title" className="block text-sm font-medium mb-1">
               Title
             </label>
             <input
@@ -1139,7 +1139,7 @@ function CreatePollContent() {
 
           {/* Optional details field */}
           <div>
-            <label htmlFor="details" className="block text-sm font-medium mb-2">
+            <label htmlFor="details" className="block text-sm font-medium mb-1">
               Details{' '}
               <span className="text-gray-500 font-normal">(optional)</span>
             </label>
@@ -1164,7 +1164,7 @@ function CreatePollContent() {
           {/* Category selector for suggestion and poll types */}
           {pollType !== 'participation' && (
             <div>
-              <label htmlFor="category" className="block text-sm font-medium mb-2">
+              <label htmlFor="category" className="block text-sm font-medium mb-1">
                 Category
               </label>
               <TypeFieldInput
@@ -1255,7 +1255,7 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="deadline" className="block text-sm font-medium mb-2">
+            <label htmlFor="deadline" className="block text-sm font-medium mb-1">
               Response Deadline
             </label>
             <select
@@ -1275,7 +1275,7 @@ function CreatePollContent() {
 
           {deadlineOption === "custom" && (
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium mb-1">
                 Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
               </label>
               <div className="flex justify-between gap-2">
@@ -1316,7 +1316,7 @@ function CreatePollContent() {
 
           {/* Auto-close after N responses */}
           <div>
-            <label className="block text-sm font-medium mb-2">Auto-close</label>
+            <label className="block text-sm font-medium mb-1">Auto-close</label>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600 dark:text-gray-400">After</span>
               <input
@@ -1388,7 +1388,7 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="creatorName" className="block text-sm font-medium mb-2">
+            <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
               Your Name (optional)
             </label>
             <input

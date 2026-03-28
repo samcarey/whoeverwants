@@ -113,7 +113,7 @@ export default function ReferenceLocationInput({
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-2">
+      <label className="block text-sm font-medium mb-1">
         Your Location
       </label>
       {hasLocation && (

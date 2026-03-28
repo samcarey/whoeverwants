@@ -115,7 +115,7 @@ export default function ProfilePage() {
     <div className="poll-content">
       {/* Name Input Section */}
       <div className="mb-6">
-        <label htmlFor="name" className="block text-sm font-medium mb-2">
+        <label htmlFor="name" className="block text-sm font-medium mb-1">
           Your Name
         </label>
         <input
@@ -135,7 +135,7 @@ export default function ProfilePage() {
 
       {/* Location Section */}
       <div className="mb-6">
-        <label htmlFor="location" className="block text-sm font-medium mb-2">
+        <label htmlFor="location" className="block text-sm font-medium mb-1">
           Your Location
         </label>
         {savedLocation && (

@@ -150,7 +150,7 @@ export default function OptionsInput({
   return (
     <div>
       {label && (
-        <label className="block text-sm font-medium mb-2">
+        <label className="block text-sm font-medium mb-1">
           {label}
         </label>
       )}
