@@ -1,7 +1,7 @@
-"""Vote structure validation for all poll types.
+"""Vote structure validation for all poll categories.
 
-Enforces that each vote contains exactly the fields required for its poll type
-and no fields belonging to other poll types. Mirrors the database CHECK constraint
+Enforces that each vote contains exactly the fields required for its category
+and no fields belonging to other categories. Mirrors the database CHECK constraint
 from migration 053.
 
 Rules:
@@ -14,38 +14,38 @@ Rules:
 
 
 class VoteValidationError(Exception):
-    """Raised when a vote's structure doesn't match its poll type."""
+    """Raised when a vote's structure doesn't match its category."""
     pass
 
 
 def validate_vote(
-    poll_type: str,
+    category: str,
     vote_type: str,
     yes_no_choice: str | None = None,
     ranked_choices: list[str] | None = None,
     nominations: list[str] | None = None,
     is_abstain: bool = False,
 ) -> None:
-    """Validate vote structure for a given poll type.
+    """Validate vote structure for a given category.
 
     Raises VoteValidationError if the vote is invalid.
     """
-    # vote_type must match poll_type
-    if vote_type != poll_type:
+    # vote_type must match category
+    if vote_type != category:
         # participation polls accept both 'participation' and 'yes_no' vote types
-        if not (poll_type == "participation" and vote_type in ("yes_no", "participation")):
+        if not (category == "participation" and vote_type in ("yes_no", "participation")):
             raise VoteValidationError(
-                f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
+                f"Vote type '{vote_type}' does not match category '{category}'"
             )
 
-    if poll_type == "yes_no" or poll_type == "participation":
+    if category == "yes_no" or category == "participation":
         _validate_yes_no_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
-    elif poll_type == "ranked_choice":
+    elif category == "ranked_choice":
         _validate_ranked_choice_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
-    elif poll_type == "nomination":
+    elif category == "nomination":
         _validate_nomination_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
     else:
-        raise VoteValidationError(f"Unknown poll type: {poll_type}")
+        raise VoteValidationError(f"Unknown category: {category}")
 
 
 def _validate_yes_no_vote(
@@ -54,7 +54,7 @@ def _validate_yes_no_vote(
     nominations: list[str] | None,
     is_abstain: bool,
 ) -> None:
-    # Forbid other poll type fields
+    # Forbid other poll category fields
     if ranked_choices:
         raise VoteValidationError("ranked_choices not allowed for yes/no polls")
     if nominations:

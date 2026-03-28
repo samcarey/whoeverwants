@@ -37,7 +37,7 @@ function CreatePollContent() {
   const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'poll' | 'nomination' | 'participation'>('nomination');
+  const [pollCategory, setPollCategory] = useState<'poll' | 'nomination' | 'participation'>('nomination');
   const [options, setOptions] = useState<string[]>(['']);
   const [minParticipants, setMinParticipants] = useState<number | null>(1);
   const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
@@ -63,7 +63,7 @@ function CreatePollContent() {
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
+  const [hasLoadedPollCategory, setHasLoadedPollCategory] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
@@ -99,14 +99,14 @@ function CreatePollContent() {
     }
   }, []);
 
-  // Save poll type preference separately (persists across submissions)
-  const savePollTypePreference = useCallback((type: 'poll' | 'nomination' | 'participation') => {
+  // Save poll category preference separately (persists across submissions)
+  const savePollCategoryPreference = useCallback((type: 'poll' | 'nomination' | 'participation') => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('pollTypePreference', type);
+      localStorage.setItem('pollCategoryPreference', type);
     }
   }, []);
 
-  // Save form state to localStorage (excluding poll type which is saved separately)
+  // Save form state to localStorage (excluding poll category which is saved separately)
   const saveFormState = useCallback(() => {
     if (typeof window !== 'undefined') {
       const formState = {
@@ -148,21 +148,21 @@ function CreatePollContent() {
     };
   };
 
-  // Load poll type preference from localStorage
-  const loadPollTypePreference = () => {
+  // Load poll category preference from localStorage
+  const loadPollCategoryPreference = () => {
     if (typeof window !== 'undefined') {
-      const savedPollType = localStorage.getItem('pollTypePreference');
-      if (savedPollType && (savedPollType === 'poll' || savedPollType === 'nomination' || savedPollType === 'participation')) {
-        setPollType(savedPollType as 'poll' | 'nomination' | 'participation');
+      const savedPollCategory = localStorage.getItem('pollCategoryPreference');
+      if (savedPollCategory && (savedPollCategory === 'poll' || savedPollCategory === 'nomination' || savedPollCategory === 'participation')) {
+        setPollCategory(savedPollCategory as 'poll' | 'nomination' | 'participation');
       }
       // Delay enabling transitions to avoid animation on initial load
       setTimeout(() => {
-        setHasLoadedPollType(true);
+        setHasLoadedPollCategory(true);
       }, 50);
     }
   };
 
-  // Load form state from localStorage (excluding poll type which is loaded separately)
+  // Load form state from localStorage (excluding poll category which is loaded separately)
   const loadFormState = () => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('pollFormState');
@@ -215,12 +215,12 @@ function CreatePollContent() {
     }
   };
 
-  // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
-    if (pollType === 'nomination') {
+  // Determine poll category based on form selection and options
+  const getPollCategory = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
+    if (pollCategory === 'nomination') {
       return 'nomination';
     }
-    if (pollType === 'participation') {
+    if (pollCategory === 'participation') {
       return 'participation';
     }
     const filledOptions = options.filter(opt => opt.trim() !== '');
@@ -252,11 +252,11 @@ function CreatePollContent() {
       }
     }
 
-    const dbPollType = getPollType();
+    const dbCategory = getPollCategory();
 
     // Options validation only applies to ranked_choice (poll tab) — nomination
     // and participation polls don't use the options array.
-    if (dbPollType !== 'nomination' && dbPollType !== 'participation') {
+    if (dbCategory !== 'nomination' && dbCategory !== 'participation') {
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       // Check for options that exceed character limit (relaxed for autocomplete types)
@@ -321,9 +321,9 @@ function CreatePollContent() {
     if (voteFromNominationParam) setVoteFromNomination(voteFromNominationParam);
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
-  // Load poll type preference first (runs once on mount)
+  // Load poll category preference first (runs once on mount)
   useEffect(() => {
-    loadPollTypePreference();
+    loadPollCategoryPreference();
   }, []); // Empty deps - only run once on mount
 
   // Initialize client-side state
@@ -353,20 +353,20 @@ function CreatePollContent() {
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
 
-  // Save poll type preference and emit poll type changes to update the header
+  // Save poll category preference and emit poll category changes to update the header
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Only save after initial load to avoid overwriting saved preference
-      if (hasLoadedPollType) {
-        savePollTypePreference(pollType);
+      if (hasLoadedPollCategory) {
+        savePollCategoryPreference(pollCategory);
       }
 
       // Emit event to update the header
-      window.dispatchEvent(new CustomEvent('pollTypeChange', {
-        detail: { pollType }
+      window.dispatchEvent(new CustomEvent('pollCategoryChange', {
+        detail: { pollCategory }
       }));
     }
-  }, [pollType, hasLoadedPollType, savePollTypePreference]);
+  }, [pollCategory, hasLoadedPollCategory, savePollCategoryPreference]);
 
   // Load fork data if this is a fork
   useEffect(() => {
@@ -393,15 +393,15 @@ function CreatePollContent() {
           setTitle(forkData.title || "");
           setDetails(forkData.details || "");
 
-          // Set poll type and options based on forked poll
-          if (forkData.poll_type === 'ranked_choice' && forkData.options) {
-            setPollType('poll');
+          // Set poll category and options based on forked poll
+          if (forkData.category === 'ranked_choice' && forkData.options) {
+            setPollCategory('poll');
             setOptions(forkData.options);
-          } else if (forkData.poll_type === 'nomination') {
-            setPollType('nomination');
+          } else if (forkData.category === 'nomination') {
+            setPollCategory('nomination');
             setOptions(['']);
-          } else if (forkData.poll_type === 'participation') {
-            setPollType('participation');
+          } else if (forkData.category === 'participation') {
+            setPollCategory('participation');
             setOptions(['']);
             // Load participant counts
             if (forkData.min_participants !== null && forkData.min_participants !== undefined) {
@@ -416,7 +416,7 @@ function CreatePollContent() {
             }
           } else {
             // yes_no poll
-            setPollType('poll');
+            setPollCategory('poll');
             setOptions(['']);
           }
 
@@ -478,15 +478,15 @@ function CreatePollContent() {
           setTitle(duplicateData.title || "");
           setDetails(duplicateData.details || "");
 
-          // Set poll type based on duplicated poll
-          if (duplicateData.poll_type === 'ranked_choice') {
-            setPollType('poll');
+          // Set poll category based on duplicated poll
+          if (duplicateData.category === 'ranked_choice') {
+            setPollCategory('poll');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.poll_type === 'nomination') {
-            setPollType('nomination');
+          } else if (duplicateData.category === 'nomination') {
+            setPollCategory('nomination');
             setOptions(['']);
-          } else if (duplicateData.poll_type === 'participation') {
-            setPollType('participation');
+          } else if (duplicateData.category === 'participation') {
+            setPollCategory('participation');
             setOptions(['']);
             // Load participant counts
             if (duplicateData.min_participants !== null && duplicateData.min_participants !== undefined) {
@@ -502,7 +502,7 @@ function CreatePollContent() {
             }
           } else {
             // yes_no poll
-            setPollType('poll');
+            setPollCategory('poll');
             setOptions(['']);
           }
           if (duplicateData.response_deadline) {
@@ -564,9 +564,9 @@ function CreatePollContent() {
           const voteData = JSON.parse(savedVoteData);
           debugLog.logObject('Parsed vote data', voteData, 'CreatePoll');
 
-          // Auto-fill form with preference poll type and nominated options
+          // Auto-fill form with preference poll category and nominated options
           setTitle(voteData.title || "");
-          setPollType('poll'); // Set to preference poll
+          setPollCategory('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
           // Don't clean up the vote data yet - keep it until poll is created
@@ -596,7 +596,7 @@ function CreatePollContent() {
     }
   }, [isClient, customDate, customTime]);
 
-  // Save form state whenever form data changes (pollType is saved separately)
+  // Save form state whenever form data changes (pollCategory is saved separately)
   useEffect(() => {
     if (isClient) {
       saveFormState();
@@ -610,11 +610,11 @@ function CreatePollContent() {
         title !== originalPollData.title ||
         JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
         creatorName !== (originalPollData.creator_name || "") ||
-        pollType !== 'poll'; // Nomination polls are always considered changed
+        pollCategory !== 'poll'; // Nomination polls are always considered changed
 
       setHasFormChanged(hasChanged);
     }
-  }, [title, pollType, options, creatorName, originalPollData, forkOf]);
+  }, [title, pollCategory, options, creatorName, originalPollData, forkOf]);
 
   // Handle removal of parent poll association
   const handleRemoveAssociation = useCallback(() => {
@@ -818,8 +818,8 @@ function CreatePollContent() {
         return;
       }
       
-      // Determine poll type and get options
-      const pollType = getPollType();
+      // Determine poll category and get options
+      const pollCategory = getPollCategory();
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       const responseDeadline = calculateDeadline();
@@ -847,10 +847,10 @@ function CreatePollContent() {
       const creatorSecret = generateCreatorSecret();
       
       // Prepare poll data
-      const dbPollType = getPollType();
+      const dbCategory = getPollCategory();
       const pollData: any = {
         title,
-        poll_type: dbPollType,
+        category: dbCategory,
         response_deadline: responseDeadline,
         creator_secret: creatorSecret
       };
@@ -880,7 +880,7 @@ function CreatePollContent() {
       }
 
       // Add content type for nomination and ranked_choice polls
-      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && pollContentType !== 'custom') {
+      if ((dbCategory === 'nomination' || dbCategory === 'ranked_choice') && pollContentType !== 'custom') {
         pollData.poll_content_type = pollContentType;
       }
 
@@ -898,19 +898,19 @@ function CreatePollContent() {
 
       // Add options for ranked choice polls only
       // For nomination polls, initial options become the creator's vote (not poll content)
-      if (dbPollType === 'ranked_choice') {
+      if (dbCategory === 'ranked_choice') {
         pollData.options = filledOptions;
       }
 
       // Add auto-create preferences settings for nomination polls
-      if (dbPollType === 'nomination' && autoCreatePreferences) {
+      if (dbCategory === 'nomination' && autoCreatePreferences) {
         pollData.auto_create_preferences = true;
         pollData.auto_preferences_deadline_minutes =
           baseDeadlineOptions.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
       }
 
       // Add min/max participants for participation polls
-      if (dbPollType === 'participation') {
+      if (dbCategory === 'participation') {
         // Min is always required
         if (minParticipants !== null) {
           pollData.min_participants = minParticipants;
@@ -937,7 +937,7 @@ function CreatePollContent() {
       }
 
       // Add location field for participation polls
-      if (dbPollType === 'participation') {
+      if (dbCategory === 'participation') {
         const addFieldData = (
           fieldName: 'location',
           mode: string,
@@ -1050,17 +1050,17 @@ function CreatePollContent() {
             <div className="relative w-48 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 mb-1">
               <div
                 className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm ${
-                  hasLoadedPollType ? 'transition-all duration-200 ease-in-out' : ''
+                  hasLoadedPollCategory ? 'transition-all duration-200 ease-in-out' : ''
                 } ${
-                  pollType === 'nomination'
+                  pollCategory === 'nomination'
                     ? 'bg-blue-100 dark:bg-blue-700/50'
-                    : pollType === 'poll'
+                    : pollCategory === 'poll'
                     ? 'bg-green-100 dark:bg-green-700/50'
                     : 'bg-purple-100 dark:bg-purple-700/50'
                 }`}
                 style={{
                   width: 'calc(33.333% - 4px)',
-                  left: pollType === 'nomination' ? '2px' : pollType === 'poll' ? 'calc(33.333% + 1px)' : 'calc(66.666% - 0px)'
+                  left: pollCategory === 'nomination' ? '2px' : pollCategory === 'poll' ? 'calc(33.333% + 1px)' : 'calc(66.666% - 0px)'
                 }}
               />
               <div className="relative flex w-full">
@@ -1070,11 +1070,11 @@ function CreatePollContent() {
                     if (titleInputRef.current) {
                       titleInputRef.current.focus();
                     }
-                    setPollType('nomination');
+                    setPollCategory('nomination');
                   }}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'nomination'
+                    pollCategory === 'nomination'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -1087,11 +1087,11 @@ function CreatePollContent() {
                     if (titleInputRef.current) {
                       titleInputRef.current.focus();
                     }
-                    setPollType('poll');
+                    setPollCategory('poll');
                   }}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'poll'
+                    pollCategory === 'poll'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -1104,11 +1104,11 @@ function CreatePollContent() {
                     if (titleInputRef.current) {
                       titleInputRef.current.focus();
                     }
-                    setPollType('participation');
+                    setPollCategory('participation');
                   }}
                   disabled={isLoading}
                   className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'participation'
+                    pollCategory === 'participation'
                       ? 'text-gray-900 dark:text-white'
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -1161,8 +1161,8 @@ function CreatePollContent() {
             />
           </div>
 
-          {/* Content type selector for suggestion and poll types */}
-          {pollType !== 'participation' && (
+          {/* Content type selector for suggestion and poll categorys */}
+          {pollCategory !== 'participation' && (
             <div>
               <label htmlFor="contentType" className="block text-sm font-medium mb-2">
                 Type
@@ -1176,7 +1176,7 @@ function CreatePollContent() {
           )}
 
           {/* Reference location for location polls */}
-          {(pollContentType === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+          {(pollContentType === 'location' || (pollCategory === 'participation' && locationMode !== 'none')) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}
@@ -1193,7 +1193,7 @@ function CreatePollContent() {
           )}
 
           {/* Participant counters for participation polls */}
-          {pollType === 'participation' && (
+          {pollCategory === 'participation' && (
             <ParticipationConditions
               minValue={minParticipants}
               maxValue={maxParticipants}
@@ -1217,7 +1217,7 @@ function CreatePollContent() {
           )}
 
           {/* Location field for participation polls */}
-          {pollType === 'participation' && (
+          {pollCategory === 'participation' && (
             <div className="space-y-3">
               <LocationTimeFieldConfig
                 label="Location"
@@ -1237,13 +1237,13 @@ function CreatePollContent() {
             </div>
           )}
 
-          {/* Options field for poll type (ranked choice / yes-no) */}
-          {pollType !== 'nomination' && pollType !== 'participation' && (
+          {/* Options field for poll category (ranked choice / yes-no) */}
+          {pollCategory !== 'nomination' && pollCategory !== 'participation' && (
             <OptionsInput
               options={options}
               setOptions={setOptions}
               isLoading={isLoading}
-              pollType="poll"
+              pollCategory="poll"
               contentType={pollContentType}
               optionsMetadata={optionsMetadata}
               onMetadataChange={setOptionsMetadata}
@@ -1348,7 +1348,7 @@ function CreatePollContent() {
           </div>
 
           {/* Auto-create preferences poll checkbox - nomination polls only */}
-          {pollType === 'nomination' && (
+          {pollCategory === 'nomination' && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input

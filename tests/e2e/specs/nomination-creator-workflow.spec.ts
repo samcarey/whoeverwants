@@ -22,8 +22,8 @@ test.describe('Nomination Poll Creator Workflow', () => {
     const optionsLabel = page.locator('text="Poll Options"');
     await expect(optionsLabel).toBeVisible();
     
-    // Switch to Nomination poll type
-    await createPollPage.selectPollType('nomination');
+    // Switch to Nomination poll category
+    await createPollPage.selectPollCategory('nomination');
     
     // CRITICAL TEST: Options field should now be HIDDEN for nomination polls
     await expect(optionsLabel).not.toBeVisible();
@@ -98,7 +98,7 @@ test.describe('Nomination Poll Creator Workflow', () => {
     await homePage.navigateToCreatePoll();
     
     await createPollPage.fillTitle('Edit Nominations Test');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Edit Test Creator');
     
@@ -166,7 +166,7 @@ test.describe('Nomination Poll Creator Workflow', () => {
     await homePage.navigateToCreatePoll();
     
     await createPollPage.fillTitle('Abstain Test Poll');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Abstain Test Creator');
     
@@ -259,8 +259,8 @@ test.describe('Nomination Poll Creator Workflow', () => {
     await createPollPage.verifyPageLoaded();
     
     // Start with Poll type
-    const pollTypeButton = page.locator('button:has-text("Poll")').first();
-    await expect(pollTypeButton).toBeVisible();
+    const pollCategoryButton = page.locator('button:has-text("Poll")').first();
+    await expect(pollCategoryButton).toBeVisible();
     
     // Options field should be visible for regular polls
     await expect(page.locator('text="Poll Options"')).toBeVisible();
@@ -269,7 +269,7 @@ test.describe('Nomination Poll Creator Workflow', () => {
     expect(initialCount).toBeGreaterThan(0);
     
     // Switch to Nomination type
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     
     // Options field should be completely hidden
     await expect(page.locator('text="Poll Options"')).not.toBeVisible();
@@ -280,7 +280,7 @@ test.describe('Nomination Poll Creator Workflow', () => {
     await expect(nominationOptionInputs).toHaveCount(0);
     
     // Switch back to Poll type
-    await createPollPage.selectPollType('poll');
+    await createPollPage.selectPollCategory('poll');
     
     // Options field should reappear
     await expect(page.locator('text="Poll Options"')).toBeVisible();

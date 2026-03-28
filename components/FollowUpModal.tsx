@@ -18,7 +18,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
 
   const pollSnapshot = {
     title: poll.title,
-    poll_type: poll.poll_type,
+    category: poll.category,
     options: poll.options,
     response_deadline: poll.response_deadline,
     creator_name: poll.creator_name,

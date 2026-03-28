@@ -35,7 +35,7 @@ class PollBuilder {
     this.creatorSecret = `test-secret-${Date.now()}-${Math.random()}`
     const poll = await apiCreateTestPoll({
       title: `Test Poll ${Date.now()}`,
-      poll_type: 'ranked_choice',
+      category: 'ranked_choice',
       options: this.pollOptions,
       creator_secret: this.creatorSecret,
     })

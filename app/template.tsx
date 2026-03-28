@@ -82,7 +82,7 @@ export default function Template({ children }: AppTemplateProps) {
   const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   const [pollPageTitle, setPollPageTitle] = useState('');
-  const [createPollType, setCreatePollType] = useState<'nomination' | 'poll' | 'participation'>('nomination');
+  const [createPollCategory, setCreatePollCategory] = useState<'nomination' | 'poll' | 'participation'>('nomination');
 
   // Determine page-specific header content based on pathname
   useEffect(() => {
@@ -119,16 +119,16 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Listen for poll type changes from create-poll page
+  // Listen for poll category changes from create-poll page
   useEffect(() => {
-    const handlePollTypeChange = (event: CustomEvent) => {
-      setCreatePollType(event.detail.pollType);
+    const handlePollCategoryChange = (event: CustomEvent) => {
+      setCreatePollCategory(event.detail.pollCategory);
     };
 
-    window.addEventListener('pollTypeChange', handlePollTypeChange as EventListener);
+    window.addEventListener('pollCategoryChange', handlePollCategoryChange as EventListener);
 
     return () => {
-      window.removeEventListener('pollTypeChange', handlePollTypeChange as EventListener);
+      window.removeEventListener('pollCategoryChange', handlePollCategoryChange as EventListener);
     };
   }, []);
 
@@ -494,7 +494,7 @@ export default function Template({ children }: AppTemplateProps) {
                       className="text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
                     >
-                      {createPollType === 'nomination' ? 'Suggestions' : createPollType === 'poll' ? 'Preferences' : 'Participation'}
+                      {createPollCategory === 'nomination' ? 'Suggestions' : createPollCategory === 'poll' ? 'Preferences' : 'Participation'}
                     </span>
                   </h1>
                 </div>

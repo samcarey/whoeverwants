@@ -12,7 +12,7 @@ beforeAll(async () => {
   if (apiUp) {
     const poll = await apiCreateTestPoll({
       title: 'Test Poll for Ballot Validation',
-      poll_type: 'ranked_choice',
+      category: 'ranked_choice',
       options: ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta'],
       creator_secret: 'validation-test-secret-' + Date.now(),
     })

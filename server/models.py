@@ -6,7 +6,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-class PollType(str, Enum):
+class PollCategory(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
     nomination = "nomination"
@@ -24,7 +24,7 @@ class CloseReason(str, Enum):
 
 class CreatePollRequest(BaseModel):
     title: str
-    poll_type: PollType = PollType.yes_no
+    category: PollCategory = PollCategory.yes_no
     options: list[str] | None = None
     response_deadline: str | None = None
     creator_secret: str
@@ -117,7 +117,7 @@ class RelatedPollsResponse(BaseModel):
 class PollResponse(BaseModel):
     id: str
     title: str
-    poll_type: str
+    category: str
     options: list[str] | None = None
     response_deadline: str | None = None
     created_at: str
@@ -197,7 +197,7 @@ class TimeSlotResponse(BaseModel):
 class PollResultsResponse(BaseModel):
     poll_id: str
     title: str
-    poll_type: str
+    category: str
     created_at: str
     response_deadline: str | None = None
     options: list[str] | None = None

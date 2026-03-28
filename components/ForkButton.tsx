@@ -16,7 +16,7 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
     // Store poll data in localStorage for the create-poll form to access
     const forkData = {
       title: poll.title,
-      poll_type: poll.poll_type,
+      category: poll.category,
       options: poll.options,
       response_deadline: poll.response_deadline,
       creator_name: poll.creator_name,

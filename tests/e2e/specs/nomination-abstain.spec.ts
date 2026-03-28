@@ -15,7 +15,7 @@ test.describe('Nomination Poll Abstain Restrictions', () => {
     
     // Create nomination poll with NO initial nominations to test from scratch
     await createPollPage.fillTitle('Abstain Test Poll');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Test User');
     
@@ -99,7 +99,7 @@ test.describe('Nomination Poll Abstain Restrictions', () => {
     await createPollPage.verifyPageLoaded();
     
     await createPollPage.fillTitle('Multiple Nominations Abstain Test');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Multi Test User');
     await createPollPage.submitPoll();
@@ -163,7 +163,7 @@ test.describe('Nomination Poll Abstain Restrictions', () => {
     await homePage.navigateToCreatePoll();
     
     await createPollPage.fillTitle('Abstain Cancel Test');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min'); 
     await createPollPage.fillCreatorName('Cancel Test User');
     await createPollPage.submitPoll();
@@ -227,7 +227,7 @@ test.describe('Nomination Poll Abstain Restrictions', () => {
     await homePage.navigateToCreatePoll();
     
     await createPollPage.fillTitle('Abstain vs Nominations Test');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Interaction Test User');
     await createPollPage.submitPoll();

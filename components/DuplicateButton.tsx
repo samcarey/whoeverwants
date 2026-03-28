@@ -15,7 +15,7 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
     // Create duplicate data for follow-up with prefilled form data
     const duplicateData = {
       title: poll.title,
-      poll_type: poll.poll_type,
+      category: poll.category,
       options: poll.options,
       response_deadline: poll.response_deadline,
       creator_name: poll.creator_name,

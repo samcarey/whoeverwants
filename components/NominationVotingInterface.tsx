@@ -361,7 +361,7 @@ export default function NominationVotingInterface({
             options={newNominations}
             setOptions={setNewNominations}
             isLoading={isSubmitting}
-            pollType="nomination"
+            pollCategory="nomination"
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
             contentType={poll.poll_content_type || 'custom'}
             optionsMetadata={nominationMetadata}

@@ -12,7 +12,7 @@ beforeAll(async () => {
   if (apiUp) {
     const poll = await apiCreateTestPoll({
       title: 'Test Poll for Edge Cases',
-      poll_type: 'ranked_choice',
+      category: 'ranked_choice',
       options: ['Edge A', 'Edge B', 'Edge C', 'Edge D', 'Edge E'],
       creator_secret: 'edge-test-secret-' + Date.now(),
     })

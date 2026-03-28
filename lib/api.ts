@@ -89,7 +89,7 @@ function toPoll(data: any): Poll {
   return {
     id: data.id,
     title: data.title,
-    poll_type: data.poll_type,
+    category: data.category,
     options: data.options ?? undefined,
     response_deadline: data.response_deadline ?? undefined,
     created_at: data.created_at,
@@ -135,7 +135,7 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
   return {
     poll_id: data.poll_id,
     title: data.title,
-    poll_type: data.poll_type,
+    category: data.category,
     created_at: data.created_at,
     response_deadline: data.response_deadline ?? undefined,
     options: data.options ?? undefined,
@@ -169,7 +169,7 @@ export interface ApiRankedChoiceRound {
 
 export async function apiCreatePoll(params: {
   title: string;
-  poll_type?: string;
+  category?: string;
   options?: string[];
   response_deadline?: string;
   creator_secret: string;

@@ -118,7 +118,7 @@ class TestNominationValidation:
             validate_vote("nomination", "yes_no", nominations=["a"])
 
 
-class TestUnknownPollType:
-    def test_unknown_poll_type(self):
-        with pytest.raises(VoteValidationError, match="Unknown poll type"):
+class TestUnknownCategory:
+    def test_unknown_category(self):
+        with pytest.raises(VoteValidationError, match="Unknown category"):
             validate_vote("unknown_type", "unknown_type")

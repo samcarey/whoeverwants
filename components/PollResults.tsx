@@ -15,19 +15,19 @@ interface PollResultsProps {
 }
 
 export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: PollResultsProps) {
-  if (results.poll_type === 'yes_no') {
+  if (results.category === 'yes_no') {
     return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
 
-  if (results.poll_type === 'participation') {
+  if (results.category === 'participation') {
     return <ParticipationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
   }
 
-  if (results.poll_type === 'ranked_choice') {
+  if (results.category === 'ranked_choice') {
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
-  if (results.poll_type === 'nomination') {
+  if (results.category === 'nomination') {
     return <NominationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 

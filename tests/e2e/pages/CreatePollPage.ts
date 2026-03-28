@@ -18,7 +18,7 @@ export class CreatePollPage extends BasePage {
     return this.page.locator('#title');
   }
 
-  get pollTypeToggle() {
+  get pollCategoryToggle() {
     return {
       poll: this.page.locator('button:has-text("Poll")').first(),
       nomination: this.page.locator('button:has-text("Nomination/Suggestions")').first()
@@ -80,15 +80,15 @@ export class CreatePollPage extends BasePage {
     await this.titleInput.fill(title);
   }
 
-  async selectPollType(type: 'poll' | 'nomination') {
+  async selectPollCategory(type: 'poll' | 'nomination') {
     // Only click if we need to change the type
     // Since nomination is the default, only click if switching to poll or if explicitly selecting nomination
     if (type === 'poll') {
-      await this.pollTypeToggle.poll.click();
+      await this.pollCategoryToggle.poll.click();
     } else if (type === 'nomination') {
       // Check if nomination button exists and is not already selected
       // If it doesn't exist or page hasn't loaded, it might already be selected by default
-      const nominationButton = this.pollTypeToggle.nomination;
+      const nominationButton = this.pollCategoryToggle.nomination;
       const exists = await nominationButton.count() > 0;
       if (exists) {
         // Only click if button exists and we can interact with it
@@ -141,9 +141,9 @@ export class CreatePollPage extends BasePage {
     // Fill basic poll information
     await this.fillTitle(data.title);
     
-    // Select poll type (nomination is default, so only click if changing to poll)
+    // Select poll category (nomination is default, so only click if changing to poll)
     if (data.type === 'poll') {
-      await this.selectPollType(data.type);
+      await this.selectPollCategory(data.type);
     }
 
     // Fill options if provided

@@ -39,7 +39,7 @@ def sample_poll(client, creator_secret):
         "/api/polls",
         json={
             "title": "Test Poll",
-            "poll_type": "yes_no",
+            "category": "yes_no",
             "creator_secret": creator_secret,
         },
     )
@@ -67,14 +67,14 @@ class TestCreatePoll:
             "/api/polls",
             json={
                 "title": "Lunch?",
-                "poll_type": "yes_no",
+                "category": "yes_no",
                 "creator_secret": creator_secret,
             },
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Lunch?"
-        assert data["poll_type"] == "yes_no"
+        assert data["category"] == "yes_no"
         assert data["is_closed"] is False
         assert data["short_id"] is not None
         assert data["id"] is not None
@@ -84,7 +84,7 @@ class TestCreatePoll:
             "/api/polls",
             json={
                 "title": "Favorite color?",
-                "poll_type": "ranked_choice",
+                "category": "ranked_choice",
                 "options": ["Red", "Blue", "Green"],
                 "creator_secret": creator_secret,
             },
@@ -92,14 +92,14 @@ class TestCreatePoll:
         assert resp.status_code == 201
         data = resp.json()
         assert data["options"] == ["Red", "Blue", "Green"]
-        assert data["poll_type"] == "ranked_choice"
+        assert data["category"] == "ranked_choice"
 
     def test_create_poll_with_deadline(self, client, creator_secret):
         resp = client.post(
             "/api/polls",
             json={
                 "title": "RSVP",
-                "poll_type": "yes_no",
+                "category": "yes_no",
                 "response_deadline": "2026-12-31T23:59:59+00:00",
                 "creator_secret": creator_secret,
             },
@@ -112,7 +112,7 @@ class TestCreatePoll:
             "/api/polls",
             json={
                 "title": "Game night",
-                "poll_type": "participation",
+                "category": "participation",
                 "min_participants": 4,
                 "max_participants": 8,
                 "creator_secret": creator_secret,

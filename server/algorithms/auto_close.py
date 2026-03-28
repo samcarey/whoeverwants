@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def should_auto_close(
-    poll_type: str,
+    category: str,
     is_closed: bool,
     max_participants: int | None,
     yes_vote_count: int,
@@ -17,7 +17,7 @@ def should_auto_close(
     """Check whether a participation poll should be auto-closed.
 
     Args:
-        poll_type: The poll's type (only "participation" triggers auto-close).
+        category: The poll's category (only "participation" triggers auto-close).
         is_closed: Whether the poll is already closed.
         max_participants: The poll's max_participants setting (None = no limit).
         yes_vote_count: Current number of "yes" votes on the poll.
@@ -25,7 +25,7 @@ def should_auto_close(
     Returns:
         True if the poll should be closed due to reaching max capacity.
     """
-    if poll_type != "participation":
+    if category != "participation":
         return False
     if is_closed:
         return False

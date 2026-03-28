@@ -54,7 +54,7 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
 
       const poll = await apiCreatePoll({
         title: pollTitle,
-        poll_type: "ranked_choice",
+        category: "ranked_choice",
         options: nominations,
         response_deadline: deadline.toISOString(),
         creator_secret: creatorSecret,

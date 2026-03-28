@@ -12,7 +12,7 @@ beforeAll(async () => {
   if (apiUp) {
     const poll = await apiCreateTestPoll({
       title: 'Test Poll for Data Integrity',
-      poll_type: 'ranked_choice',
+      category: 'ranked_choice',
       options: ['Secure Option A', 'Secure Option B', 'Secure Option C', 'Secure Option D'],
       creator_secret: 'integrity-test-secret-' + Date.now(),
     })

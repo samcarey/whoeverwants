@@ -127,7 +127,7 @@ test.describe('Nomination Poll Cross-Browser Identity', () => {
     await homePage.navigateToCreatePoll();
     
     await createPollPage.fillTitle('Multi-Browser Vote Identity Test');
-    await createPollPage.selectPollType('nomination');
+    await createPollPage.selectPollCategory('nomination');
     await createPollPage.selectDeadline('10min');
     await createPollPage.fillCreatorName('Poll Creator');
     await createPollPage.submitPoll();

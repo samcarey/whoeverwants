@@ -17,7 +17,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
+  category: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -92,7 +92,7 @@ export interface NominationCount {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
+  category: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
   created_at: string;
   response_deadline?: string;
   options?: string[];

@@ -15,7 +15,7 @@ describe('PollPageClient Vote Display Logic', () => {
       // This simulates the exact logic in PollPageClient.tsx
       const poll = { 
         id: 'test-poll',
-        poll_type: 'yes_no'
+        category: 'yes_no'
       }
       
       // Simulate what's returned from database
@@ -29,7 +29,7 @@ describe('PollPageClient Vote Display Logic', () => {
       let yesNoChoice = null
       
       // The bug might be here - checking the wrong field?
-      if (poll.poll_type === 'yes_no' && voteDataFromDB.yes_no_choice) {
+      if (poll.category === 'yes_no' && voteDataFromDB.yes_no_choice) {
         yesNoChoice = voteDataFromDB.yes_no_choice
       }
       
