@@ -97,7 +97,7 @@ async def _nominatim_search(
             try:
                 domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
                 if domain:
-                    image_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=32"
+                    image_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
             except Exception:
                 pass
 
