@@ -92,6 +92,13 @@ function CreatePollContent() {
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
 
+  // Acronymize multi-word options: "Call of Duty" → "CoD", "Halo" stays "Halo"
+  const acronymize = (text: string) => {
+    const words = text.split(/\s+/);
+    if (words.length <= 1) return text;
+    return words.map(w => w[0].toUpperCase()).join('');
+  };
+
   // Strip parenthesized suffixes and colon suffixes from option text for titles
   const shortenOption = (text: string) => text.split(/[:(]/)[0].trim();
 
@@ -118,20 +125,30 @@ function CreatePollContent() {
       else if (filled.length === 1) base = filled[0];
       else {
         const limit = 40 - (icon ? icon.length + 1 : 0);
-        // Include as many options as fit within the limit
-        const included = [filled[0]];
-        for (let i = 1; i < filled.length; i++) {
-          const isLast = i === filled.length - 1;
-          const candidate = isLast
-            ? `${included.join(', ')} or ${filled[i]}?`
-            : `${[...included, filled[i]].join(', ')} or ...?`;
-          if (candidate.length > limit && included.length >= 2) break;
-          included.push(filled[i]);
-        }
-        if (included.length === filled.length) {
-          base = `${included.slice(0, -1).join(', ')} or ${included[included.length - 1]}?`;
+        const buildTitle = (items: string[]) => {
+          const included = [items[0]];
+          for (let i = 1; i < items.length; i++) {
+            const isLast = i === items.length - 1;
+            const candidate = isLast
+              ? `${included.join(', ')} or ${items[i]}?`
+              : `${[...included, items[i]].join(', ')} or ...?`;
+            if (candidate.length > limit && included.length >= 2) break;
+            included.push(items[i]);
+          }
+          const allFit = included.length === items.length;
+          const text = allFit
+            ? `${included.slice(0, -1).join(', ')} or ${included[included.length - 1]}?`
+            : `${included.join(', ')}, or ...?`;
+          return { text, allFit };
+        };
+        // Try full names first
+        const full = buildTitle(filled);
+        if (full.allFit) {
+          base = full.text;
         } else {
-          base = `${included.join(', ')}, or ...?`;
+          // Retry with acronyms for multi-word options
+          const abbreviated = filled.map(acronymize);
+          base = buildTitle(abbreviated).text;
         }
       }
       return icon ? `${icon} ${base}` : base;
