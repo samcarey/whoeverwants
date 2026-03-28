@@ -125,19 +125,23 @@ function CreatePollContent() {
       else if (filled.length === 1) base = filled[0];
       else {
         const limit = 40 - (icon ? icon.length + 1 : 0);
+        const joinWithOr = (items: string[]) => {
+          if (items.length === 2) return `${items[0]} or ${items[1]}?`;
+          return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
+        };
         const buildTitle = (items: string[]) => {
           const included = [items[0]];
           for (let i = 1; i < items.length; i++) {
             const isLast = i === items.length - 1;
             const candidate = isLast
-              ? `${included.join(', ')} or ${items[i]}?`
-              : `${[...included, items[i]].join(', ')} or ...?`;
+              ? joinWithOr([...included, items[i]])
+              : `${[...included, items[i]].join(', ')}, or ...?`;
             if (candidate.length > limit && included.length >= 2) break;
             included.push(items[i]);
           }
           const allFit = included.length === items.length;
           const text = allFit
-            ? `${included.slice(0, -1).join(', ')} or ${included[included.length - 1]}?`
+            ? joinWithOr(included)
             : `${included.join(', ')}, or ...?`;
           return { text, allFit };
         };
