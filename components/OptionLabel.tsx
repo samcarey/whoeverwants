@@ -67,7 +67,7 @@ function LocationName({ name, infoUrl }: { name: string; infoUrl?: string }) {
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
-        className="font-medium leading-tight underline decoration-blue-400/50 hover:decoration-blue-500"
+        className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 hover:decoration-blue-500"
       >
         {name}
       </a>
@@ -157,7 +157,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="underline decoration-blue-400/50 hover:decoration-blue-500"
+          className="underline decoration-2 decoration-blue-400/50 hover:decoration-blue-500"
         >
           {text}
         </a>
