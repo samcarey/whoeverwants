@@ -601,10 +601,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       >
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center text-gray-900 dark:text-white">
-            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
+            <div className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
               {rankNumber}
             </div>
-            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight overflow-hidden" />
+            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
           </div>
           <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
             <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
@@ -975,12 +975,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   </div>
                   
                   {/* Center content - not grabbable */}
-                  <div className={`flex-1 flex items-center px-12 ${
+                  <div className={`flex-1 flex items-center pl-11 pr-12 ${
                     disabled
                       ? 'text-gray-500 dark:text-gray-400'
                       : 'text-gray-900 dark:text-white'
                   }`}>
-                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="font-medium leading-tight overflow-hidden" />
+                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                   </div>
                   
                   {/* Right drag handle with grabbable region */}
