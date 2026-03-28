@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
-import type { PollContentType, OptionsMetadata } from "@/lib/types";
+import type { OptionsMetadata } from "@/lib/types";
+import TypeFieldInput from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -67,7 +68,7 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
-  const [pollContentType, setPollContentType] = useState<PollContentType>('custom');
+  const [pollContentType, setPollContentType] = useState<string>('custom');
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
@@ -1166,18 +1167,11 @@ function CreatePollContent() {
               <label htmlFor="contentType" className="block text-sm font-medium mb-2">
                 Type
               </label>
-              <select
-                id="contentType"
+              <TypeFieldInput
                 value={pollContentType}
-                onChange={(e) => setPollContentType(e.target.value as PollContentType)}
+                onChange={setPollContentType}
                 disabled={isLoading}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="custom">Custom</option>
-                <option value="location">Location</option>
-                <option value="movie">Movie</option>
-                <option value="video_game">Video Game</option>
-              </select>
+              />
             </div>
           )}
 

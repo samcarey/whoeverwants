@@ -1,7 +1,7 @@
 // Core type definitions for WhoeverWants
 // Extracted from lib/supabase.ts during Phase 3 cleanup
 
-export type PollContentType = 'custom' | 'location' | 'movie' | 'video_game';
+export type PollContentType = string;
 
 export type OptionMetadataEntry = {
   imageUrl?: string;
