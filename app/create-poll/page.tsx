@@ -132,7 +132,7 @@ function CreatePollContent() {
   useEffect(() => {
     if (isAutoTitle) {
       const generated = generateTitle();
-      setTitle(generated.slice(0, 50));
+      setTitle(generated.slice(0, 100));
     }
   }, [isAutoTitle, generateTitle]);
 
@@ -287,8 +287,8 @@ function CreatePollContent() {
       return "Please enter a title.";
     }
     
-    if (title.length > 50) {
-      return "Title must be 50 characters or less.";
+    if (title.length > 100) {
+      return "Title must be 100 characters or less.";
     }
 
     // Check custom deadline if selected
@@ -1399,7 +1399,7 @@ function CreatePollContent() {
                   setIsAutoTitle(false);
                 }}
                 disabled={isLoading}
-                maxLength={50}
+                maxLength={100}
                 className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="Enter your title..."
                 required
@@ -1453,7 +1453,7 @@ function CreatePollContent() {
               value={creatorName}
               onChange={(e) => setCreatorName(e.target.value)}
               disabled={isLoading}
-              maxLength={50}
+              maxLength={100}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder="Enter your name..."
             />
