@@ -409,7 +409,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                     : 'bg-white dark:bg-gray-700'
                 }`}>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-4 min-w-0 flex-1">
+                    <div className="flex items-center space-x-2 min-w-0 flex-1">
                       {/* Position number */}
                       <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
                         isUserPreference 
