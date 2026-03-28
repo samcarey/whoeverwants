@@ -8,7 +8,6 @@ export interface BuiltInType {
   icon: string;
 }
 
-// Only types with actual search/autocomplete backends
 const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "location", label: "Location", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
@@ -19,10 +18,6 @@ export function getBuiltInType(value: string): BuiltInType | undefined {
   return BUILT_IN_TYPES.find((t) => t.value === value);
 }
 
-export function isBuiltInType(value: string): boolean {
-  return BUILT_IN_TYPES.some((t) => t.value === value);
-}
-
 interface TypeFieldInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -31,43 +26,38 @@ interface TypeFieldInputProps {
 
 export default function TypeFieldInput({ value, onChange, disabled = false }: TypeFieldInputProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [editText, setEditText] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const builtIn = getBuiltInType(value);
-  // What shows in the input: built-in label, custom text, or empty
-  const inputText = builtIn ? builtIn.label : (value === "custom" ? "" : value);
+  // When editing, show local edit text; otherwise show the committed value
+  const inputText = editText !== null ? editText : (builtIn ? builtIn.label : (value === "custom" ? "" : value));
 
-  // Filter types based on current input text
-  const filteredTypes = inputText
+  const filterText = editText !== null ? editText : "";
+  const filteredTypes = filterText
     ? BUILT_IN_TYPES.filter((t) =>
-        t.label.toLowerCase().includes(inputText.toLowerCase())
+        t.label.toLowerCase().includes(filterText.toLowerCase())
       )
     : BUILT_IN_TYPES;
 
-  // Close dropdown on outside click or focus loss
+  function closeDropdown() {
+    setIsOpen(false);
+    setHighlightedIndex(-1);
+  }
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setHighlightedIndex(-1);
+        closeDropdown();
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleBlur(e: React.FocusEvent) {
-    // If focus moves outside the container, close dropdown
-    if (containerRef.current && !containerRef.current.contains(e.relatedTarget as Node)) {
-      setIsOpen(false);
-      setHighlightedIndex(-1);
-    }
-  }
-
-  // Scroll highlighted item into view
   useEffect(() => {
     if (highlightedIndex >= 0 && listRef.current) {
       const items = listRef.current.children;
@@ -80,32 +70,43 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
   function handleFocus() {
     setIsOpen(true);
     setHighlightedIndex(-1);
-    // If it's a built-in type, clear so user can type fresh or see all options
-    if (builtIn) {
-      onChange("custom");
+    setEditText("");
+  }
+
+  function commitAndClose() {
+    if (editText !== null) {
+      const trimmed = editText.trim();
+      const match = BUILT_IN_TYPES.find(
+        (t) => t.label.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (match) {
+        onChange(match.value);
+      } else if (trimmed) {
+        onChange(trimmed);
+      } else {
+        onChange("custom");
+      }
+      setEditText(null);
+    }
+    closeDropdown();
+  }
+
+  function handleBlur(e: React.FocusEvent) {
+    if (containerRef.current && !containerRef.current.contains(e.relatedTarget as Node)) {
+      commitAndClose();
     }
   }
 
   function handleInputChange(text: string) {
-    // Check if it exactly matches a built-in type label
-    const match = BUILT_IN_TYPES.find(
-      (t) => t.label.toLowerCase() === text.toLowerCase()
-    );
-    if (match) {
-      onChange(match.value);
-    } else if (text.trim() === "") {
-      onChange("custom");
-    } else {
-      onChange(text);
-    }
+    setEditText(text);
     setHighlightedIndex(-1);
     if (!isOpen) setIsOpen(true);
   }
 
   function selectType(type: BuiltInType) {
     onChange(type.value);
-    setIsOpen(false);
-    setHighlightedIndex(-1);
+    setEditText(null);
+    closeDropdown();
     inputRef.current?.blur();
   }
 
@@ -131,23 +132,21 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
       if (highlightedIndex >= 0 && highlightedIndex < filteredTypes.length) {
         selectType(filteredTypes[highlightedIndex]);
       } else {
-        // Just close — value is already committed live
-        setIsOpen(false);
+        commitAndClose();
         inputRef.current?.blur();
       }
     } else if (e.key === "Escape") {
-      setIsOpen(false);
-      setHighlightedIndex(-1);
+      setEditText(null);
+      closeDropdown();
       inputRef.current?.blur();
     }
   }
 
-  const isCustomValue = value && value !== "custom" && !builtIn;
+  const isCustomValue = value !== "" && value !== "custom" && !builtIn;
 
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
-        {/* Icon prefix for built-in types */}
         {builtIn && !isOpen && (
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base pointer-events-none">
             {builtIn.icon}
@@ -169,13 +168,11 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
             !isOpen && isCustomValue ? "pr-24" : !isOpen && value !== "custom" ? "pr-8" : ""
           }`}
         />
-        {/* Custom badge — left of the clear button */}
         {isCustomValue && !isOpen && (
           <span className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">
             Custom
           </span>
         )}
-        {/* Clear button — rightmost */}
         {value !== "custom" && !isOpen && (
           <button
             type="button"
@@ -191,7 +188,6 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
         )}
       </div>
 
-      {/* Dropdown list */}
       {isOpen && filteredTypes.length > 0 && (
         <div
           ref={listRef}
@@ -202,7 +198,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
               key={type.value}
               type="button"
               onMouseDown={(e) => {
-                e.preventDefault(); // Prevent blur before click registers
+                e.preventDefault();
                 selectType(type);
               }}
               onMouseEnter={() => setHighlightedIndex(index)}
