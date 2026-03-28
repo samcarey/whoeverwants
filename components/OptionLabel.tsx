@@ -17,7 +17,7 @@ function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
 }
 
 /** Detect if metadata represents a location (has OSM infoUrl or name). */
-function isLocationEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
+export function isLocationEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
   if (!metadata) return false;
   if (metadata.name) return true;
   return !!metadata.infoUrl?.includes("openstreetmap.org");

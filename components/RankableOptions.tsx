@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
-import OptionLabel from './OptionLabel';
+import OptionLabel, { isLocationEntry } from './OptionLabel';
 
 interface RankableOption {
   id: string;
@@ -99,8 +99,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     noPreference: 0
   });
 
-  // Configuration
-  const itemHeight = 56;
+  // Configuration — taller items for location entries (two-line layout)
+  const hasLocationOptions = optionsMetadata && Object.values(optionsMetadata).some(m => isLocationEntry(m));
+  const itemHeight = hasLocationOptions ? 72 : 56;
   const gapSize = 8;
   const totalItemHeight = itemHeight + gapSize;
 
