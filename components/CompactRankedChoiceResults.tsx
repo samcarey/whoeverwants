@@ -417,8 +417,12 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       </div>
                       
                       {/* Candidate name */}
-                      <div>
-                        <div className={`leading-tight line-clamp-2 ${
+                      <div className="min-w-0 overflow-hidden">
+                        <div className={`leading-tight ${
+                          optionsMetadata?.[candidate.name]?.name || optionsMetadata?.[candidate.name]?.infoUrl?.includes('openstreetmap.org')
+                            ? 'overflow-hidden'
+                            : 'line-clamp-2'
+                        } ${
                           isTiedCandidate
                             ? 'text-green-900 dark:text-green-100 font-bold'
                             : candidate.isEliminated && !isTiedCandidate

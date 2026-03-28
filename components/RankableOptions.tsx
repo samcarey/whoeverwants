@@ -604,7 +604,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-3">
               {rankNumber}
             </div>
-            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight line-clamp-2" />
+            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="font-medium leading-tight overflow-hidden" />
           </div>
           <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
             <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
@@ -980,7 +980,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       ? 'text-gray-500 dark:text-gray-400'
                       : 'text-gray-900 dark:text-white'
                   }`}>
-                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="font-medium leading-tight line-clamp-2" />
+                    <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="font-medium leading-tight overflow-hidden" />
                   </div>
                   
                   {/* Right drag handle with grabbable region */}
