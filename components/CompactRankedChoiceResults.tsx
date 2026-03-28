@@ -405,8 +405,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                     ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
                     : 'bg-white dark:bg-gray-700'
                 }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center space-x-4 min-w-0 flex-1">
                       {/* Position number */}
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                         isUserPreference 
@@ -445,7 +445,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                     </div>
 
                     {/* Vote count and percentage */}
-                    <div className="text-right">
+                    <div className="text-right flex-shrink-0">
                       <div className={`text-lg font-bold ${
                         isTiedCandidate
                           ? 'text-green-800 dark:text-green-200'
