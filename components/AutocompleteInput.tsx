@@ -235,7 +235,7 @@ export default function AutocompleteInput({
           ))}
           <li className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
             {category === 'restaurant'
-              ? 'Powered by Yelp'
+              ? 'Data \u00A9 OpenStreetMap contributors'
               : category === 'movie'
                 ? 'Data from TMDB. Not endorsed by TMDB.'
                 : category === 'video_game'
