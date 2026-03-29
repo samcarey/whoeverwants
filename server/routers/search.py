@@ -384,7 +384,7 @@ async def search_restaurants(
         "term": q,
         "categories": "restaurants,food",
         "limit": 6,
-        "sort_by": "best_match",
+        "sort_by": "distance",
     }
 
     if has_ref:
