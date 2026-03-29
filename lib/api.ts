@@ -357,7 +357,7 @@ export interface SearchResult {
 
 const SEARCH_BASE = getApiEndpoint('search');
 
-export async function apiSearchLocations(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
+async function searchWithLocation(endpoint: string, query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (refLat !== undefined && refLon !== undefined) {
     params.set('lat', String(refLat));
@@ -366,9 +366,17 @@ export async function apiSearchLocations(query: string, refLat?: number, refLon?
   if (maxDistance !== undefined) {
     params.set('max_distance', String(maxDistance));
   }
-  const res = await fetch(`${SEARCH_BASE}/locations?${params}`);
+  const res = await fetch(`${SEARCH_BASE}/${endpoint}?${params}`);
   if (!res.ok) return [];
   return res.json();
+}
+
+export function apiSearchLocations(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
+  return searchWithLocation('locations', query, refLat, refLon, maxDistance);
+}
+
+export function apiSearchRestaurants(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
+  return searchWithLocation('restaurants', query, refLat, refLon, maxDistance);
 }
 
 export async function apiGeocode(query: string): Promise<{ lat: string; lon: string; label: string } | null> {
@@ -388,20 +396,6 @@ export async function apiSearchMovies(query: string): Promise<SearchResult[]> {
 export async function apiSearchVideoGames(query: string): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
   const res = await fetch(`${SEARCH_BASE}/video-games?${params}`);
-  if (!res.ok) return [];
-  return res.json();
-}
-
-export async function apiSearchRestaurants(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
-  const params = new URLSearchParams({ q: query });
-  if (refLat !== undefined && refLon !== undefined) {
-    params.set('lat', String(refLat));
-    params.set('lon', String(refLon));
-  }
-  if (maxDistance !== undefined) {
-    params.set('max_distance', String(maxDistance));
-  }
-  const res = await fetch(`${SEARCH_BASE}/restaurants?${params}`);
   if (!res.ok) return [];
   return res.json();
 }

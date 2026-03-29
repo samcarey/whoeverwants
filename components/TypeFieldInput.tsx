@@ -19,6 +19,16 @@ export function getBuiltInType(value: string): BuiltInType | undefined {
   return BUILT_IN_TYPES.find((t) => t.value === value);
 }
 
+/** Categories that use location-based search (proximity, reference location, radius). */
+export function isLocationLikeCategory(category: string): boolean {
+  return category === 'location' || category === 'restaurant';
+}
+
+/** Categories that use autocomplete search (any built-in type). */
+export function isAutocompleteCategory(category: string): boolean {
+  return BUILT_IN_TYPES.some((t) => t.value === category);
+}
+
 interface TypeFieldInputProps {
   value: string;
   onChange: (value: string) => void;

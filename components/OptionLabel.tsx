@@ -83,7 +83,7 @@ function LocationName({ name, infoUrl }: { name: string; infoUrl?: string }) {
   return <span className="font-medium leading-tight">{name}</span>;
 }
 
-function StarRating({ rating }: { rating: number }) {
+export function StarRating({ rating }: { rating: number }) {
   return (
     <span className="text-yellow-500 dark:text-yellow-400 whitespace-nowrap">
       {'★'.repeat(Math.floor(rating))}{rating % 1 >= 0.5 ? '½' : ''}

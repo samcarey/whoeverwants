@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
 import type { PollCategory } from "@/lib/types";
-import { formatDistance } from "./OptionLabel";
+import { formatDistance, StarRating } from "./OptionLabel";
 
 interface AutocompleteInputProps {
   value: string;
@@ -184,8 +184,8 @@ export default function AutocompleteInput({
                         {result.name}
                       </span>
                       {result.rating !== undefined && (
-                        <span className="text-xs text-yellow-600 dark:text-yellow-400 whitespace-nowrap flex-shrink-0">
-                          {'★'.repeat(Math.floor(result.rating))}{result.rating % 1 >= 0.5 ? '½' : ''} {result.rating}
+                        <span className="text-xs flex-shrink-0">
+                          <StarRating rating={result.rating} />
                         </span>
                       )}
                       {result.distance_miles !== undefined && (
