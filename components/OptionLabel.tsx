@@ -138,7 +138,52 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     return <span className={className}>{text}</span>;
   }
 
+  // Extract name without parenthesized suffix (e.g. "Inception (2010)" → "Inception")
+  const displayName = text.replace(/\s*\(.*\)\s*$/, '').trim() || text;
+  const yearMatch = text.match(/\((\d{4})\)/);
+  const year = yearMatch ? yearMatch[1] : null;
+
   // Typed option with image and/or link (movies, video games, etc.)
+  if (layout === "stacked") {
+    const nameEl = metadata.infoUrl ? (
+      <a
+        href={metadata.infoUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 hover:decoration-blue-500"
+      >
+        {displayName}
+      </a>
+    ) : (
+      <span className="font-medium leading-tight">{displayName}</span>
+    );
+
+    return (
+      <div className={`min-w-0 overflow-hidden ${className}`}>
+        {metadata.imageUrl && (
+          <div className="flex justify-center">
+            <img
+              src={metadata.imageUrl}
+              alt=""
+              className="w-12 h-16 object-cover rounded"
+              loading="lazy"
+            />
+          </div>
+        )}
+        <div className="line-clamp-2 leading-tight mt-1 text-center">
+          {nameEl}
+        </div>
+        {year && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 text-center">
+            {year}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Default inline layout
   const imageEl = metadata.imageUrl ? (
     <img
       src={metadata.imageUrl}
