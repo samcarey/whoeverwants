@@ -18,9 +18,16 @@ function MapPinIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
+/** Detect if metadata represents a restaurant (has rating or cuisine). */
+export function isRestaurantEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
+  if (!metadata) return false;
+  return metadata.rating !== undefined || !!metadata.cuisine;
+}
+
 /** Detect if metadata represents a location (has OSM infoUrl or name). */
 export function isLocationEntry(metadata: OptionMetadataEntry | null | undefined): boolean {
   if (!metadata) return false;
+  if (isRestaurantEntry(metadata)) return false; // restaurants handled separately
   if (metadata.name) return true;
   return !!metadata.infoUrl?.includes("openstreetmap.org");
 }
@@ -76,7 +83,104 @@ function LocationName({ name, infoUrl }: { name: string; infoUrl?: string }) {
   return <span className="font-medium leading-tight">{name}</span>;
 }
 
+export function StarRating({ rating }: { rating: number }) {
+  return (
+    <span className="text-yellow-500 dark:text-yellow-400 whitespace-nowrap">
+      {'★'.repeat(Math.floor(rating))}{rating % 1 >= 0.5 ? '½' : ''}
+      <span className="text-xs ml-0.5">{rating}</span>
+    </span>
+  );
+}
+
+function RestaurantIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "sm" | "lg" }) {
+  if (imageUrl) {
+    const imgClass = size === "lg" ? "w-10 h-10 rounded object-cover" : "w-7 h-7 rounded object-cover";
+    return <img src={imageUrl} alt="" className={imgClass} loading="lazy" />;
+  }
+  const textClass = size === "lg" ? "text-2xl" : "text-base";
+  return <span className={textClass}>🍽️</span>;
+}
+
 export default function OptionLabel({ text, metadata, className = "", layout = "inline" }: OptionLabelProps) {
+  // Restaurant entry
+  if (isRestaurantEntry(metadata)) {
+    const name = metadata!.name || text.split(", ")[0];
+    const address = getAddressFromLabel(text, name);
+    const distance = metadata!.distance_miles;
+
+    if (layout === "stacked") {
+      return (
+        <div className={`min-w-0 overflow-hidden ${className}`}>
+          <div className="flex justify-center">
+            <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
+              <RestaurantIcon imageUrl={metadata!.imageUrl} size="lg" />
+            </span>
+          </div>
+          <div className="line-clamp-2 leading-tight mt-1 text-center">
+            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+          </div>
+          {metadata!.rating !== undefined && (
+            <div className="text-xs mt-0.5 text-center">
+              <StarRating rating={metadata!.rating} />
+            </div>
+          )}
+          {metadata!.cuisine && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 text-center truncate">
+              {metadata!.cuisine}
+              {metadata!.priceLevel && <span className="ml-1 text-green-600 dark:text-green-400">{metadata!.priceLevel}</span>}
+            </div>
+          )}
+          {distance !== undefined && (
+            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
+              {formatDistance(distance)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Default inline layout
+    return (
+      <div className={`flex items-center gap-2 ${className}`}>
+        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
+          <RestaurantIcon imageUrl={metadata!.imageUrl} />
+        </span>
+        <div className="min-w-0 overflow-hidden">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+            {metadata!.rating !== undefined && (
+              <span className="text-xs">
+                <StarRating rating={metadata!.rating} />
+              </span>
+            )}
+            {distance !== undefined && (
+              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                {formatDistance(distance)}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            {metadata!.cuisine && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {metadata!.cuisine}
+              </span>
+            )}
+            {metadata!.priceLevel && (
+              <span className="text-xs text-green-600 dark:text-green-400 whitespace-nowrap">
+                {metadata!.priceLevel}
+              </span>
+            )}
+            {!metadata!.cuisine && address && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+                {address}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Location entry
   if (isLocationEntry(metadata)) {
     const name = getLocationName(text, metadata!);

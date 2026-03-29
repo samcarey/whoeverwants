@@ -10,6 +10,10 @@ export type OptionMetadataEntry = {
   distance_miles?: number;
   lat?: string;
   lon?: string;
+  rating?: number;
+  reviewCount?: number;
+  cuisine?: string;
+  priceLevel?: string;
 };
 
 export type OptionsMetadata = Record<string, OptionMetadataEntry>;

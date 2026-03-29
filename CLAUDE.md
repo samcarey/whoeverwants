@@ -875,6 +875,24 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Use `bounded=1` with viewbox AND a hard distance cutoff** for proximity searches. Nominatim's viewbox is a bias, not a hard filter — results outside the box can still appear. Always post-filter with `_haversine_miles()` against `max_distance`.
 - **Always set `Accept-Language: en`** in Nominatim requests to avoid foreign-language results.
 - **Reference location is stored per-poll** (`reference_latitude`, `reference_longitude`, `reference_location_label` columns) and per-user in localStorage (`lib/userProfile.ts: UserLocation`). The poll creation page auto-fills from localStorage.
+- **Nominatim rate-limits aggressively (1 req/sec, IP-based).** Never fire parallel Nominatim requests — use a single search covering the area. The restaurant endpoint does one Nominatim call for the whole result set, not one per business. If rate-limited (429), the code silently falls back to Yelp photos.
+- **OSM data completeness varies wildly by region.** NYC has websites for most chain restaurants; suburban/rural areas often have none. The `_restaurant_favicon_cache` compensates: once any location of a chain (e.g., Burger King) has a website in OSM, all locations get that favicon via name-based caching.
+
+### Yelp Fusion API (Restaurant Search)
+
+- **`YELP_API_KEY` in `.env.api` on the droplet.** Free tier: 500 calls/day. If missing, restaurant search falls back to Nominatim with "restaurant" appended to the query.
+- **Yelp search doesn't return business websites** — only the Yelp listing URL. To get favicons, the backend does a single Nominatim search in the area and matches OSM results to Yelp businesses by proximity (<0.5 mi). If no OSM match, falls back to Yelp's business photo (resized to 60x60 via `/ms.jpg` suffix).
+- **Favicon cache is name-based and in-memory** (`_restaurant_favicon_cache` in `search.py`). Bounded to 500 entries with LRU eviction. Persists for the API process lifetime. Populated from OSM `website`, `contact:website`, and `brand:website` extratags.
+- **`sort_by=distance` requires `latitude`/`longitude`** in the Yelp request. Without coordinates, Yelp ignores the sort parameter.
+- **Yelp image URL suffixes control size:** `/o.jpg` = original, `/ms.jpg` = 60x60, `/s.jpg` = 100x100, `/l.jpg` = 600x400. Use `/ms.jpg` for icon-like display.
+
+### Adding New Poll Categories
+
+- **Built-in categories** are defined in `TypeFieldInput.tsx: BUILT_IN_TYPES`. Add new entries there.
+- **`isLocationLikeCategory()`** in `TypeFieldInput.tsx` controls which categories show reference location input and use proximity search. Update it when adding location-aware categories.
+- **`isAutocompleteCategory()`** in `TypeFieldInput.tsx` controls which categories use the autocomplete dropdown (derived from `BUILT_IN_TYPES`).
+- **Search dispatch** is in `AutocompleteInput.tsx: doSearch()` — add a new branch for each category's API endpoint.
+- **Metadata rendering** is in `OptionLabel.tsx` — add detection function (like `isRestaurantEntry()`) and inline/stacked layout branches.
 
 ### API Development Pitfalls
 

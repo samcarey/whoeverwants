@@ -14,8 +14,118 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 RAWG_API_KEY = os.environ.get("RAWG_API_KEY", "")
+YELP_API_KEY = os.environ.get("YELP_API_KEY", "")
 
 _http_client = httpx.AsyncClient(timeout=5.0)
+
+# LRU-style cache: normalized restaurant name -> favicon URL.
+# Bounded to 500 entries; oldest entries evicted when full.
+_FAVICON_CACHE_MAX = 500
+_restaurant_favicon_cache: dict[str, str] = {}
+
+
+def _favicon_url(website: str) -> str | None:
+    """Extract a Google favicon URL from a website URL."""
+    if not website:
+        return None
+    try:
+        domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
+        if domain:
+            return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+    except Exception:
+        pass
+    return None
+
+
+async def _find_osm_websites(
+    name: str, ref_lat: float, ref_lon: float, max_distance: float,
+) -> list[dict]:
+    """Search Nominatim once for a business name in the area.
+
+    Returns a list of OSM results that have a website, with their coordinates
+    and favicon URL. Uses a single API call covering the whole search area
+    (respects Nominatim's 1 req/sec policy).
+    """
+    headers = {
+        "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+        "Accept-Language": "en",
+    }
+    delta = max(max_distance / 69.0, 0.02)  # at least ~1.4 miles
+
+    try:
+        resp = await _http_client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": name,
+                "format": "jsonv2",
+                "limit": 10,
+                "extratags": 1,
+                "viewbox": f"{ref_lon - delta},{ref_lat + delta},{ref_lon + delta},{ref_lat - delta}",
+                "bounded": 1,
+            },
+            headers=headers,
+        )
+        resp.raise_for_status()
+        results = resp.json()
+
+        # If bounded search found nothing, retry unbounded (biased, not restricted)
+        if not results:
+            resp = await _http_client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": name,
+                    "format": "jsonv2",
+                    "limit": 10,
+                    "extratags": 1,
+                    "viewbox": f"{ref_lon - delta},{ref_lat + delta},{ref_lon + delta},{ref_lat - delta}",
+                },
+                headers=headers,
+            )
+            resp.raise_for_status()
+            results = resp.json()
+
+        osm_entries = []
+        for item in results:
+            extratags = item.get("extratags") or {}
+            website = (
+                extratags.get("website")
+                or extratags.get("contact:website")
+                or extratags.get("brand:website")
+            )
+            if not website:
+                continue
+            item_lat = item.get("lat")
+            item_lon = item.get("lon")
+            favicon = _favicon_url(website)
+            if item_lat and item_lon and favicon:
+                osm_entries.append({
+                    "lat": float(item_lat),
+                    "lon": float(item_lon),
+                    "favicon": favicon,
+                })
+                item_name = (item.get("name") or "").strip().lower()
+                if item_name:
+                    if len(_restaurant_favicon_cache) >= _FAVICON_CACHE_MAX:
+                        # Evict oldest entry (first key in insertion order)
+                        _restaurant_favicon_cache.pop(next(iter(_restaurant_favicon_cache)))
+                    _restaurant_favicon_cache[item_name] = favicon
+        return osm_entries
+    except Exception:
+        return []
+
+
+def _match_osm_favicon(
+    biz_lat: float, biz_lon: float, osm_entries: list[dict],
+) -> str | None:
+    """Find the closest OSM entry with a favicon within 0.5 miles of a business."""
+    best_favicon = None
+    best_dist = 0.5  # max match distance in miles
+    for entry in osm_entries:
+        dist = _haversine_miles(biz_lat, biz_lon, entry["lat"], entry["lon"])
+        if dist < best_dist:
+            best_dist = dist
+            best_favicon = entry["favicon"]
+    return best_favicon
 
 
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -92,14 +202,7 @@ async def _nominatim_search(
         # Extract website from extratags for favicon
         extratags = item.get("extratags") or {}
         website = extratags.get("website") or extratags.get("contact:website") or ""
-        image_url = None
-        if website:
-            try:
-                domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
-                if domain:
-                    image_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
-            except Exception:
-                pass
+        image_url = _favicon_url(website)
 
         entry: dict = {
             "label": item.get("display_name", ""),
@@ -265,4 +368,129 @@ async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
             "imageUrl": _rawg_crop_image(game.get("background_image")),
             "infoUrl": f"https://rawg.io/games/{slug}" if slug else None,
         })
+    return results
+
+
+@router.get("/restaurants")
+async def search_restaurants(
+    q: str = Query(..., min_length=2, max_length=100),
+    lat: float | None = Query(None, description="Reference latitude for proximity"),
+    lon: float | None = Query(None, description="Reference longitude for proximity"),
+    max_distance: float = Query(25, description="Maximum distance in miles (0 = no limit)"),
+):
+    """Search for restaurants using the Yelp Fusion API.
+
+    Returns up to 6 results with name, cuisine categories, rating, distance,
+    and image. Requires YELP_API_KEY environment variable.
+    Falls back to Nominatim location search filtered to food-related results
+    if no Yelp key is configured.
+    """
+    if not YELP_API_KEY:
+        # Fallback: use Nominatim with food keywords appended
+        results = await _nominatim_search(f"{q} restaurant", lat, lon, max_distance)
+        return results[:6]
+
+    has_ref = lat is not None and lon is not None
+
+    params: dict = {
+        "term": q,
+        "categories": "restaurants,food",
+        "limit": 6,
+        "sort_by": "distance",
+    }
+
+    if has_ref:
+        params["latitude"] = lat
+        params["longitude"] = lon
+        if max_distance > 0:
+            # Yelp uses meters for radius (max 40000)
+            radius_meters = min(int(max_distance * 1609.34), 40000)
+            params["radius"] = radius_meters
+
+    try:
+        resp = await _http_client.get(
+            "https://api.yelp.com/v3/businesses/search",
+            params=params,
+            headers={"Authorization": f"Bearer {YELP_API_KEY}"},
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        logger.warning("Yelp API error for query %r, falling back to Nominatim", q)
+        results = await _nominatim_search(f"{q} restaurant", lat, lon, max_distance)
+        return results[:6]
+
+    data = resp.json()
+
+    businesses = data.get("businesses", [])[:6]
+
+    # Pre-filter and extract coordinates
+    filtered = []
+    for biz in businesses:
+        biz_lat = biz.get("coordinates", {}).get("latitude")
+        biz_lon = biz.get("coordinates", {}).get("longitude")
+
+        distance = None
+        if has_ref and biz_lat and biz_lon:
+            distance = round(_haversine_miles(lat, lon, biz_lat, biz_lon), 1)
+            if max_distance > 0 and distance > max_distance:
+                continue
+
+        filtered.append((biz, biz_lat, biz_lon, distance))
+
+    # Skip Nominatim if all business names are already in the favicon cache.
+    osm_entries: list[dict] = []
+    biz_names = {biz.get("name", "").strip().lower() for biz, *_ in filtered}
+    all_cached = biz_names and all(n in _restaurant_favicon_cache for n in biz_names if n)
+    if has_ref and not all_cached:
+        osm_entries = await _find_osm_websites(q, lat, lon, max_distance)
+
+    results = []
+    for biz, biz_lat, biz_lon, distance in filtered:
+        # Build cuisine string from Yelp categories
+        categories = biz.get("categories", [])
+        cuisine = ", ".join(c.get("title", "") for c in categories[:3])
+
+        # Build address label
+        location = biz.get("location", {})
+        address_parts = [
+            location.get("address1", ""),
+            location.get("city", ""),
+            location.get("state", ""),
+        ]
+        address = ", ".join(p for p in address_parts if p)
+
+        name = biz.get("name", "")
+        label = f"{name}, {address}" if address else name
+
+        # Prefer favicon from OSM website, then name cache, then Yelp photo
+        favicon = None
+        if biz_lat and biz_lon and osm_entries:
+            favicon = _match_osm_favicon(biz_lat, biz_lon, osm_entries)
+        if not favicon:
+            favicon = _restaurant_favicon_cache.get(name.strip().lower())
+        yelp_photo = biz.get("image_url") or None
+        if yelp_photo and not favicon:
+            # Yelp image URLs end with /o.jpg (original). Replace with /ms.jpg
+            # for a 60x60 square thumbnail, or /s.jpg for 100x100.
+            yelp_photo = yelp_photo.replace("/o.jpg", "/ms.jpg")
+        image_url = favicon or yelp_photo
+
+        entry: dict = {
+            "label": label,
+            "name": name,
+            "description": cuisine or None,
+            "imageUrl": image_url,
+            "infoUrl": biz.get("url") or None,
+            "lat": str(biz_lat) if biz_lat else None,
+            "lon": str(biz_lon) if biz_lon else None,
+            "rating": biz.get("rating"),
+            "reviewCount": biz.get("review_count"),
+            "cuisine": cuisine or None,
+            "priceLevel": biz.get("price"),
+        }
+        if distance is not None:
+            entry["distance_miles"] = distance
+
+        results.append(entry)
+
     return results

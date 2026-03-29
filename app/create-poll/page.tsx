@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
-import TypeFieldInput, { getBuiltInType } from "@/components/TypeFieldInput";
+import TypeFieldInput, { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -151,7 +151,7 @@ function CreatePollContent() {
     }
 
     if (pollType === 'poll') {
-      const shorten = category === 'location' ? shortenLocation : shortenOption;
+      const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
       return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
@@ -1214,7 +1214,7 @@ function CreatePollContent() {
           )}
 
           {/* Reference location for location polls */}
-          {(category === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+          {(isLocationLikeCategory(category) || (pollType === 'participation' && locationMode !== 'none')) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}

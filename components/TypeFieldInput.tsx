@@ -10,12 +10,23 @@ export interface BuiltInType {
 
 const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "location", label: "Location", icon: "📍" },
+  { value: "restaurant", label: "Restaurant", icon: "🍽️" },
   { value: "movie", label: "Movie", icon: "🎬" },
   { value: "video_game", label: "Video Game", icon: "🎮" },
 ];
 
 export function getBuiltInType(value: string): BuiltInType | undefined {
   return BUILT_IN_TYPES.find((t) => t.value === value);
+}
+
+/** Categories that use location-based search (proximity, reference location, radius). */
+export function isLocationLikeCategory(category: string): boolean {
+  return category === 'location' || category === 'restaurant';
+}
+
+/** Categories that use autocomplete search (any built-in type). */
+export function isAutocompleteCategory(category: string): boolean {
+  return BUILT_IN_TYPES.some((t) => t.value === category);
 }
 
 interface TypeFieldInputProps {
