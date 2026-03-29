@@ -449,11 +449,16 @@ async def search_restaurants(
         name = biz.get("name", "")
         label = f"{name}, {address}" if address else name
 
-        # Prefer favicon from OSM website, fall back to Yelp business photo
+        # Prefer favicon from OSM website, fall back to Yelp business photo (small square)
         favicon = None
         if biz_lat and biz_lon and osm_entries:
             favicon = _match_osm_favicon(biz_lat, biz_lon, osm_entries)
-        image_url = favicon or biz.get("image_url") or None
+        yelp_photo = biz.get("image_url") or None
+        if yelp_photo and not favicon:
+            # Yelp image URLs end with /o.jpg (original). Replace with /ms.jpg
+            # for a 60x60 square thumbnail, or /s.jpg for 100x100.
+            yelp_photo = yelp_photo.replace("/o.jpg", "/ms.jpg")
+        image_url = favicon or yelp_photo
 
         entry: dict = {
             "label": label,
