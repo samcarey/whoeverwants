@@ -209,6 +209,7 @@ function CreatePollContent() {
         customTime,
         creatorName,
         isAutoTitle,
+        category,
         minParticipants,
         maxParticipants,
         maxEnabled,
@@ -220,7 +221,7 @@ function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -269,6 +270,7 @@ function CreatePollContent() {
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
+          if (formState.category) setCategory(formState.category);
 
           // Restore participation poll conditions
           if (formState.minParticipants !== undefined) setMinParticipants(formState.minParticipants);
@@ -697,7 +699,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Track form changes for fork validation
   useEffect(() => {
