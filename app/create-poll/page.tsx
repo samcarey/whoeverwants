@@ -106,6 +106,40 @@ function CreatePollContent() {
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
     const icon = builtIn?.icon || '';
+    const limit = 40 - (icon ? icon.length + 1 : 0);
+    const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
+
+    const joinWithOr = (items: string[]) => {
+      if (items.length === 2) return `${items[0]} or ${items[1]}?`;
+      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
+    };
+    const buildTitle = (items: string[]) => {
+      const included = [items[0]];
+      for (let i = 1; i < items.length; i++) {
+        const isLast = i === items.length - 1;
+        const candidate = isLast
+          ? joinWithOr([...included, items[i]])
+          : `${[...included, items[i]].join(', ')}, or ...?`;
+        if (candidate.length > limit && included.length >= 2) break;
+        included.push(items[i]);
+      }
+      const allFit = included.length === items.length;
+      const text = allFit
+        ? joinWithOr(included)
+        : `${included.join(', ')}, or ...?`;
+      return { text, allFit };
+    };
+    const buildFromOptions = (filled: string[], fallback: string) => {
+      if (filled.length === 0) return fallback;
+      if (filled.length === 1) return filled[0];
+      const full = buildTitle(filled);
+      if (full.allFit) return full.text;
+      const abbrev = buildTitle(filled.map(acronymize));
+      if (abbrev.allFit) return abbrev.text;
+      return `Which ${catLabel}?`;
+    };
+
+    const addIcon = (base: string) => icon ? `${icon} ${base}` : base;
 
     if (pollType === 'nomination') {
       const nominationLabels: Record<string, string> = {
@@ -114,63 +148,24 @@ function CreatePollContent() {
         video_game: 'Video Game',
       };
       const prefix = nominationLabels[category] || (category !== 'custom' ? category : '');
-      const base = prefix ? `${prefix} Suggestions` : 'Suggestions';
-      return icon ? `${icon} ${base}` : base;
+      return addIcon(prefix ? `${prefix} Suggestions` : 'Suggestions');
     }
 
     if (pollType === 'poll') {
       const filled = options.filter(o => o.trim()).map(shortenOption);
-      let base: string;
-      if (filled.length === 0) base = 'Quick Vote';
-      else if (filled.length === 1) base = filled[0];
-      else {
-        const limit = 40 - (icon ? icon.length + 1 : 0);
-        const joinWithOr = (items: string[]) => {
-          if (items.length === 2) return `${items[0]} or ${items[1]}?`;
-          return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
-        };
-        const buildTitle = (items: string[]) => {
-          const included = [items[0]];
-          for (let i = 1; i < items.length; i++) {
-            const isLast = i === items.length - 1;
-            const candidate = isLast
-              ? joinWithOr([...included, items[i]])
-              : `${[...included, items[i]].join(', ')}, or ...?`;
-            if (candidate.length > limit && included.length >= 2) break;
-            included.push(items[i]);
-          }
-          const allFit = included.length === items.length;
-          const text = allFit
-            ? joinWithOr(included)
-            : `${included.join(', ')}, or ...?`;
-          return { text, allFit };
-        };
-        // Try full names first
-        const full = buildTitle(filled);
-        if (full.allFit) {
-          base = full.text;
-        } else {
-          // Retry with acronyms for multi-word options
-          const abbreviated = filled.map(acronymize);
-          const abbrev = buildTitle(abbreviated);
-          if (abbrev.allFit) {
-            base = abbrev.text;
-          } else {
-            // Fall back to "Which {category}?"
-            const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
-            base = `Which ${catLabel}?`;
-          }
-        }
-      }
-      return icon ? `${icon} ${base}` : base;
+      return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
 
     // participation
     if (locationMode === 'set' && locationValue.trim()) {
       return `Who's going to ${shortenOption(locationValue)}?`;
     }
+    if (locationMode === 'preferences') {
+      const filled = locationOptions.filter(o => o.trim()).map(shortenOption);
+      if (filled.length > 0) return addIcon(buildFromOptions(filled, "Who's in?"));
+    }
     return "Who's in?";
-  }, [pollType, category, options, locationMode, locationValue]);
+  }, [pollType, category, options, locationMode, locationValue, locationOptions]);
 
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
