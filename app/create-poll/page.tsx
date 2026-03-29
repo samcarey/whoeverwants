@@ -101,6 +101,8 @@ function CreatePollContent() {
 
   // Strip parenthesized suffixes and colon suffixes from option text for titles
   const shortenOption = (text: string) => text.split(/[:(]/)[0].trim();
+  // For locations, take just the name (first comma segment) then apply shortenOption
+  const shortenLocation = (text: string) => shortenOption(text.split(',')[0].trim());
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -152,16 +154,17 @@ function CreatePollContent() {
     }
 
     if (pollType === 'poll') {
-      const filled = options.filter(o => o.trim()).map(shortenOption);
+      const shorten = category === 'location' ? shortenLocation : shortenOption;
+      const filled = options.filter(o => o.trim()).map(shorten);
       return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
 
     // participation
     if (locationMode === 'set' && locationValue.trim()) {
-      return `Who's going to ${shortenOption(locationValue)}?`;
+      return `Who's going to ${shortenLocation(locationValue)}?`;
     }
     if (locationMode === 'preferences') {
-      const filled = locationOptions.filter(o => o.trim()).map(shortenOption);
+      const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
       if (filled.length > 0) return addIcon(buildFromOptions(filled, "Who's in?"));
     }
     return "Who's in?";
