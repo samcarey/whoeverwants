@@ -1,5 +1,6 @@
 """Search/autocomplete endpoints for poll categories."""
 
+import asyncio
 import logging
 import math
 import os
@@ -17,6 +18,53 @@ RAWG_API_KEY = os.environ.get("RAWG_API_KEY", "")
 YELP_API_KEY = os.environ.get("YELP_API_KEY", "")
 
 _http_client = httpx.AsyncClient(timeout=5.0)
+
+
+def _favicon_url(website: str) -> str | None:
+    """Extract a Google favicon URL from a website URL."""
+    if not website:
+        return None
+    try:
+        domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
+        if domain:
+            return f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
+    except Exception:
+        pass
+    return None
+
+
+async def _find_website_on_osm(name: str, lat: float, lon: float) -> str | None:
+    """Search Nominatim for a business by name near coordinates to find its website.
+
+    Uses a tight bounding box (~0.3 miles) around the known coordinates.
+    Returns the website URL if found, None otherwise.
+    """
+    delta = 0.005  # ~0.3 miles
+    try:
+        resp = await _http_client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={
+                "q": name,
+                "format": "jsonv2",
+                "limit": 3,
+                "extratags": 1,
+                "viewbox": f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}",
+                "bounded": 1,
+            },
+            headers={
+                "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+                "Accept-Language": "en",
+            },
+        )
+        resp.raise_for_status()
+        for item in resp.json():
+            extratags = item.get("extratags") or {}
+            website = extratags.get("website") or extratags.get("contact:website")
+            if website:
+                return website
+    except Exception:
+        pass
+    return None
 
 
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -93,14 +141,7 @@ async def _nominatim_search(
         # Extract website from extratags for favicon
         extratags = item.get("extratags") or {}
         website = extratags.get("website") or extratags.get("contact:website") or ""
-        image_url = None
-        if website:
-            try:
-                domain = urlparse(website).netloc or urlparse(website).path.split("/")[0]
-                if domain:
-                    image_url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
-            except Exception:
-                pass
+        image_url = _favicon_url(website)
 
         entry: dict = {
             "label": item.get("display_name", ""),
@@ -319,8 +360,11 @@ async def search_restaurants(
 
     data = resp.json()
 
-    results = []
-    for biz in data.get("businesses", [])[:6]:
+    businesses = data.get("businesses", [])[:6]
+
+    # Pre-filter and extract coordinates
+    filtered = []
+    for biz in businesses:
         biz_lat = biz.get("coordinates", {}).get("latitude")
         biz_lon = biz.get("coordinates", {}).get("longitude")
 
@@ -330,6 +374,23 @@ async def search_restaurants(
             if max_distance > 0 and distance > max_distance:
                 continue
 
+        filtered.append((biz, biz_lat, biz_lon, distance))
+
+    # Look up websites on OSM in parallel for all results
+    async def _lookup_favicon(name: str, blat: float | None, blon: float | None) -> str | None:
+        if not blat or not blon:
+            return None
+        website = await _find_website_on_osm(name, blat, blon)
+        return _favicon_url(website)
+
+    favicon_tasks = [
+        _lookup_favicon(biz.get("name", ""), blat, blon)
+        for biz, blat, blon, _ in filtered
+    ]
+    favicons = await asyncio.gather(*favicon_tasks)
+
+    results = []
+    for (biz, biz_lat, biz_lon, distance), favicon in zip(filtered, favicons):
         # Build cuisine string from Yelp categories
         categories = biz.get("categories", [])
         cuisine = ", ".join(c.get("title", "") for c in categories[:3])
@@ -346,11 +407,14 @@ async def search_restaurants(
         name = biz.get("name", "")
         label = f"{name}, {address}" if address else name
 
+        # Prefer favicon from OSM website, fall back to Yelp business photo
+        image_url = favicon or biz.get("image_url") or None
+
         entry: dict = {
             "label": label,
             "name": name,
             "description": cuisine or None,
-            "imageUrl": biz.get("image_url") or None,
+            "imageUrl": image_url,
             "infoUrl": biz.get("url") or None,
             "lat": str(biz_lat) if biz_lat else None,
             "lon": str(biz_lon) if biz_lon else None,
