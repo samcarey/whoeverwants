@@ -138,13 +138,11 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     return <span className={className}>{text}</span>;
   }
 
-  // Extract name without parenthesized suffix (e.g. "Inception (2010)" → "Inception")
-  const displayName = text.replace(/\s*\(.*\)\s*$/, '').trim() || text;
-  const yearMatch = text.match(/\((\d{4})\)/);
-  const year = yearMatch ? yearMatch[1] : null;
-
-  // Typed option with image and/or link (movies, video games, etc.)
+  // Stacked layout for movies, video games, etc.
   if (layout === "stacked") {
+    const displayName = text.replace(/\s*\(.*\)\s*$/, '').trim() || text;
+    const yearMatch = text.match(/\((\d{4})\)/);
+    const year = yearMatch ? yearMatch[1] : null;
     const nameEl = metadata.infoUrl ? (
       <a
         href={metadata.infoUrl}

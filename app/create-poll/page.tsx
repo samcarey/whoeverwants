@@ -25,6 +25,18 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
+// Acronymize multi-word options: "Call of Duty" → "CoD", "Halo" stays "Halo"
+function acronymize(text: string) {
+  const words = text.split(/\s+/);
+  if (words.length <= 1) return text;
+  return words.map(w => w[0].toUpperCase()).join('');
+}
+
+// Strip parenthesized suffixes and colon suffixes from option text for titles
+function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
+// For locations, take just the name (first comma segment) then apply shortenOption
+function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
+
 function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -92,18 +104,6 @@ function CreatePollContent() {
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
 
-  // Acronymize multi-word options: "Call of Duty" → "CoD", "Halo" stays "Halo"
-  const acronymize = (text: string) => {
-    const words = text.split(/\s+/);
-    if (words.length <= 1) return text;
-    return words.map(w => w[0].toUpperCase()).join('');
-  };
-
-  // Strip parenthesized suffixes and colon suffixes from option text for titles
-  const shortenOption = (text: string) => text.split(/[:(]/)[0].trim();
-  // For locations, take just the name (first comma segment) then apply shortenOption
-  const shortenLocation = (text: string) => shortenOption(text.split(',')[0].trim());
-
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
@@ -144,12 +144,9 @@ function CreatePollContent() {
     const addIcon = (base: string) => icon ? `${icon} ${base}` : base;
 
     if (pollType === 'nomination') {
-      const nominationLabels: Record<string, string> = {
-        location: 'Place',
-        movie: 'Movie',
-        video_game: 'Video Game',
-      };
-      const prefix = nominationLabels[category] || (category !== 'custom' ? category : '');
+      // Use "Place" instead of "Location" for nomination polls
+      const prefix = category === 'location' ? 'Place'
+        : builtIn?.label || (category !== 'custom' ? category : '');
       return addIcon(prefix ? `${prefix} Suggestions` : 'Suggestions');
     }
 
@@ -699,7 +696,7 @@ function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -1497,7 +1494,7 @@ function CreatePollContent() {
               value={creatorName}
               onChange={(e) => setCreatorName(e.target.value)}
               disabled={isLoading}
-              maxLength={100}
+              maxLength={50}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder="Enter your name..."
             />
