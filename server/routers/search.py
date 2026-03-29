@@ -21,6 +21,12 @@ _http_client = httpx.AsyncClient(timeout=5.0)
 _FAVICON_CACHE_MAX = 500
 _restaurant_favicon_cache: dict[str, str] = {}
 
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_NOMINATIM_HEADERS = {
+    "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+    "Accept-Language": "en",
+}
+
 
 def _favicon_url(website: str) -> str | None:
     """Extract a Google favicon URL from a website URL."""
@@ -46,13 +52,27 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def _nominatim_search(
+def _extract_website(extratags: dict) -> str:
+    """Extract website URL from OSM extratags, checking common tag variants."""
+    return (
+        extratags.get("website")
+        or extratags.get("contact:website")
+        or extratags.get("brand:website")
+        or ""
+    )
+
+
+async def _nominatim_fetch(
     query: str,
     lat: float | None,
     lon: float | None,
     max_distance: float,
+    min_delta: float = 0,
 ) -> list[dict]:
-    """Run a Nominatim search and return processed results with distance."""
+    """Fetch raw Nominatim results with bounded search and unbounded fallback.
+
+    Returns the raw JSON items from Nominatim (not yet processed into results).
+    """
     has_ref = lat is not None and lon is not None
 
     params: dict = {
@@ -65,19 +85,12 @@ async def _nominatim_search(
 
     if has_ref and max_distance > 0:
         delta = max_distance / 69.0
+        if min_delta:
+            delta = max(delta, min_delta)
         params["viewbox"] = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
         params["bounded"] = 1
 
-    headers = {
-        "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
-        "Accept-Language": "en",
-    }
-
-    resp = await _http_client.get(
-        "https://nominatim.openstreetmap.org/search",
-        params=params,
-        headers=headers,
-    )
+    resp = await _http_client.get(_NOMINATIM_URL, params=params, headers=_NOMINATIM_HEADERS)
     resp.raise_for_status()
     data = resp.json()
 
@@ -86,16 +99,23 @@ async def _nominatim_search(
         params.pop("bounded", None)
         params.pop("viewbox", None)
         params["limit"] = 10
-        resp = await _http_client.get(
-            "https://nominatim.openstreetmap.org/search",
-            params=params,
-            headers=headers,
-        )
+        resp = await _http_client.get(_NOMINATIM_URL, params=params, headers=_NOMINATIM_HEADERS)
         resp.raise_for_status()
         data = resp.json()
 
+    return data
+
+
+def _filter_by_distance(
+    items: list[dict],
+    lat: float | None,
+    lon: float | None,
+    max_distance: float,
+) -> list[tuple[dict, float | None]]:
+    """Filter Nominatim items by distance and return (item, distance) pairs."""
+    has_ref = lat is not None and lon is not None
     results = []
-    for item in data:
+    for item in items:
         item_lat = item.get("lat")
         item_lon = item.get("lon")
         distance = None
@@ -105,30 +125,42 @@ async def _nominatim_search(
             )
             if max_distance > 0 and distance > max_distance:
                 continue
+        results.append((item, distance))
+    if has_ref:
+        results.sort(key=lambda r: r[1] if r[1] is not None else float("inf"))
+    return results
 
-        # Extract website from extratags for favicon
+
+async def _nominatim_search(
+    query: str,
+    lat: float | None,
+    lon: float | None,
+    max_distance: float,
+) -> list[dict]:
+    """Run a Nominatim search and return processed results with distance."""
+    data = await _nominatim_fetch(query, lat, lon, max_distance)
+    filtered = _filter_by_distance(data, lat, lon, max_distance)
+
+    results = []
+    for item, distance in filtered:
         extratags = item.get("extratags") or {}
-        website = extratags.get("website") or extratags.get("contact:website") or ""
-        image_url = _favicon_url(website)
+        image_url = _favicon_url(_extract_website(extratags))
 
         entry: dict = {
             "label": item.get("display_name", ""),
             "name": item.get("name") or "",
             "description": item.get("type", "").replace("_", " ").title(),
-            "lat": item_lat,
-            "lon": item_lon,
+            "lat": item.get("lat"),
+            "lon": item.get("lon"),
             "imageUrl": image_url,
             "infoUrl": (
-                f"https://www.openstreetmap.org/?mlat={item_lat}&mlon={item_lon}#map=15/{item_lat}/{item_lon}"
-                if item_lat and item_lon else None
+                f"https://www.openstreetmap.org/?mlat={item.get('lat')}&mlon={item.get('lon')}#map=15/{item.get('lat')}/{item.get('lon')}"
+                if item.get("lat") and item.get("lon") else None
             ),
         }
         if distance is not None:
             entry["distance_miles"] = distance
         results.append(entry)
-
-    if has_ref:
-        results.sort(key=lambda r: r.get("distance_miles", float("inf")))
 
     return results
 
@@ -157,17 +189,14 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     suitable for display (city name or zip code).
     """
     resp = await _http_client.get(
-        "https://nominatim.openstreetmap.org/search",
+        _NOMINATIM_URL,
         params={
             "q": q,
             "format": "jsonv2",
             "limit": 1,
             "addressdetails": 1,
         },
-        headers={
-            "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
-            "Accept-Language": "en",
-        },
+        headers=_NOMINATIM_HEADERS,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -285,14 +314,31 @@ def _format_cuisine(extratags: dict, osm_type: str) -> str | None:
     The type field gives the broad category (restaurant, fast_food, cafe, etc.).
     """
     cuisine_raw = extratags.get("cuisine") or ""
-    # Split semicolons, title-case each, take first 3
-    cuisines = [c.strip().replace("_", " ").title() for c in cuisine_raw.split(";") if c.strip()][:3]
+    cuisines = []
+    for c in cuisine_raw.split(";"):
+        c = c.strip()
+        if c:
+            cuisines.append(c.replace("_", " ").title())
+            if len(cuisines) == 3:
+                break
     if cuisines:
         return ", ".join(cuisines)
-    # Fall back to the OSM type (e.g. "fast_food" -> "Fast Food")
     if osm_type and osm_type not in ("yes", "place"):
         return osm_type.replace("_", " ").title()
     return None
+
+
+def _cache_favicon(name: str, favicon: str | None) -> str | None:
+    """Store or retrieve a favicon from the name-based cache."""
+    key = name.strip().lower()
+    if not key:
+        return favicon
+    if favicon:
+        if len(_restaurant_favicon_cache) >= _FAVICON_CACHE_MAX:
+            _restaurant_favicon_cache.pop(next(iter(_restaurant_favicon_cache)))
+        _restaurant_favicon_cache[key] = favicon
+        return favicon
+    return _restaurant_favicon_cache.get(key)
 
 
 @router.get("/restaurants")
@@ -307,97 +353,29 @@ async def search_restaurants(
     Returns up to 6 results with name, cuisine categories, distance,
     and favicon image. Uses OSM extratags for cuisine data.
     """
-    has_ref = lat is not None and lon is not None
-
-    params: dict = {
-        "q": f"{q} restaurant",
-        "format": "jsonv2",
-        "limit": 20,
-        "addressdetails": 1,
-        "extratags": 1,
-    }
-
-    if has_ref and max_distance > 0:
-        delta = max(max_distance / 69.0, 0.02)
-        params["viewbox"] = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
-        params["bounded"] = 1
-
-    headers = {
-        "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
-        "Accept-Language": "en",
-    }
-
-    resp = await _http_client.get(
-        "https://nominatim.openstreetmap.org/search",
-        params=params,
-        headers=headers,
+    data = await _nominatim_fetch(
+        f"{q} restaurant", lat, lon, max_distance, min_delta=0.02,
     )
-    resp.raise_for_status()
-    data = resp.json()
-
-    # If bounded search returned nothing, retry unbounded
-    if not data and has_ref and max_distance > 0:
-        params.pop("bounded", None)
-        params.pop("viewbox", None)
-        params["limit"] = 10
-        resp = await _http_client.get(
-            "https://nominatim.openstreetmap.org/search",
-            params=params,
-            headers=headers,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+    filtered = _filter_by_distance(data, lat, lon, max_distance)
 
     results = []
-    for item in data:
-        item_lat = item.get("lat")
-        item_lon = item.get("lon")
-        distance = None
-        if has_ref and item_lat and item_lon:
-            distance = round(
-                _haversine_miles(lat, lon, float(item_lat), float(item_lon)), 1
-            )
-            if max_distance > 0 and distance > max_distance:
-                continue
-
+    for item, distance in filtered:
         extratags = item.get("extratags") or {}
-        osm_type = item.get("type", "")
+        cuisine = _format_cuisine(extratags, item.get("type", ""))
 
-        # Extract cuisine from OSM tags
-        cuisine = _format_cuisine(extratags, osm_type)
-
-        # Extract website for favicon
-        website = (
-            extratags.get("website")
-            or extratags.get("contact:website")
-            or extratags.get("brand:website")
-            or ""
-        )
-        image_url = _favicon_url(website)
-
-        # Cache favicon by name for future lookups
-        item_name = (item.get("name") or "").strip().lower()
-        if item_name and image_url:
-            if len(_restaurant_favicon_cache) >= _FAVICON_CACHE_MAX:
-                _restaurant_favicon_cache.pop(next(iter(_restaurant_favicon_cache)))
-            _restaurant_favicon_cache[item_name] = image_url
-        elif item_name and not image_url:
-            # Check name cache for favicon (e.g. chain restaurant seen elsewhere)
-            image_url = _restaurant_favicon_cache.get(item_name)
+        name = item.get("name") or ""
+        image_url = _cache_favicon(name, _favicon_url(_extract_website(extratags)))
 
         # Build address from addressdetails
         addr = item.get("address", {})
-        address_parts = [
-            addr.get("road", ""),
-            addr.get("house_number", ""),
-        ]
-        road = " ".join(p for p in address_parts if p)
+        road = " ".join(p for p in [addr.get("road", ""), addr.get("house_number", "")] if p)
         city = addr.get("city") or addr.get("town") or addr.get("village") or ""
         state = addr.get("state") or ""
         address = ", ".join(p for p in [road, city, state] if p)
 
-        name = item.get("name") or ""
         label = f"{name}, {address}" if name and address else name or item.get("display_name", "")
+        item_lat = item.get("lat")
+        item_lon = item.get("lon")
 
         entry: dict = {
             "label": label,
@@ -416,8 +394,5 @@ async def search_restaurants(
             entry["distance_miles"] = distance
 
         results.append(entry)
-
-    if has_ref:
-        results.sort(key=lambda r: r.get("distance_miles", float("inf")))
 
     return results[:6]
