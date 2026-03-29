@@ -36,31 +36,64 @@ def _favicon_url(website: str) -> str | None:
 async def _find_website_on_osm(name: str, lat: float, lon: float) -> str | None:
     """Search Nominatim for a business by name near coordinates to find its website.
 
-    Uses a tight bounding box (~0.3 miles) around the known coordinates.
+    Tries a bounded search first (~1 mile box), then an unbounded search with
+    distance filtering if the bounded search finds no website.
     Returns the website URL if found, None otherwise.
     """
-    delta = 0.005  # ~0.3 miles
+    headers = {
+        "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
+        "Accept-Language": "en",
+    }
+    delta = 0.015  # ~1 mile
+
     try:
+        # Try bounded search first
         resp = await _http_client.get(
             "https://nominatim.openstreetmap.org/search",
             params={
                 "q": name,
                 "format": "jsonv2",
-                "limit": 3,
+                "limit": 5,
                 "extratags": 1,
                 "viewbox": f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}",
                 "bounded": 1,
             },
-            headers={
-                "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
-                "Accept-Language": "en",
-            },
+            headers=headers,
         )
         resp.raise_for_status()
-        for item in resp.json():
+        results = resp.json()
+
+        # If bounded search found nothing, try unbounded (biased, not restricted)
+        if not results:
+            resp = await _http_client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={
+                    "q": name,
+                    "format": "jsonv2",
+                    "limit": 5,
+                    "extratags": 1,
+                    "viewbox": f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}",
+                },
+                headers=headers,
+            )
+            resp.raise_for_status()
+            results = resp.json()
+
+        for item in results:
             extratags = item.get("extratags") or {}
-            website = extratags.get("website") or extratags.get("contact:website")
+            website = (
+                extratags.get("website")
+                or extratags.get("contact:website")
+                or extratags.get("brand:website")
+            )
             if website:
+                # Verify it's reasonably close (within 2 miles)
+                item_lat = item.get("lat")
+                item_lon = item.get("lon")
+                if item_lat and item_lon:
+                    dist = _haversine_miles(lat, lon, float(item_lat), float(item_lon))
+                    if dist > 2.0:
+                        continue
                 return website
     except Exception:
         pass
