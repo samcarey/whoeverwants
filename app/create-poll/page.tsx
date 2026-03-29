@@ -151,7 +151,7 @@ function CreatePollContent() {
     }
 
     if (pollType === 'poll') {
-      const shorten = category === 'location' ? shortenLocation : shortenOption;
+      const shorten = (category === 'location' || category === 'restaurant') ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
       return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
@@ -1214,7 +1214,7 @@ function CreatePollContent() {
           )}
 
           {/* Reference location for location polls */}
-          {(category === 'location' || (pollType === 'participation' && locationMode !== 'none')) && (
+          {(category === 'location' || category === 'restaurant' || (pollType === 'participation' && locationMode !== 'none')) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}

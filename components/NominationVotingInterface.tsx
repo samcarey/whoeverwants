@@ -343,7 +343,7 @@ export default function NominationVotingInterface({
 
         {/* Add new nominations using shared component */}
         <div className={filteredExistingNominations.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
-          {poll.category === 'location' && poll.reference_latitude && (
+          {(poll.category === 'location' || poll.category === 'restaurant') && poll.reference_latitude && (
             <div className="mb-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span>Search within</span>
               <select

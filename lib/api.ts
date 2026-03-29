@@ -349,6 +349,10 @@ export interface SearchResult {
   lat?: string;
   lon?: string;
   distance_miles?: number;
+  rating?: number;
+  reviewCount?: number;
+  cuisine?: string;
+  priceLevel?: string;
 }
 
 const SEARCH_BASE = getApiEndpoint('search');
@@ -384,6 +388,20 @@ export async function apiSearchMovies(query: string): Promise<SearchResult[]> {
 export async function apiSearchVideoGames(query: string): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query });
   const res = await fetch(`${SEARCH_BASE}/video-games?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function apiSearchRestaurants(query: string, refLat?: number, refLon?: number, maxDistance?: number): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  if (refLat !== undefined && refLon !== undefined) {
+    params.set('lat', String(refLat));
+    params.set('lon', String(refLon));
+  }
+  if (maxDistance !== undefined) {
+    params.set('max_distance', String(maxDistance));
+  }
+  const res = await fetch(`${SEARCH_BASE}/restaurants?${params}`);
   if (!res.ok) return [];
   return res.json();
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, type SearchResult } from "@/lib/api";
+import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
 import type { PollCategory } from "@/lib/types";
 import { formatDistance } from "./OptionLabel";
 
@@ -53,7 +53,9 @@ export default function AutocompleteInput({
     }
     try {
       let results: SearchResult[];
-      if (category === 'location') {
+      if (category === 'restaurant') {
+        results = await apiSearchRestaurants(query, referenceLatitude, referenceLongitude, searchRadius);
+      } else if (category === 'location') {
         results = await apiSearchLocations(query, referenceLatitude, referenceLongitude, searchRadius);
       } else if (category === 'video_game') {
         results = await apiSearchVideoGames(query);
@@ -181,15 +183,33 @@ export default function AutocompleteInput({
                       <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                         {result.name}
                       </span>
+                      {result.rating !== undefined && (
+                        <span className="text-xs text-yellow-600 dark:text-yellow-400 whitespace-nowrap flex-shrink-0">
+                          {'★'.repeat(Math.floor(result.rating))}{result.rating % 1 >= 0.5 ? '½' : ''} {result.rating}
+                        </span>
+                      )}
                       {result.distance_miles !== undefined && (
                         <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap flex-shrink-0">
                           {formatDistance(result.distance_miles)}
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {result.label.startsWith(result.name + ', ') ? result.label.slice(result.name.length + 2) : result.label}
-                    </div>
+                    {result.cuisine ? (
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {result.cuisine}
+                        </span>
+                        {result.priceLevel && (
+                          <span className="text-xs text-green-600 dark:text-green-400 whitespace-nowrap flex-shrink-0">
+                            {result.priceLevel}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {result.label.startsWith(result.name + ', ') ? result.label.slice(result.name.length + 2) : result.label}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -214,11 +234,13 @@ export default function AutocompleteInput({
             </li>
           ))}
           <li className="px-3 py-1.5 text-[10px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700">
-            {category === 'movie'
-              ? 'Data from TMDB. Not endorsed by TMDB.'
-              : category === 'video_game'
-                ? 'Data from RAWG Video Games Database'
-                : 'Data \u00A9 OpenStreetMap contributors'}
+            {category === 'restaurant'
+              ? 'Powered by Yelp'
+              : category === 'movie'
+                ? 'Data from TMDB. Not endorsed by TMDB.'
+                : category === 'video_game'
+                  ? 'Data from RAWG Video Games Database'
+                  : 'Data \u00A9 OpenStreetMap contributors'}
           </li>
         </ul>
       )}

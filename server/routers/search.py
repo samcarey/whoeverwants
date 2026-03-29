@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 RAWG_API_KEY = os.environ.get("RAWG_API_KEY", "")
+YELP_API_KEY = os.environ.get("YELP_API_KEY", "")
 
 _http_client = httpx.AsyncClient(timeout=5.0)
 
@@ -265,4 +266,102 @@ async def search_video_games(q: str = Query(..., min_length=2, max_length=100)):
             "imageUrl": _rawg_crop_image(game.get("background_image")),
             "infoUrl": f"https://rawg.io/games/{slug}" if slug else None,
         })
+    return results
+
+
+@router.get("/restaurants")
+async def search_restaurants(
+    q: str = Query(..., min_length=2, max_length=100),
+    lat: float | None = Query(None, description="Reference latitude for proximity"),
+    lon: float | None = Query(None, description="Reference longitude for proximity"),
+    max_distance: float = Query(25, description="Maximum distance in miles (0 = no limit)"),
+):
+    """Search for restaurants using the Yelp Fusion API.
+
+    Returns up to 6 results with name, cuisine categories, rating, distance,
+    and image. Requires YELP_API_KEY environment variable.
+    Falls back to Nominatim location search filtered to food-related results
+    if no Yelp key is configured.
+    """
+    if not YELP_API_KEY:
+        # Fallback: use Nominatim with food keywords appended
+        results = await _nominatim_search(f"{q} restaurant", lat, lon, max_distance)
+        return results[:6]
+
+    has_ref = lat is not None and lon is not None
+
+    params: dict = {
+        "term": q,
+        "categories": "restaurants,food",
+        "limit": 6,
+        "sort_by": "best_match",
+    }
+
+    if has_ref:
+        params["latitude"] = lat
+        params["longitude"] = lon
+        if max_distance > 0:
+            # Yelp uses meters for radius (max 40000)
+            radius_meters = min(int(max_distance * 1609.34), 40000)
+            params["radius"] = radius_meters
+
+    try:
+        resp = await _http_client.get(
+            "https://api.yelp.com/v3/businesses/search",
+            params=params,
+            headers={"Authorization": f"Bearer {YELP_API_KEY}"},
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError:
+        logger.warning("Yelp API error for query %r, falling back to Nominatim", q)
+        results = await _nominatim_search(f"{q} restaurant", lat, lon, max_distance)
+        return results[:6]
+
+    data = resp.json()
+
+    results = []
+    for biz in data.get("businesses", [])[:6]:
+        biz_lat = biz.get("coordinates", {}).get("latitude")
+        biz_lon = biz.get("coordinates", {}).get("longitude")
+
+        distance = None
+        if has_ref and biz_lat and biz_lon:
+            distance = round(_haversine_miles(lat, lon, biz_lat, biz_lon), 1)
+            if max_distance > 0 and distance > max_distance:
+                continue
+
+        # Build cuisine string from Yelp categories
+        categories = biz.get("categories", [])
+        cuisine = ", ".join(c.get("title", "") for c in categories[:3])
+
+        # Build address label
+        location = biz.get("location", {})
+        address_parts = [
+            location.get("address1", ""),
+            location.get("city", ""),
+            location.get("state", ""),
+        ]
+        address = ", ".join(p for p in address_parts if p)
+
+        name = biz.get("name", "")
+        label = f"{name}, {address}" if address else name
+
+        entry: dict = {
+            "label": label,
+            "name": name,
+            "description": cuisine or None,
+            "imageUrl": biz.get("image_url") or None,
+            "infoUrl": biz.get("url") or None,
+            "lat": str(biz_lat) if biz_lat else None,
+            "lon": str(biz_lon) if biz_lon else None,
+            "rating": biz.get("rating"),
+            "reviewCount": biz.get("review_count"),
+            "cuisine": cuisine or None,
+            "priceLevel": biz.get("price"),
+        }
+        if distance is not None:
+            entry["distance_miles"] = distance
+
+        results.append(entry)
+
     return results
