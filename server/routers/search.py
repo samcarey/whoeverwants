@@ -18,6 +18,10 @@ YELP_API_KEY = os.environ.get("YELP_API_KEY", "")
 
 _http_client = httpx.AsyncClient(timeout=5.0)
 
+# Cache mapping normalized restaurant name -> favicon URL.
+# When one "Burger King" has a website on OSM, all Burger Kings get the same favicon.
+_restaurant_favicon_cache: dict[str, str] = {}
+
 
 def _favicon_url(website: str) -> str | None:
     """Extract a Google favicon URL from a website URL."""
@@ -91,12 +95,19 @@ async def _find_osm_websites(
                 continue
             item_lat = item.get("lat")
             item_lon = item.get("lon")
-            if item_lat and item_lon:
+            favicon = _favicon_url(website)
+            if item_lat and item_lon and favicon:
                 osm_entries.append({
                     "lat": float(item_lat),
                     "lon": float(item_lon),
-                    "favicon": _favicon_url(website),
+                    "favicon": favicon,
                 })
+                # Cache favicon by normalized name so other locations of the
+                # same chain get the same icon even if OSM doesn't have their
+                # individual website (e.g. one Burger King has bk.com, all do).
+                item_name = (item.get("name") or "").strip().lower()
+                if item_name:
+                    _restaurant_favicon_cache[item_name] = favicon
         return osm_entries
     except Exception:
         return []
@@ -449,10 +460,12 @@ async def search_restaurants(
         name = biz.get("name", "")
         label = f"{name}, {address}" if address else name
 
-        # Prefer favicon from OSM website, fall back to Yelp business photo (small square)
+        # Prefer favicon from OSM website, then name cache, then Yelp photo
         favicon = None
         if biz_lat and biz_lon and osm_entries:
             favicon = _match_osm_favicon(biz_lat, biz_lon, osm_entries)
+        if not favicon:
+            favicon = _restaurant_favicon_cache.get(name.strip().lower())
         yelp_photo = biz.get("image_url") or None
         if yelp_photo and not favicon:
             # Yelp image URLs end with /o.jpg (original). Replace with /ms.jpg
