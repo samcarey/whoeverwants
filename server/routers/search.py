@@ -1,6 +1,5 @@
 """Search/autocomplete endpoints for poll categories."""
 
-import asyncio
 import logging
 import math
 import os
@@ -33,29 +32,30 @@ def _favicon_url(website: str) -> str | None:
     return None
 
 
-async def _find_website_on_osm(name: str, lat: float, lon: float) -> str | None:
-    """Search Nominatim for a business by name near coordinates to find its website.
+async def _find_osm_websites(
+    name: str, ref_lat: float, ref_lon: float, max_distance: float,
+) -> list[dict]:
+    """Search Nominatim once for a business name in the area.
 
-    Tries a bounded search first (~1 mile box), then an unbounded search with
-    distance filtering if the bounded search finds no website.
-    Returns the website URL if found, None otherwise.
+    Returns a list of OSM results that have a website, with their coordinates
+    and favicon URL. Uses a single API call covering the whole search area
+    (respects Nominatim's 1 req/sec policy).
     """
     headers = {
         "User-Agent": "WhoeverWants/1.0 (whoeverwants.com)",
         "Accept-Language": "en",
     }
-    delta = 0.015  # ~1 mile
+    delta = max(max_distance / 69.0, 0.02)  # at least ~1.4 miles
 
     try:
-        # Try bounded search first
         resp = await _http_client.get(
             "https://nominatim.openstreetmap.org/search",
             params={
                 "q": name,
                 "format": "jsonv2",
-                "limit": 5,
+                "limit": 20,
                 "extratags": 1,
-                "viewbox": f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}",
+                "viewbox": f"{ref_lon - delta},{ref_lat + delta},{ref_lon + delta},{ref_lat - delta}",
                 "bounded": 1,
             },
             headers=headers,
@@ -63,22 +63,23 @@ async def _find_website_on_osm(name: str, lat: float, lon: float) -> str | None:
         resp.raise_for_status()
         results = resp.json()
 
-        # If bounded search found nothing, try unbounded (biased, not restricted)
+        # If bounded search found nothing, retry unbounded (biased, not restricted)
         if not results:
             resp = await _http_client.get(
                 "https://nominatim.openstreetmap.org/search",
                 params={
                     "q": name,
                     "format": "jsonv2",
-                    "limit": 5,
+                    "limit": 10,
                     "extratags": 1,
-                    "viewbox": f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}",
+                    "viewbox": f"{ref_lon - delta},{ref_lat + delta},{ref_lon + delta},{ref_lat - delta}",
                 },
                 headers=headers,
             )
             resp.raise_for_status()
             results = resp.json()
 
+        osm_entries = []
         for item in results:
             extratags = item.get("extratags") or {}
             website = (
@@ -86,18 +87,33 @@ async def _find_website_on_osm(name: str, lat: float, lon: float) -> str | None:
                 or extratags.get("contact:website")
                 or extratags.get("brand:website")
             )
-            if website:
-                # Verify it's reasonably close (within 2 miles)
-                item_lat = item.get("lat")
-                item_lon = item.get("lon")
-                if item_lat and item_lon:
-                    dist = _haversine_miles(lat, lon, float(item_lat), float(item_lon))
-                    if dist > 2.0:
-                        continue
-                return website
+            if not website:
+                continue
+            item_lat = item.get("lat")
+            item_lon = item.get("lon")
+            if item_lat and item_lon:
+                osm_entries.append({
+                    "lat": float(item_lat),
+                    "lon": float(item_lon),
+                    "favicon": _favicon_url(website),
+                })
+        return osm_entries
     except Exception:
-        pass
-    return None
+        return []
+
+
+def _match_osm_favicon(
+    biz_lat: float, biz_lon: float, osm_entries: list[dict],
+) -> str | None:
+    """Find the closest OSM entry with a favicon within 0.5 miles of a business."""
+    best_favicon = None
+    best_dist = 0.5  # max match distance in miles
+    for entry in osm_entries:
+        dist = _haversine_miles(biz_lat, biz_lon, entry["lat"], entry["lon"])
+        if dist < best_dist:
+            best_dist = dist
+            best_favicon = entry["favicon"]
+    return best_favicon
 
 
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -409,21 +425,14 @@ async def search_restaurants(
 
         filtered.append((biz, biz_lat, biz_lon, distance))
 
-    # Look up websites on OSM in parallel for all results
-    async def _lookup_favicon(name: str, blat: float | None, blon: float | None) -> str | None:
-        if not blat or not blon:
-            return None
-        website = await _find_website_on_osm(name, blat, blon)
-        return _favicon_url(website)
-
-    favicon_tasks = [
-        _lookup_favicon(biz.get("name", ""), blat, blon)
-        for biz, blat, blon, _ in filtered
-    ]
-    favicons = await asyncio.gather(*favicon_tasks)
+    # Single Nominatim search for the query in the area to find websites/favicons.
+    # This avoids per-result lookups that would violate Nominatim's rate limit.
+    osm_entries: list[dict] = []
+    if has_ref:
+        osm_entries = await _find_osm_websites(q, lat, lon, max_distance)
 
     results = []
-    for (biz, biz_lat, biz_lon, distance), favicon in zip(filtered, favicons):
+    for biz, biz_lat, biz_lon, distance in filtered:
         # Build cuisine string from Yelp categories
         categories = biz.get("categories", [])
         cuisine = ", ".join(c.get("title", "") for c in categories[:3])
@@ -441,6 +450,9 @@ async def search_restaurants(
         label = f"{name}, {address}" if address else name
 
         # Prefer favicon from OSM website, fall back to Yelp business photo
+        favicon = None
+        if biz_lat and biz_lon and osm_entries:
+            favicon = _match_osm_favicon(biz_lat, biz_lon, osm_entries)
         image_url = favicon or biz.get("image_url") or None
 
         entry: dict = {
