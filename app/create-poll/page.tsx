@@ -152,10 +152,11 @@ function CreatePollContent() {
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
       if (filled.length === 0) {
-        // Suggestion mode (no options) — generate title like old nomination
+        // Suggestion mode (no options) — use category name as title
         const prefix = category === 'location' ? 'Place'
           : builtIn?.label || (category !== 'custom' ? category : '');
-        return addIcon((prefix || 'Quick Poll') + '?');
+        if (prefix) return addIcon(prefix + '?');
+        return '';
       }
       return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
