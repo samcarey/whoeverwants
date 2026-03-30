@@ -15,20 +15,9 @@ const POLL_TYPE_SYMBOLS: Record<string, string> = {
 
 const CLOSED_YES_NO_SYMBOL = '🏆';
 
-const POLL_TYPE_LABELS: Record<string, string> = {
-  yes_no: 'Poll',
-  nomination: 'Suggestions',
-  ranked_choice: 'Preferences',
-  participation: 'Participation',
-};
-
 function getPollSymbol(pollType: string, isClosed: boolean): string {
   if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
-}
-
-function getPollTypeLabel(pollType: string): string {
-  return POLL_TYPE_LABELS[pollType] || pollType;
 }
 
 function relativeTime(dateStr: string): string {
