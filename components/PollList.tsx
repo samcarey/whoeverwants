@@ -318,13 +318,15 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex justify-end items-center gap-1 mb-0.5">
-                        <span className="text-xs text-gray-400 dark:text-gray-500">{getPollTypeLabel(poll.poll_type)}</span>
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                          {poll.title}
+                        </h3>
+                        <div className="flex-shrink-0 flex items-center gap-1 mt-0.5">
+                          <span className="text-xs text-gray-400 dark:text-gray-500">{getPollTypeLabel(poll.poll_type)}</span>
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
+                        </div>
                       </div>
-                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                        {poll.title}
-                      </h3>
                       {poll.response_deadline && (
                         <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           <ClientOnly fallback={<>Loading...</>}>
@@ -441,13 +443,15 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex justify-end items-center gap-1 mb-0.5">
-                        <span className="text-xs text-gray-400 dark:text-gray-500">{getPollTypeLabel(poll.poll_type)}</span>
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                          {poll.title}
+                        </h3>
+                        <div className="flex-shrink-0 flex items-center gap-1 mt-0.5">
+                          <span className="text-xs text-gray-400 dark:text-gray-500">{getPollTypeLabel(poll.poll_type)}</span>
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                        </div>
                       </div>
-                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                        {poll.title}
-                      </h3>
                       {poll.response_deadline && (
                         <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           Closed {(() => {
