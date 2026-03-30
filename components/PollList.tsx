@@ -363,10 +363,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
           )}
           <div>
               {closedPolls.map((poll, index) => {
-                const isVoted = votedPollIds.has(poll.id);
-                const isAbstained = abstainedPollIds.has(poll.id);
-                const hasVotedOrAbstained = isVoted || isAbstained;
-                
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
