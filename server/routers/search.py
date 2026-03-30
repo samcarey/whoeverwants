@@ -27,6 +27,12 @@ _NOMINATIM_HEADERS = {
     "Accept-Language": "en",
 }
 
+# OSM amenity types considered "food/drink" for restaurant search filtering.
+_FOOD_TYPES = frozenset({
+    "restaurant", "fast_food", "cafe", "bar", "pub", "food_court",
+    "ice_cream", "biergarten", "bakery",
+})
+
 
 def _favicon_url(website: str) -> str | None:
     """Extract a Google favicon URL from a website URL."""
@@ -353,10 +359,11 @@ async def search_restaurants(
     Returns up to 6 results with name, cuisine categories, distance,
     and favicon image. Uses OSM extratags for cuisine data.
     """
-    data = await _nominatim_fetch(
-        f"{q} restaurant", lat, lon, max_distance, min_delta=0.02,
+    data = await _nominatim_fetch(q, lat, lon, max_distance, min_delta=0.02)
+    filtered = _filter_by_distance(
+        (item for item in data if item.get("type", "") in _FOOD_TYPES),
+        lat, lon, max_distance,
     )
-    filtered = _filter_by_distance(data, lat, lon, max_distance)
 
     results = []
     for item, distance in filtered:
