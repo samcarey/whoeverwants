@@ -38,7 +38,7 @@ function AddressActionsModal({
 
   if (!isOpen) return null;
 
-  const query = encodeURIComponent(name + ", " + address);
+  const query = encodeURIComponent(address);
 
   return (
     <ModalPortal>
