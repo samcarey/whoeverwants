@@ -31,6 +31,25 @@ function getPollTypeLabel(pollType: string): string {
   return POLL_TYPE_LABELS[pollType] || pollType;
 }
 
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
+
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -331,6 +350,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
                       </h3>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <ClientOnly fallback={null}>
+                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                        </ClientOnly>
+                      </div>
                     </div>
                   </div>
                 </React.Fragment>
@@ -469,6 +493,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
                       </h3>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                        <ClientOnly fallback={null}>
+                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                        </ClientOnly>
+                      </div>
                     </div>
                   </div>
               );
