@@ -105,7 +105,7 @@ export default function PlaceDetailModal({
             {/* Address — opens native maps app on mobile */}
             {address && hasCoords && (
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`}
+                href={`geo:${lat},${lon}?q=${lat},${lon}(${encodeURIComponent(name)})`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block mt-1.5 text-sm text-blue-600 dark:text-blue-400 underline decoration-1 underline-offset-2"
