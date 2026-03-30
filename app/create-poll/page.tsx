@@ -141,7 +141,7 @@ function CreatePollContent() {
       return `Which ${catLabel}?`;
     };
 
-    const addIcon = (base: string) => icon ? `${icon} ${base}` : base;
+    const addIcon = (base: string) => icon ? `${base} ${icon}` : base;
 
     if (pollType === 'nomination') {
       // Use "Place" instead of "Location" for nomination polls

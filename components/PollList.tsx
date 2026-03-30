@@ -20,6 +20,25 @@ function getPollSymbol(pollType: string, isClosed: boolean): string {
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
 }
 
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
+
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -205,8 +224,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     <div>
       {/* Open Polls Section */}
       {openPolls.length > 0 && (
-        <div className="mb-3">
-          <div className="space-y-1">
+        <div>
+          <div>
             {openPolls.map((poll, index) => {
               const isVoted = votedPollIds.has(poll.id);
               const isAbstained = abstainedPollIds.has(poll.id);
@@ -284,45 +303,48 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
                       Already Voted
                     </div>
                   )}
-                  <div key={poll.id}>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        onClick={() => {
-                          setNavigatingPollId(poll.id);
-                          router.push(`/p/${poll.short_id || poll.id}`);
-                        }}
-                        onTouchStart={handleTouchStart}
-                        onTouchEnd={handleTouchEnd}
-                        onTouchMove={handleTouchMove}
-                        className={`flex-1 ${pressedPollId === poll.id ? '' : hasVotedOrAbstained ? 'bg-gray-100 dark:bg-gray-800/50 opacity-75' : 'bg-white dark:bg-gray-800'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 active:scale-95 active:shadow-sm active:border-blue-400 dark:active:border-blue-500 ${pressedPollId === poll.id ? 'scale-95 !shadow-md !border-blue-500 dark:!border-blue-400 !bg-blue-100 dark:!bg-blue-900/40 opacity-100' : ''} transition-all cursor-pointer select-none relative`}
-                      >
-                        {navigatingPollId === poll.id && (
-                          <div className="absolute inset-0 bg-white/80 dark:bg-gray-800/80 flex items-center justify-center rounded-lg">
-                            <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          </div>
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
+                    <div
+                      onClick={() => {
+                        setNavigatingPollId(poll.id);
+                        router.push(`/p/${poll.short_id || poll.id}`);
+                      }}
+                      onTouchStart={handleTouchStart}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchMove}
+                      className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                    >
+                      {navigatingPollId === poll.id && (
+                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
+                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
+                        {poll.response_deadline && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <ClientOnly fallback={<>Loading...</>}>
+                              <SimpleCountdown deadline={poll.response_deadline} />
+                            </ClientOnly>
+                          </span>
                         )}
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                          {poll.title}
-                        </h3>
                       </div>
-                      <div className="flex-shrink-0 text-base">
-                        {getPollSymbol(poll.poll_type, false)}
-                      </div>
-                    </div>
-                    {poll.response_deadline && (
-                      <div className="text-right mt-1 mr-7 text-xs text-gray-500 dark:text-gray-400">
-                        <ClientOnly fallback={<>Loading...</>}>
-                          <SimpleCountdown deadline={poll.response_deadline} />
+                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                        {poll.title}
+                      </h3>
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
+                        <ClientOnly fallback={null}>
+                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                         </ClientOnly>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </React.Fragment>
               );
@@ -333,13 +355,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
-        <div className="mb-3">
+        <div>
           {openPolls.length > 0 && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
+            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
               Closed
             </div>
           )}
-          <div className="space-y-1">
+          <div>
               {closedPolls.map((poll, index) => {
                 const isVoted = votedPollIds.has(poll.id);
                 const isAbstained = abstainedPollIds.has(poll.id);
@@ -412,61 +434,60 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 };
 
                 return (
-                  <div key={poll.id}>
-                    <div className="flex items-center gap-1.5">
-                      <div
-                        onClick={() => {
-                          setNavigatingPollId(poll.id);
-                          router.push(`/p/${poll.short_id || poll.id}`);
-                        }}
-                        onTouchStart={handleTouchStart}
-                        onTouchEnd={handleTouchEnd}
-                        onTouchMove={handleTouchMove}
-                        className={`flex-1 ${pressedPollId === poll.id ? '' : 'bg-gray-100 dark:bg-gray-800/50'} border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 active:scale-95 active:shadow-sm active:border-blue-400 dark:active:border-blue-500 ${pressedPollId === poll.id ? 'scale-95 !shadow-md !border-blue-500 dark:!border-blue-400 !bg-blue-100 dark:!bg-blue-900/40 opacity-100' : 'opacity-75'} transition-all cursor-pointer select-none relative`}
-                      >
-                        {navigatingPollId === poll.id && (
-                          <div className="absolute inset-0 bg-gray-100/90 dark:bg-gray-800/90 flex items-center justify-center rounded-lg">
-                            <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                          </div>
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
+                    <div
+                      onClick={() => {
+                        setNavigatingPollId(poll.id);
+                        router.push(`/p/${poll.short_id || poll.id}`);
+                      }}
+                      onTouchStart={handleTouchStart}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchMove}
+                      className={`px-1 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                    >
+                      {navigatingPollId === poll.id && (
+                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
+                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                        {poll.response_deadline && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Closed {(() => {
+                              const deadline = new Date(poll.response_deadline);
+                              const now = new Date();
+                              const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+
+                              if (hoursAgo <= 24) {
+                                return deadline.toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true
+                                });
+                              } else {
+                                return deadline.toLocaleDateString("en-US", {
+                                  month: "numeric",
+                                  day: "numeric",
+                                  year: "2-digit"
+                                });
+                              }
+                            })()}
+                          </span>
                         )}
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                          {poll.title}
-                        </h3>
                       </div>
-                      <div className="flex-shrink-0 text-base">
-                        {getPollSymbol(poll.poll_type, true)}
+                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                        {poll.title}
+                      </h3>
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
+                        <ClientOnly fallback={null}>
+                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                        </ClientOnly>
                       </div>
                     </div>
-                    {poll.response_deadline && (
-                      <div className="text-right -mt-1 mr-7">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Closed {(() => {
-                            const deadline = new Date(poll.response_deadline);
-                            const now = new Date();
-                            const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
-
-                            if (hoursAgo <= 24) {
-                              // Within 24 hours, show only time
-                              return deadline.toLocaleTimeString("en-US", {
-                                hour: "numeric",
-                                minute: "2-digit",
-                                hour12: true
-                              });
-                            } else {
-                              // More than 24 hours ago, show only date
-                              return deadline.toLocaleDateString("en-US", {
-                                month: "numeric",
-                                day: "numeric",
-                                year: "2-digit"
-                              });
-                            }
-                          })()}
-                        </span>
-                      </div>
-                    )}
                   </div>
               );
             })}
