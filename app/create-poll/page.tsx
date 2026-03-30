@@ -1308,8 +1308,8 @@ function CreatePollContent() {
 
           {/* Auto-close + Response Deadline */}
           <div>
-            <label className="block text-sm font-medium mb-1">Close after</label>
-            <div className="flex items-center gap-2">
+            <label className="block text-sm font-medium mb-1">Close After</label>
+            <div className="flex items-center gap-2 min-w-0">
               <input
                 type="number"
                 min="1"
@@ -1320,15 +1320,15 @@ function CreatePollContent() {
                 }}
                 disabled={isLoading}
                 placeholder="—"
-                className="w-16 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
+                className="w-16 shrink-0 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
               />
-              <span className="text-sm text-gray-600 dark:text-gray-400">responses or</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400 shrink-0">votes or</span>
               <select
                 id="deadline"
                 value={deadlineOption}
                 onChange={(e) => setDeadlineOption(e.target.value)}
                 disabled={isLoading}
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm truncate"
               >
                 {deadlineOptions.map((option) => (
                   <option key={option.value} value={option.value}>
