@@ -1455,7 +1455,7 @@ function CreatePollContent() {
                 placeholder="Enter your title..."
                 required
               />
-              {!isAutoTitle && (
+              {!isAutoTitle && category !== 'yes_no' && (
                 <button
                   type="button"
                   onClick={() => setIsAutoTitle(true)}
