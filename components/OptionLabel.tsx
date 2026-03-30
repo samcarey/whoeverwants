@@ -161,7 +161,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
           </div>
           <div className="flex items-baseline gap-1.5">
             {metadata!.cuisine && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                 {metadata!.cuisine}
               </span>
             )}
@@ -170,8 +170,8 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
                 {metadata!.priceLevel}
               </span>
             )}
-            {!metadata!.cuisine && address && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+            {address && (
+              <span className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight">
                 {address}
               </span>
             )}
