@@ -107,6 +107,7 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
+  const [showRadiusModal, setShowRadiusModal] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -1238,6 +1239,8 @@ function CreatePollContent() {
               }}
               searchRadius={searchRadius}
               onSearchRadiusChange={setSearchRadius}
+              showRadiusModal={showRadiusModal}
+              onShowRadiusModal={setShowRadiusModal}
               disabled={isLoading}
             />
           )}
@@ -1301,7 +1304,20 @@ function CreatePollContent() {
                 referenceLatitude={refLatitude}
                 referenceLongitude={refLongitude}
                 searchRadius={searchRadius}
-                label={<>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+                label={
+                  <span className="flex items-center justify-between">
+                    <span>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></span>
+                    {refLatitude !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRadiusModal(true)}
+                        className="px-2 py-0.5 text-xs font-normal bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+                      >
+                        within {searchRadius} mi
+                      </button>
+                    )}
+                  </span>
+                }
               />
               {hasNoOptions && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">

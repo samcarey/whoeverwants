@@ -136,7 +136,7 @@ export default function ProfilePage() {
       {/* Location Section */}
       <div className="mb-6">
         <label htmlFor="location" className="block text-sm font-medium mb-1">
-          Your Location
+          Reference Location
         </label>
         {savedLocation && (
           <div className="mb-2 flex items-center gap-2">
@@ -183,7 +183,7 @@ export default function ProfilePage() {
           </button>
         </div>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Used to find nearby places when creating location polls
+          Used as the reference point for calculating distance in location-based polls
         </p>
       </div>
 

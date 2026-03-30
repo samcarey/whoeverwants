@@ -11,6 +11,8 @@ interface ReferenceLocationInputProps {
   onLocationChange: (lat: number | undefined, lng: number | undefined, label: string) => void;
   searchRadius: number;
   onSearchRadiusChange: (radius: number) => void;
+  showRadiusModal?: boolean;
+  onShowRadiusModal?: (show: boolean) => void;
   disabled?: boolean;
 }
 
@@ -21,13 +23,17 @@ export default function ReferenceLocationInput({
   onLocationChange,
   searchRadius,
   onSearchRadiusChange,
+  showRadiusModal: showRadiusModalProp,
+  onShowRadiusModal,
   disabled = false,
 }: ReferenceLocationInputProps) {
   const [input, setInput] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showRadiusModal, setShowRadiusModal] = useState(false);
+  const [showRadiusModalLocal, setShowRadiusModalLocal] = useState(false);
+  const showRadiusModal = showRadiusModalProp ?? showRadiusModalLocal;
+  const setShowRadiusModal = onShowRadiusModal ?? setShowRadiusModalLocal;
   const [radiusInput, setRadiusInput] = useState(String(searchRadius));
   const radiusInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,15 +119,9 @@ export default function ReferenceLocationInput({
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">
-        Your Location
-      </label>
-      {hasLocation && (
-        <div className="mb-2 flex items-center gap-2 text-sm flex-wrap">
-          <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+      {hasLocation ? (
+        <div className="flex items-center gap-2 text-sm flex-wrap">
+          <span className="font-medium">Near:</span>
           <button
             type="button"
             onClick={() => onLocationChange(undefined, undefined, "")}
@@ -129,45 +129,12 @@ export default function ReferenceLocationInput({
           >
             {label}
           </button>
-          <div className="flex-1" />
-          <button
-            type="button"
-            onClick={() => setShowRadiusModal(true)}
-            className="px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
-          >
-            Within {searchRadius} mi
-          </button>
         </div>
-      )}
-      {showRadiusModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowRadiusModal(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-56" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-medium mb-3 text-gray-900 dark:text-white">Search Radius</h3>
-            <div className="flex items-center gap-2">
-              <input
-                ref={radiusInputRef}
-                type="number"
-                min="1"
-                max="10000"
-                value={radiusInput}
-                onChange={(e) => setRadiusInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') applyRadius(); }}
-                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
-              />
-              <span className="text-sm text-gray-500 dark:text-gray-400">mi</span>
-            </div>
-            <button
-              type="button"
-              onClick={applyRadius}
-              className="mt-3 w-full py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-      )}
-      {!hasLocation && (
+      ) : (
         <>
+          <label className="block text-sm font-medium mb-1">
+            Near
+          </label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -207,10 +174,34 @@ export default function ReferenceLocationInput({
               )}
             </button>
           </div>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Search results will be sorted by distance from this location
-          </p>
         </>
+      )}
+      {showRadiusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowRadiusModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-4 w-56" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-medium mb-3 text-gray-900 dark:text-white">Search Radius</h3>
+            <div className="flex items-center gap-2">
+              <input
+                ref={radiusInputRef}
+                type="number"
+                min="1"
+                max="10000"
+                value={radiusInput}
+                onChange={(e) => setRadiusInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') applyRadius(); }}
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+              />
+              <span className="text-sm text-gray-500 dark:text-gray-400">mi</span>
+            </div>
+            <button
+              type="button"
+              onClick={applyRadius}
+              className="mt-3 w-full py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
       )}
       {error && (
         <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
