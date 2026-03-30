@@ -356,11 +356,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
         <div>
-          {openPolls.length > 0 && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
-              Closed
-            </div>
-          )}
+          <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
+            Closed
+          </div>
           <div>
               {closedPolls.map((poll, index) => {
                 const handleTouchStart = (e: React.TouchEvent) => {
