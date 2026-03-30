@@ -105,7 +105,7 @@ export default function PlaceDetailModal({
             {/* Address — opens native maps app on mobile */}
             {address && hasCoords && (
               <a
-                href={`https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block mt-1.5 text-sm text-blue-600 dark:text-blue-400 underline decoration-1 underline-offset-2"
@@ -121,9 +121,9 @@ export default function PlaceDetailModal({
 
             {/* Actions */}
             <div className="flex gap-2 mt-3">
-              {metadata.infoUrl && (
+              {hasCoords && (
                 <a
-                  href={metadata.infoUrl}
+                  href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 text-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
