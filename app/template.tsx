@@ -82,7 +82,7 @@ export default function Template({ children }: AppTemplateProps) {
   const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   const [pollPageTitle, setPollPageTitle] = useState('');
-  const [createPollType, setCreatePollType] = useState<'nomination' | 'poll' | 'participation'>('nomination');
+  const [createPollType, setCreatePollType] = useState<'poll' | 'participation'>('poll');
 
   // Determine page-specific header content based on pathname
   useEffect(() => {
@@ -494,7 +494,7 @@ export default function Template({ children }: AppTemplateProps) {
                       className="text-blue-600 dark:text-blue-400"
                       style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
                     >
-                      {createPollType === 'nomination' ? 'Suggestions' : createPollType === 'poll' ? 'Preferences' : 'Participation'}
+                      {createPollType === 'poll' ? 'Preferences' : 'Participation'}
                     </span>
                   </h1>
                 </div>
