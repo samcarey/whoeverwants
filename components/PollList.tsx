@@ -350,7 +350,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
                       </h3>
-                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
                         <ClientOnly fallback={null}>
                           <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                         </ClientOnly>
@@ -493,7 +493,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
                       </h3>
-                      <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      <div className="text-xs text-gray-400 dark:text-gray-500">
                         <ClientOnly fallback={null}>
                           <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                         </ClientOnly>
