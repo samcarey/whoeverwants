@@ -1,0 +1,136 @@
+"use client";
+
+import { useEffect } from "react";
+import ModalPortal from "./ModalPortal";
+import type { OptionMetadataEntry } from "@/lib/types";
+import { formatDistance } from "./OptionLabel";
+
+interface PlaceDetailModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  name: string;
+  address: string;
+  metadata: OptionMetadataEntry;
+}
+
+export default function PlaceDetailModal({
+  isOpen,
+  onClose,
+  name,
+  address,
+  metadata,
+}: PlaceDetailModalProps) {
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) onClose();
+    };
+    if (isOpen) {
+      document.addEventListener("keydown", handleEscape);
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = "unset";
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const lat = metadata.lat;
+  const lon = metadata.lon;
+  const hasCoords = lat && lon;
+
+  // OSM embed URL with marker
+  const embedUrl = hasCoords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${Number(lon) - 0.005},${Number(lat) - 0.003},${Number(lon) + 0.005},${Number(lat) + 0.003}&layer=mapnik&marker=${lat},${lon}`
+    : null;
+
+  return (
+    <ModalPortal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 dark:bg-black/70"
+          onClick={onClose}
+        />
+
+        {/* Modal */}
+        <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-sm w-full overflow-hidden">
+          {/* Map preview */}
+          {embedUrl && (
+            <a
+              href={metadata.infoUrl || "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+            >
+              <iframe
+                src={embedUrl}
+                className="w-full h-48 border-0 pointer-events-none"
+                loading="lazy"
+                title={`Map of ${name}`}
+              />
+            </a>
+          )}
+
+          {/* Details */}
+          <div className="px-4 py-3">
+            {/* Name + icon */}
+            <div className="flex items-center gap-2.5">
+              {metadata.imageUrl && (
+                <img
+                  src={metadata.imageUrl}
+                  alt=""
+                  className="w-8 h-8 rounded object-cover flex-shrink-0"
+                />
+              )}
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white leading-tight">
+                {name}
+              </h3>
+            </div>
+
+            {/* Metadata row */}
+            <div className="flex items-center gap-2 mt-1.5 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+              {metadata.cuisine && <span>{metadata.cuisine}</span>}
+              {metadata.cuisine && metadata.distance_miles !== undefined && (
+                <span>·</span>
+              )}
+              {metadata.distance_miles !== undefined && (
+                <span className="text-blue-600 dark:text-blue-400">
+                  {formatDistance(metadata.distance_miles)}
+                </span>
+              )}
+            </div>
+
+            {/* Address */}
+            {address && (
+              <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+                {address}
+              </p>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 mt-3">
+              {metadata.infoUrl && (
+                <a
+                  href={metadata.infoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Open in Maps
+                </a>
+              )}
+              <button
+                onClick={onClose}
+                className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </ModalPortal>
+  );
+}
