@@ -295,11 +295,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-2 bg-gray-50 dark:bg-gray-800/30">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
                       Already Voted
                     </div>
                   )}
-                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-2">
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
                     <div
                       onClick={() => {
                         setNavigatingPollId(poll.id);
@@ -344,7 +344,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {closedPolls.length > 0 && (
         <div>
           {openPolls.length > 0 && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-2 bg-gray-50 dark:bg-gray-800/30">
+            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
               Closed
             </div>
           )}
@@ -421,7 +421,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 };
 
                 return (
-                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-2">
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
                     <div
                       onClick={() => {
                         setNavigatingPollId(poll.id);
