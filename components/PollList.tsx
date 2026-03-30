@@ -308,7 +308,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`flex items-start gap-2 px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -318,19 +318,19 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <span className="w-6 flex-shrink-0 text-center text-sm mt-0.5">{getPollSymbol(poll.poll_type, false)}</span>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                          {poll.title}
-                        </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
                         {poll.response_deadline && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
                             <ClientOnly fallback={<>Loading...</>}>
                               <SimpleCountdown deadline={poll.response_deadline} />
                             </ClientOnly>
-                          </div>
+                          </span>
                         )}
                       </div>
+                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                        {poll.title}
+                      </h3>
                     </div>
                   </div>
                 </React.Fragment>
@@ -430,7 +430,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`flex items-start gap-2 px-3 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`px-3 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -440,35 +440,35 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <span className="w-6 flex-shrink-0 text-center text-sm mt-0.5">{getPollSymbol(poll.poll_type, true)}</span>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                          {poll.title}
-                        </h3>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
                         {poll.response_deadline && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
                             Closed {(() => {
-                            const deadline = new Date(poll.response_deadline);
-                            const now = new Date();
-                            const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                              const deadline = new Date(poll.response_deadline);
+                              const now = new Date();
+                              const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                            if (hoursAgo <= 24) {
-                              return deadline.toLocaleTimeString("en-US", {
-                                hour: "numeric",
-                                minute: "2-digit",
-                                hour12: true
-                              });
-                            } else {
-                              return deadline.toLocaleDateString("en-US", {
-                                month: "numeric",
-                                day: "numeric",
-                                year: "2-digit"
-                              });
-                            }
-                          })()}
-                        </div>
-                      )}
+                              if (hoursAgo <= 24) {
+                                return deadline.toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true
+                                });
+                              } else {
+                                return deadline.toLocaleDateString("en-US", {
+                                  month: "numeric",
+                                  day: "numeric",
+                                  year: "2-digit"
+                                });
+                              }
+                            })()}
+                          </span>
+                        )}
                       </div>
+                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                        {poll.title}
+                      </h3>
                     </div>
                   </div>
               );
