@@ -76,6 +76,8 @@ function CreatePollContent() {
   const isSubmittingRef = useRef(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [creatorName, setCreatorName] = useState<string>("");
+  const [isEditingName, setIsEditingName] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
@@ -1487,16 +1489,40 @@ function CreatePollContent() {
             <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
               Your Name (optional)
             </label>
-            <input
-              type="text"
-              id="creatorName"
-              value={creatorName}
-              onChange={(e) => setCreatorName(e.target.value)}
-              disabled={isLoading}
-              maxLength={50}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your name..."
-            />
+            {creatorName.trim() && !isEditingName ? (
+              <div className="flex items-center gap-2 text-sm">
+                <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingName(true);
+                    setTimeout(() => nameInputRef.current?.focus(), 0);
+                  }}
+                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                >
+                  {creatorName.trim()}
+                </button>
+              </div>
+            ) : (
+              <input
+                ref={nameInputRef}
+                type="text"
+                id="creatorName"
+                value={creatorName}
+                onChange={(e) => setCreatorName(e.target.value)}
+                onBlur={() => {
+                  if (creatorName.trim()) {
+                    setIsEditingName(false);
+                  }
+                }}
+                disabled={isLoading}
+                maxLength={50}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                placeholder="Enter your name..."
+              />
+            )}
           </div>
           
           {!isFormValid() && !isLoading && (
