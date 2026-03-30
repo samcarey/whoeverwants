@@ -326,7 +326,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         {poll.title}
                       </h3>
                       {poll.response_deadline && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           <ClientOnly fallback={<>Loading...</>}>
                             <SimpleCountdown deadline={poll.response_deadline} />
                           </ClientOnly>
@@ -449,7 +449,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         {poll.title}
                       </h3>
                       {poll.response_deadline && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           Closed {(() => {
                             const deadline = new Date(poll.response_deadline);
                             const now = new Date();
@@ -471,7 +471,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           })()}
                         </div>
                       )}
-                      </div>
                     </div>
                   </div>
               );
