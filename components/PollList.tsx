@@ -213,11 +213,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   }
 
   return (
-    <div className="border-t border-b border-gray-200 dark:border-gray-700">
+    <div>
       {/* Open Polls Section */}
       {openPolls.length > 0 && (
         <div>
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+          <div>
             {openPolls.map((poll, index) => {
               const isVoted = votedPollIds.has(poll.id);
               const isAbstained = abstainedPollIds.has(poll.id);
@@ -295,11 +295,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-3 bg-gray-50 dark:bg-gray-800/30">
                       Already Voted
                     </div>
                   )}
-                  <div key={poll.id}>
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-3">
                     <div
                       onClick={() => {
                         setNavigatingPollId(poll.id);
@@ -308,7 +308,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -344,11 +344,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {closedPolls.length > 0 && (
         <div>
           {openPolls.length > 0 && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-3 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+            <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-3 bg-gray-50 dark:bg-gray-800/30">
               Closed
             </div>
           )}
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+          <div>
               {closedPolls.map((poll, index) => {
                 const isVoted = votedPollIds.has(poll.id);
                 const isAbstained = abstainedPollIds.has(poll.id);
@@ -421,7 +421,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 };
 
                 return (
-                  <div key={poll.id}>
+                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-3">
                     <div
                       onClick={() => {
                         setNavigatingPollId(poll.id);
@@ -430,7 +430,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`px-3 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`px-1 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
