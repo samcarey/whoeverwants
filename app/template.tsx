@@ -520,7 +520,7 @@ export default function Template({ children }: AppTemplateProps) {
                       className="text-2xl font-bold mb-1 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
                     >Whoever Wants</h1>
-                    <div className="h-7 flex items-center justify-center mb-4" id="home-phrase-content">
+                    <div className="h-7 flex items-center justify-center mb-2" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
                     </div>
                   </div>
@@ -529,7 +529,7 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-2 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-1 pb-6' : 'py-6'}`}>
             {children}
           </div>
         </div>
