@@ -1306,23 +1306,49 @@ function CreatePollContent() {
             </>
           )}
 
+          {/* Auto-close + Response Deadline */}
           <div>
-            <label htmlFor="deadline" className="block text-sm font-medium mb-1">
-              Response Deadline
-            </label>
-            <select
-              id="deadline"
-              value={deadlineOption}
-              onChange={(e) => setDeadlineOption(e.target.value)}
-              disabled={isLoading}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {deadlineOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {isClient ? getTimeLabel(option.value) : option.label}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium mb-1">Close after</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                value={autoCloseAfter ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
+                }}
+                disabled={isLoading}
+                placeholder="—"
+                className="w-16 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">responses or</span>
+              <select
+                id="deadline"
+                value={deadlineOption}
+                onChange={(e) => setDeadlineOption(e.target.value)}
+                disabled={isLoading}
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                {deadlineOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {isClient ? getTimeLabel(option.value) : option.label}
+                  </option>
+                ))}
+              </select>
+              {autoCloseAfter !== null && (
+                <button
+                  type="button"
+                  onClick={() => setAutoCloseAfter(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
+                  title="Disable auto-close"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {deadlineOption === "custom" && (
@@ -1365,39 +1391,6 @@ function CreatePollContent() {
               </div>
             </div>
           )}
-
-          {/* Auto-close after N responses */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Auto-close</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">After</span>
-              <input
-                type="number"
-                min="1"
-                value={autoCloseAfter ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
-                }}
-                disabled={isLoading}
-                placeholder="—"
-                className="w-16 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
-              />
-              <span className="text-sm text-gray-600 dark:text-gray-400">responses</span>
-              {autoCloseAfter !== null && (
-                <button
-                  type="button"
-                  onClick={() => setAutoCloseAfter(null)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1"
-                  title="Disable auto-close"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
 
           {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
           {isSuggestionMode && (
