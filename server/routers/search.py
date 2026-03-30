@@ -360,9 +360,10 @@ async def search_restaurants(
     and favicon image. Uses OSM extratags for cuisine data.
     """
     data = await _nominatim_fetch(q, lat, lon, max_distance, min_delta=0.02)
-    # Filter to food-related POIs only (excludes streets, landmarks, etc.)
-    data = [item for item in data if item.get("type", "") in _FOOD_TYPES]
-    filtered = _filter_by_distance(data, lat, lon, max_distance)
+    filtered = _filter_by_distance(
+        (item for item in data if item.get("type", "") in _FOOD_TYPES),
+        lat, lon, max_distance,
+    )
 
     results = []
     for item, distance in filtered:
