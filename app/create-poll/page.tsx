@@ -168,6 +168,13 @@ function CreatePollContent() {
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue, locationOptions]);
 
+  // Focus name input when switching to edit mode
+  useEffect(() => {
+    if (isEditingName) {
+      nameInputRef.current?.focus();
+    }
+  }, [isEditingName]);
+
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
     if (isAutoTitle) {
@@ -1489,40 +1496,40 @@ function CreatePollContent() {
             <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
               Your Name (optional)
             </label>
-            {creatorName.trim() && !isEditingName ? (
-              <div className="flex items-center gap-2 text-sm">
-                <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsEditingName(true);
-                    setTimeout(() => nameInputRef.current?.focus(), 0);
+            {(() => {
+              const trimmedName = creatorName.trim();
+              return trimmedName && !isEditingName ? (
+                <div className="flex items-center gap-2 text-sm">
+                  <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingName(true)}
+                    className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  >
+                    {trimmedName}
+                  </button>
+                </div>
+              ) : (
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  id="creatorName"
+                  value={creatorName}
+                  onChange={(e) => setCreatorName(e.target.value)}
+                  onBlur={() => {
+                    if (creatorName.trim()) {
+                      setIsEditingName(false);
+                    }
                   }}
-                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                >
-                  {creatorName.trim()}
-                </button>
-              </div>
-            ) : (
-              <input
-                ref={nameInputRef}
-                type="text"
-                id="creatorName"
-                value={creatorName}
-                onChange={(e) => setCreatorName(e.target.value)}
-                onBlur={() => {
-                  if (creatorName.trim()) {
-                    setIsEditingName(false);
-                  }
-                }}
-                disabled={isLoading}
-                maxLength={50}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Enter your name..."
-              />
-            )}
+                  disabled={isLoading}
+                  maxLength={50}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="Enter your name..."
+                />
+              );
+            })()}
           </div>
           
           {!isFormValid() && !isLoading && (
