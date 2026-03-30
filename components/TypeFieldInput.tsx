@@ -9,6 +9,7 @@ export interface BuiltInType {
 }
 
 const BUILT_IN_TYPES: BuiltInType[] = [
+  { value: "yes_no", label: "Yes / No", icon: "👍" },
   { value: "location", label: "Location", icon: "📍" },
   { value: "restaurant", label: "Restaurant", icon: "🍽️" },
   { value: "movie", label: "Movie", icon: "🎬" },
@@ -24,9 +25,9 @@ export function isLocationLikeCategory(category: string): boolean {
   return category === 'location' || category === 'restaurant';
 }
 
-/** Categories that use autocomplete search (any built-in type). */
+/** Categories that use autocomplete search (any built-in type except yes_no). */
 export function isAutocompleteCategory(category: string): boolean {
-  return BUILT_IN_TYPES.some((t) => t.value === category);
+  return category !== 'yes_no' && BUILT_IN_TYPES.some((t) => t.value === category);
 }
 
 interface TypeFieldInputProps {
@@ -171,7 +172,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Enter built-in or custom category"
+          placeholder="Built-in or custom category"
           className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed ${
             builtIn && !isOpen ? "pl-9" : ""
           } ${

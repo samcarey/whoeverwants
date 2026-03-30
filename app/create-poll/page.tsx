@@ -53,7 +53,7 @@ function CreatePollContent() {
   const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'poll' | 'nomination' | 'participation'>('nomination');
+  const [pollType, setPollType] = useState<'poll' | 'participation'>('poll');
   const [options, setOptions] = useState<string[]>(['']);
   const [minParticipants, setMinParticipants] = useState<number | null>(1);
   const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
@@ -106,6 +106,9 @@ function CreatePollContent() {
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
 
+  const hasNoOptions = options.filter(o => o.trim()).length === 0;
+  const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
+
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
@@ -145,15 +148,19 @@ function CreatePollContent() {
 
     const addIcon = (base: string) => icon ? `${base} ${icon}` : base;
 
-    if (pollType === 'nomination') {
-      const prefix = category === 'location' ? 'Place'
-        : builtIn?.label || (category !== 'custom' ? category : '');
-      return addIcon((prefix || 'Quick Poll') + '?');
-    }
-
     if (pollType === 'poll') {
+      if (category === 'yes_no') {
+        return '';
+      }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
+      if (filled.length === 0) {
+        // Suggestion mode (no options) — use category name as title
+        const prefix = category === 'location' ? 'Place'
+          : builtIn?.label || (category !== 'custom' ? category : '');
+        if (prefix) return addIcon(prefix + '?');
+        return '';
+      }
       return addIcon(buildFromOptions(filled, 'Quick Vote'));
     }
 
@@ -196,7 +203,7 @@ function CreatePollContent() {
   }, []);
 
   // Save poll type preference separately (persists across submissions)
-  const savePollTypePreference = useCallback((type: 'poll' | 'nomination' | 'participation') => {
+  const savePollTypePreference = useCallback((type: 'poll' | 'participation') => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('pollTypePreference', type);
     }
@@ -250,8 +257,8 @@ function CreatePollContent() {
   const loadPollTypePreference = () => {
     if (typeof window !== 'undefined') {
       const savedPollType = localStorage.getItem('pollTypePreference');
-      if (savedPollType && (savedPollType === 'poll' || savedPollType === 'nomination' || savedPollType === 'participation')) {
-        setPollType(savedPollType as 'poll' | 'nomination' | 'participation');
+      if (savedPollType && (savedPollType === 'poll' || savedPollType === 'participation')) {
+        setPollType(savedPollType as 'poll' | 'participation');
       }
       // Delay enabling transitions to avoid animation on initial load
       setTimeout(() => {
@@ -317,14 +324,14 @@ function CreatePollContent() {
 
   // Determine poll type based on form selection and options
   const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
-    if (pollType === 'nomination') {
-      return 'nomination';
-    }
     if (pollType === 'participation') {
       return 'participation';
     }
+    if (category === 'yes_no') {
+      return 'yes_no';
+    }
     const filledOptions = options.filter(opt => opt.trim() !== '');
-    return filledOptions.length === 0 ? 'yes_no' : 'ranked_choice';
+    return filledOptions.length === 0 ? 'nomination' : 'ranked_choice';
   };
 
 
@@ -354,9 +361,9 @@ function CreatePollContent() {
 
     const dbPollType = getPollType();
 
-    // Options validation only applies to ranked_choice (poll tab) — nomination
+    // Options validation only applies to ranked_choice — yes_no, nomination,
     // and participation polls don't use the options array.
-    if (dbPollType !== 'nomination' && dbPollType !== 'participation') {
+    if (dbPollType === 'ranked_choice') {
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       // Check for options that exceed character limit (relaxed for autocomplete types)
@@ -384,7 +391,7 @@ function CreatePollContent() {
       }
 
       if (filledOptions.length === 1) {
-        return "Add at least one more option for a ranked choice poll, or leave all options blank for a yes/no poll.";
+        return "Add at least one more option, or leave all options blank to ask for suggestions.";
       }
 
       const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
@@ -499,7 +506,7 @@ function CreatePollContent() {
             setPollType('poll');
             setOptions(forkData.options);
           } else if (forkData.poll_type === 'nomination') {
-            setPollType('nomination');
+            setPollType('poll');
             setOptions(['']);
           } else if (forkData.poll_type === 'participation') {
             setPollType('participation');
@@ -585,7 +592,7 @@ function CreatePollContent() {
             setPollType('poll');
             setOptions(duplicateData.options || ['']);
           } else if (duplicateData.poll_type === 'nomination') {
-            setPollType('nomination');
+            setPollType('poll');
             setOptions(['']);
           } else if (duplicateData.poll_type === 'participation') {
             setPollType('participation');
@@ -713,7 +720,7 @@ function CreatePollContent() {
         title !== originalPollData.title ||
         JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
         creatorName !== (originalPollData.creator_name || "") ||
-        pollType !== 'poll'; // Nomination polls are always considered changed
+        category !== (originalPollData.category || 'custom');
 
       setHasFormChanged(hasChanged);
     }
@@ -1150,35 +1157,21 @@ function CreatePollContent() {
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
           <div className="flex justify-center">
-            <div className="relative w-48 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 mb-1">
+            <div className="relative w-36 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 -mb-2">
               <div
                 className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm ${
                   hasLoadedPollType ? 'transition-all duration-200 ease-in-out' : ''
                 } ${
-                  pollType === 'nomination'
-                    ? 'bg-blue-100 dark:bg-blue-700/50'
-                    : pollType === 'poll'
+                  pollType === 'poll'
                     ? 'bg-green-100 dark:bg-green-700/50'
                     : 'bg-purple-100 dark:bg-purple-700/50'
                 }`}
                 style={{
-                  width: 'calc(33.333% - 4px)',
-                  left: pollType === 'nomination' ? '2px' : pollType === 'poll' ? 'calc(33.333% + 1px)' : 'calc(66.666% - 0px)'
+                  width: 'calc(50% - 3px)',
+                  left: pollType === 'poll' ? '2px' : 'calc(50% + 1px)'
                 }}
               />
               <div className="relative flex w-full">
-                <button
-                  type="button"
-                  onClick={() => setPollType('nomination')}
-                  disabled={isLoading}
-                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'nomination'
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  💡
-                </button>
                 <button
                   type="button"
                   onClick={() => setPollType('poll')}
@@ -1215,7 +1208,13 @@ function CreatePollContent() {
               </label>
               <TypeFieldInput
                 value={category}
-                onChange={setCategory}
+                onChange={(val) => {
+                  setCategory(val);
+                  if (val === 'yes_no') {
+                    setIsAutoTitle(false);
+                    setTitle('');
+                  }
+                }}
                 disabled={isLoading}
               />
             </div>
@@ -1283,21 +1282,28 @@ function CreatePollContent() {
             </div>
           )}
 
-          {/* Options field for poll type (ranked choice / yes-no) */}
-          {pollType !== 'nomination' && pollType !== 'participation' && (
-            <OptionsInput
-              options={options}
-              setOptions={setOptions}
-              isLoading={isLoading}
-              pollType="poll"
-              category={category}
-              optionsMetadata={optionsMetadata}
-              onMetadataChange={setOptionsMetadata}
-              referenceLatitude={refLatitude}
-              referenceLongitude={refLongitude}
-              searchRadius={searchRadius}
-              label={<>Options{' '}<span className="text-gray-500 font-normal">(blank for yes/no)</span></>}
-            />
+          {/* Options field for poll type (ranked choice / suggestions) */}
+          {pollType === 'poll' && category !== 'yes_no' && (
+            <>
+              <OptionsInput
+                options={options}
+                setOptions={setOptions}
+                isLoading={isLoading}
+                pollType="poll"
+                category={category}
+                optionsMetadata={optionsMetadata}
+                onMetadataChange={setOptionsMetadata}
+                referenceLatitude={refLatitude}
+                referenceLongitude={refLongitude}
+                searchRadius={searchRadius}
+                label={<>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+              />
+              {hasNoOptions && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
+                  If no options are given, suggestions will be asked for.
+                </p>
+              )}
+            </>
           )}
 
           <div>
@@ -1393,8 +1399,8 @@ function CreatePollContent() {
             </div>
           </div>
 
-          {/* Auto-create preferences poll checkbox - nomination polls only */}
-          {pollType === 'nomination' && (
+          {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
+          {isSuggestionMode && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1453,7 +1459,7 @@ function CreatePollContent() {
                 placeholder="Enter your title..."
                 required
               />
-              {!isAutoTitle && (
+              {!isAutoTitle && category !== 'yes_no' && (
                 <button
                   type="button"
                   onClick={() => setIsAutoTitle(true)}
