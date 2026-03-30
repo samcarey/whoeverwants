@@ -780,20 +780,20 @@ function CreatePollContent() {
 
 
   const baseDeadlineOptions = [
-    { value: "5min", label: "5 minutes", minutes: 5 },
-    { value: "10min", label: "10 minutes", minutes: 10 },
-    { value: "15min", label: "15 minutes", minutes: 15 },
-    { value: "30min", label: "30 minutes", minutes: 30 },
-    { value: "1hr", label: "1 hour", minutes: 60 },
-    { value: "2hr", label: "2 hours", minutes: 120 },
-    { value: "4hr", label: "4 hours", minutes: 240 },
+    { value: "5min", label: "5 min", minutes: 5 },
+    { value: "10min", label: "10 min", minutes: 10 },
+    { value: "15min", label: "15 min", minutes: 15 },
+    { value: "30min", label: "30 min", minutes: 30 },
+    { value: "1hr", label: "1 hr", minutes: 60 },
+    { value: "2hr", label: "2 hr", minutes: 120 },
+    { value: "4hr", label: "4 hr", minutes: 240 },
     { value: "custom", label: "Custom", minutes: 0 },
   ];
 
   // Add 10-second option for development only
-  const deadlineOptions = process.env.NODE_ENV === 'development' 
+  const deadlineOptions = process.env.NODE_ENV === 'development'
     ? [
-        { value: "10sec", label: "10 seconds (Dev Only)", minutes: 1/6 }, // 10 seconds = 1/6 minute
+        { value: "10sec", label: "10 sec", minutes: 1/6 }, // 10 seconds = 1/6 minute
         ...baseDeadlineOptions
       ]
     : baseDeadlineOptions;
