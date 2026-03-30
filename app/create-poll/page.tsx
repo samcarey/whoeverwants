@@ -87,6 +87,8 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
@@ -277,6 +279,7 @@ function CreatePollContent() {
           setTitle(formState.title || '');
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
           setDetails(formState.details || '');
+          if (formState.details) setDetailsOpen(true);
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -500,6 +503,7 @@ function CreatePollContent() {
           setTitle(forkData.title || "");
           if (forkData.title) setIsAutoTitle(false);
           setDetails(forkData.details || "");
+          if (forkData.details) setDetailsOpen(true);
 
           // Set poll type and options based on forked poll
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
@@ -586,6 +590,7 @@ function CreatePollContent() {
           setTitle(duplicateData.title || "");
           if (duplicateData.title) setIsAutoTitle(false);
           setDetails(duplicateData.details || "");
+          if (duplicateData.details) setDetailsOpen(true);
 
           // Set poll type based on duplicated poll
           if (duplicateData.poll_type === 'ranked_choice') {
@@ -1469,26 +1474,48 @@ function CreatePollContent() {
 
           {/* Optional details field */}
           <div>
-            <label htmlFor="details" className="block text-sm font-medium mb-1">
-              Details{' '}
-              <span className="text-gray-500 font-normal">(optional)</span>
-            </label>
-            <textarea
-              id="details"
-              value={details}
-              onChange={(e) => {
-                setDetails(e.target.value);
-                const el = e.target;
-                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                const maxH = 5 * 20 + 16; // 5 lines + padding
-                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-              }}
-              disabled={isLoading}
-              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-              placeholder="Add more context or instructions..."
-            />
+            {detailsOpen ? (
+              <>
+                <label htmlFor="details" className="block text-sm font-medium mb-1">
+                  Details{' '}
+                  <span className="text-gray-500 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  ref={detailsRef}
+                  id="details"
+                  value={details}
+                  onChange={(e) => {
+                    setDetails(e.target.value);
+                    const el = e.target;
+                    el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                    const maxH = 5 * 20 + 16; // 5 lines + padding
+                    el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                  }}
+                  onBlur={() => {
+                    if (!details.trim()) {
+                      setDetailsOpen(false);
+                      setDetails('');
+                    }
+                  }}
+                  disabled={isLoading}
+                  style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                  placeholder="Add more context or instructions..."
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setTimeout(() => detailsRef.current?.focus(), 0);
+                }}
+                className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                Add Details <span className="font-normal">(optional)</span>
+              </button>
+            )}
           </div>
 
           <div>
