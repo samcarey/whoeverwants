@@ -147,7 +147,7 @@ function CreatePollContent() {
 
     if (pollType === 'poll') {
       if (category === 'yes_no') {
-        return 'Quick Vote 👍';
+        return '';
       }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
@@ -1204,7 +1204,13 @@ function CreatePollContent() {
               </label>
               <TypeFieldInput
                 value={category}
-                onChange={setCategory}
+                onChange={(val) => {
+                  setCategory(val);
+                  if (val === 'yes_no') {
+                    setIsAutoTitle(false);
+                    setTitle('');
+                  }
+                }}
                 disabled={isLoading}
               />
             </div>
