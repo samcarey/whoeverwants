@@ -102,8 +102,18 @@ export default function PlaceDetailModal({
               )}
             </div>
 
-            {/* Address */}
-            {address && (
+            {/* Address — opens native maps app on mobile */}
+            {address && hasCoords && (
+              <a
+                href={`https://maps.apple.com/?ll=${lat},${lon}&q=${encodeURIComponent(name)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block mt-1.5 text-sm text-blue-600 dark:text-blue-400 underline decoration-1 underline-offset-2"
+              >
+                {address}
+              </a>
+            )}
+            {address && !hasCoords && (
               <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
                 {address}
               </p>
