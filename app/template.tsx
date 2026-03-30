@@ -461,8 +461,8 @@ export default function Template({ children }: AppTemplateProps) {
         className="flex-1 overflow-auto safari-scroll-container"
         style={{
           paddingTop: '0',
-          paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
-          paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+          paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
+          paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
           paddingBottom: '1rem',
         }}>
         <div>
