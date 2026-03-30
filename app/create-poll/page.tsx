@@ -1461,9 +1461,9 @@ function CreatePollContent() {
                     <button
                       type="button"
                       onClick={() => setIsAutoTitle(true)}
-                      className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                      className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                     >
-                      Autogen
+                      Generate
                     </button>
                   )}
                 </div>
