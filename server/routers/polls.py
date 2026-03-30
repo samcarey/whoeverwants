@@ -1119,7 +1119,21 @@ def get_accessible_polls(req: AccessiblePollsRequest):
         return []
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM polls WHERE id = ANY(%(poll_ids)s) AND (is_sub_poll = false OR is_sub_poll IS NULL) ORDER BY created_at DESC",
+            """SELECT * FROM polls
+               WHERE id = ANY(%(poll_ids)s)
+                 AND (is_sub_poll = false OR is_sub_poll IS NULL)
+                 AND NOT (
+                   poll_type = 'nomination'
+                   AND auto_create_preferences = true
+                   AND is_closed = true
+                   AND EXISTS (
+                     SELECT 1 FROM polls p2
+                     WHERE p2.follow_up_to = polls.id
+                       AND p2.poll_type = 'ranked_choice'
+                       AND p2.options IS NOT NULL
+                   )
+                 )
+               ORDER BY created_at DESC""",
             {"poll_ids": req.poll_ids},
         ).fetchall()
     return [_row_to_poll(r) for r in rows]
