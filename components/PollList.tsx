@@ -430,7 +430,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`flex items-start gap-2 px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : 'opacity-60'} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`flex items-start gap-2 px-3 py-2.5 opacity-60 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
