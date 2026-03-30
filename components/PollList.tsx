@@ -6,6 +6,20 @@ import { Poll } from "@/lib/types";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 
+const POLL_TYPE_SYMBOLS: Record<string, string> = {
+  yes_no: '☐',
+  nomination: '💡',
+  ranked_choice: '🗳️',
+  participation: '🙋',
+};
+
+const CLOSED_YES_NO_SYMBOL = '🏆';
+
+function getPollSymbol(pollType: string, isClosed: boolean): string {
+  if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
+  return POLL_TYPE_SYMBOLS[pollType] || '☰';
+}
+
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -299,7 +313,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </h3>
                       </div>
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
+                        {getPollSymbol(poll.poll_type, false)}
                       </div>
                     </div>
                     {poll.response_deadline && (
@@ -423,7 +437,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </h3>
                       </div>
                       <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
+                        {getPollSymbol(poll.poll_type, true)}
                       </div>
                     </div>
                     {poll.response_deadline && (
