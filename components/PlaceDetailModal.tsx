@@ -105,7 +105,7 @@ export default function PlaceDetailModal({
             {/* Address — opens native maps app on mobile */}
             {address && hasCoords && (
               <a
-                href={`geo:${lat},${lon}?q=${lat},${lon}(${encodeURIComponent(name)})`}
+                href={`geo:0,0?q=${encodeURIComponent(name + ", " + address)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block mt-1.5 text-sm text-blue-600 dark:text-blue-400 underline decoration-1 underline-offset-2"
