@@ -270,15 +270,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
                       Already Voted
                     </div>
                   )}
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
-                      <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
-                      </div>
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
@@ -301,6 +298,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           {poll.title}
                         </h3>
                       </div>
+                      <div className="flex-shrink-0 text-base">
+                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
+                      </div>
                     </div>
                     {poll.response_deadline && (
                       <div className="text-right mt-1 mr-0 text-xs text-gray-500 dark:text-gray-400">
@@ -321,7 +321,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {closedPolls.length > 0 && (
         <div className="mb-3">
           {openPolls.length > 0 && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
               Closed
             </div>
           )}
@@ -400,9 +400,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 return (
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
-                      <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
-                      </div>
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
@@ -424,6 +421,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                           {poll.title}
                         </h3>
+                      </div>
+                      <div className="flex-shrink-0 text-base">
+                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
                       </div>
                     </div>
                     {poll.response_deadline && (
