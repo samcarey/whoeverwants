@@ -144,10 +144,9 @@ function CreatePollContent() {
     const addIcon = (base: string) => icon ? `${base} ${icon}` : base;
 
     if (pollType === 'nomination') {
-      // Use "Place" instead of "Location" for nomination polls
       const prefix = category === 'location' ? 'Place'
         : builtIn?.label || (category !== 'custom' ? category : '');
-      return addIcon(prefix ? `${prefix} Suggestions` : 'Suggestions');
+      return addIcon(prefix || 'Quick Poll');
     }
 
     if (pollType === 'poll') {
