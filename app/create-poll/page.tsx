@@ -106,6 +106,9 @@ function CreatePollContent() {
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
 
+  const hasNoOptions = options.filter(o => o.trim()).length === 0;
+  const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
+
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
@@ -1295,7 +1298,7 @@ function CreatePollContent() {
                 searchRadius={searchRadius}
                 label={<>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
               />
-              {options.filter(o => o.trim()).length === 0 && (
+              {hasNoOptions && (
                 <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
                   If no options are given, suggestions will be asked for.
                 </p>
@@ -1397,7 +1400,7 @@ function CreatePollContent() {
           </div>
 
           {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
-          {pollType === 'poll' && category !== 'yes_no' && options.filter(o => o.trim()).length === 0 && (
+          {isSuggestionMode && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
