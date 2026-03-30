@@ -146,7 +146,7 @@ function CreatePollContent() {
     if (pollType === 'nomination') {
       const prefix = category === 'location' ? 'Place'
         : builtIn?.label || (category !== 'custom' ? category : '');
-      return addIcon(prefix || 'Quick Poll');
+      return addIcon((prefix || 'Quick Poll') + '?');
     }
 
     if (pollType === 'poll') {
