@@ -26,7 +26,7 @@ function AddressActionsModal({
 }) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isOpen) onClose();
+      if (e.key === "Escape") onClose();
     };
     if (isOpen) {
       document.addEventListener("keydown", handleEscape);
@@ -135,7 +135,6 @@ export default function PlaceDetailModal({
             <iframe
               src={embedUrl}
               className="w-full h-48 border-0"
-              loading="lazy"
               title={`Map of ${name}`}
               style={{ pointerEvents: "none" }}
             />

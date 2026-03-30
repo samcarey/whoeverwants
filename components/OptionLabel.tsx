@@ -41,7 +41,7 @@ function getLocationName(text: string, metadata: OptionMetadataEntry): string {
   return commaIdx >= 0 ? text.slice(0, commaIdx) : text;
 }
 
-export function getAddressFromLabel(label: string, name: string): string {
+function getAddressFromLabel(label: string, name: string): string {
   if (label.startsWith(name + ", ")) {
     return label.slice(name.length + 2);
   }
@@ -68,7 +68,6 @@ function LocationIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "sm
   );
 }
 
-/** Clickable place name that opens the detail modal. */
 function PlaceName({ name, hasModal }: { name: string; hasModal: boolean }) {
   if (hasModal) {
     return (
@@ -98,7 +97,6 @@ function RestaurantIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "
   return <span className={textClass}>🍽️</span>;
 }
 
-/** Wrapper that adds modal behavior to place/restaurant entries. */
 function PlaceWrapper({
   children,
   text,
@@ -119,14 +117,13 @@ function PlaceWrapper({
   return (
     <>
       <div
-        className={className}
+        className={`${className}${hasCoords ? " cursor-pointer" : ""}`}
         onClick={(e) => {
           if (hasCoords) {
             e.stopPropagation();
             setModalOpen(true);
           }
         }}
-        style={hasCoords ? { cursor: "pointer" } : undefined}
       >
         {children}
       </div>
