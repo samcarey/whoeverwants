@@ -308,7 +308,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`flex items-start gap-2 px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -318,19 +318,19 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-start justify-between gap-2">
+                      <span className="w-6 flex-shrink-0 text-center text-sm mt-0.5">{getPollSymbol(poll.poll_type, false)}</span>
+                      <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                           {poll.title}
                         </h3>
-                        <span className="flex-shrink-0 text-sm mt-0.5">{getPollSymbol(poll.poll_type, false)}</span>
+                        {poll.response_deadline && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            <ClientOnly fallback={<>Loading...</>}>
+                              <SimpleCountdown deadline={poll.response_deadline} />
+                            </ClientOnly>
+                          </div>
+                        )}
                       </div>
-                      {poll.response_deadline && (
-                        <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          <ClientOnly fallback={<>Loading...</>}>
-                            <SimpleCountdown deadline={poll.response_deadline} />
-                          </ClientOnly>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </React.Fragment>
@@ -430,7 +430,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : 'opacity-60'} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`flex items-start gap-2 px-3 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : 'opacity-60'} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -440,15 +440,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-start justify-between gap-2">
+                      <span className="w-6 flex-shrink-0 text-center text-sm mt-0.5">{getPollSymbol(poll.poll_type, true)}</span>
+                      <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                           {poll.title}
                         </h3>
-                        <span className="flex-shrink-0 text-sm mt-0.5">{getPollSymbol(poll.poll_type, true)}</span>
-                      </div>
-                      {poll.response_deadline && (
-                        <div className="flex justify-end text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          Closed {(() => {
+                        {poll.response_deadline && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Closed {(() => {
                             const deadline = new Date(poll.response_deadline);
                             const now = new Date();
                             const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
@@ -469,6 +468,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           })()}
                         </div>
                       )}
+                      </div>
                     </div>
                   </div>
               );
