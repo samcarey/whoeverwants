@@ -6,6 +6,20 @@ import { Poll } from "@/lib/types";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 
+const POLL_TYPE_SYMBOLS: Record<string, string> = {
+  yes_no: '☐',
+  nomination: '💡',
+  ranked_choice: '🗳️',
+  participation: '🙋',
+};
+
+const CLOSED_YES_NO_SYMBOL = '🏆';
+
+function getPollSymbol(pollType: string, isClosed: boolean): string {
+  if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
+  return POLL_TYPE_SYMBOLS[pollType] || '☰';
+}
+
 // Simple countdown component
 const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -270,15 +284,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
                       Already Voted
                     </div>
                   )}
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
-                      <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '☐' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
-                      </div>
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
@@ -301,9 +312,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           {poll.title}
                         </h3>
                       </div>
+                      <div className="flex-shrink-0 text-base">
+                        {getPollSymbol(poll.poll_type, false)}
+                      </div>
                     </div>
                     {poll.response_deadline && (
-                      <div className="text-right mt-1 mr-0 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-right mt-1 mr-7 text-xs text-gray-500 dark:text-gray-400">
                         <ClientOnly fallback={<>Loading...</>}>
                           <SimpleCountdown deadline={poll.response_deadline} />
                         </ClientOnly>
@@ -321,7 +335,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {closedPolls.length > 0 && (
         <div className="mb-3">
           {openPolls.length > 0 && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2 ml-7">
+            <div className="text-sm text-gray-500 dark:text-gray-400 font-medium mt-0.5 mb-2">
               Closed
             </div>
           )}
@@ -400,9 +414,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 return (
                   <div key={poll.id}>
                     <div className="flex items-center gap-1.5">
-                      <div className="flex-shrink-0 text-base">
-                        {poll.poll_type === 'yes_no' ? '🏆' : poll.poll_type === 'nomination' ? '💡' : poll.poll_type === 'ranked_choice' ? '🗳️' : poll.poll_type === 'participation' ? '🙋' : '☰'}
-                      </div>
                       <div
                         onClick={() => {
                           setNavigatingPollId(poll.id);
@@ -425,9 +436,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           {poll.title}
                         </h3>
                       </div>
+                      <div className="flex-shrink-0 text-base">
+                        {getPollSymbol(poll.poll_type, true)}
+                      </div>
                     </div>
                     {poll.response_deadline && (
-                      <div className="text-right -mt-1 mr-0">
+                      <div className="text-right -mt-1 mr-7">
                         <span className="text-xs text-gray-500 dark:text-gray-400">
                           Closed {(() => {
                             const deadline = new Date(poll.response_deadline);
