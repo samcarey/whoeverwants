@@ -119,25 +119,6 @@ export default function PlaceDetailModal({
               </p>
             )}
 
-            {/* Actions */}
-            <div className="flex gap-2 mt-3">
-              {hasCoords && (
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 text-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  Open in Maps
-                </a>
-              )}
-              <button
-                onClick={onClose}
-                className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg transition-colors"
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
       </div>
