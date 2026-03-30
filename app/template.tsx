@@ -538,7 +538,7 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className={`fixed left-0 right-0 bottom-0 backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-lg z-50 ${
+          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm ${
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
@@ -548,48 +548,48 @@ export default function Template({ children }: AppTemplateProps) {
             willChange: 'transform',
           }}
         >
-        <div className="max-w-4xl mx-auto px-4 py-2 flex items-center justify-center">
-          <div className="flex items-center justify-center gap-12">
-            {/* Home button */}
-            <button 
-              onClick={pathname === '/' ? undefined : () => window.location.href = '/'}
-              className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
-                pathname === '/' 
-                  ? 'bg-blue-100 dark:bg-blue-900/30 cursor-default' 
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
-              }`}
-              aria-label="Go to home"
-              disabled={pathname === '/'}
-            >
-              <svg className={`w-7 h-7 ${
-                pathname === '/' 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-gray-400 dark:text-gray-500'
-              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </button>
-            
-            {/* Profile button - larger direct size */}
-            <button
-              onClick={isProfilePage ? undefined : () => router.push('/profile')}
-              className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
-                isProfilePage 
-                  ? 'bg-blue-100 dark:bg-blue-900/30 cursor-default' 
-                  : 'hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer'
-              }`}
-              aria-label="Profile"
-              disabled={isProfilePage}
-            >
-              <svg className={`w-7 h-7 ${
-                isProfilePage 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-gray-400 dark:text-gray-500'
-              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </button>
-          </div>
+        <div className="flex items-center justify-evenly py-1.5">
+          {/* Home button */}
+          <button
+            onClick={pathname === '/' ? undefined : () => window.location.href = '/'}
+            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
+            aria-label="Go to home"
+            disabled={pathname === '/'}
+          >
+            <svg className={`w-6 h-6 ${
+              pathname === '/'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-500 dark:text-gray-400'
+            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span className={`text-[10px] font-medium ${
+              pathname === '/'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}>Home</span>
+          </button>
+
+          {/* Profile button */}
+          <button
+            onClick={isProfilePage ? undefined : () => router.push('/profile')}
+            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
+            aria-label="Profile"
+            disabled={isProfilePage}
+          >
+            <svg className={`w-6 h-6 ${
+              isProfilePage
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-500 dark:text-gray-400'
+            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span className={`text-[10px] font-medium ${
+              isProfilePage
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}>Account</span>
+          </button>
         </div>
         </div>,
         document.getElementById('bottom-bar-portal')!
