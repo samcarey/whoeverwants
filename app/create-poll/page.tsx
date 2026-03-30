@@ -1438,38 +1438,52 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="title" className="block text-sm font-medium mb-1">
-              Title
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="title"
-                ref={titleInputRef}
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
+            {isAutoTitle ? (
+              <button
+                type="button"
+                onClick={() => {
                   setIsAutoTitle(false);
+                  setTitle('');
+                  setTimeout(() => titleInputRef.current?.focus(), 0);
                 }}
-                disabled={isLoading}
-                maxLength={100}
-                className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Enter your title..."
-                required
-              />
-              {!isAutoTitle && category !== 'yes_no' && (
-                <button
-                  type="button"
-                  onClick={() => setIsAutoTitle(true)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  title="Auto-generate title"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-                  </svg>
-                </button>
-              )}
-            </div>
+                className="block text-sm font-medium text-left"
+              >
+                Title: {title || <span className="text-gray-400 italic font-normal">auto</span>}{' '}
+                <span className="text-gray-500 font-normal">(Tap to Edit)</span>
+              </button>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="title" className="text-sm font-medium">
+                    Title
+                  </label>
+                  {category !== 'yes_no' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsAutoTitle(true)}
+                      className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                    >
+                      Autogen
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  id="title"
+                  ref={titleInputRef}
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setIsAutoTitle(false);
+                  }}
+                  disabled={isLoading}
+                  maxLength={100}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="Enter your title..."
+                  required
+                />
+              </>
+            )}
           </div>
 
           {/* Optional details field */}
