@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PollResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
-import OptionLabel, { isLocationEntry } from "./OptionLabel";
+import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
   results: PollResults;
@@ -422,7 +422,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       {/* Candidate name */}
                       <div className="min-w-0 overflow-hidden">
                         <div className={`leading-tight ${
-                          isLocationEntry(optionsMetadata?.[candidate.name])
+                          isLocationEntry(optionsMetadata?.[candidate.name]) || isRestaurantEntry(optionsMetadata?.[candidate.name])
                             ? 'overflow-hidden'
                             : 'line-clamp-2'
                         } ${

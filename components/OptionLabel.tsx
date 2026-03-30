@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { OptionMetadataEntry } from "@/lib/types";
+import PlaceDetailModal from "./PlaceDetailModal";
 
 interface OptionLabelProps {
   text: string;
@@ -66,18 +68,12 @@ function LocationIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "sm
   );
 }
 
-function LocationName({ name, infoUrl }: { name: string; infoUrl?: string }) {
-  if (infoUrl) {
+function PlaceName({ name, hasModal }: { name: string; hasModal: boolean }) {
+  if (hasModal) {
     return (
-      <a
-        href={infoUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 hover:decoration-blue-500"
-      >
+      <span className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 cursor-pointer">
         {name}
-      </a>
+      </span>
     );
   }
   return <span className="font-medium leading-tight">{name}</span>;
@@ -101,83 +97,93 @@ function RestaurantIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "
   return <span className={textClass}>🍽️</span>;
 }
 
+function PlaceWrapper({
+  children,
+  text,
+  name,
+  metadata,
+  className,
+}: {
+  children: React.ReactNode;
+  text: string;
+  name: string;
+  metadata: OptionMetadataEntry;
+  className?: string;
+}) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const address = getAddressFromLabel(text, name);
+  const hasCoords = metadata.lat && metadata.lon;
+
+  return (
+    <>
+      <div
+        className={`${className}${hasCoords ? " cursor-pointer" : ""}`}
+        onClick={(e) => {
+          if (hasCoords) {
+            e.stopPropagation();
+            setModalOpen(true);
+          }
+        }}
+      >
+        {children}
+      </div>
+      {hasCoords && (
+        <PlaceDetailModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          name={name}
+          address={address}
+          metadata={metadata}
+        />
+      )}
+    </>
+  );
+}
+
 export default function OptionLabel({ text, metadata, className = "", layout = "inline" }: OptionLabelProps) {
   // Restaurant entry
   if (isRestaurantEntry(metadata)) {
     const name = metadata!.name || text.split(", ")[0];
-    const address = getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
+    const hasCoords = !!(metadata!.lat && metadata!.lon);
 
     if (layout === "stacked") {
       return (
-        <div className={`min-w-0 overflow-hidden ${className}`}>
+        <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
           <div className="flex justify-center">
             <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
               <RestaurantIcon imageUrl={metadata!.imageUrl} size="lg" />
             </span>
           </div>
           <div className="line-clamp-2 leading-tight mt-1 text-center">
-            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+            <PlaceName name={name} hasModal={hasCoords} />
           </div>
-          {metadata!.rating !== undefined && (
-            <div className="text-xs mt-0.5 text-center">
-              <StarRating rating={metadata!.rating} />
-            </div>
-          )}
-          {metadata!.cuisine && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 text-center truncate">
-              {metadata!.cuisine}
-              {metadata!.priceLevel && <span className="ml-1 text-green-600 dark:text-green-400">{metadata!.priceLevel}</span>}
-            </div>
-          )}
           {distance !== undefined && (
             <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
               {formatDistance(distance)}
             </div>
           )}
-        </div>
+        </PlaceWrapper>
       );
     }
 
     // Default inline layout
     return (
-      <div className={`flex items-center gap-2 ${className}`}>
+      <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
         <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
           <RestaurantIcon imageUrl={metadata!.imageUrl} />
         </span>
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            <LocationName name={name} infoUrl={metadata!.infoUrl} />
-            {metadata!.rating !== undefined && (
-              <span className="text-xs">
-                <StarRating rating={metadata!.rating} />
-              </span>
-            )}
+            <PlaceName name={name} hasModal={hasCoords} />
             {distance !== undefined && (
               <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
                 {formatDistance(distance)}
               </span>
             )}
           </div>
-          <div className="flex items-baseline gap-1.5">
-            {metadata!.cuisine && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                {metadata!.cuisine}
-              </span>
-            )}
-            {metadata!.priceLevel && (
-              <span className="text-xs text-green-600 dark:text-green-400 whitespace-nowrap">
-                {metadata!.priceLevel}
-              </span>
-            )}
-            {!metadata!.cuisine && address && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
-                {address}
-              </span>
-            )}
-          </div>
         </div>
-      </div>
+      </PlaceWrapper>
     );
   }
 
@@ -186,17 +192,18 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     const name = getLocationName(text, metadata!);
     const address = getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
+    const hasCoords = !!(metadata!.lat && metadata!.lon);
 
     if (layout === "stacked") {
       return (
-        <div className={`min-w-0 overflow-hidden ${className}`}>
+        <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
           <div className="flex justify-center">
             <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
               <LocationIcon imageUrl={metadata!.imageUrl} size="lg" />
             </span>
           </div>
           <div className="line-clamp-2 leading-tight mt-1 text-center">
-            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+            <PlaceName name={name} hasModal={hasCoords} />
           </div>
           {address && (
             <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5 text-center">
@@ -208,19 +215,19 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
               {formatDistance(distance)}
             </div>
           )}
-        </div>
+        </PlaceWrapper>
       );
     }
 
     // Default inline layout
     return (
-      <div className={`flex items-center gap-2 ${className}`}>
+      <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
         <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
           <LocationIcon imageUrl={metadata!.imageUrl} />
         </span>
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            <LocationName name={name} infoUrl={metadata!.infoUrl} />
+            <PlaceName name={name} hasModal={hasCoords} />
             {distance !== undefined && (
               <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
                 {formatDistance(distance)}
@@ -233,7 +240,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
             </div>
           )}
         </div>
-      </div>
+      </PlaceWrapper>
     );
   }
 
