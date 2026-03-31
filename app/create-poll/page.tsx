@@ -1533,7 +1533,7 @@ function CreatePollContent() {
                 onClick={() => setDetailsOpen(true)}
                 className="block text-sm font-medium text-left"
               >
-                Add Details <span className="font-normal text-gray-500">(optional)</span>
+                <span className="font-normal text-blue-600 dark:text-blue-400">Add Details</span> <span className="font-normal text-gray-500">(optional)</span>
               </button>
             )}
           </div>
