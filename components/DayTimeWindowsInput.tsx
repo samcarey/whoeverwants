@@ -87,7 +87,7 @@ export default function DayTimeWindowsInput({
   return (
     <div className={`flex items-start gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border ${windows.length === 0 && !pollWindows ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-700'}`}>
       {/* Left: Day display */}
-      <div className="min-w-[100px] pt-1">
+      <div className="min-w-[100px]">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayDisplay(day)}
         </div>
