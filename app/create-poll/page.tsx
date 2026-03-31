@@ -1527,9 +1527,9 @@ function CreatePollContent() {
                   setDetailsOpen(true);
                   setTimeout(() => detailsRef.current?.focus(), 0);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500 text-left dark:bg-gray-800"
+                className="block text-sm font-medium text-left"
               >
-                Add Details <span className="font-normal">(optional)</span>
+                Details: <span className="text-blue-600 dark:text-blue-400 font-normal italic">add</span>
               </button>
             )}
           </div>
@@ -1557,7 +1557,7 @@ function CreatePollContent() {
               <button
                 type="button"
                 onClick={handleEditName}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-left hover:border-gray-400 dark:hover:border-gray-500 dark:bg-gray-800"
+                className="block text-sm font-medium text-left"
               >
                 Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
               </button>
@@ -1565,9 +1565,9 @@ function CreatePollContent() {
               <button
                 type="button"
                 onClick={handleEditName}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500 text-left dark:bg-gray-800"
+                className="block text-sm font-medium text-left"
               >
-                Add Your Name <span className="font-normal">(optional)</span>
+                Your Name: <span className="text-blue-600 dark:text-blue-400 font-normal italic">add</span>
               </button>
             )}
           </div>
