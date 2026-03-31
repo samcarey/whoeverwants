@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Poll } from "@/lib/types";
+import { Poll, PollResults } from "@/lib/types";
+import { apiGetPollResults } from "@/lib/api";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 
@@ -93,6 +94,28 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   );
 };
 
+function getWinnerText(poll: Poll, results: PollResults): string | null {
+  switch (poll.poll_type) {
+    case 'yes_no':
+      if (results.winner === 'yes') return 'Yes';
+      if (results.winner === 'no') return 'No';
+      if (results.winner === 'tie') return 'Tie';
+      return null;
+    case 'ranked_choice':
+      return results.winner || null;
+    case 'nomination':
+      if (results.nomination_counts && results.nomination_counts.length > 0) {
+        return results.nomination_counts[0].option;
+      }
+      return null;
+    case 'participation':
+      if (results.is_happening) return 'Happening';
+      return 'Not happening';
+    default:
+      return null;
+  }
+}
+
 interface PollListProps {
   polls: Poll[];
   showSections?: boolean; // Whether to show "Open Polls" and "Closed Polls" section headers
@@ -116,6 +139,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
+  const [winnerTexts, setWinnerTexts] = useState<Record<string, string>>({});
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -205,6 +229,39 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     categorizePollsByTime();
   }, [categorizePollsByTime]);
   
+  // Fetch results for closed polls to display winners
+  useEffect(() => {
+    if (closedPolls.length === 0) return;
+
+    const pollsToFetch = closedPolls.filter(p => !winnerTexts[p.id]);
+    if (pollsToFetch.length === 0) return;
+
+    let cancelled = false;
+
+    Promise.all(
+      pollsToFetch.map(async (poll) => {
+        try {
+          const results = await apiGetPollResults(poll.id);
+          const winner = getWinnerText(poll, results);
+          return { id: poll.id, winner };
+        } catch {
+          return { id: poll.id, winner: null };
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      const newTexts: Record<string, string> = {};
+      for (const { id, winner } of entries) {
+        if (winner) newTexts[id] = winner;
+      }
+      if (Object.keys(newTexts).length > 0) {
+        setWinnerTexts(prev => ({ ...prev, ...newTexts }));
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [closedPolls]);
+
   // Set up timer to check for expired polls every 10 seconds
   useEffect(() => {
     if (typeof window === 'undefined' || polls.length === 0) return;
@@ -447,39 +504,50 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Closed {(() => {
-                              const deadline = new Date(poll.response_deadline);
-                              const now = new Date();
-                              const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                            {poll.response_deadline && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                Closed {(() => {
+                                  const deadline = new Date(poll.response_deadline);
+                                  const now = new Date();
+                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                              if (hoursAgo <= 24) {
-                                return deadline.toLocaleTimeString("en-US", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true
-                                });
-                              } else {
-                                return deadline.toLocaleDateString("en-US", {
-                                  month: "numeric",
-                                  day: "numeric",
-                                  year: "2-digit"
-                                });
-                              }
-                            })()}
-                          </span>
+                                  if (hoursAgo <= 24) {
+                                    return deadline.toLocaleTimeString("en-US", {
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      hour12: true
+                                    });
+                                  } else {
+                                    return deadline.toLocaleDateString("en-US", {
+                                      month: "numeric",
+                                      day: "numeric",
+                                      year: "2-digit"
+                                    });
+                                  }
+                                })()}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                            {poll.title}
+                          </h3>
+                          <div className="text-xs text-gray-400 dark:text-gray-500">
+                            <ClientOnly fallback={null}>
+                              <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                            </ClientOnly>
+                          </div>
+                        </div>
+                        {winnerTexts[poll.id] && (
+                          <div className="flex-shrink-0 self-center max-w-[40%]">
+                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 truncate max-w-full">
+                              {winnerTexts[poll.id]}
+                            </span>
+                          </div>
                         )}
-                      </div>
-                      <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                        {poll.title}
-                      </h3>
-                      <div className="text-xs text-gray-400 dark:text-gray-500">
-                        <ClientOnly fallback={null}>
-                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
-                        </ClientOnly>
                       </div>
                     </div>
                   </div>
