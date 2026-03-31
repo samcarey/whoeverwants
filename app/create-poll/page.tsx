@@ -114,8 +114,7 @@ function CreatePollContent() {
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
-    const icon = builtIn?.icon || '';
-    const limit = 40 - (icon ? icon.length + 1 : 0);
+    const limit = 40;
     const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
 
     const joinWithOr = (items: string[]) => {
@@ -148,8 +147,6 @@ function CreatePollContent() {
       return `Which ${catLabel}?`;
     };
 
-    const addIcon = (base: string) => icon ? `${base} ${icon}` : base;
-
     if (pollType === 'poll') {
       if (category === 'yes_no') {
         return '';
@@ -160,10 +157,10 @@ function CreatePollContent() {
         // Suggestion mode (no options) — use category name as title
         const prefix = category === 'location' ? 'Place'
           : builtIn?.label || (category !== 'custom' ? category : '');
-        if (prefix) return addIcon(prefix + '?');
+        if (prefix) return prefix + '?';
         return '';
       }
-      return addIcon(buildFromOptions(filled, 'Quick Vote'));
+      return buildFromOptions(filled, 'Quick Vote');
     }
 
     // participation
@@ -172,7 +169,7 @@ function CreatePollContent() {
     }
     if (locationMode === 'preferences') {
       const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
-      if (filled.length > 0) return addIcon(buildFromOptions(filled, "Who's in?"));
+      if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
     }
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue, locationOptions]);
