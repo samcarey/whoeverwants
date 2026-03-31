@@ -11,8 +11,6 @@ interface ReferenceLocationInputProps {
   onLocationChange: (lat: number | undefined, lng: number | undefined, label: string) => void;
   searchRadius: number;
   onSearchRadiusChange: (radius: number) => void;
-  showRadiusModal?: boolean;
-  onShowRadiusModal?: (show: boolean) => void;
   disabled?: boolean;
 }
 
@@ -23,17 +21,13 @@ export default function ReferenceLocationInput({
   onLocationChange,
   searchRadius,
   onSearchRadiusChange,
-  showRadiusModal: showRadiusModalProp,
-  onShowRadiusModal,
   disabled = false,
 }: ReferenceLocationInputProps) {
   const [input, setInput] = useState("");
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isGeolocating, setIsGeolocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showRadiusModalLocal, setShowRadiusModalLocal] = useState(false);
-  const showRadiusModal = showRadiusModalProp ?? showRadiusModalLocal;
-  const setShowRadiusModal = onShowRadiusModal ?? setShowRadiusModalLocal;
+  const [showRadiusModal, setShowRadiusModal] = useState(false);
   const [radiusInput, setRadiusInput] = useState(String(searchRadius));
   const radiusInputRef = useRef<HTMLInputElement>(null);
 

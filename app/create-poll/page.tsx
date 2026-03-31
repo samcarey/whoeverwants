@@ -37,6 +37,22 @@ function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
 // For locations, take just the name (first comma segment) then apply shortenOption
 function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
 
+const BASE_DEADLINE_OPTIONS = [
+  { value: "5min", label: "5 min", minutes: 5 },
+  { value: "10min", label: "10 min", minutes: 10 },
+  { value: "15min", label: "15 min", minutes: 15 },
+  { value: "30min", label: "30 min", minutes: 30 },
+  { value: "1hr", label: "1 hr", minutes: 60 },
+  { value: "2hr", label: "2 hr", minutes: 120 },
+  { value: "4hr", label: "4 hr", minutes: 240 },
+  { value: "custom", label: "Custom", minutes: 0 },
+];
+
+const DEV_DEADLINE_OPTIONS = [
+  { value: "10sec", label: "10 sec", minutes: 1/6 },
+  ...BASE_DEADLINE_OPTIONS,
+];
+
 function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -781,24 +797,9 @@ function CreatePollContent() {
   }, [options.length, shouldFocusNewOption]);
 
 
-  const baseDeadlineOptions = [
-    { value: "5min", label: "5 min", minutes: 5 },
-    { value: "10min", label: "10 min", minutes: 10 },
-    { value: "15min", label: "15 min", minutes: 15 },
-    { value: "30min", label: "30 min", minutes: 30 },
-    { value: "1hr", label: "1 hr", minutes: 60 },
-    { value: "2hr", label: "2 hr", minutes: 120 },
-    { value: "4hr", label: "4 hr", minutes: 240 },
-    { value: "custom", label: "Custom", minutes: 0 },
-  ];
-
-  // Add 10-second option for development only
   const deadlineOptions = process.env.NODE_ENV === 'development'
-    ? [
-        { value: "10sec", label: "10 sec", minutes: 1/6 }, // 10 seconds = 1/6 minute
-        ...baseDeadlineOptions
-      ]
-    : baseDeadlineOptions;
+    ? DEV_DEADLINE_OPTIONS
+    : BASE_DEADLINE_OPTIONS;
 
   const calculateDeadline = () => {
     const now = new Date();
@@ -877,6 +878,11 @@ function CreatePollContent() {
     if (displayParts.length === 0) return " (less than 1 min)";
     
     return ` (${displayParts.join(', ')})`;
+  };
+
+  const handleEditName = () => {
+    setIsEditingName(true);
+    setTimeout(() => nameInputRef.current?.focus(), 0);
   };
 
   const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
@@ -1018,7 +1024,7 @@ function CreatePollContent() {
       if (dbPollType === 'nomination' && autoCreatePreferences) {
         pollData.auto_create_preferences = true;
         pollData.auto_preferences_deadline_minutes =
-          baseDeadlineOptions.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
+          BASE_DEADLINE_OPTIONS.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
       }
 
       // Add min/max participants for participation polls
@@ -1065,12 +1071,12 @@ function CreatePollContent() {
           } else if (mode === 'preferences') {
             pollData[`${fieldName}_options`] = fieldOptions.filter(o => o.trim() !== '');
             pollData[`${fieldName}_preferences_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
           } else if (mode === 'suggestions') {
             pollData[`${fieldName}_suggestions_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === sugDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === sugDeadline)?.minutes || 10;
             pollData[`${fieldName}_preferences_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
           }
         };
         addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
@@ -1278,7 +1284,7 @@ function CreatePollContent() {
                 onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
                 preferencesDeadline={locationPreferencesDeadline}
                 onPreferencesDeadlineChange={setLocationPreferencesDeadline}
-                deadlineOptions={baseDeadlineOptions}
+                deadlineOptions={BASE_DEADLINE_OPTIONS}
                 isLoading={isLoading}
               />
             </div>
@@ -1550,10 +1556,7 @@ function CreatePollContent() {
             ) : creatorName.trim() ? (
               <button
                 type="button"
-                onClick={() => {
-                  setIsEditingName(true);
-                  setTimeout(() => nameInputRef.current?.focus(), 0);
-                }}
+                onClick={handleEditName}
                 className="block text-sm font-medium text-left"
               >
                 Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
@@ -1561,10 +1564,7 @@ function CreatePollContent() {
             ) : (
               <button
                 type="button"
-                onClick={() => {
-                  setIsEditingName(true);
-                  setTimeout(() => nameInputRef.current?.focus(), 0);
-                }}
+                onClick={handleEditName}
                 className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
               >
                 Add Your Name <span className="font-normal">(optional)</span>
