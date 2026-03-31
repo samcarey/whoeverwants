@@ -14,7 +14,10 @@ interface DaysSelectorProps {
 
 export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen, onOpenChange, allowedDays, hideButton = false }: DaysSelectorProps) {
   const [tempSelectedDays, setTempSelectedDays] = useState<string[]>(selectedDays);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const modalContentRef = useRef<HTMLDivElement>(null);
 
   const handleToggleDay = (date: string) => {
@@ -66,7 +69,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
       onChange(validDays);
     }
     setTempSelectedDays(validDays);
-    setCurrentMonth(new Date());
+    const now = new Date();
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
 
     const body = document.body;
     const html = document.documentElement;
@@ -174,7 +178,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   };
 
   const goToToday = () => {
-    setCurrentMonth(new Date());
+    const now = new Date();
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
   };
 
   const renderCalendar = () => {
