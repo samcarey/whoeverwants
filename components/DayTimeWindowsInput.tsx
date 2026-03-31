@@ -85,12 +85,17 @@ export default function DayTimeWindowsInput({
   };
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className={`flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border ${windows.length === 0 && !pollWindows ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-700'}`}>
       {/* Left: Day display */}
       <div className="min-w-[100px]">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayDisplay(day)}
         </div>
+        {windows.length === 0 && !pollWindows && (
+          <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+            Add a time slot
+          </div>
+        )}
       </div>
 
       {/* Right: Time windows */}
