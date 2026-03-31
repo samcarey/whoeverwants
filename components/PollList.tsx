@@ -511,7 +511,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
@@ -549,10 +549,10 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </div>
                         </div>
                         {winnerTexts[poll.id] && (
-                          <div className="flex-shrink-0 max-w-[40%]">
-                            <span className="inline-flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 max-w-full">
-                              <span className="flex-shrink-0">👑</span>
-                              <span className="truncate">{winnerTexts[poll.id]}</span>
+                          <div className="flex-shrink-0 flex items-center gap-1 max-w-[40%] mt-5">
+                            <span className="flex-shrink-0 text-xs">👑</span>
+                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 truncate">
+                              {winnerTexts[poll.id]}
                             </span>
                           </div>
                         )}
