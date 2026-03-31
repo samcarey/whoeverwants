@@ -515,25 +515,27 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
                         {poll.response_deadline && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">
-                            Closed {(() => {
-                              const deadline = new Date(poll.response_deadline);
-                              const now = new Date();
-                              const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                            <ClientOnly fallback={<>Closed</>}>
+                              <>Closed {(() => {
+                                const deadline = new Date(poll.response_deadline);
+                                const now = new Date();
+                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                              if (hoursAgo <= 24) {
-                                return deadline.toLocaleTimeString("en-US", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true
-                                });
-                              } else {
-                                return deadline.toLocaleDateString("en-US", {
-                                  month: "numeric",
-                                  day: "numeric",
-                                  year: "2-digit"
-                                });
-                              }
-                            })()}
+                                if (hoursAgo <= 24) {
+                                  return deadline.toLocaleTimeString("en-US", {
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true
+                                  });
+                                } else {
+                                  return deadline.toLocaleDateString("en-US", {
+                                    month: "numeric",
+                                    day: "numeric",
+                                    year: "2-digit"
+                                  });
+                                }
+                              })()}</>
+                            </ClientOnly>
                           </span>
                         )}
                       </div>
