@@ -3,6 +3,7 @@
 import logging
 import math
 import os
+import re
 from urllib.parse import urlparse
 
 import httpx
@@ -194,15 +195,16 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     Returns the first matching result with lat, lon, and a short label
     suitable for display (city name or zip code).
     """
+    q = q.strip()
     params: dict[str, str | int] = {
         "q": q,
         "format": "jsonv2",
         "limit": 1,
         "addressdetails": 1,
     }
-    # Pure numeric queries are zip codes — restrict to US to avoid
+    # Pure numeric queries are US zip codes — restrict to US to avoid
     # matching postal codes in other countries (e.g. 75080 → Pakistan).
-    if q.strip().replace("-", "").isdigit():
+    if re.fullmatch(r"\d{5}(-\d{4})?", q):
         params["countrycodes"] = "us"
     else:
         # Bias (not restrict) toward continental US for non-zip queries
