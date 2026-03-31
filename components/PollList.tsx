@@ -247,8 +247,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     // Mark as fetched immediately to prevent duplicate requests
     for (const p of pollsToFetch) fetchedPollIds.current.add(p.id);
 
-    let cancelled = false;
-
     Promise.all(
       pollsToFetch.map(async (poll) => {
         try {
@@ -259,7 +257,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
         }
       })
     ).then((entries) => {
-      if (cancelled) return;
       const newTexts: Record<string, string> = {};
       for (const { id, winner } of entries) {
         if (winner) newTexts[id] = winner;
@@ -268,8 +265,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
         setWinnerTexts(prev => ({ ...prev, ...newTexts }));
       }
     });
-
-    return () => { cancelled = true; };
   }, [closedPolls]);
 
   // Set up timer to check for expired polls every 10 seconds
