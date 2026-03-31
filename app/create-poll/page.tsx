@@ -1311,13 +1311,8 @@ function CreatePollContent() {
                 referenceLatitude={refLatitude}
                 referenceLongitude={refLongitude}
                 searchRadius={searchRadius}
-                label={<>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+                label={<>Options <span className="font-normal">(leave blank to ask for suggestions first)</span></>}
               />
-              {hasNoOptions && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
-                  If no options are given, suggestions will be asked for.
-                </p>
-              )}
             </>
           )}
 
