@@ -120,14 +120,22 @@ export default function ReferenceLocationInput({
   return (
     <div>
       {hasLocation ? (
-        <div className="flex items-center gap-2 text-sm flex-wrap">
-          <span className="font-medium">Near:</span>
+        <div className="flex items-center gap-2 text-sm min-w-0">
+          <span className="font-medium shrink-0">Near:</span>
           <button
             type="button"
             onClick={() => onLocationChange(undefined, undefined, "")}
-            className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+            className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer truncate min-w-0"
+            title={label}
           >
             {label}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRadiusModal(true)}
+            className="shrink-0 px-2 py-0.5 text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors"
+          >
+            within {searchRadius} mi
           </button>
         </div>
       ) : (
