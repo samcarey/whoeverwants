@@ -197,6 +197,13 @@ function CreatePollContent() {
     }
   }, [isEditingName]);
 
+  // Focus details textarea when opening
+  useEffect(() => {
+    if (detailsOpen) {
+      detailsRef.current?.focus();
+    }
+  }, [detailsOpen]);
+
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
     if (isAutoTitle) {
@@ -1304,13 +1311,8 @@ function CreatePollContent() {
                 referenceLatitude={refLatitude}
                 referenceLongitude={refLongitude}
                 searchRadius={searchRadius}
-                label={<>Options{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+                label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
               />
-              {hasNoOptions && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">
-                  If no options are given, suggestions will be asked for.
-                </p>
-              )}
             </>
           )}
 
@@ -1493,8 +1495,7 @@ function CreatePollContent() {
             {detailsOpen ? (
               <>
                 <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Details{' '}
-                  <span className="text-gray-500 font-normal">(optional)</span>
+                  Details{!details.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
                 </label>
                 <textarea
                   ref={detailsRef}
@@ -1521,16 +1522,16 @@ function CreatePollContent() {
                 />
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setTimeout(() => detailsRef.current?.focus(), 0);
-                }}
-                className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                Add Details <span className="font-normal">(optional)</span>
-              </button>
+              <div className="text-sm font-medium">
+                Details <span className="font-normal">(optional)</span>:{' '}
+                <button
+                  type="button"
+                  onClick={() => setDetailsOpen(true)}
+                  className="font-normal text-blue-600 dark:text-blue-400"
+                >
+                  Add
+                </button>
+              </div>
             )}
           </div>
 
@@ -1538,7 +1539,7 @@ function CreatePollContent() {
             {isEditingName ? (
               <>
                 <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
-                  Your Name <span className="text-gray-500 font-normal">(optional)</span>
+                  Your Name{!creatorName.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
                 </label>
                 <input
                   ref={nameInputRef}
@@ -1562,13 +1563,16 @@ function CreatePollContent() {
                 Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleEditName}
-                className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                Add Your Name <span className="font-normal">(optional)</span>
-              </button>
+              <div className="text-sm font-medium">
+                Your Name <span className="font-normal">(optional)</span>:{' '}
+                <button
+                  type="button"
+                  onClick={handleEditName}
+                  className="font-normal text-blue-600 dark:text-blue-400"
+                >
+                  Add
+                </button>
+              </div>
             )}
           </div>
           
