@@ -1311,7 +1311,7 @@ function CreatePollContent() {
                 referenceLatitude={refLatitude}
                 referenceLongitude={refLongitude}
                 searchRadius={searchRadius}
-                label={<>Options <span className="font-normal">(leave blank to ask for suggestions first)</span></>}
+                label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
               />
             </>
           )}
