@@ -194,14 +194,22 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     Returns the first matching result with lat, lon, and a short label
     suitable for display (city name or zip code).
     """
+    params: dict[str, str | int] = {
+        "q": q,
+        "format": "jsonv2",
+        "limit": 1,
+        "addressdetails": 1,
+    }
+    # Pure numeric queries are zip codes — restrict to US to avoid
+    # matching postal codes in other countries (e.g. 75080 → Pakistan).
+    if q.strip().replace("-", "").isdigit():
+        params["countrycodes"] = "us"
+    else:
+        # Bias (not restrict) toward continental US for non-zip queries
+        params["viewbox"] = "-125.0,49.4,-66.9,25.0"
     resp = await _http_client.get(
         _NOMINATIM_URL,
-        params={
-            "q": q,
-            "format": "jsonv2",
-            "limit": 1,
-            "addressdetails": 1,
-        },
+        params=params,
         headers=_NOMINATIM_HEADERS,
     )
     resp.raise_for_status()
