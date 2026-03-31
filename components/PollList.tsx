@@ -147,6 +147,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
   const [winnerTexts, setWinnerTexts] = useState<Record<string, string>>({});
+  const fetchedPollIds = useRef<Set<string>>(new Set());
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -240,8 +241,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   useEffect(() => {
     if (closedPolls.length === 0) return;
 
-    const pollsToFetch = closedPolls.filter(p => !winnerTexts[p.id]);
+    const pollsToFetch = closedPolls.filter(p => !fetchedPollIds.current.has(p.id));
     if (pollsToFetch.length === 0) return;
+
+    // Mark as fetched immediately to prevent duplicate requests
+    for (const p of pollsToFetch) fetchedPollIds.current.add(p.id);
 
     let cancelled = false;
 
@@ -249,8 +253,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       pollsToFetch.map(async (poll) => {
         try {
           const results = await apiGetPollResults(poll.id);
-          const winner = getWinnerText(poll, results);
-          return { id: poll.id, winner };
+          return { id: poll.id, winner: getWinnerText(poll, results) };
         } catch {
           return { id: poll.id, winner: null };
         }
