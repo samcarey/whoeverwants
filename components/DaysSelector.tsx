@@ -186,31 +186,34 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
 
-    // Get first day of month
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    // Get day of week for first day (0 = Sunday)
     const firstDayOfWeek = firstDay.getDay();
 
-    // Get total days in month
-    const daysInMonth = lastDay.getDate();
+    const days: { dateStr: string; isCurrentMonth: boolean }[] = [];
+    const TOTAL_CELLS = 35; // 5 rows × 7 cols
 
-    // Create array of all days
-    const days: (string | null)[] = [];
-
-    // Add empty cells for days before month starts
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      days.push(null);
+    // Fill leading days from previous month
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const date = new Date(year, month, -i);
+      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
     }
 
-    // Add all days of the month
+    // Add all days of the current month
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      days.push(dateToString(date));
+      days.push({ dateStr: dateToString(date), isCurrentMonth: true });
     }
 
-    return days;
+    // Fill trailing days from next month
+    let nextDay = 1;
+    while (days.length < TOTAL_CELLS) {
+      const date = new Date(year, month + 1, nextDay++);
+      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
+    }
+
+    // If we have more than 35 (month spans 6 rows), truncate to 35
+    return days.slice(0, TOTAL_CELLS);
   };
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -308,20 +311,16 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
                   {/* Calendar days */}
                   <div className="grid grid-cols-7 gap-1">
-                    {calendarDays.map((dateStr, index) => {
-                      if (dateStr === null) {
-                        return <div key={`empty-${index}`} className="aspect-square" />;
-                      }
-
+                    {calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
                       const isPast = isPastDate(dateStr);
                       const isAllowed = !allowedDays || allowedDays.includes(dateStr);
-                      const isDisabled = isPast || !isAllowed;
+                      const isDisabled = isPast || !isAllowed || !isCurrentMonth;
                       const isSelected = tempSelectedDays.includes(dateStr);
                       const isToday = dateStr === getTodayDate();
 
                       return (
                         <button
-                          key={dateStr}
+                          key={`${dateStr}-${index}`}
                           type="button"
                           onClick={() => !isDisabled && handleToggleDay(dateStr)}
                           disabled={isDisabled}
@@ -329,9 +328,11 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                           data-testid={`calendar-day-${dateStr}`}
                           className={`
                             aspect-square rounded-md text-sm flex items-center justify-center
-                            ${isDisabled
-                              ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                            ${!isCurrentMonth
+                              ? 'text-gray-300 dark:text-gray-600 cursor-default'
+                              : isDisabled
+                                ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                                : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
                             }
                             ${isSelected
                               ? 'bg-blue-500 text-white hover:bg-blue-600'
