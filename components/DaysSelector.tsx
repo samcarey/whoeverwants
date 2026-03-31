@@ -14,7 +14,10 @@ interface DaysSelectorProps {
 
 export default function DaysSelector({ selectedDays, onChange, disabled = false, isOpen, onOpenChange, allowedDays, hideButton = false }: DaysSelectorProps) {
   const [tempSelectedDays, setTempSelectedDays] = useState<string[]>(selectedDays);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const modalContentRef = useRef<HTMLDivElement>(null);
 
   const handleToggleDay = (date: string) => {
@@ -66,7 +69,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
       onChange(validDays);
     }
     setTempSelectedDays(validDays);
-    setCurrentMonth(new Date());
+    const now = new Date();
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
 
     const body = document.body;
     const html = document.documentElement;
@@ -150,13 +154,6 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     return `${year}-${month}-${day}`;
   };
 
-  const isPastDate = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date < today;
-  };
-
   const goToPreviousMonth = () => {
     setCurrentMonth(prev => {
       const newMonth = new Date(prev);
@@ -174,38 +171,42 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
   };
 
   const goToToday = () => {
-    setCurrentMonth(new Date());
+    const now = new Date();
+    setCurrentMonth(new Date(now.getFullYear(), now.getMonth(), 1));
   };
 
   const renderCalendar = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
 
-    // Get first day of month
     const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    // Get day of week for first day (0 = Sunday)
     const firstDayOfWeek = firstDay.getDay();
 
-    // Get total days in month
-    const daysInMonth = lastDay.getDate();
+    const days: { dateStr: string; isCurrentMonth: boolean }[] = [];
+    const TOTAL_CELLS = 35; // 5 rows × 7 cols
 
-    // Create array of all days
-    const days: (string | null)[] = [];
-
-    // Add empty cells for days before month starts
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      days.push(null);
+    // Fill leading days from previous month
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      const date = new Date(year, month, -i);
+      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
     }
 
-    // Add all days of the month
+    // Add all days of the current month
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      days.push(dateToString(date));
+      days.push({ dateStr: dateToString(date), isCurrentMonth: true });
     }
 
-    return days;
+    // Fill trailing days from next month
+    let nextDay = 1;
+    while (days.length < TOTAL_CELLS) {
+      const date = new Date(year, month + 1, nextDay++);
+      days.push({ dateStr: dateToString(date), isCurrentMonth: false });
+    }
+
+    // If we have more than 35 (month spans 6 rows), truncate to 35
+    return days.slice(0, TOTAL_CELLS);
   };
 
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -303,20 +304,18 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
                   {/* Calendar days */}
                   <div className="grid grid-cols-7 gap-1">
-                    {calendarDays.map((dateStr, index) => {
-                      if (dateStr === null) {
-                        return <div key={`empty-${index}`} className="aspect-square" />;
-                      }
-
-                      const isPast = isPastDate(dateStr);
+                    {(() => {
+                      const todayStr = getTodayDate();
+                      return calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
+                      const isPast = dateStr < todayStr;
                       const isAllowed = !allowedDays || allowedDays.includes(dateStr);
                       const isDisabled = isPast || !isAllowed;
                       const isSelected = tempSelectedDays.includes(dateStr);
-                      const isToday = dateStr === getTodayDate();
+                      const isToday = dateStr === todayStr;
 
                       return (
                         <button
-                          key={dateStr}
+                          key={`${dateStr}-${index}`}
                           type="button"
                           onClick={() => !isDisabled && handleToggleDay(dateStr)}
                           disabled={isDisabled}
@@ -326,7 +325,9 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                             aspect-square rounded-md text-sm flex items-center justify-center
                             ${isDisabled
                               ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                              : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                              : !isCurrentMonth
+                                ? 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
+                                : 'hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer'
                             }
                             ${isSelected
                               ? 'bg-blue-500 text-white hover:bg-blue-600'
@@ -341,21 +342,16 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                           {new Date(dateStr + 'T00:00:00').getDate()}
                         </button>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 </div>
 
-                {/* Selected count or warning */}
-                <div className="my-2 text-sm text-center">
-                  {tempSelectedDays.length > 0 ? (
-                    <div className="text-gray-600 dark:text-gray-400">
-                      {tempSelectedDays.length} day{tempSelectedDays.length !== 1 ? 's' : ''} selected
-                    </div>
-                  ) : (
-                    <div className="text-orange-600 dark:text-orange-400">
-                      Please select at least one day
-                    </div>
-                  )}
+                {/* Selected count */}
+                <div className="my-2 text-sm text-center text-gray-600 dark:text-gray-400">
+                  {tempSelectedDays.length > 0
+                    ? `${tempSelectedDays.length} day${tempSelectedDays.length !== 1 ? 's' : ''} selected`
+                    : 'No days selected'}
                 </div>
 
                 <div className="flex gap-2 pt-2">
@@ -369,8 +365,7 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                   <button
                     type="button"
                     onClick={handleApply}
-                    disabled={tempSelectedDays.length === 0}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     Apply
                   </button>

@@ -37,6 +37,24 @@ function formatDayDisplay(dateStr: string): string {
   return `${weekday}, ${month} ${day}`;
 }
 
+function getRelativeDay(dateStr: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr + 'T00:00:00');
+  const diffMs = target.getTime() - today.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays < 14) return `${diffDays} days away`;
+  const weeks = Math.floor(diffDays / 7);
+  if (weeks < 8) return `${weeks} week${weeks === 1 ? '' : 's'} away`;
+  const months = Math.floor(diffDays / 30.44);
+  if (months < 24) return `${months} month${months === 1 ? '' : 's'} away`;
+  const years = Math.floor(diffDays / 365.25);
+  return `${years} year${years === 1 ? '' : 's'} away`;
+}
+
 export default function DayTimeWindowsInput({
   day,
   windows,
@@ -85,11 +103,14 @@ export default function DayTimeWindowsInput({
   };
 
   return (
-    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+    <div className="flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       {/* Left: Day display */}
-      <div className="min-w-[100px]">
+      <div className="min-w-[100px] self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayDisplay(day)}
+        </div>
+        <div className="text-xs text-blue-500 dark:text-blue-400">
+          {getRelativeDay(day)}
         </div>
       </div>
 
@@ -150,7 +171,7 @@ export default function DayTimeWindowsInput({
             type="button"
             onClick={handleAddWindow}
             disabled={disabled}
-            className="w-[168px] py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center"
+            className={`w-[168px] py-1.5 rounded-full text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center ${windows.length === 0 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
           >
             + Time
           </button>

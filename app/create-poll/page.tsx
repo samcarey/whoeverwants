@@ -423,6 +423,17 @@ function CreatePollContent() {
       }
     }
 
+    // Participation poll: must have days selected, and every day needs a time slot
+    if (dbPollType === 'participation') {
+      if (dayTimeWindows.length === 0) {
+        return "Please select at least one day.";
+      }
+      const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
+      if (emptyDays.length > 0) {
+        return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
+      }
+    }
+
     return null;
   };
 
