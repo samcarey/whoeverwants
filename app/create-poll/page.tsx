@@ -197,6 +197,13 @@ function CreatePollContent() {
     }
   }, [isEditingName]);
 
+  // Focus details textarea when opening
+  useEffect(() => {
+    if (detailsOpen) {
+      detailsRef.current?.focus();
+    }
+  }, [detailsOpen]);
+
   // Auto-update title when form fields change (if user hasn't manually edited)
   useEffect(() => {
     if (isAutoTitle) {
@@ -1523,13 +1530,10 @@ function CreatePollContent() {
             ) : (
               <button
                 type="button"
-                onClick={() => {
-                  setDetailsOpen(true);
-                  setTimeout(() => detailsRef.current?.focus(), 0);
-                }}
+                onClick={() => setDetailsOpen(true)}
                 className="block text-sm font-medium text-left"
               >
-                Details: <span className="text-blue-600 dark:text-blue-400 font-normal italic">add</span>
+                Add Details <span className="font-normal text-gray-500">(optional)</span>
               </button>
             )}
           </div>
