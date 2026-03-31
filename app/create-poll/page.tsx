@@ -1448,8 +1448,7 @@ function CreatePollContent() {
                 }}
                 className="block text-sm font-medium text-left"
               >
-                Title: {title || <span className="text-gray-400 italic font-normal">auto</span>}{' '}
-                <span className="text-gray-500 font-normal">(Tap to Edit)</span>
+                Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
               </button>
             ) : (
               <>
@@ -1560,7 +1559,7 @@ function CreatePollContent() {
                 }}
                 className="block text-sm font-medium text-left"
               >
-                Your Name: <span className="font-normal">{creatorName.trim()}</span>
+                Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
               </button>
             ) : (
               <button
