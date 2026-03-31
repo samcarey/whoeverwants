@@ -91,11 +91,6 @@ export default function DayTimeWindowsInput({
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
           {formatDayDisplay(day)}
         </div>
-        {windows.length === 0 && !pollWindows && (
-          <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-            Add a time slot
-          </div>
-        )}
       </div>
 
       {/* Right: Time windows */}
@@ -155,7 +150,7 @@ export default function DayTimeWindowsInput({
             type="button"
             onClick={handleAddWindow}
             disabled={disabled}
-            className="w-[168px] py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center"
+            className={`w-[168px] py-1.5 rounded-full text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-center ${windows.length === 0 ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
           >
             + Time
           </button>
