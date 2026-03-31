@@ -1528,13 +1528,16 @@ function CreatePollContent() {
                 />
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setDetailsOpen(true)}
-                className="block text-sm font-medium text-left"
-              >
-                <span className="font-normal text-blue-600 dark:text-blue-400">Add Details</span> <span className="font-normal text-gray-500">(optional)</span>
-              </button>
+              <div className="text-sm font-medium">
+                Details <span className="text-gray-500 font-normal">(optional)</span>:{' '}
+                <button
+                  type="button"
+                  onClick={() => setDetailsOpen(true)}
+                  className="font-normal text-blue-600 dark:text-blue-400"
+                >
+                  Add
+                </button>
+              </div>
             )}
           </div>
 
