@@ -550,7 +550,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </div>
                         {winnerTexts[poll.id] && (
                           <div className="flex items-center gap-1 max-w-[40%]">
-                            <span className="flex-shrink-0 text-xs leading-none">👑</span>
+                            <span className="flex-shrink-0 text-xs leading-none -mt-px">👑</span>
                             <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 truncate">
                               {winnerTexts[poll.id]}
                             </span>
