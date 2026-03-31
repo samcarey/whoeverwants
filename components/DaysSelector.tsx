@@ -154,13 +154,6 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
     return `${year}-${month}-${day}`;
   };
 
-  const isPastDate = (dateStr: string) => {
-    const date = new Date(dateStr + 'T00:00:00');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return date < today;
-  };
-
   const goToPreviousMonth = () => {
     setCurrentMonth(prev => {
       const newMonth = new Date(prev);
@@ -311,12 +304,14 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
 
                   {/* Calendar days */}
                   <div className="grid grid-cols-7 gap-1">
-                    {calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
-                      const isPast = isPastDate(dateStr);
+                    {(() => {
+                      const todayStr = getTodayDate();
+                      return calendarDays.map(({ dateStr, isCurrentMonth }, index) => {
+                      const isPast = dateStr < todayStr;
                       const isAllowed = !allowedDays || allowedDays.includes(dateStr);
                       const isDisabled = isPast || !isAllowed;
                       const isSelected = tempSelectedDays.includes(dateStr);
-                      const isToday = dateStr === getTodayDate();
+                      const isToday = dateStr === todayStr;
 
                       return (
                         <button
@@ -347,7 +342,8 @@ export default function DaysSelector({ selectedDays, onChange, disabled = false,
                           {new Date(dateStr + 'T00:00:00').getDate()}
                         </button>
                       );
-                    })}
+                    });
+                    })()}
                   </div>
                 </div>
 
