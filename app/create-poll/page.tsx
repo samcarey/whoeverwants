@@ -1500,8 +1500,7 @@ function CreatePollContent() {
             {detailsOpen ? (
               <>
                 <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Details{' '}
-                  <span className="text-gray-500 font-normal">(optional)</span>
+                  Details{!details.trim() && <>{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
                 </label>
                 <textarea
                   ref={detailsRef}
@@ -1545,7 +1544,7 @@ function CreatePollContent() {
             {isEditingName ? (
               <>
                 <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
-                  Your Name <span className="text-gray-500 font-normal">(optional)</span>
+                  Your Name{!creatorName.trim() && <>{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
                 </label>
                 <input
                   ref={nameInputRef}
@@ -1569,13 +1568,16 @@ function CreatePollContent() {
                 Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleEditName}
-                className="block text-sm font-medium text-left"
-              >
-                Your Name: <span className="text-blue-600 dark:text-blue-400 font-normal italic">add</span>
-              </button>
+              <div className="text-sm font-medium">
+                Your Name <span className="text-gray-500 font-normal">(optional)</span>:{' '}
+                <button
+                  type="button"
+                  onClick={handleEditName}
+                  className="font-normal text-blue-600 dark:text-blue-400"
+                >
+                  Add
+                </button>
+              </div>
             )}
           </div>
           
