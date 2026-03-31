@@ -1500,7 +1500,7 @@ function CreatePollContent() {
             {detailsOpen ? (
               <>
                 <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Details{!details.trim() && <>{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+                  Details{!details.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
                 </label>
                 <textarea
                   ref={detailsRef}
@@ -1528,7 +1528,7 @@ function CreatePollContent() {
               </>
             ) : (
               <div className="text-sm font-medium">
-                Details <span className="text-gray-500 font-normal">(optional)</span>:{' '}
+                Details <span className="font-normal">(optional)</span>:{' '}
                 <button
                   type="button"
                   onClick={() => setDetailsOpen(true)}
@@ -1544,7 +1544,7 @@ function CreatePollContent() {
             {isEditingName ? (
               <>
                 <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
-                  Your Name{!creatorName.trim() && <>{' '}<span className="text-gray-500 font-normal">(optional)</span></>}
+                  Your Name{!creatorName.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
                 </label>
                 <input
                   ref={nameInputRef}
@@ -1569,7 +1569,7 @@ function CreatePollContent() {
               </button>
             ) : (
               <div className="text-sm font-medium">
-                Your Name <span className="text-gray-500 font-normal">(optional)</span>:{' '}
+                Your Name <span className="font-normal">(optional)</span>:{' '}
                 <button
                   type="button"
                   onClick={handleEditName}
