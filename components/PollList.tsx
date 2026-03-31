@@ -94,6 +94,12 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
   );
 };
 
+function getOptionDisplayName(optionKey: string, poll: Poll): string {
+  const meta = poll.options_metadata?.[optionKey];
+  if (meta?.name) return meta.name;
+  return optionKey;
+}
+
 function getWinnerText(poll: Poll, results: PollResults): string | null {
   switch (poll.poll_type) {
     case 'yes_no':
@@ -102,10 +108,11 @@ function getWinnerText(poll: Poll, results: PollResults): string | null {
       if (results.winner === 'tie') return 'Tie';
       return null;
     case 'ranked_choice':
-      return results.winner || null;
+      if (!results.winner) return null;
+      return getOptionDisplayName(results.winner, poll);
     case 'nomination':
       if (results.nomination_counts && results.nomination_counts.length > 0) {
-        return results.nomination_counts[0].option;
+        return getOptionDisplayName(results.nomination_counts[0].option, poll);
       }
       return null;
     case 'participation':
@@ -504,7 +511,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-start gap-2">
+                      <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
@@ -542,9 +549,10 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </div>
                         </div>
                         {winnerTexts[poll.id] && (
-                          <div className="flex-shrink-0 self-center max-w-[40%]">
-                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 truncate max-w-full">
-                              {winnerTexts[poll.id]}
+                          <div className="flex-shrink-0 max-w-[40%]">
+                            <span className="inline-flex items-center gap-0.5 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 max-w-full">
+                              <span className="flex-shrink-0">👑</span>
+                              <span className="truncate">{winnerTexts[poll.id]}</span>
                             </span>
                           </div>
                         )}
