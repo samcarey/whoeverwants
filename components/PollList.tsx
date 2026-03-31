@@ -539,7 +539,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                               </span>
                             )}
                           </div>
-                          <h3 className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white">
+                          <h3 className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1">
                             {poll.title}
                           </h3>
                           <div className="text-xs text-gray-400 dark:text-gray-500">
