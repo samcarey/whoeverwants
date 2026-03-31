@@ -511,45 +511,43 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                            {poll.response_deadline && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                Closed {(() => {
-                                  const deadline = new Date(poll.response_deadline);
-                                  const now = new Date();
-                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                        {poll.response_deadline && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Closed {(() => {
+                              const deadline = new Date(poll.response_deadline);
+                              const now = new Date();
+                              const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                                  if (hoursAgo <= 24) {
-                                    return deadline.toLocaleTimeString("en-US", {
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                      hour12: true
-                                    });
-                                  } else {
-                                    return deadline.toLocaleDateString("en-US", {
-                                      month: "numeric",
-                                      day: "numeric",
-                                      year: "2-digit"
-                                    });
-                                  }
-                                })()}
-                              </span>
-                            )}
-                          </div>
-                          <h3 className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1">
-                            {poll.title}
-                          </h3>
-                          <div className="text-xs text-gray-400 dark:text-gray-500">
-                            <ClientOnly fallback={null}>
-                              <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
-                            </ClientOnly>
-                          </div>
+                              if (hoursAgo <= 24) {
+                                return deadline.toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true
+                                });
+                              } else {
+                                return deadline.toLocaleDateString("en-US", {
+                                  month: "numeric",
+                                  day: "numeric",
+                                  year: "2-digit"
+                                });
+                              }
+                            })()}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1">
+                        {poll.title}
+                      </h3>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          <ClientOnly fallback={null}>
+                            <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                          </ClientOnly>
                         </div>
                         {winnerTexts[poll.id] && (
-                          <div className="flex-shrink-0 flex items-center gap-1 max-w-[40%] self-end">
+                          <div className="flex items-center gap-1 max-w-[40%]">
                             <span className="flex-shrink-0 text-xs">👑</span>
                             <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 truncate">
                               {winnerTexts[poll.id]}
