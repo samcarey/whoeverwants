@@ -99,6 +99,7 @@ class ReopenPollRequest(BaseModel):
 
 class AccessiblePollsRequest(BaseModel):
     poll_ids: list[str]
+    include_results: bool = False
 
 
 class RelatedPollsRequest(BaseModel):
@@ -158,6 +159,7 @@ class PollResponse(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    results: "PollResultsResponse | None" = None
 
 
 class VoteResponse(BaseModel):
@@ -228,3 +230,7 @@ class RankedChoiceRoundResponse(BaseModel):
     is_eliminated: bool
     borda_score: int | None = None
     tie_broken_by_borda: bool = False
+
+
+# Resolve forward references (PollResponse.results -> PollResultsResponse)
+PollResponse.model_rebuild()
