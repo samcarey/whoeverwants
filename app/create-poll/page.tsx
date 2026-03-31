@@ -37,6 +37,22 @@ function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
 // For locations, take just the name (first comma segment) then apply shortenOption
 function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
 
+const BASE_DEADLINE_OPTIONS = [
+  { value: "5min", label: "5 min", minutes: 5 },
+  { value: "10min", label: "10 min", minutes: 10 },
+  { value: "15min", label: "15 min", minutes: 15 },
+  { value: "30min", label: "30 min", minutes: 30 },
+  { value: "1hr", label: "1 hr", minutes: 60 },
+  { value: "2hr", label: "2 hr", minutes: 120 },
+  { value: "4hr", label: "4 hr", minutes: 240 },
+  { value: "custom", label: "Custom", minutes: 0 },
+];
+
+const DEV_DEADLINE_OPTIONS = [
+  { value: "10sec", label: "10 sec", minutes: 1/6 },
+  ...BASE_DEADLINE_OPTIONS,
+];
+
 function CreatePollContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -87,6 +103,8 @@ function CreatePollContent() {
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
@@ -112,8 +130,7 @@ function CreatePollContent() {
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
     const builtIn = getBuiltInType(category);
-    const icon = builtIn?.icon || '';
-    const limit = 40 - (icon ? icon.length + 1 : 0);
+    const limit = 40;
     const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
 
     const joinWithOr = (items: string[]) => {
@@ -146,8 +163,6 @@ function CreatePollContent() {
       return `Which ${catLabel}?`;
     };
 
-    const addIcon = (base: string) => icon ? `${base} ${icon}` : base;
-
     if (pollType === 'poll') {
       if (category === 'yes_no') {
         return '';
@@ -158,10 +173,10 @@ function CreatePollContent() {
         // Suggestion mode (no options) — use category name as title
         const prefix = category === 'location' ? 'Place'
           : builtIn?.label || (category !== 'custom' ? category : '');
-        if (prefix) return addIcon(prefix + '?');
+        if (prefix) return prefix + '?';
         return '';
       }
-      return addIcon(buildFromOptions(filled, 'Quick Vote'));
+      return buildFromOptions(filled, 'Quick Vote');
     }
 
     // participation
@@ -170,7 +185,7 @@ function CreatePollContent() {
     }
     if (locationMode === 'preferences') {
       const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
-      if (filled.length > 0) return addIcon(buildFromOptions(filled, "Who's in?"));
+      if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
     }
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue, locationOptions]);
@@ -277,6 +292,7 @@ function CreatePollContent() {
           setTitle(formState.title || '');
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
           setDetails(formState.details || '');
+          if (formState.details) setDetailsOpen(true);
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -500,6 +516,7 @@ function CreatePollContent() {
           setTitle(forkData.title || "");
           if (forkData.title) setIsAutoTitle(false);
           setDetails(forkData.details || "");
+          if (forkData.details) setDetailsOpen(true);
 
           // Set poll type and options based on forked poll
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
@@ -586,6 +603,7 @@ function CreatePollContent() {
           setTitle(duplicateData.title || "");
           if (duplicateData.title) setIsAutoTitle(false);
           setDetails(duplicateData.details || "");
+          if (duplicateData.details) setDetailsOpen(true);
 
           // Set poll type based on duplicated poll
           if (duplicateData.poll_type === 'ranked_choice') {
@@ -779,24 +797,9 @@ function CreatePollContent() {
   }, [options.length, shouldFocusNewOption]);
 
 
-  const baseDeadlineOptions = [
-    { value: "5min", label: "5 minutes", minutes: 5 },
-    { value: "10min", label: "10 minutes", minutes: 10 },
-    { value: "15min", label: "15 minutes", minutes: 15 },
-    { value: "30min", label: "30 minutes", minutes: 30 },
-    { value: "1hr", label: "1 hour", minutes: 60 },
-    { value: "2hr", label: "2 hours", minutes: 120 },
-    { value: "4hr", label: "4 hours", minutes: 240 },
-    { value: "custom", label: "Custom", minutes: 0 },
-  ];
-
-  // Add 10-second option for development only
-  const deadlineOptions = process.env.NODE_ENV === 'development' 
-    ? [
-        { value: "10sec", label: "10 seconds (Dev Only)", minutes: 1/6 }, // 10 seconds = 1/6 minute
-        ...baseDeadlineOptions
-      ]
-    : baseDeadlineOptions;
+  const deadlineOptions = process.env.NODE_ENV === 'development'
+    ? DEV_DEADLINE_OPTIONS
+    : BASE_DEADLINE_OPTIONS;
 
   const calculateDeadline = () => {
     const now = new Date();
@@ -875,6 +878,11 @@ function CreatePollContent() {
     if (displayParts.length === 0) return " (less than 1 min)";
     
     return ` (${displayParts.join(', ')})`;
+  };
+
+  const handleEditName = () => {
+    setIsEditingName(true);
+    setTimeout(() => nameInputRef.current?.focus(), 0);
   };
 
   const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
@@ -1016,7 +1024,7 @@ function CreatePollContent() {
       if (dbPollType === 'nomination' && autoCreatePreferences) {
         pollData.auto_create_preferences = true;
         pollData.auto_preferences_deadline_minutes =
-          baseDeadlineOptions.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
+          BASE_DEADLINE_OPTIONS.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
       }
 
       // Add min/max participants for participation polls
@@ -1063,12 +1071,12 @@ function CreatePollContent() {
           } else if (mode === 'preferences') {
             pollData[`${fieldName}_options`] = fieldOptions.filter(o => o.trim() !== '');
             pollData[`${fieldName}_preferences_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
           } else if (mode === 'suggestions') {
             pollData[`${fieldName}_suggestions_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === sugDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === sugDeadline)?.minutes || 10;
             pollData[`${fieldName}_preferences_deadline_minutes`] =
-              baseDeadlineOptions.find(o => o.value === prefDeadline)?.minutes || 10;
+              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
           }
         };
         addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
@@ -1276,7 +1284,7 @@ function CreatePollContent() {
                 onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
                 preferencesDeadline={locationPreferencesDeadline}
                 onPreferencesDeadlineChange={setLocationPreferencesDeadline}
-                deadlineOptions={baseDeadlineOptions}
+                deadlineOptions={BASE_DEADLINE_OPTIONS}
                 isLoading={isLoading}
               />
             </div>
@@ -1306,23 +1314,49 @@ function CreatePollContent() {
             </>
           )}
 
+          {/* Auto-close + Response Deadline */}
           <div>
-            <label htmlFor="deadline" className="block text-sm font-medium mb-1">
-              Response Deadline
-            </label>
-            <select
-              id="deadline"
-              value={deadlineOption}
-              onChange={(e) => setDeadlineOption(e.target.value)}
-              disabled={isLoading}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {deadlineOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {isClient ? getTimeLabel(option.value) : option.label}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium mb-1">Close After</label>
+            <div className="flex items-center gap-2 min-w-0">
+              <input
+                type="number"
+                min="1"
+                value={autoCloseAfter ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
+                }}
+                disabled={isLoading}
+                placeholder="—"
+                className="w-16 shrink-0 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400 shrink-0">votes or</span>
+              <select
+                id="deadline"
+                value={deadlineOption}
+                onChange={(e) => setDeadlineOption(e.target.value)}
+                disabled={isLoading}
+                className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm truncate"
+              >
+                {deadlineOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {isClient ? getTimeLabel(option.value) : option.label}
+                  </option>
+                ))}
+              </select>
+              {autoCloseAfter !== null && (
+                <button
+                  type="button"
+                  onClick={() => setAutoCloseAfter(null)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
+                  title="Disable auto-close"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {deadlineOption === "custom" && (
@@ -1366,39 +1400,6 @@ function CreatePollContent() {
             </div>
           )}
 
-          {/* Auto-close after N responses */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Auto-close</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">After</span>
-              <input
-                type="number"
-                min="1"
-                value={autoCloseAfter ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
-                }}
-                disabled={isLoading}
-                placeholder="—"
-                className="w-16 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
-              />
-              <span className="text-sm text-gray-600 dark:text-gray-400">responses</span>
-              {autoCloseAfter !== null && (
-                <button
-                  type="button"
-                  onClick={() => setAutoCloseAfter(null)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 ml-1"
-                  title="Disable auto-close"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-
           {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
           {isSuggestionMode && (
             <div className="space-y-2">
@@ -1440,102 +1441,135 @@ function CreatePollContent() {
           )}
 
           <div>
-            <label htmlFor="title" className="block text-sm font-medium mb-1">
-              Title
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                id="title"
-                ref={titleInputRef}
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
+            {isAutoTitle ? (
+              <button
+                type="button"
+                onClick={() => {
                   setIsAutoTitle(false);
+                  setTitle('');
+                  setTimeout(() => titleInputRef.current?.focus(), 0);
                 }}
-                disabled={isLoading}
-                maxLength={100}
-                className="w-full px-3 py-2 pr-9 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Enter your title..."
-                required
-              />
-              {!isAutoTitle && category !== 'yes_no' && (
-                <button
-                  type="button"
-                  onClick={() => setIsAutoTitle(true)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                  title="Auto-generate title"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-                  </svg>
-                </button>
-              )}
-            </div>
+                className="block text-sm font-medium text-left"
+              >
+                Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
+              </button>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="title" className="text-sm font-medium">
+                    Title
+                  </label>
+                  {category !== 'yes_no' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsAutoTitle(true)}
+                      className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Generate
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  id="title"
+                  ref={titleInputRef}
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setIsAutoTitle(false);
+                  }}
+                  disabled={isLoading}
+                  maxLength={100}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder="Enter your title..."
+                  required
+                />
+              </>
+            )}
           </div>
 
           {/* Optional details field */}
           <div>
-            <label htmlFor="details" className="block text-sm font-medium mb-1">
-              Details{' '}
-              <span className="text-gray-500 font-normal">(optional)</span>
-            </label>
-            <textarea
-              id="details"
-              value={details}
-              onChange={(e) => {
-                setDetails(e.target.value);
-                const el = e.target;
-                el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                const maxH = 5 * 20 + 16; // 5 lines + padding
-                el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-              }}
-              disabled={isLoading}
-              style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-              className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-              placeholder="Add more context or instructions..."
-            />
+            {detailsOpen ? (
+              <>
+                <label htmlFor="details" className="block text-sm font-medium mb-1">
+                  Details{' '}
+                  <span className="text-gray-500 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  ref={detailsRef}
+                  id="details"
+                  value={details}
+                  onChange={(e) => {
+                    setDetails(e.target.value);
+                    const el = e.target;
+                    el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                    const maxH = 5 * 20 + 16; // 5 lines + padding
+                    el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                  }}
+                  onBlur={() => {
+                    if (!details.trim()) {
+                      setDetailsOpen(false);
+                      setDetails('');
+                    }
+                  }}
+                  disabled={isLoading}
+                  style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                  placeholder="Add more context or instructions..."
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailsOpen(true);
+                  setTimeout(() => detailsRef.current?.focus(), 0);
+                }}
+                className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                Add Details <span className="font-normal">(optional)</span>
+              </button>
+            )}
           </div>
 
           <div>
-            <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
-              Your Name (optional)
-            </label>
-            {(() => {
-              const trimmedName = creatorName.trim();
-              return trimmedName && !isEditingName ? (
-                <div className="flex items-center gap-2 text-sm">
-                  <svg className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingName(true)}
-                    className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                  >
-                    {trimmedName}
-                  </button>
-                </div>
-              ) : (
+            {isEditingName ? (
+              <>
+                <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
+                  Your Name <span className="text-gray-500 font-normal">(optional)</span>
+                </label>
                 <input
                   ref={nameInputRef}
                   type="text"
                   id="creatorName"
                   value={creatorName}
                   onChange={(e) => setCreatorName(e.target.value)}
-                  onBlur={() => {
-                    if (creatorName.trim()) {
-                      setIsEditingName(false);
-                    }
-                  }}
+                  onBlur={() => setIsEditingName(false)}
                   disabled={isLoading}
                   maxLength={50}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   placeholder="Enter your name..."
                 />
-              );
-            })()}
+              </>
+            ) : creatorName.trim() ? (
+              <button
+                type="button"
+                onClick={handleEditName}
+                className="block text-sm font-medium text-left"
+              >
+                Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleEditName}
+                className="text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                Add Your Name <span className="font-normal">(optional)</span>
+              </button>
+            )}
           </div>
           
           {!isFormValid() && !isLoading && (
