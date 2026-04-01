@@ -14,6 +14,8 @@ interface VoterListProps {
   refreshTrigger?: number; // Optional prop to trigger refresh
 }
 
+const CARD_CLASS = "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm";
+
 export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -60,7 +62,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (initialLoading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
+      <div className={`${CARD_CLASS} ${className}`}>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           {/* Shimmer effect for loading voter bubbles */}
@@ -81,7 +83,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
+      <div className={`${CARD_CLASS} ${className}`}>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
@@ -157,7 +159,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
+    <div className={`${CARD_CLASS} ${className}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">
           Respondents ({voters.length})
