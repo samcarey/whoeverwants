@@ -109,26 +109,54 @@ function getOptionDisplayName(optionKey: string, poll: Poll): string {
   return optionKey;
 }
 
-function getWinnerText(poll: Poll, results: PollResults): string | null {
+interface ResultBadge {
+  text: string;
+  emoji: string;
+  color: 'green' | 'red' | 'yellow' | 'gray';
+}
+
+const BADGE_COLORS = {
+  green: 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200',
+  red: 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200',
+  yellow: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200',
+  gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
+};
+
+function getResultBadge(poll: Poll, results: PollResults | null | undefined): ResultBadge {
+  if (!results) {
+    return { text: 'No results', emoji: '—', color: 'gray' };
+  }
+
+  if (results.total_votes === 0) {
+    return { text: 'No voters', emoji: '🦗', color: 'gray' };
+  }
+
   switch (poll.poll_type) {
-    case 'yes_no':
-      if (results.winner === 'yes') return 'Yes';
-      if (results.winner === 'no') return 'No';
-      if (results.winner === 'tie') return 'Tie';
-      return null;
-    case 'ranked_choice':
-      if (!results.winner) return null;
-      return getOptionDisplayName(results.winner, poll);
-    case 'nomination':
-      if (results.nomination_counts && results.nomination_counts.length > 0) {
-        return getOptionDisplayName(results.nomination_counts[0].option, poll);
+    case 'yes_no': {
+      if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
+      if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };
+      if (results.winner === 'tie') return { text: 'Tie', emoji: '🤝', color: 'yellow' };
+      return { text: 'No winner', emoji: '—', color: 'gray' };
+    }
+    case 'ranked_choice': {
+      if (results.winner) {
+        return { text: getOptionDisplayName(results.winner, poll), emoji: '👑', color: 'green' };
       }
-      return null;
-    case 'participation':
-      if (results.is_happening) return 'Happening';
-      return 'Not happening';
+      return { text: 'No winner', emoji: '—', color: 'gray' };
+    }
+    case 'nomination': {
+      if (results.nomination_counts && results.nomination_counts.length > 0) {
+        const top = results.nomination_counts[0];
+        return { text: getOptionDisplayName(top.option, poll), emoji: '👑', color: 'green' };
+      }
+      return { text: 'No suggestions', emoji: '—', color: 'gray' };
+    }
+    case 'participation': {
+      if (results.is_happening) return { text: 'Happening', emoji: '🎉', color: 'green' };
+      return { text: 'Not happening', emoji: '✗', color: 'red' };
+    }
     default:
-      return null;
+      return { text: 'Closed', emoji: '—', color: 'gray' };
   }
 }
 
@@ -155,15 +183,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
-  const winnerTexts = useMemo(() => {
-    const texts: Record<string, string> = {};
+  const resultBadges = useMemo(() => {
+    const badges: Record<string, ResultBadge> = {};
     for (const poll of closedPolls) {
-      if (poll.results) {
-        const winner = getWinnerText(poll, poll.results);
-        if (winner) texts[poll.id] = winner;
-      }
+      badges[poll.id] = getResultBadge(poll, poll.results);
     }
-    return texts;
+    return badges;
   }, [closedPolls]);
   
   // Load voted and abstained polls from localStorage
@@ -549,14 +574,17 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                           </ClientOnly>
                         </div>
-                        {winnerTexts[poll.id] && (
-                          <div className="flex items-center gap-1 max-w-[40%]">
-                            <span className="flex-shrink-0 text-xs leading-none -mt-px">👑</span>
-                            <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 truncate">
-                              {winnerTexts[poll.id]}
-                            </span>
-                          </div>
-                        )}
+                        {(() => {
+                          const badge = resultBadges[poll.id];
+                          return badge && (
+                            <div className="flex items-center gap-1 max-w-[40%]">
+                              <span className="flex-shrink-0 text-xs leading-none -mt-px">{badge.emoji}</span>
+                              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
+                                {badge.text}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
