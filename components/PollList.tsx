@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
+import { getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import { getBuiltInType } from "@/components/TypeFieldInput";
@@ -122,7 +123,7 @@ const BADGE_COLORS = {
   gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
-function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean): ResultBadge {
+function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean, userName?: string | null): ResultBadge {
   if (!results) {
     return { text: 'No results', emoji: '—', color: 'gray' };
   }
@@ -160,7 +161,11 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       if (results.max_participants != null && participatingCount > results.max_participants) {
         isHappening = false;
       }
-      const userIsParticipating = !!(userVoteId && results.participating_vote_ids?.includes(userVoteId));
+      // Check if user is participating by vote ID or by name match
+      const userIsParticipating = !!(
+        (userVoteId && results.participating_vote_ids?.includes(userVoteId)) ||
+        (userName && results.participating_voter_names?.includes(userName))
+      );
       if (isHappening && userIsParticipating) {
         if (participatingCount === 1) return { text: "You're going alone", emoji: '😢', color: 'yellow' };
         const others = participatingCount - 1;
@@ -199,14 +204,19 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
+  const savedUserName = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return getUserName();
+  }, []);
+
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
     for (const poll of closedPolls) {
       const userVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
-      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id], userVoted);
+      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id], userVoted, savedUserName);
     }
     return badges;
-  }, [closedPolls, pollVoteIds, votedPollIds, abstainedPollIds]);
+  }, [closedPolls, pollVoteIds, votedPollIds, abstainedPollIds, savedUserName]);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {

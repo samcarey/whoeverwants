@@ -118,6 +118,7 @@ export interface PollResults {
   nomination_counts?: NominationCount[];
   time_slot_rounds?: TimeSlotResult[];
   participating_vote_ids?: string[];
+  participating_voter_names?: (string | null)[];
 }
 
 export interface TimeSlotResult {
