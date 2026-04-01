@@ -161,6 +161,14 @@ export default function Template({ children }: AppTemplateProps) {
         return;
       }
 
+      // Don't hide the bottom bar when barely scrolled from top.
+      // A tiny accidental scroll (e.g. 12px) would otherwise hide the bar,
+      // and on pages with little content the user can't scroll up to get it back.
+      if (currentScrollY < 50) {
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
       // iOS rubber band past the bottom — ignore and clamp lastScrollY
       if (currentScrollY > maxScrollY) {
         isInBounceRef.current = true;
