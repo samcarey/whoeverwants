@@ -63,6 +63,7 @@ export interface Poll {
   reference_latitude?: number | null;
   reference_longitude?: number | null;
   reference_location_label?: string | null;
+  response_count?: number | null;
   results?: PollResults | null;
 }
 

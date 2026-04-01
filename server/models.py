@@ -159,6 +159,7 @@ class PollResponse(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    response_count: int | None = None
     results: "PollResultsResponse | None" = None
 
 

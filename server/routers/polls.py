@@ -1149,12 +1149,15 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             return [_row_to_poll(r) for r in rows]
 
         closed_poll_ids = []
+        open_poll_ids = []
         for r in rows:
             is_closed = r.get("is_closed", False)
             deadline = r.get("response_deadline")
             deadline_passed = deadline and deadline <= now
             if is_closed or deadline_passed:
                 closed_poll_ids.append(str(r["id"]))
+            else:
+                open_poll_ids.append(str(r["id"]))
 
         votes_by_poll: dict[str, list] = {pid: [] for pid in closed_poll_ids}
         if closed_poll_ids:
@@ -1167,6 +1170,16 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                 if pid in votes_by_poll:
                     votes_by_poll[pid].append(v)
 
+        # Count responses for open polls
+        response_counts: dict[str, int] = {}
+        if open_poll_ids:
+            count_rows = conn.execute(
+                "SELECT poll_id, COUNT(*) as cnt FROM votes WHERE poll_id = ANY(%(poll_ids)s) GROUP BY poll_id",
+                {"poll_ids": open_poll_ids},
+            ).fetchall()
+            for cr in count_rows:
+                response_counts[str(cr["poll_id"])] = cr["cnt"]
+
     results = []
     for r in rows:
         poll_resp = _row_to_poll(r)
@@ -1176,6 +1189,8 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                 poll_resp.results = _compute_results(dict(r), votes_by_poll[pid])
             except Exception:
                 logger.warning("Failed to compute results for poll %s", pid, exc_info=True)
+        if pid in response_counts:
+            poll_resp.response_count = response_counts[pid]
         results.append(poll_resp)
     return results
 
