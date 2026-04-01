@@ -62,7 +62,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     return (
       <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           {/* Shimmer effect for loading voter bubbles */}
           {[1, 2, 3, 4, 5].map((i) => (
             <div
@@ -83,7 +83,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     return (
       <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
+          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
         </div>
       </div>
@@ -159,7 +159,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   return (
     <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm ${className}`}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm font-bold text-gray-900 dark:text-white mr-1">
+        <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">
           Respondents ({voters.length})
         </span>
 
