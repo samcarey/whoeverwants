@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { OptionMetadataEntry } from "@/lib/types";
 import PlaceDetailModal from "./PlaceDetailModal";
 
@@ -105,25 +105,25 @@ function RestaurantIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "
 
 function PlaceWrapper({
   children,
-  text,
+  address,
   name,
   metadata,
   className,
 }: {
   children: (onOpenModal: () => void) => React.ReactNode;
-  text: string;
+  address: string;
   name: string;
   metadata: OptionMetadataEntry;
   className?: string;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const address = getAddressFromLabel(text, name);
-  const hasCoords = metadata.lat && metadata.lon;
+  const hasCoords = !!(metadata.lat && metadata.lon);
+  const onOpenModal = useCallback(() => { setModalOpen(true); }, []);
 
   return (
     <>
       <div className={className}>
-        {children(() => { if (hasCoords) setModalOpen(true); })}
+        {children(hasCoords ? onOpenModal : () => {})}
       </div>
       {hasCoords && (
         <PlaceDetailModal
@@ -149,7 +149,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
 
     if (layout === "stacked") {
       return (
-        <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
+        <PlaceWrapper address={address} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
           {(onOpenModal) => (
             <>
               <div className="flex justify-center">
@@ -178,7 +178,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
 
     // Default inline layout
     return (
-      <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
+      <PlaceWrapper address={address} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
         {(onOpenModal) => (
           <>
             <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
@@ -209,7 +209,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
 
     if (layout === "stacked") {
       return (
-        <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
+        <PlaceWrapper address={address} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
           {(onOpenModal) => (
             <>
               <div className="flex justify-center">
@@ -238,7 +238,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
 
     // Default inline layout
     return (
-      <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
+      <PlaceWrapper address={address} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
         {(onOpenModal) => (
           <>
             <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">

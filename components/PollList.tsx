@@ -282,7 +282,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               const prevPoll = index > 0 ? openPolls[index - 1] : null;
               const isPrevVoted = prevPoll ? (votedPollIds.has(prevPoll.id) || abstainedPollIds.has(prevPoll.id)) : false;
               const isFirstVoted = hasVotedOrAbstained && !isPrevVoted;
-              
+              const categoryDisplay = getCategoryDisplay(poll);
+
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
                 isScrolling.current = false;
@@ -386,9 +387,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             </span>
                           )}
                         </div>
-                        {getCategoryDisplay(poll) && (
+                        {categoryDisplay && (
                           <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {getCategoryDisplay(poll)!.label} {getCategoryDisplay(poll)!.icon}
+                            {categoryDisplay.label} {categoryDisplay.icon}
                           </span>
                         )}
                       </div>
@@ -417,6 +418,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
           </div>
           <div>
               {closedPolls.map((poll, index) => {
+                const categoryDisplay = getCategoryDisplay(poll);
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
@@ -532,9 +534,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             </span>
                           )}
                         </div>
-                        {getCategoryDisplay(poll) && (
+                        {categoryDisplay && (
                           <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {getCategoryDisplay(poll)!.label} {getCategoryDisplay(poll)!.icon}
+                            {categoryDisplay.label} {categoryDisplay.icon}
                           </span>
                         )}
                       </div>
