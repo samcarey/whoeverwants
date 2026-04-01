@@ -68,10 +68,16 @@ function LocationIcon({ imageUrl, size = "sm" }: { imageUrl?: string; size?: "sm
   );
 }
 
-function PlaceName({ name, hasModal }: { name: string; hasModal: boolean }) {
+function PlaceName({ name, hasModal, onOpenModal }: { name: string; hasModal: boolean; onOpenModal?: () => void }) {
   if (hasModal) {
     return (
-      <span className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 cursor-pointer">
+      <span
+        className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenModal?.();
+        }}
+      >
         {name}
       </span>
     );
@@ -104,7 +110,7 @@ function PlaceWrapper({
   metadata,
   className,
 }: {
-  children: React.ReactNode;
+  children: (onOpenModal: () => void) => React.ReactNode;
   text: string;
   name: string;
   metadata: OptionMetadataEntry;
@@ -116,16 +122,8 @@ function PlaceWrapper({
 
   return (
     <>
-      <div
-        className={`${className}${hasCoords ? " cursor-pointer" : ""}`}
-        onClick={(e) => {
-          if (hasCoords) {
-            e.stopPropagation();
-            setModalOpen(true);
-          }
-        }}
-      >
-        {children}
+      <div className={className}>
+        {children(() => { if (hasCoords) setModalOpen(true); })}
       </div>
       {hasCoords && (
         <PlaceDetailModal
@@ -147,21 +145,32 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     const distance = metadata!.distance_miles;
     const hasCoords = !!(metadata!.lat && metadata!.lon);
 
+    const address = getAddressFromLabel(text, name);
+
     if (layout === "stacked") {
       return (
         <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
-          <div className="flex justify-center">
-            <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
-              <RestaurantIcon imageUrl={metadata!.imageUrl} size="lg" />
-            </span>
-          </div>
-          <div className="line-clamp-2 leading-tight mt-1 text-center">
-            <PlaceName name={name} hasModal={hasCoords} />
-          </div>
-          {distance !== undefined && (
-            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
-              {formatDistance(distance)}
-            </div>
+          {(onOpenModal) => (
+            <>
+              <div className="flex justify-center">
+                <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
+                  <RestaurantIcon imageUrl={metadata!.imageUrl} size="lg" />
+                </span>
+              </div>
+              <div className="line-clamp-2 leading-tight mt-1 text-center">
+                <PlaceName name={name} hasModal={hasCoords} onOpenModal={onOpenModal} />
+              </div>
+              {address && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5 text-center">
+                  {address}
+                </div>
+              )}
+              {distance !== undefined && (
+                <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
+                  {formatDistance(distance)}
+                </div>
+              )}
+            </>
           )}
         </PlaceWrapper>
       );
@@ -170,19 +179,23 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     // Default inline layout
     return (
       <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
-        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
-          <RestaurantIcon imageUrl={metadata!.imageUrl} />
-        </span>
-        <div className="min-w-0 overflow-hidden">
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <PlaceName name={name} hasModal={hasCoords} />
-            {distance !== undefined && (
-              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                {formatDistance(distance)}
-              </span>
-            )}
-          </div>
-        </div>
+        {(onOpenModal) => (
+          <>
+            <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
+              <RestaurantIcon imageUrl={metadata!.imageUrl} />
+            </span>
+            <div className="min-w-0 overflow-hidden">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <PlaceName name={name} hasModal={hasCoords} onOpenModal={onOpenModal} />
+                {distance !== undefined && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                    {formatDistance(distance)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </PlaceWrapper>
     );
   }
@@ -197,23 +210,27 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     if (layout === "stacked") {
       return (
         <PlaceWrapper text={text} name={name} metadata={metadata!} className={`min-w-0 overflow-hidden ${className}`}>
-          <div className="flex justify-center">
-            <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
-              <LocationIcon imageUrl={metadata!.imageUrl} size="lg" />
-            </span>
-          </div>
-          <div className="line-clamp-2 leading-tight mt-1 text-center">
-            <PlaceName name={name} hasModal={hasCoords} />
-          </div>
-          {address && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5 text-center">
-              {address}
-            </div>
-          )}
-          {distance !== undefined && (
-            <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
-              {formatDistance(distance)}
-            </div>
+          {(onOpenModal) => (
+            <>
+              <div className="flex justify-center">
+                <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center">
+                  <LocationIcon imageUrl={metadata!.imageUrl} size="lg" />
+                </span>
+              </div>
+              <div className="line-clamp-2 leading-tight mt-1 text-center">
+                <PlaceName name={name} hasModal={hasCoords} onOpenModal={onOpenModal} />
+              </div>
+              {address && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-tight mt-0.5 text-center">
+                  {address}
+                </div>
+              )}
+              {distance !== undefined && (
+                <div className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 text-center">
+                  {formatDistance(distance)}
+                </div>
+              )}
+            </>
           )}
         </PlaceWrapper>
       );
@@ -222,24 +239,28 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     // Default inline layout
     return (
       <PlaceWrapper text={text} name={name} metadata={metadata!} className={`flex items-center gap-2 ${className}`}>
-        <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
-          <LocationIcon imageUrl={metadata!.imageUrl} />
-        </span>
-        <div className="min-w-0 overflow-hidden">
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <PlaceName name={name} hasModal={hasCoords} />
-            {distance !== undefined && (
-              <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                {formatDistance(distance)}
-              </span>
-            )}
-          </div>
-          {address && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
-              {address}
+        {(onOpenModal) => (
+          <>
+            <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
+              <LocationIcon imageUrl={metadata!.imageUrl} />
+            </span>
+            <div className="min-w-0 overflow-hidden">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <PlaceName name={name} hasModal={hasCoords} onOpenModal={onOpenModal} />
+                {distance !== undefined && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                    {formatDistance(distance)}
+                  </span>
+                )}
+              </div>
+              {address && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+                  {address}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </PlaceWrapper>
     );
   }
