@@ -432,22 +432,26 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // OR if this is a nomination poll (to handle creator votes and aggregation)
       if (voteId || poll.poll_type === 'nomination' || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
-        
-        // For nomination polls, always use aggregated data to handle multiple votes
-        // For other poll types, fetch by voteId or latest vote
-        // For participation polls without a stored vote ID, find the user's vote by name
+
+        // For participation polls without a stored vote ID, find the user's vote ID by name
         const fetchParticipationVoteByName = async (pollId: string) => {
           const savedName = getUserName();
           if (!savedName) return null;
-          const votes = await apiGetVotes(pollId);
-          return votes.find(v => v.voter_name === savedName) || null;
+          const participants = await apiGetParticipants(pollId);
+          const match = participants.find(p => p.voter_name === savedName);
+          return match ? { id: match.vote_id } : null;
         };
 
-        const fetchPromise = poll.poll_type === 'nomination'
-          ? fetchAggregatedVoteData(poll.id)
-          : (voteId ? fetchVoteData(voteId)
-            : (poll.poll_type === 'participation' ? fetchParticipationVoteByName(poll.id)
-              : fetchLatestUserVote(poll.id)));
+        let fetchPromise;
+        if (poll.poll_type === 'nomination') {
+          fetchPromise = fetchAggregatedVoteData(poll.id);
+        } else if (voteId) {
+          fetchPromise = fetchVoteData(voteId);
+        } else if (poll.poll_type === 'participation') {
+          fetchPromise = fetchParticipationVoteByName(poll.id);
+        } else {
+          fetchPromise = fetchLatestUserVote(poll.id);
+        }
           
         fetchPromise.then(voteData => {
           if (voteData) {

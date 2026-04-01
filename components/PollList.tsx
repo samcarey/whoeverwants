@@ -161,7 +161,6 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       if (results.max_participants != null && participatingCount > results.max_participants) {
         isHappening = false;
       }
-      // Check if user is participating by vote ID or by name match
       const userIsParticipating = !!(
         (userVoteId && results.participating_vote_ids?.includes(userVoteId)) ||
         (userName && results.participating_voter_names?.includes(userName))
@@ -237,12 +236,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       setVotedPollIds(voted);
       setAbstainedPollIds(abstained);
 
-      // Merge vote IDs from both localStorage formats
       const voteIds: Record<string, string> = {};
-      // Format 1: pollVoteIds
       const storedVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
       Object.assign(voteIds, storedVoteIds);
-      // Format 2: votedPolls entries with {voteId: ...} object format
       Object.keys(votedPolls).forEach(id => {
         if (!voteIds[id] && votedPolls[id]?.voteId) {
           voteIds[id] = votedPolls[id].voteId;
