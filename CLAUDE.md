@@ -395,7 +395,7 @@ The sections below contain mandatory rules. Follow them exactly.
   2. **Update CLAUDE.md** with any lessons learned, new patterns, pitfalls discovered, or infrastructure changes from the current work. Keep the knowledge base growing.
   3. **Rebase on main** (`git fetch origin main && git rebase origin/main`) to ensure the branch merges cleanly. Force-push if needed after rebase.
   4. Create the PR.
-  5. **Wait for PR checks to pass AND verify mergeability** before showing the PR link. Poll the GitHub check-runs API every 15s until all checks complete, and confirm `mergeable: true` on the PR. Report the link only after both succeed, or report failures.
+  5. **Wait for PR checks to pass AND verify mergeability** before showing the PR link. Poll **both** the check-runs API (`/commits/{sha}/check-runs`) AND the commit statuses API (`/commits/{sha}/statuses`) every 15s until all checks complete — GitHub Actions results appear in check-runs, but Vercel build status appears in commit statuses. Also confirm `mergeable: true` on the PR. Report the link only after both succeed, or report failures.
 
 ### Python Tooling: uv (Mandatory)
 
