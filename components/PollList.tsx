@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
+import { getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import { getBuiltInType } from "@/components/TypeFieldInput";
@@ -122,7 +123,7 @@ const BADGE_COLORS = {
   gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
-function getResultBadge(poll: Poll, results: PollResults | null | undefined): ResultBadge {
+function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean, userName?: string | null): ResultBadge {
   if (!results) {
     return { text: 'No results', emoji: '—', color: 'gray' };
   }
@@ -152,7 +153,25 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined): Re
       return { text: 'No suggestions', emoji: '—', color: 'gray' };
     }
     case 'participation': {
-      if (results.is_happening) return { text: 'Happening', emoji: '🎉', color: 'green' };
+      const participatingCount = results.yes_count || 0;
+      let isHappening = participatingCount > 0;
+      if (results.min_participants != null && participatingCount < results.min_participants) {
+        isHappening = false;
+      }
+      if (results.max_participants != null && participatingCount > results.max_participants) {
+        isHappening = false;
+      }
+      const userIsParticipating = !!(
+        (userVoteId && results.participating_vote_ids?.includes(userVoteId)) ||
+        (userName && results.participating_voter_names?.includes(userName))
+      );
+      if (isHappening && userIsParticipating) {
+        if (participatingCount === 1) return { text: "You're going alone", emoji: '😢', color: 'yellow' };
+        const others = participatingCount - 1;
+        return { text: `You're going with ${others} other${others > 1 ? 's' : ''}`, emoji: '🎉', color: 'green' };
+      }
+      if (isHappening && !userVoted) return { text: "It's happening without you", emoji: '🎉', color: 'yellow' };
+      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
@@ -175,6 +194,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
+  const [pollVoteIds, setPollVoteIds] = useState<Record<string, string>>({});
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -183,13 +203,19 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
+  const savedUserName = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return getUserName();
+  }, []);
+
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
     for (const poll of closedPolls) {
-      badges[poll.id] = getResultBadge(poll, poll.results);
+      const userVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
+      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id], userVoted, savedUserName);
     }
     return badges;
-  }, [closedPolls]);
+  }, [closedPolls, pollVoteIds, votedPollIds, abstainedPollIds, savedUserName]);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -209,6 +235,16 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       
       setVotedPollIds(voted);
       setAbstainedPollIds(abstained);
+
+      const voteIds: Record<string, string> = {};
+      const storedVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      Object.assign(voteIds, storedVoteIds);
+      Object.keys(votedPolls).forEach(id => {
+        if (!voteIds[id] && votedPolls[id]?.voteId) {
+          voteIds[id] = votedPolls[id].voteId;
+        }
+      });
+      setPollVoteIds(voteIds);
     } catch (error) {
       console.error('Error loading voted polls:', error);
     }

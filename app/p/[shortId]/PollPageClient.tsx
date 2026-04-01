@@ -430,14 +430,28 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       // Fetch vote data from database if we have a vote ID
       // OR if this is a nomination poll (to handle creator votes and aggregation)
-      if (voteId || poll.poll_type === 'nomination') {
+      if (voteId || poll.poll_type === 'nomination' || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
-        
-        // For nomination polls, always use aggregated data to handle multiple votes
-        // For other poll types, fetch by voteId or latest vote
-        const fetchPromise = poll.poll_type === 'nomination'
-          ? fetchAggregatedVoteData(poll.id)
-          : (voteId ? fetchVoteData(voteId) : fetchLatestUserVote(poll.id));
+
+        // For participation polls without a stored vote ID, find the user's vote ID by name
+        const fetchParticipationVoteByName = async (pollId: string) => {
+          const savedName = getUserName();
+          if (!savedName) return null;
+          const participants = await apiGetParticipants(pollId);
+          const match = participants.find(p => p.voter_name === savedName);
+          return match ? { id: match.vote_id } : null;
+        };
+
+        let fetchPromise;
+        if (poll.poll_type === 'nomination') {
+          fetchPromise = fetchAggregatedVoteData(poll.id);
+        } else if (voteId) {
+          fetchPromise = fetchVoteData(voteId);
+        } else if (poll.poll_type === 'participation') {
+          fetchPromise = fetchParticipationVoteByName(poll.id);
+        } else {
+          fetchPromise = fetchLatestUserVote(poll.id);
+        }
           
         fetchPromise.then(voteData => {
           if (voteData) {
@@ -447,6 +461,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             // This ensures that vote editing updates the existing record instead of creating new ones
             if (voteData && 'id' in voteData && voteData.id) {
               setUserVoteId(voteData.id);
+              // Backfill pollVoteIds localStorage so the poll list can show personalized badges
+              try {
+                const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+                if (!voteIds[poll.id]) {
+                  voteIds[poll.id] = voteData.id;
+                  localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
+                }
+              } catch (e) { /* ignore */ }
             }
 
             // For nomination polls, fetch results to show vote counts even when poll is open

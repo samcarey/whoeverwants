@@ -280,6 +280,19 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     return colors[voterIndex % colors.length];
   };
 
+  // Wait for participant data before rendering status
+  if (loading) {
+    return (
+      <div className="rounded-lg border-2 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 p-6">
+        <div className="text-center">
+          <div className="text-gray-500 dark:text-gray-400 animate-pulse">
+            Loading results...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // SCENARIO: No votes at all
   if (totalVotes === 0) {
     return (

@@ -152,6 +152,8 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
     ranked_choice_winner: data.ranked_choice_winner ?? undefined,
     time_slot_rounds: data.time_slot_rounds ?? undefined,
+    participating_vote_ids: data.participating_vote_ids ?? undefined,
+    participating_voter_names: data.participating_voter_names ?? undefined,
   };
 }
 

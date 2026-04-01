@@ -1015,6 +1015,8 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),
             time_slot_rounds=time_slot_rounds_data,
+            participating_vote_ids=[p.vote_id for p in participating],
+            participating_voter_names=[p.voter_name for p in participating if p.voter_name],
         )
 
     # For other poll types, return basic structure (to be extended in later phases)
