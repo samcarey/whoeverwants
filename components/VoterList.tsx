@@ -14,6 +14,8 @@ interface VoterListProps {
   refreshTrigger?: number; // Optional prop to trigger refresh
 }
 
+const CARD_CLASS = "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm";
+
 export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -60,9 +62,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (initialLoading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
+      <div className={`${CARD_CLASS} ${className}`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           {/* Shimmer effect for loading voter bubbles */}
           {[1, 2, 3, 4, 5].map((i) => (
             <div
@@ -81,9 +83,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (error) {
     return (
-      <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3 w-full text-center">Respondents</h3>
+      <div className={`${CARD_CLASS} ${className}`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
           <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
         </div>
       </div>
@@ -157,11 +159,11 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm ${className}`}>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white w-full text-center mb-3">
+    <div className={`${CARD_CLASS} ${className}`}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">
           Respondents ({voters.length})
-        </h3>
+        </span>
 
         {/* Named voters - displayed as colored bubbles in a flowing layout */}
         {namedVoters.map((voter, index) => {
@@ -184,11 +186,9 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
         {/* Anonymous voters count */}
         {adjustedAnonymousCount > 0 && (
-          <div className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600">
-            <span className="text-sm text-gray-600 dark:text-gray-300 italic">
-              {adjustedAnonymousCount} × Anonymous {adjustedAnonymousCount === 1 ? 'voter' : 'voters'}
-            </span>
-          </div>
+          <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 italic">
+            {adjustedAnonymousCount} × Anonymous
+          </span>
         )}
       </div>
     </div>

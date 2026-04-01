@@ -1348,7 +1348,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
         {/* Voter list for closed polls - always shown after Follow-up button */}
         {isPollClosed && (
-          <div className="mt-8">
+          <div className="mt-4">
             <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
           </div>
         )}
@@ -1488,7 +1488,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Voter list for open yes/no polls - shown after Follow-up button when voted */}
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-8">
+                    <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
@@ -1659,7 +1659,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-8">
+                    <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
@@ -1921,7 +1921,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Voter list for open ranked choice polls - shown after Follow-up button when voted */}
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-8">
+                    <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
