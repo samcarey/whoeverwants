@@ -117,6 +117,7 @@ export interface PollResults {
   is_happening?: boolean;
   nomination_counts?: NominationCount[];
   time_slot_rounds?: TimeSlotResult[];
+  participating_vote_ids?: string[];
 }
 
 export interface TimeSlotResult {

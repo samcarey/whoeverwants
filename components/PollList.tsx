@@ -122,7 +122,7 @@ const BADGE_COLORS = {
   gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
-function getResultBadge(poll: Poll, results: PollResults | null | undefined): ResultBadge {
+function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null): ResultBadge {
   if (!results) {
     return { text: 'No results', emoji: '—', color: 'gray' };
   }
@@ -152,8 +152,6 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined): Re
       return { text: 'No suggestions', emoji: '—', color: 'gray' };
     }
     case 'participation': {
-      // Compute isHappening from yes_count (= participating count from priority algorithm)
-      // and the poll's min/max participant constraints
       const participatingCount = results.yes_count || 0;
       let isHappening = participatingCount > 0;
       if (results.min_participants != null && participatingCount < results.min_participants) {
@@ -162,7 +160,13 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined): Re
       if (results.max_participants != null && participatingCount > results.max_participants) {
         isHappening = false;
       }
-      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
+      const userIsParticipating = !!(userVoteId && results.participating_vote_ids?.includes(userVoteId));
+      if (isHappening && userIsParticipating) {
+        if (participatingCount === 1) return { text: "You're going alone", emoji: '😢', color: 'yellow' };
+        const others = participatingCount - 1;
+        return { text: `You're going with ${others} other${others > 1 ? 's' : ''}`, emoji: '🎉', color: 'green' };
+      }
+      if (isHappening) return { text: "It's happening without you", emoji: '🎉', color: 'yellow' };
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
@@ -185,6 +189,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
+  const [pollVoteIds, setPollVoteIds] = useState<Record<string, string>>({});
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -196,10 +201,10 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
     for (const poll of closedPolls) {
-      badges[poll.id] = getResultBadge(poll, poll.results);
+      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id]);
     }
     return badges;
-  }, [closedPolls]);
+  }, [closedPolls, pollVoteIds]);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -219,6 +224,9 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       
       setVotedPollIds(voted);
       setAbstainedPollIds(abstained);
+
+      const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      setPollVoteIds(voteIds);
     } catch (error) {
       console.error('Error loading voted polls:', error);
     }

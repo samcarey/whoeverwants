@@ -220,6 +220,7 @@ class PollResultsResponse(BaseModel):
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
     ranked_choice_winner: str | None = None
     time_slot_rounds: list[TimeSlotResponse] | None = None
+    participating_vote_ids: list[str] | None = None
 
 
 class ParticipantResponse(BaseModel):
