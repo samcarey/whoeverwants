@@ -128,6 +128,7 @@ function toPoll(data: any): Poll {
     reference_latitude: data.reference_latitude ?? undefined,
     reference_longitude: data.reference_longitude ?? undefined,
     reference_location_label: data.reference_location_label ?? undefined,
+    response_count: data.response_count ?? undefined,
   };
 }
 

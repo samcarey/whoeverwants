@@ -421,10 +421,17 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
                       </h3>
-                      <div className="text-xs text-gray-400 dark:text-gray-500">
-                        <ClientOnly fallback={null}>
-                          <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
-                        </ClientOnly>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-400 dark:text-gray-500">
+                          <ClientOnly fallback={null}>
+                            <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                          </ClientOnly>
+                        </div>
+                        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_COLORS.gray}`}>
+                          {(poll.response_count ?? 0) > 0
+                            ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
+                            : 'No responses yet'}
+                        </span>
                       </div>
                     </div>
                   </div>
