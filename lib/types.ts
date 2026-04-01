@@ -62,6 +62,7 @@ export interface Poll {
   reference_latitude?: number | null;
   reference_longitude?: number | null;
   reference_location_label?: string | null;
+  results?: PollResults | null;
 }
 
 export interface TimeWindow {

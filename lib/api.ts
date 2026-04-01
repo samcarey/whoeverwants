@@ -333,9 +333,15 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
   if (pollIds.length === 0) return [];
   const data: any[] = await apiFetch('/accessible', {
     method: 'POST',
-    body: JSON.stringify({ poll_ids: pollIds }),
+    body: JSON.stringify({ poll_ids: pollIds, include_results: true }),
   });
-  return data.map(toPoll);
+  return data.map(d => {
+    const poll = toPoll(d);
+    if (d.results) {
+      poll.results = toPollResults(d.results);
+    }
+    return poll;
+  });
 }
 
 // --- Search/autocomplete ---

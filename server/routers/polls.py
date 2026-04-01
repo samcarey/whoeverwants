@@ -1,6 +1,9 @@
 """Poll API endpoints."""
 
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException
 
@@ -842,6 +845,11 @@ def get_results(poll_id: str):
             {"poll_id": poll_id},
         ).fetchall()
 
+    return _compute_results(poll, votes)
+
+
+def _compute_results(poll, votes) -> PollResultsResponse:
+    """Compute poll results from a poll row and its votes. Shared by get_results and get_accessible_polls."""
     poll_type = poll["poll_type"]
 
     if poll_type == "yes_no":
@@ -865,7 +873,6 @@ def get_results(poll_id: str):
         )
 
     if poll_type == "nomination":
-        # Parse poll options from JSONB
         import json
         raw_options = poll.get("options")
         poll_options = None
@@ -1117,6 +1124,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
     """Get polls by a list of IDs (used by frontend to fetch polls the browser has access to)."""
     if not req.poll_ids:
         return []
+    now = datetime.now(timezone.utc)
     with get_db() as conn:
         rows = conn.execute(
             """SELECT * FROM polls
@@ -1136,7 +1144,40 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                ORDER BY created_at DESC""",
             {"poll_ids": req.poll_ids},
         ).fetchall()
-    return [_row_to_poll(r) for r in rows]
+
+        if not req.include_results:
+            return [_row_to_poll(r) for r in rows]
+
+        closed_poll_ids = []
+        for r in rows:
+            is_closed = r.get("is_closed", False)
+            deadline = r.get("response_deadline")
+            deadline_passed = deadline and deadline <= now
+            if is_closed or deadline_passed:
+                closed_poll_ids.append(str(r["id"]))
+
+        votes_by_poll: dict[str, list] = {pid: [] for pid in closed_poll_ids}
+        if closed_poll_ids:
+            vote_rows = conn.execute(
+                "SELECT * FROM votes WHERE poll_id = ANY(%(poll_ids)s)",
+                {"poll_ids": closed_poll_ids},
+            ).fetchall()
+            for v in vote_rows:
+                pid = str(v["poll_id"])
+                if pid in votes_by_poll:
+                    votes_by_poll[pid].append(v)
+
+    results = []
+    for r in rows:
+        poll_resp = _row_to_poll(r)
+        pid = str(r["id"])
+        if pid in votes_by_poll:
+            try:
+                poll_resp.results = _compute_results(dict(r), votes_by_poll[pid])
+            except Exception:
+                logger.warning("Failed to compute results for poll %s", pid, exc_info=True)
+        results.append(poll_resp)
+    return results
 
 
 @router.post("/related", response_model=RelatedPollsResponse)
