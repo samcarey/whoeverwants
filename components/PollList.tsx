@@ -123,45 +123,42 @@ const BADGE_COLORS = {
 };
 
 function getResultBadge(poll: Poll, results: PollResults | null | undefined): ResultBadge {
-  const timedOut = poll.close_reason === 'deadline';
-  const clockPrefix = timedOut ? '⏰' : '';
-
   // No results data at all
   if (!results) {
-    return { text: 'No results', emoji: clockPrefix || '—', color: 'gray' };
+    return { text: 'No results', emoji: '—', color: 'gray' };
   }
 
   // No voters
   if (results.total_votes === 0) {
-    return { text: 'No voters', emoji: clockPrefix || '🦗', color: 'gray' };
+    return { text: 'No voters', emoji: '🦗', color: 'gray' };
   }
 
   switch (poll.poll_type) {
     case 'yes_no': {
-      if (results.winner === 'yes') return { text: 'Yes', emoji: clockPrefix || '👑', color: 'green' };
-      if (results.winner === 'no') return { text: 'No', emoji: clockPrefix || '👑', color: 'red' };
-      if (results.winner === 'tie') return { text: 'Tie', emoji: clockPrefix || '🤝', color: 'yellow' };
-      return { text: 'No winner', emoji: clockPrefix || '—', color: 'gray' };
+      if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
+      if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };
+      if (results.winner === 'tie') return { text: 'Tie', emoji: '🤝', color: 'yellow' };
+      return { text: 'No winner', emoji: '—', color: 'gray' };
     }
     case 'ranked_choice': {
       if (results.winner) {
-        return { text: getOptionDisplayName(results.winner, poll), emoji: clockPrefix || '👑', color: 'green' };
+        return { text: getOptionDisplayName(results.winner, poll), emoji: '👑', color: 'green' };
       }
-      return { text: 'No winner', emoji: clockPrefix || '—', color: 'gray' };
+      return { text: 'No winner', emoji: '—', color: 'gray' };
     }
     case 'nomination': {
       if (results.nomination_counts && results.nomination_counts.length > 0) {
         const top = results.nomination_counts[0];
-        return { text: getOptionDisplayName(top.option, poll), emoji: clockPrefix || '👑', color: 'green' };
+        return { text: getOptionDisplayName(top.option, poll), emoji: '👑', color: 'green' };
       }
-      return { text: 'No suggestions', emoji: clockPrefix || '—', color: 'gray' };
+      return { text: 'No suggestions', emoji: '—', color: 'gray' };
     }
     case 'participation': {
-      if (results.is_happening) return { text: 'Happening', emoji: clockPrefix || '🎉', color: 'green' };
-      return { text: 'Not happening', emoji: clockPrefix || '✗', color: 'red' };
+      if (results.is_happening) return { text: 'Happening', emoji: '🎉', color: 'green' };
+      return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
-      return { text: 'Closed', emoji: clockPrefix || '—', color: 'gray' };
+      return { text: 'Closed', emoji: '—', color: 'gray' };
   }
 }
 
