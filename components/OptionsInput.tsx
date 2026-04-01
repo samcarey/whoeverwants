@@ -108,8 +108,7 @@ export default function OptionsInput({
       newOptions.push('');
     }
 
-    // Ensure there's always a trailing empty field for expansion
-    if (newOptions.length > 0 && newOptions[newOptions.length - 1] !== '') {
+    if (newOptions[newOptions.length - 1] !== '') {
       newOptions.push('');
     }
 
