@@ -7,6 +7,7 @@ export type OptionMetadataEntry = {
   imageUrl?: string;
   infoUrl?: string;
   name?: string;
+  address?: string;
   distance_miles?: number;
   lat?: string;
   lon?: string;

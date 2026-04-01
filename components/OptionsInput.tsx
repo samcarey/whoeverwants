@@ -88,6 +88,7 @@ export default function OptionsInput({
     if (result.imageUrl) entry.imageUrl = result.imageUrl;
     if (result.infoUrl) entry.infoUrl = result.infoUrl;
     if (result.name) entry.name = result.name;
+    if (result.address) entry.address = result.address;
     if (result.distance_miles !== undefined) entry.distance_miles = result.distance_miles;
     if (result.lat) entry.lat = result.lat;
     if (result.lon) entry.lon = result.lon;
