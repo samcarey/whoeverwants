@@ -10,8 +10,8 @@ export interface BuiltInType {
 
 const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "yes_no", label: "Yes / No", icon: "👍" },
-  { value: "location", label: "Location", icon: "📍" },
   { value: "restaurant", label: "Restaurant", icon: "🍽️" },
+  { value: "location", label: "Location", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
   { value: "video_game", label: "Video Game", icon: "🎮" },
 ];
@@ -172,7 +172,7 @@ export default function TypeFieldInput({ value, onChange, disabled = false }: Ty
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Built-in or custom category"
+          placeholder="Built-in or custom"
           className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed ${
             builtIn && !isOpen ? "pl-9" : ""
           } ${

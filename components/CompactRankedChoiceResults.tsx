@@ -364,117 +364,113 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         onTouchEnd={roundVisualizations.length > 1 ? handleTouchEnd : undefined}
       >
         <div className="space-y-2">
-          {currentRound.candidates.map((candidate, index) => {
-            // Find the highest vote count in the current round
+          {(() => {
             const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
-            const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
-            const isTieByVotes = candidatesWithHighestVotes.length > 1;
-            
-            const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
+            const isTieByVotes = currentRound.candidates.filter(c => c.votes === highestVotes).length > 1;
+            const isFinalRound = currentRound.roundNumber === roundVisualizations.length;
+
+            return currentRound.candidates.map((candidate, index) => {
+              const isTiedCandidate = isFinalRound &&
                                   (results.winner === 'tie' || isTieByVotes) &&
                                   candidate.votes === highestVotes;
 
             // Check if we should show Borda explanation after this candidate
-            // Show it only after the LAST eliminated candidate in a tie-breaking round
-            const isLastEliminatedCandidate = candidate.isEliminated && 
+            const isLastEliminatedCandidate = candidate.isEliminated &&
                                             index === currentRound.candidates.length - 1;
-            const hasBordaTieBreaking = isLastEliminatedCandidate && 
+            const hasBordaTieBreaking = isLastEliminatedCandidate &&
                                       currentRound.eliminatedCandidates.length > 0;
-            
-            // Check if this candidate is the user's preference for this round
+
             const isUserPreference = currentRound.userPreference === candidate.name;
-            
-            // Get the ordinal position of this candidate in user's ranking
+
             const getUserChoicePosition = () => {
               if (!isUserPreference || !userVoteData?.ranked_choices) return null;
               const position = userVoteData.ranked_choices.indexOf(candidate.name) + 1;
               if (position === 0) return null;
-              
-              // Convert to ordinal (1st, 2nd, 3rd, etc.)
               const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
               return `Your ${position}${suffix} choice`;
             };
-            
+
             const userChoiceText = getUserChoicePosition();
-            
+
             return (
               <React.Fragment key={candidate.name}>
-                <div className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
-                  isTiedCandidate
-                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
-                    : candidate.isEliminated && !isTiedCandidate
-                    ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
-                    : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600' 
-                    : 'bg-white dark:bg-gray-700'
-                }`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2 min-w-0 flex-1">
-                      {/* Position number */}
-                      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
-                        isUserPreference 
-                          ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white' 
-                          : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
-                      }`}>
-                        {isTiedCandidate ? 'T' : candidate.position}
-                      </div>
-                      
-                      {/* Candidate name */}
-                      <div className="min-w-0 overflow-hidden">
-                        <div className={`leading-tight ${
-                          isLocationEntry(optionsMetadata?.[candidate.name]) || isRestaurantEntry(optionsMetadata?.[candidate.name])
-                            ? 'overflow-hidden'
-                            : 'line-clamp-2'
-                        } ${
-                          isTiedCandidate
-                            ? 'text-green-900 dark:text-green-100 font-bold'
-                            : candidate.isEliminated && !isTiedCandidate
-                            ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
-                            : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                            ? 'text-green-900 dark:text-green-100 font-bold'
-                            : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
-                        }`}>
-                          <OptionLabel text={candidate.name} metadata={optionsMetadata?.[candidate.name]} />
-                        </div>
-                        {/* Show user preference indicator under name */}
-                        {userChoiceText && (
-                          <div className="mt-1">
-                            <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                              {userChoiceText}
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                <div className="flex items-center gap-2">
+                  {/* Static position number */}
+                  <div className="flex-shrink-0" style={{ width: '32px' }}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      isUserPreference
+                        ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
+                    }`}>
+                      {isTiedCandidate ? 'T' : candidate.position}
                     </div>
+                  </div>
 
-                    {/* Vote count and percentage - hidden for uncontested polls */}
-                    {!(results.total_votes === 0 && currentRound.candidates.length === 1) && (
-                      <div className="text-right flex-shrink-0">
-                        <div className={`text-lg font-bold ${
-                          isTiedCandidate
-                            ? 'text-green-800 dark:text-green-200'
-                            : candidate.isEliminated && !isTiedCandidate
-                            ? 'text-red-700 dark:text-red-300'
-                            : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
-                            ? 'text-green-800 dark:text-green-200'
-                            : 'text-gray-900 dark:text-white'
-                        }`}>
-                          {candidate.percentage}%
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
-                          {candidate.donatedVotes && candidate.donatedVotes > 0 && (
-                            <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                              +{candidate.donatedVotes}
-                            </span>
+                  {/* Candidate row */}
+                  <div className={`flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
+                    isTiedCandidate
+                      ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
+                      : candidate.isEliminated && !isTiedCandidate
+                      ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
+                      : results.winner === candidate.name && isFinalRound
+                      ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
+                      : 'bg-white dark:bg-gray-700'
+                  }`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="min-w-0 overflow-hidden">
+                          <div className={`leading-tight ${
+                            isLocationEntry(optionsMetadata?.[candidate.name]) || isRestaurantEntry(optionsMetadata?.[candidate.name])
+                              ? 'overflow-hidden'
+                              : 'line-clamp-2'
+                          } ${
+                            isTiedCandidate
+                              ? 'text-green-900 dark:text-green-100 font-bold'
+                              : candidate.isEliminated && !isTiedCandidate
+                              ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
+                              : results.winner === candidate.name && isFinalRound
+                              ? 'text-green-900 dark:text-green-100 font-bold'
+                              : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
+                          }`}>
+                            <OptionLabel text={candidate.name} metadata={optionsMetadata?.[candidate.name]} />
+                          </div>
+                          {userChoiceText && (
+                            <div className="mt-1">
+                              <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
+                                {userChoiceText}
+                              </span>
+                            </div>
                           )}
-                          <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
                         </div>
                       </div>
-                    )}
+
+                      {!(results.total_votes === 0 && currentRound.candidates.length === 1) && (
+                        <div className="text-right flex-shrink-0">
+                          <div className={`text-lg font-bold ${
+                            isTiedCandidate
+                              ? 'text-green-800 dark:text-green-200'
+                              : candidate.isEliminated && !isTiedCandidate
+                              ? 'text-red-700 dark:text-red-300'
+                              : results.winner === candidate.name && isFinalRound
+                              ? 'text-green-800 dark:text-green-200'
+                              : 'text-gray-900 dark:text-white'
+                          }`}>
+                            {candidate.percentage}%
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center justify-end gap-1">
+                            {candidate.donatedVotes && candidate.donatedVotes > 0 && (
+                              <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                                +{candidate.donatedVotes}
+                              </span>
+                            )}
+                            <span>{candidate.votes} vote{candidate.votes !== 1 ? 's' : ''}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {/* Show Borda count explanation when tie-breaking occurs */}
                 {hasBordaTieBreaking && (
                   <BordaCountExplanation
                     pollId={results.poll_id}
@@ -484,7 +480,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                 )}
               </React.Fragment>
             );
-          })}
+          });
+          })()}
         </div>
       </div>
     </div>

@@ -1846,12 +1846,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
-                            <div key={index} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                              <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
-                                {index + 1}
-                              </span>
-                              <div className="min-w-0 overflow-hidden">
-                                <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                            <div key={index} className="flex items-center gap-2">
+                              <div className="flex-shrink-0" style={{ width: '32px' }}>
+                                <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                                  {index + 1}
+                                </span>
+                              </div>
+                              <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                                <div className="min-w-0 overflow-hidden">
+                                  <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                                </div>
                               </div>
                             </div>
                           ))
