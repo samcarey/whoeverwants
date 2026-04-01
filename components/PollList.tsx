@@ -123,12 +123,10 @@ const BADGE_COLORS = {
 };
 
 function getResultBadge(poll: Poll, results: PollResults | null | undefined): ResultBadge {
-  // No results data at all
   if (!results) {
     return { text: 'No results', emoji: '—', color: 'gray' };
   }
 
-  // No voters
   if (results.total_votes === 0) {
     return { text: 'No voters', emoji: '🦗', color: 'gray' };
   }
@@ -576,14 +574,17 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                           </ClientOnly>
                         </div>
-                        {resultBadges[poll.id] && (
-                          <div className="flex items-center gap-1 max-w-[40%]">
-                            <span className="flex-shrink-0 text-xs leading-none -mt-px">{resultBadges[poll.id].emoji}</span>
-                            <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[resultBadges[poll.id].color]}`}>
-                              {resultBadges[poll.id].text}
-                            </span>
-                          </div>
-                        )}
+                        {(() => {
+                          const badge = resultBadges[poll.id];
+                          return badge && (
+                            <div className="flex items-center gap-1 max-w-[40%]">
+                              <span className="flex-shrink-0 text-xs leading-none -mt-px">{badge.emoji}</span>
+                              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
+                                {badge.text}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
