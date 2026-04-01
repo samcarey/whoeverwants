@@ -153,9 +153,15 @@ async def _nominatim_search(
         extratags = item.get("extratags") or {}
         image_url = _favicon_url(_extract_website(extratags))
 
+        # Build address from display_name minus the place name
+        display_name = item.get("display_name", "")
+        place_name = item.get("name") or ""
+        loc_address = display_name[len(place_name) + 2:] if display_name.startswith(place_name + ", ") else ""
+
         entry: dict = {
-            "label": item.get("display_name", ""),
-            "name": item.get("name") or "",
+            "label": display_name,
+            "name": place_name,
+            "address": loc_address or None,
             "description": item.get("type", "").replace("_", " ").title(),
             "lat": item.get("lat"),
             "lon": item.get("lon"),
@@ -397,6 +403,7 @@ async def search_restaurants(
         entry: dict = {
             "label": label,
             "name": name,
+            "address": address or None,
             "description": cuisine,
             "imageUrl": image_url,
             "infoUrl": (

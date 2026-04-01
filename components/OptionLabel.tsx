@@ -72,6 +72,7 @@ function PlaceName({ name, hasModal, onOpenModal }: { name: string; hasModal: bo
   if (hasModal) {
     return (
       <span
+        data-place-name
         className="font-medium leading-tight underline decoration-2 decoration-blue-400/50 cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
@@ -145,7 +146,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     const distance = metadata!.distance_miles;
     const hasCoords = !!(metadata!.lat && metadata!.lon);
 
-    const address = getAddressFromLabel(text, name);
+    const address = metadata!.address || getAddressFromLabel(text, name);
 
     if (layout === "stacked") {
       return (
@@ -193,6 +194,11 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
                   </span>
                 )}
               </div>
+              {address && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+                  {address}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -203,7 +209,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
   // Location entry
   if (isLocationEntry(metadata)) {
     const name = getLocationName(text, metadata!);
-    const address = getAddressFromLabel(text, name);
+    const address = metadata!.address || getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
     const hasCoords = !!(metadata!.lat && metadata!.lon);
 
