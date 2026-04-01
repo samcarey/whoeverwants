@@ -152,7 +152,17 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined): Re
       return { text: 'No suggestions', emoji: '—', color: 'gray' };
     }
     case 'participation': {
-      if (results.is_happening) return { text: 'Happening', emoji: '🎉', color: 'green' };
+      // Compute isHappening from yes_count (= participating count from priority algorithm)
+      // and the poll's min/max participant constraints
+      const participatingCount = results.yes_count || 0;
+      let isHappening = participatingCount > 0;
+      if (results.min_participants != null && participatingCount < results.min_participants) {
+        isHappening = false;
+      }
+      if (results.max_participants != null && participatingCount > results.max_participants) {
+        isHappening = false;
+      }
+      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
