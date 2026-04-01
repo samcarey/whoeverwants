@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import { getBuiltInType } from "@/components/TypeFieldInput";
 
 const POLL_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '☐',
@@ -18,6 +19,15 @@ const CLOSED_YES_NO_SYMBOL = '🏆';
 function getPollSymbol(pollType: string, isClosed: boolean): string {
   if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
+}
+
+function getCategoryDisplay(poll: Poll): { label: string; icon: string } | null {
+  const category = poll.category;
+  if (!category || category === 'custom') return null;
+  const builtIn = getBuiltInType(category);
+  if (builtIn) return { label: builtIn.label, icon: builtIn.icon };
+  // Custom category string — capitalize first letter
+  return { label: category.charAt(0).toUpperCase() + category.slice(1), icon: '' };
 }
 
 function relativeTime(dateStr: string): string {
@@ -365,13 +375,20 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            <ClientOnly fallback={<>Loading...</>}>
-                              <SimpleCountdown deadline={poll.response_deadline} />
-                            </ClientOnly>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
+                          {poll.response_deadline && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              <ClientOnly fallback={<>Loading...</>}>
+                                <SimpleCountdown deadline={poll.response_deadline} />
+                              </ClientOnly>
+                            </span>
+                          )}
+                        </div>
+                        {getCategoryDisplay(poll) && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {getCategoryDisplay(poll)!.label} {getCategoryDisplay(poll)!.icon}
                           </span>
                         )}
                       </div>
@@ -486,31 +503,38 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            <ClientOnly fallback={<>Closed</>}>
-                              <>Closed {(() => {
-                                const deadline = new Date(poll.response_deadline);
-                                const now = new Date();
-                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                          {poll.response_deadline && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              <ClientOnly fallback={<>Closed</>}>
+                                <>Closed {(() => {
+                                  const deadline = new Date(poll.response_deadline);
+                                  const now = new Date();
+                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                                if (hoursAgo <= 24) {
-                                  return deadline.toLocaleTimeString("en-US", {
-                                    hour: "numeric",
-                                    minute: "2-digit",
-                                    hour12: true
-                                  });
-                                } else {
-                                  return deadline.toLocaleDateString("en-US", {
-                                    month: "numeric",
-                                    day: "numeric",
-                                    year: "2-digit"
-                                  });
-                                }
-                              })()}</>
-                            </ClientOnly>
+                                  if (hoursAgo <= 24) {
+                                    return deadline.toLocaleTimeString("en-US", {
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      hour12: true
+                                    });
+                                  } else {
+                                    return deadline.toLocaleDateString("en-US", {
+                                      month: "numeric",
+                                      day: "numeric",
+                                      year: "2-digit"
+                                    });
+                                  }
+                                })()}</>
+                              </ClientOnly>
+                            </span>
+                          )}
+                        </div>
+                        {getCategoryDisplay(poll) && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {getCategoryDisplay(poll)!.label} {getCategoryDisplay(poll)!.icon}
                           </span>
                         )}
                       </div>
