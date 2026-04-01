@@ -433,13 +433,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (voteId || poll.poll_type === 'nomination' || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
 
-        // For participation polls without a stored vote ID, find the user's vote ID by name
+        // For participation polls without a stored vote ID, find the vote via participant name match
         const fetchParticipationVoteByName = async (pollId: string) => {
           const savedName = getUserName();
           if (!savedName) return null;
           const participants = await apiGetParticipants(pollId);
           const match = participants.find(p => p.voter_name === savedName);
-          return match ? { id: match.vote_id } : null;
+          if (!match) return null;
+          return fetchVoteData(match.vote_id);
         };
 
         let fetchPromise;
