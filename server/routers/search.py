@@ -153,7 +153,6 @@ async def _nominatim_search(
         extratags = item.get("extratags") or {}
         image_url = _favicon_url(_extract_website(extratags))
 
-        # Build address from display_name minus the place name
         display_name = item.get("display_name", "")
         place_name = item.get("name") or ""
         loc_address = display_name[len(place_name) + 2:] if display_name.startswith(place_name + ", ") else ""

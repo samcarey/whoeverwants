@@ -146,7 +146,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
     const distance = metadata!.distance_miles;
     const hasCoords = !!(metadata!.lat && metadata!.lon);
 
-    const address = metadata!.address || getAddressFromLabel(text, name);
+    const address = metadata!.address ?? getAddressFromLabel(text, name);
 
     if (layout === "stacked") {
       return (
@@ -209,7 +209,7 @@ export default function OptionLabel({ text, metadata, className = "", layout = "
   // Location entry
   if (isLocationEntry(metadata)) {
     const name = getLocationName(text, metadata!);
-    const address = metadata!.address || getAddressFromLabel(text, name);
+    const address = metadata!.address ?? getAddressFromLabel(text, name);
     const distance = metadata!.distance_miles;
     const hasCoords = !!(metadata!.lat && metadata!.lon);
 
