@@ -98,6 +98,7 @@ function CreatePollContent() {
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const loadedTitleRef = useRef<string | null>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
@@ -212,17 +213,17 @@ function CreatePollContent() {
     }
   }, [isAutoTitle, generateTitle]);
 
-  // After loading duplicate/fork data, detect if the title was auto-generated
-  // by comparing it to what generateTitle() produces with the loaded options.
-  // This handles both old snapshots (without is_auto_title) and new ones.
+  // Detect auto-generated titles from copied polls (handles old snapshots without is_auto_title)
   useEffect(() => {
-    if (!isAutoTitle && (duplicateOfParam || forkOfParam) && title) {
+    const loaded = loadedTitleRef.current;
+    if (!isAutoTitle && loaded) {
       const generated = generateTitle();
-      if (generated && title === generated.slice(0, 100)) {
+      if (generated && loaded === generated.slice(0, 100)) {
+        loadedTitleRef.current = null;
         setIsAutoTitle(true);
       }
     }
-  }, [duplicateOfParam, forkOfParam, isAutoTitle, title, generateTitle]);
+  }, [isAutoTitle, generateTitle]);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -544,10 +545,9 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
-          if (forkData.is_auto_title) {
-            setIsAutoTitle(true);
-          } else if (forkData.title) {
+          if (!forkData.is_auto_title && forkData.title) {
             setIsAutoTitle(false);
+            loadedTitleRef.current = forkData.title;
           }
           setDetails(forkData.details || "");
           if (forkData.details) setDetailsOpen(true);
@@ -635,10 +635,9 @@ function CreatePollContent() {
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
-          if (duplicateData.is_auto_title) {
-            setIsAutoTitle(true);
-          } else if (duplicateData.title) {
+          if (!duplicateData.is_auto_title && duplicateData.title) {
             setIsAutoTitle(false);
+            loadedTitleRef.current = duplicateData.title;
           }
           setDetails(duplicateData.details || "");
           if (duplicateData.details) setDetailsOpen(true);
@@ -731,10 +730,9 @@ function CreatePollContent() {
 
           // Auto-fill form with preference poll type and nominated options
           setTitle(voteData.title || "");
-          if (voteData.is_auto_title) {
-            setIsAutoTitle(true);
-          } else if (voteData.title) {
+          if (!voteData.is_auto_title && voteData.title) {
             setIsAutoTitle(false);
+            loadedTitleRef.current = voteData.title;
           }
           setPollType('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
