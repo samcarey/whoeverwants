@@ -23,6 +23,9 @@ const isIOSSPWAStandalone = () =>
 // Session-scoped in-app navigation counter (per-tab, cleared on tab close).
 const NAV_COUNT_KEY = 'app_nav_count';
 
+// Bottom bar scroll behavior
+const SCROLL_TOP_SAFE_ZONE = 50; // Don't hide bottom bar when within this many px of top
+
 // Pull-to-refresh constants (iOS PWA only)
 const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
 const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
@@ -156,6 +159,14 @@ export default function Template({ children }: AppTemplateProps) {
       const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
       if (currentScrollY <= 0) {
+        setVisible(true);
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Keep bottom bar visible near the top so a tiny scroll can't hide it
+      // on pages with little content where the user can't scroll up to recover.
+      if (currentScrollY < SCROLL_TOP_SAFE_ZONE) {
         setVisible(true);
         lastScrollY.current = currentScrollY;
         return;
