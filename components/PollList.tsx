@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import { getBuiltInType } from "@/components/TypeFieldInput";
 
 const POLL_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '☐',
@@ -18,6 +19,15 @@ const CLOSED_YES_NO_SYMBOL = '🏆';
 function getPollSymbol(pollType: string, isClosed: boolean): string {
   if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
+}
+
+function getCategoryDisplay(poll: Poll): { label: string; icon: string } | null {
+  const category = poll.category;
+  if (!category || category === 'custom') return null;
+  const builtIn = getBuiltInType(category);
+  if (builtIn) return { label: builtIn.label, icon: builtIn.icon };
+  // Custom category string — capitalize first letter
+  return { label: category.charAt(0).toUpperCase() + category.slice(1), icon: '' };
 }
 
 function relativeTime(dateStr: string): string {
@@ -272,7 +282,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               const prevPoll = index > 0 ? openPolls[index - 1] : null;
               const isPrevVoted = prevPoll ? (votedPollIds.has(prevPoll.id) || abstainedPollIds.has(prevPoll.id)) : false;
               const isFirstVoted = hasVotedOrAbstained && !isPrevVoted;
-              
+              const categoryDisplay = getCategoryDisplay(poll);
+
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
                 isScrolling.current = false;
@@ -355,7 +366,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
-                      className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : hasVotedOrAbstained ? 'opacity-60' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                      className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
                       {navigatingPollId === poll.id && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
@@ -365,13 +376,20 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            <ClientOnly fallback={<>Loading...</>}>
-                              <SimpleCountdown deadline={poll.response_deadline} />
-                            </ClientOnly>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
+                          {poll.response_deadline && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              <ClientOnly fallback={<>Loading...</>}>
+                                <SimpleCountdown deadline={poll.response_deadline} />
+                              </ClientOnly>
+                            </span>
+                          )}
+                        </div>
+                        {categoryDisplay && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {categoryDisplay.label} {categoryDisplay.icon}
                           </span>
                         )}
                       </div>
@@ -400,6 +418,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
           </div>
           <div>
               {closedPolls.map((poll, index) => {
+                const categoryDisplay = getCategoryDisplay(poll);
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
@@ -486,31 +505,38 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </svg>
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            <ClientOnly fallback={<>Closed</>}>
-                              <>Closed {(() => {
-                                const deadline = new Date(poll.response_deadline);
-                                const now = new Date();
-                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
+                          {poll.response_deadline && (
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              <ClientOnly fallback={<>Closed</>}>
+                                <>Closed {(() => {
+                                  const deadline = new Date(poll.response_deadline);
+                                  const now = new Date();
+                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                                if (hoursAgo <= 24) {
-                                  return deadline.toLocaleTimeString("en-US", {
-                                    hour: "numeric",
-                                    minute: "2-digit",
-                                    hour12: true
-                                  });
-                                } else {
-                                  return deadline.toLocaleDateString("en-US", {
-                                    month: "numeric",
-                                    day: "numeric",
-                                    year: "2-digit"
-                                  });
-                                }
-                              })()}</>
-                            </ClientOnly>
+                                  if (hoursAgo <= 24) {
+                                    return deadline.toLocaleTimeString("en-US", {
+                                      hour: "numeric",
+                                      minute: "2-digit",
+                                      hour12: true
+                                    });
+                                  } else {
+                                    return deadline.toLocaleDateString("en-US", {
+                                      month: "numeric",
+                                      day: "numeric",
+                                      year: "2-digit"
+                                    });
+                                  }
+                                })()}</>
+                              </ClientOnly>
+                            </span>
+                          )}
+                        </div>
+                        {categoryDisplay && (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            {categoryDisplay.label} {categoryDisplay.icon}
                           </span>
                         )}
                       </div>
