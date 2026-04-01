@@ -212,6 +212,18 @@ function CreatePollContent() {
     }
   }, [isAutoTitle, generateTitle]);
 
+  // After loading duplicate/fork data, detect if the title was auto-generated
+  // by comparing it to what generateTitle() produces with the loaded options.
+  // This handles both old snapshots (without is_auto_title) and new ones.
+  useEffect(() => {
+    if (!isAutoTitle && (duplicateOfParam || forkOfParam) && title) {
+      const generated = generateTitle();
+      if (generated && title === generated.slice(0, 100)) {
+        setIsAutoTitle(true);
+      }
+    }
+  }, [duplicateOfParam, forkOfParam, isAutoTitle, title, generateTitle]);
+
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
     if (form) {
