@@ -122,7 +122,7 @@ const BADGE_COLORS = {
   gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
-function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null): ResultBadge {
+function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean): ResultBadge {
   if (!results) {
     return { text: 'No results', emoji: '—', color: 'gray' };
   }
@@ -166,7 +166,8 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
         const others = participatingCount - 1;
         return { text: `You're going with ${others} other${others > 1 ? 's' : ''}`, emoji: '🎉', color: 'green' };
       }
-      if (isHappening) return { text: "It's happening without you", emoji: '🎉', color: 'yellow' };
+      if (isHappening && !userVoted) return { text: "It's happening without you", emoji: '🎉', color: 'yellow' };
+      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
@@ -201,10 +202,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
     for (const poll of closedPolls) {
-      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id]);
+      const userVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
+      badges[poll.id] = getResultBadge(poll, poll.results, pollVoteIds[poll.id], userVoted);
     }
     return badges;
-  }, [closedPolls, pollVoteIds]);
+  }, [closedPolls, pollVoteIds, votedPollIds, abstainedPollIds]);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -225,7 +227,17 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       setVotedPollIds(voted);
       setAbstainedPollIds(abstained);
 
-      const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      // Merge vote IDs from both localStorage formats
+      const voteIds: Record<string, string> = {};
+      // Format 1: pollVoteIds
+      const storedVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+      Object.assign(voteIds, storedVoteIds);
+      // Format 2: votedPolls entries with {voteId: ...} object format
+      Object.keys(votedPolls).forEach(id => {
+        if (!voteIds[id] && votedPolls[id]?.voteId) {
+          voteIds[id] = votedPolls[id].voteId;
+        }
+      });
       setPollVoteIds(voteIds);
     } catch (error) {
       console.error('Error loading voted polls:', error);
