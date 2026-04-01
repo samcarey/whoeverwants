@@ -108,6 +108,10 @@ export default function OptionsInput({
       newOptions.push('');
     }
 
+    if (newOptions[newOptions.length - 1] !== '') {
+      newOptions.push('');
+    }
+
     setOptions(newOptions);
   };
 
