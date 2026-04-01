@@ -895,6 +895,8 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **Catch-all fallthrough in `get_results()`**: When adding new poll types, `server/routers/polls.py` has a catch-all return at the bottom returning `yes_count=None`. Any poll type without an explicit handler silently falls through and the frontend interprets `None` as `0`. Always add an explicit handler for each poll type.
 - **Frontend TODO stubs cause silent failures**: If the backend adds a new endpoint, check whether the frontend has TODO stubs (e.g., `setParticipants([])`) that need to be connected. Stubs cause incorrect UI without errors.
+- **`toPollResults()` in `lib/api.ts` is a manual field mapper** — when adding new fields to `PollResultsResponse` on the backend, you MUST also add them to `toPollResults()` or they'll be silently dropped. The function explicitly maps each field; unmapped fields from the API response are discarded.
+- **Dev server Pydantic schema caching**: Adding fields to a Pydantic `BaseModel` (like `PollResultsResponse`) requires a full API restart — `uvicorn` with hot-reload doesn't always pick up model schema changes. Use `dev-server-manager.sh upsert` to force a clean restart.
 
 ### Auto-Created Follow-Up Polls & Creator Secrets
 
