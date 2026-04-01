@@ -363,70 +363,51 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         onTouchMove={roundVisualizations.length > 1 ? handleTouchMove : undefined}
         onTouchEnd={roundVisualizations.length > 1 ? handleTouchEnd : undefined}
       >
-        <div className="flex">
-          {/* Static position numbers column */}
-          <div className="flex-shrink-0 flex flex-col" style={{ width: '36px' }}>
-            {currentRound.candidates.map((candidate, index) => {
-              const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
-              const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
-              const isTieByVotes = candidatesWithHighestVotes.length > 1;
-              const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
-                                    (results.winner === 'tie' || isTieByVotes) &&
-                                    candidate.votes === highestVotes;
-              const isUserPreference = currentRound.userPreference === candidate.name;
+        <div className="space-y-2">
+          {currentRound.candidates.map((candidate, index) => {
+            // Find the highest vote count in the current round
+            const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
+            const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
+            const isTieByVotes = candidatesWithHighestVotes.length > 1;
 
-              return (
-                <div key={candidate.name} className="flex items-center justify-center" style={{ height: '52px', marginBottom: index < currentRound.candidates.length - 1 ? '8px' : '0' }}>
-                  <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
-                    isUserPreference
-                      ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
-                      : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
-                  }`}>
-                    {isTiedCandidate ? 'T' : candidate.position}
+            const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
+                                  (results.winner === 'tie' || isTieByVotes) &&
+                                  candidate.votes === highestVotes;
+
+            // Check if we should show Borda explanation after this candidate
+            const isLastEliminatedCandidate = candidate.isEliminated &&
+                                            index === currentRound.candidates.length - 1;
+            const hasBordaTieBreaking = isLastEliminatedCandidate &&
+                                      currentRound.eliminatedCandidates.length > 0;
+
+            const isUserPreference = currentRound.userPreference === candidate.name;
+
+            const getUserChoicePosition = () => {
+              if (!isUserPreference || !userVoteData?.ranked_choices) return null;
+              const position = userVoteData.ranked_choices.indexOf(candidate.name) + 1;
+              if (position === 0) return null;
+              const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
+              return `Your ${position}${suffix} choice`;
+            };
+
+            const userChoiceText = getUserChoicePosition();
+
+            return (
+              <React.Fragment key={candidate.name}>
+                <div className="flex items-center gap-2">
+                  {/* Static position number */}
+                  <div className="flex-shrink-0" style={{ width: '32px' }}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      isUserPreference
+                        ? 'bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-200'
+                    }`}>
+                      {isTiedCandidate ? 'T' : candidate.position}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Candidate rows */}
-          <div className="flex-1 space-y-2">
-            {currentRound.candidates.map((candidate, index) => {
-              // Find the highest vote count in the current round
-              const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
-              const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
-              const isTieByVotes = candidatesWithHighestVotes.length > 1;
-
-              const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
-                                    (results.winner === 'tie' || isTieByVotes) &&
-                                    candidate.votes === highestVotes;
-
-              // Check if we should show Borda explanation after this candidate
-              // Show it only after the LAST eliminated candidate in a tie-breaking round
-              const isLastEliminatedCandidate = candidate.isEliminated &&
-                                              index === currentRound.candidates.length - 1;
-              const hasBordaTieBreaking = isLastEliminatedCandidate &&
-                                        currentRound.eliminatedCandidates.length > 0;
-
-              // Check if this candidate is the user's preference for this round
-              const isUserPreference = currentRound.userPreference === candidate.name;
-
-              // Get the ordinal position of this candidate in user's ranking
-              const getUserChoicePosition = () => {
-                if (!isUserPreference || !userVoteData?.ranked_choices) return null;
-                const position = userVoteData.ranked_choices.indexOf(candidate.name) + 1;
-                if (position === 0) return null;
-
-                // Convert to ordinal (1st, 2nd, 3rd, etc.)
-                const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
-                return `Your ${position}${suffix} choice`;
-              };
-
-              const userChoiceText = getUserChoicePosition();
-
-              return (
-                <React.Fragment key={candidate.name}>
-                  <div className={`border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
+                  {/* Candidate row */}
+                  <div className={`flex-1 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 transition-all ${
                     isTiedCandidate
                       ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
                       : candidate.isEliminated && !isTiedCandidate
@@ -437,7 +418,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                   }`}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        {/* Candidate name */}
                         <div className="min-w-0 overflow-hidden">
                           <div className={`leading-tight ${
                             isLocationEntry(optionsMetadata?.[candidate.name]) || isRestaurantEntry(optionsMetadata?.[candidate.name])
@@ -454,7 +434,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                           }`}>
                             <OptionLabel text={candidate.name} metadata={optionsMetadata?.[candidate.name]} />
                           </div>
-                          {/* Show user preference indicator under name */}
                           {userChoiceText && (
                             <div className="mt-1">
                               <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
@@ -465,7 +444,6 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                         </div>
                       </div>
 
-                      {/* Vote count and percentage - hidden for uncontested polls */}
                       {!(results.total_votes === 0 && currentRound.candidates.length === 1) && (
                         <div className="text-right flex-shrink-0">
                           <div className={`text-lg font-bold ${
@@ -491,19 +469,18 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       )}
                     </div>
                   </div>
+                </div>
 
-                  {/* Show Borda count explanation when tie-breaking occurs */}
-                  {hasBordaTieBreaking && (
-                    <BordaCountExplanation
-                      pollId={results.poll_id}
-                      roundNumber={currentRound.roundNumber}
-                      roundEntries={currentRound.roundEntries}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
+                {hasBordaTieBreaking && (
+                  <BordaCountExplanation
+                    pollId={results.poll_id}
+                    roundNumber={currentRound.roundNumber}
+                    roundEntries={currentRound.roundEntries}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
     </div>
