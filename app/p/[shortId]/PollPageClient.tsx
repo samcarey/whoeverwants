@@ -430,14 +430,24 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       // Fetch vote data from database if we have a vote ID
       // OR if this is a nomination poll (to handle creator votes and aggregation)
-      if (voteId || poll.poll_type === 'nomination') {
+      if (voteId || poll.poll_type === 'nomination' || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
         
         // For nomination polls, always use aggregated data to handle multiple votes
         // For other poll types, fetch by voteId or latest vote
+        // For participation polls without a stored vote ID, find the user's vote by name
+        const fetchParticipationVoteByName = async (pollId: string) => {
+          const savedName = getUserName();
+          if (!savedName) return null;
+          const votes = await apiGetVotes(pollId);
+          return votes.find(v => v.voter_name === savedName) || null;
+        };
+
         const fetchPromise = poll.poll_type === 'nomination'
           ? fetchAggregatedVoteData(poll.id)
-          : (voteId ? fetchVoteData(voteId) : fetchLatestUserVote(poll.id));
+          : (voteId ? fetchVoteData(voteId)
+            : (poll.poll_type === 'participation' ? fetchParticipationVoteByName(poll.id)
+              : fetchLatestUserVote(poll.id)));
           
         fetchPromise.then(voteData => {
           if (voteData) {
