@@ -55,6 +55,8 @@ class CreatePollRequest(BaseModel):
     category: str | None = None
     # Metadata for options (thumbnail URLs, info links) keyed by option label
     options_metadata: dict | None = None
+    # Whether the title was auto-generated from poll options
+    is_auto_title: bool = False
     # Reference location for proximity-based search
     reference_latitude: float | None = None
     reference_longitude: float | None = None
@@ -159,6 +161,7 @@ class PollResponse(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    is_auto_title: bool = False
     response_count: int | None = None
     results: "PollResultsResponse | None" = None
 

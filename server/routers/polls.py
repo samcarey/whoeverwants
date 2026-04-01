@@ -252,6 +252,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         reference_latitude=row.get("reference_latitude"),
         reference_longitude=row.get("reference_longitude"),
         reference_location_label=row.get("reference_location_label"),
+        is_auto_title=row.get("is_auto_title", False),
     )
 
 
@@ -477,6 +478,7 @@ def create_poll(req: CreatePollRequest):
                                category, options_metadata,
                                reference_latitude, reference_longitude,
                                reference_location_label,
+                               is_auto_title,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -494,6 +496,7 @@ def create_poll(req: CreatePollRequest):
                     %(category)s, %(options_metadata)s::jsonb,
                     %(reference_latitude)s, %(reference_longitude)s,
                     %(reference_location_label)s,
+                    %(is_auto_title)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -531,6 +534,7 @@ def create_poll(req: CreatePollRequest):
                 "reference_latitude": req.reference_latitude,
                 "reference_longitude": req.reference_longitude,
                 "reference_location_label": req.reference_location_label,
+                "is_auto_title": req.is_auto_title,
                 "now": now,
             },
         ).fetchone()

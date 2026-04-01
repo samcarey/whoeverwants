@@ -532,7 +532,11 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
-          if (forkData.title) setIsAutoTitle(false);
+          if (forkData.is_auto_title) {
+            setIsAutoTitle(true);
+          } else if (forkData.title) {
+            setIsAutoTitle(false);
+          }
           setDetails(forkData.details || "");
           if (forkData.details) setDetailsOpen(true);
 
@@ -619,7 +623,11 @@ function CreatePollContent() {
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
-          if (duplicateData.title) setIsAutoTitle(false);
+          if (duplicateData.is_auto_title) {
+            setIsAutoTitle(true);
+          } else if (duplicateData.title) {
+            setIsAutoTitle(false);
+          }
           setDetails(duplicateData.details || "");
           if (duplicateData.details) setDetailsOpen(true);
 
@@ -711,7 +719,11 @@ function CreatePollContent() {
 
           // Auto-fill form with preference poll type and nominated options
           setTitle(voteData.title || "");
-          if (voteData.title) setIsAutoTitle(false);
+          if (voteData.is_auto_title) {
+            setIsAutoTitle(true);
+          } else if (voteData.title) {
+            setIsAutoTitle(false);
+          }
           setPollType('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
@@ -988,7 +1000,8 @@ function CreatePollContent() {
         title,
         poll_type: dbPollType,
         response_deadline: responseDeadline,
-        creator_secret: creatorSecret
+        creator_secret: creatorSecret,
+        is_auto_title: isAutoTitle,
       };
 
       // Add creator_name if provided (may fail if column doesn't exist yet)

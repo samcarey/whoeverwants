@@ -92,6 +92,7 @@ export function buildPollSnapshot(poll: Poll) {
     details: poll.details,
     category: poll.category,
     options_metadata: poll.options_metadata,
+    is_auto_title: poll.is_auto_title,
   };
 }
 
