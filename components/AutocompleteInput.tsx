@@ -171,12 +171,13 @@ export default function AutocompleteInput({
                 <img
                   src={result.imageUrl}
                   alt=""
-                  className={`object-cover rounded flex-shrink-0 mt-0.5 ${
+                  draggable={false}
+                  className={`object-cover rounded flex-shrink-0 mt-0.5 pointer-events-none ${
                     result.name ? 'w-5 h-5' : 'w-8 h-12'
                   }`}
                 />
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 pointer-events-none select-none">
                 {result.name ? (
                   <>
                     <div className="flex items-baseline gap-1.5">
