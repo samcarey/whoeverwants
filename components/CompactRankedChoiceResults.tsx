@@ -364,13 +364,13 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         onTouchEnd={roundVisualizations.length > 1 ? handleTouchEnd : undefined}
       >
         <div className="space-y-2">
-          {currentRound.candidates.map((candidate, index) => {
-            // Find the highest vote count in the current round
+          {(() => {
             const highestVotes = Math.max(...currentRound.candidates.map(c => c.votes));
-            const candidatesWithHighestVotes = currentRound.candidates.filter(c => c.votes === highestVotes);
-            const isTieByVotes = candidatesWithHighestVotes.length > 1;
+            const isTieByVotes = currentRound.candidates.filter(c => c.votes === highestVotes).length > 1;
+            const isFinalRound = currentRound.roundNumber === roundVisualizations.length;
 
-            const isTiedCandidate = currentRound.roundNumber === roundVisualizations.length &&
+            return currentRound.candidates.map((candidate, index) => {
+              const isTiedCandidate = isFinalRound &&
                                   (results.winner === 'tie' || isTieByVotes) &&
                                   candidate.votes === highestVotes;
 
@@ -412,7 +412,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                       ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
                       : candidate.isEliminated && !isTiedCandidate
                       ? 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 opacity-75'
-                      : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                      : results.winner === candidate.name && isFinalRound
                       ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-600'
                       : 'bg-white dark:bg-gray-700'
                   }`}>
@@ -428,7 +428,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                               ? 'text-green-900 dark:text-green-100 font-bold'
                               : candidate.isEliminated && !isTiedCandidate
                               ? 'text-gray-500/60 dark:text-gray-400/60 line-through font-medium'
-                              : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                              : results.winner === candidate.name && isFinalRound
                               ? 'text-green-900 dark:text-green-100 font-bold'
                               : 'text-gray-700/80 dark:text-gray-300/80 font-medium'
                           }`}>
@@ -451,7 +451,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                               ? 'text-green-800 dark:text-green-200'
                               : candidate.isEliminated && !isTiedCandidate
                               ? 'text-red-700 dark:text-red-300'
-                              : results.winner === candidate.name && currentRound.roundNumber === roundVisualizations.length
+                              : results.winner === candidate.name && isFinalRound
                               ? 'text-green-800 dark:text-green-200'
                               : 'text-gray-900 dark:text-white'
                           }`}>
@@ -480,7 +480,8 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
                 )}
               </React.Fragment>
             );
-          })}
+          });
+          })()}
         </div>
       </div>
     </div>
