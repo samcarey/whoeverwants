@@ -1230,7 +1230,7 @@ function CreatePollContent() {
           {pollType !== 'participation' && (
             <div>
               <label htmlFor="category" className="block text-sm font-medium mb-1">
-                Category
+                Category <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <TypeFieldInput
                 value={category}
