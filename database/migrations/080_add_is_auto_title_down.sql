@@ -1,0 +1,1 @@
+ALTER TABLE polls DROP COLUMN IF EXISTS is_auto_title;

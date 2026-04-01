@@ -901,6 +901,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Auto-created polls share the parent's `creator_secret`**, but the browser only stores secrets for polls it created directly. When navigating to an auto-created follow-up poll (e.g., preferences poll from a nomination poll), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `poll.follow_up_to` and propagate if the parent's secret is known).
 - **Use `recordPollCreation()` from `lib/browserPollAccess.ts`** instead of calling `storeCreatorSecret()` + `addAccessiblePollId()` separately. The higher-level function already does both.
 - **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update `buildPollSnapshot()` in `lib/pollCreator.ts` — it's used by `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`.
+- **PWA clients cache old JS bundles** — snapshot structure changes (new fields in `buildPollSnapshot`) won't take effect until users get new JS. Always add backward-compatible detection in the consumer (create-poll page) rather than relying solely on snapshot fields. The `is_auto_title` detection uses a ref-based comparison against `generateTitle()` output to handle old snapshots that lack the field.
 
 ### Textarea Sizing & Inline-Block Gaps
 

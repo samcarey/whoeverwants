@@ -98,6 +98,7 @@ function CreatePollContent() {
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const loadedTitleRef = useRef<string | null>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
   const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
@@ -209,6 +210,18 @@ function CreatePollContent() {
     if (isAutoTitle) {
       const generated = generateTitle();
       setTitle(generated.slice(0, 100));
+    }
+  }, [isAutoTitle, generateTitle]);
+
+  // Detect auto-generated titles from copied polls (handles old snapshots without is_auto_title)
+  useEffect(() => {
+    const loaded = loadedTitleRef.current;
+    if (!isAutoTitle && loaded) {
+      const generated = generateTitle();
+      if (generated && loaded === generated.slice(0, 100)) {
+        loadedTitleRef.current = null;
+        setIsAutoTitle(true);
+      }
     }
   }, [isAutoTitle, generateTitle]);
 
@@ -532,7 +545,10 @@ function CreatePollContent() {
 
           // Auto-fill form with fork data
           setTitle(forkData.title || "");
-          if (forkData.title) setIsAutoTitle(false);
+          if (!forkData.is_auto_title && forkData.title) {
+            setIsAutoTitle(false);
+            loadedTitleRef.current = forkData.title;
+          }
           setDetails(forkData.details || "");
           if (forkData.details) setDetailsOpen(true);
 
@@ -619,7 +635,10 @@ function CreatePollContent() {
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
-          if (duplicateData.title) setIsAutoTitle(false);
+          if (!duplicateData.is_auto_title && duplicateData.title) {
+            setIsAutoTitle(false);
+            loadedTitleRef.current = duplicateData.title;
+          }
           setDetails(duplicateData.details || "");
           if (duplicateData.details) setDetailsOpen(true);
 
@@ -711,7 +730,10 @@ function CreatePollContent() {
 
           // Auto-fill form with preference poll type and nominated options
           setTitle(voteData.title || "");
-          if (voteData.title) setIsAutoTitle(false);
+          if (!voteData.is_auto_title && voteData.title) {
+            setIsAutoTitle(false);
+            loadedTitleRef.current = voteData.title;
+          }
           setPollType('poll'); // Set to preference poll
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
@@ -988,7 +1010,8 @@ function CreatePollContent() {
         title,
         poll_type: dbPollType,
         response_deadline: responseDeadline,
-        creator_secret: creatorSecret
+        creator_secret: creatorSecret,
+        is_auto_title: isAutoTitle,
       };
 
       // Add creator_name if provided (may fail if column doesn't exist yet)

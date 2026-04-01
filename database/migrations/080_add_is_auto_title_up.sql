@@ -1,0 +1,1 @@
+ALTER TABLE polls ADD COLUMN is_auto_title BOOLEAN NOT NULL DEFAULT false;
