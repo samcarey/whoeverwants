@@ -67,10 +67,10 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
           {[1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
-              className="animate-pulse inline-block px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
+              className="animate-pulse inline-block px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700"
               style={{
-                width: `${50 + (i * 12) % 30}px`,
-                height: '24px'
+                width: `${60 + (i * 15) % 40}px`,
+                height: '28px'
               }}
             />
           ))}
@@ -173,7 +173,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
           return (
             <span
               key={voter.id}
-              className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+              className={`inline-block px-3 py-1 rounded-full text-sm ${
                 isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
               } ${getVoterColor(index)}`}
             >
@@ -184,7 +184,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
         {/* Anonymous voters count */}
         {adjustedAnonymousCount > 0 && (
-          <span className="inline-block px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic">
+          <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 italic">
             {adjustedAnonymousCount} × Anonymous
           </span>
         )}
