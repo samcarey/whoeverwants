@@ -447,6 +447,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             // This ensures that vote editing updates the existing record instead of creating new ones
             if (voteData && 'id' in voteData && voteData.id) {
               setUserVoteId(voteData.id);
+              // Backfill pollVoteIds localStorage so the poll list can show personalized badges
+              try {
+                const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+                if (!voteIds[poll.id]) {
+                  voteIds[poll.id] = voteData.id;
+                  localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
+                }
+              } catch (e) { /* ignore */ }
             }
 
             // For nomination polls, fetch results to show vote counts even when poll is open
