@@ -427,13 +427,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
                           </ClientOnly>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_COLORS.gray}`}>
-                            {(poll.response_count ?? 0) > 0
-                              ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
-                              : 'No responses yet'}
-                          </span>
-                        </div>
+                        <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${BADGE_COLORS.gray}`}>
+                          {(poll.response_count ?? 0) > 0
+                            ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
+                            : 'No responses yet'}
+                        </span>
                       </div>
                     </div>
                   </div>
