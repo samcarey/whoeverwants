@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
 import ClientOnly from "@/components/ClientOnly";
@@ -145,7 +145,16 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
-  const [winnerTexts, setWinnerTexts] = useState<Record<string, string>>({});
+  const winnerTexts = useMemo(() => {
+    const texts: Record<string, string> = {};
+    for (const poll of closedPolls) {
+      if (poll.results) {
+        const winner = getWinnerText(poll, poll.results);
+        if (winner) texts[poll.id] = winner;
+      }
+    }
+    return texts;
+  }, [closedPolls]);
   
   // Load voted and abstained polls from localStorage
   useEffect(() => {
@@ -235,22 +244,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     categorizePollsByTime();
   }, [categorizePollsByTime]);
   
-  // Extract winner texts from pre-fetched results on closed polls
-  useEffect(() => {
-    if (closedPolls.length === 0) return;
-
-    const newTexts: Record<string, string> = {};
-    for (const poll of closedPolls) {
-      if (poll.results && !winnerTexts[poll.id]) {
-        const winner = getWinnerText(poll, poll.results);
-        if (winner) newTexts[poll.id] = winner;
-      }
-    }
-    if (Object.keys(newTexts).length > 0) {
-      setWinnerTexts(prev => ({ ...prev, ...newTexts }));
-    }
-  }, [closedPolls]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Set up timer to check for expired polls every 10 seconds
   useEffect(() => {
     if (typeof window === 'undefined' || polls.length === 0) return;

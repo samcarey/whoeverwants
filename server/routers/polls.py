@@ -1,6 +1,9 @@
 """Poll API endpoints."""
 
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException
 
@@ -1145,7 +1148,6 @@ def get_accessible_polls(req: AccessiblePollsRequest):
         if not req.include_results:
             return [_row_to_poll(r) for r in rows]
 
-        # Identify closed polls that need results
         closed_poll_ids = []
         for r in rows:
             is_closed = r.get("is_closed", False)
@@ -1154,7 +1156,6 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             if is_closed or deadline_passed:
                 closed_poll_ids.append(str(r["id"]))
 
-        # Batch-fetch all votes for closed polls in a single query
         votes_by_poll: dict[str, list] = {pid: [] for pid in closed_poll_ids}
         if closed_poll_ids:
             vote_rows = conn.execute(
@@ -1166,7 +1167,6 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                 if pid in votes_by_poll:
                     votes_by_poll[pid].append(v)
 
-    # Build responses with results for closed polls
     results = []
     for r in rows:
         poll_resp = _row_to_poll(r)
@@ -1175,7 +1175,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             try:
                 poll_resp.results = _compute_results(dict(r), votes_by_poll[pid])
             except Exception:
-                pass  # If results computation fails, just omit results
+                logger.warning("Failed to compute results for poll %s", pid, exc_info=True)
         results.append(poll_resp)
     return results
 
