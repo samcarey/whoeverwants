@@ -875,6 +875,43 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       return;
     }
 
+    // Participation poll time window validation
+    if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
+      const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
+        (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) => dtw.windows.length > 0
+      );
+      if (pollHasTimeWindows) {
+        const enabledWindows = voterDayTimeWindows.flatMap(
+          (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
+            dtw.windows.filter((w: { enabled?: boolean }) => w.enabled !== false)
+        );
+        if (enabledWindows.length === 0) {
+          setVoteError("Please enable at least one time window, or vote No.");
+          return;
+        }
+        // Check minimum duration on enabled windows
+        const minDurMinutes = durationMinEnabled && durationMinValue != null
+          ? Math.round(durationMinValue * 60) : null;
+        if (minDurMinutes != null && minDurMinutes > 0) {
+          const tooShort = enabledWindows.some((w: { min: string; max: string }) => {
+            const [sh, sm] = w.min.split(':').map(Number);
+            const [eh, em] = w.max.split(':').map(Number);
+            const startMins = sh * 60 + sm;
+            const endMins = eh * 60 + em;
+            const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
+            return dur < minDurMinutes;
+          });
+          if (tooShort) {
+            const hours = Math.floor(minDurMinutes / 60);
+            const mins = minDurMinutes % 60;
+            const label = hours > 0 && mins > 0 ? `${hours}h ${mins}m` : hours > 0 ? `${hours}h` : `${mins}m`;
+            setVoteError(`Each enabled time window must be at least ${label} long.`);
+            return;
+          }
+        }
+      }
+    }
+
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0) {

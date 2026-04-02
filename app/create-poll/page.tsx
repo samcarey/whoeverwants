@@ -449,6 +449,28 @@ function CreatePollContent() {
       if (emptyDays.length > 0) {
         return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
       }
+      // Check minimum duration on all time windows
+      if (durationMinEnabled && durationMinValue != null) {
+        const minDurMinutes = Math.round(durationMinValue * 60);
+        if (minDurMinutes > 0) {
+          const tooShort = dayTimeWindows.some(dtw =>
+            dtw.windows.some(w => {
+              const [sh, sm] = w.min.split(':').map(Number);
+              const [eh, em] = w.max.split(':').map(Number);
+              const startMins = sh * 60 + sm;
+              const endMins = eh * 60 + em;
+              const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
+              return dur < minDurMinutes;
+            })
+          );
+          if (tooShort) {
+            const hours = Math.floor(minDurMinutes / 60);
+            const mins = minDurMinutes % 60;
+            const label = hours > 0 && mins > 0 ? `${hours}h ${mins}m` : hours > 0 ? `${hours}h` : `${mins}m`;
+            return `Each time window must be at least ${label} long (the minimum duration).`;
+          }
+        }
+      }
     }
 
     return null;

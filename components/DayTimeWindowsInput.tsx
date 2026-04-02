@@ -213,11 +213,6 @@ export default function DayTimeWindowsInput({
                   );
                 })()}
               </button>
-              {isTooShort && (
-                <span className="text-xs text-red-600 dark:text-red-400 whitespace-nowrap">
-                  Too short
-                </span>
-              )}
             </div>
           );
         })}
