@@ -19,6 +19,7 @@ import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -454,20 +455,10 @@ function CreatePollContent() {
         const minDurMinutes = Math.round(durationMinValue * 60);
         if (minDurMinutes > 0) {
           const tooShort = dayTimeWindows.some(dtw =>
-            dtw.windows.some(w => {
-              const [sh, sm] = w.min.split(':').map(Number);
-              const [eh, em] = w.max.split(':').map(Number);
-              const startMins = sh * 60 + sm;
-              const endMins = eh * 60 + em;
-              const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
-              return dur < minDurMinutes;
-            })
+            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
           );
           if (tooShort) {
-            const hours = Math.floor(minDurMinutes / 60);
-            const mins = minDurMinutes % 60;
-            const label = hours > 0 && mins > 0 ? `${hours}h ${mins}m` : hours > 0 ? `${hours}h` : `${mins}m`;
-            return `Each time window must be at least ${label} long (the minimum duration).`;
+            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
           }
         }
       }

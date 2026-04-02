@@ -32,6 +32,7 @@ import ParticipationConditions from "@/components/ParticipationConditions";
 import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
+import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -138,15 +139,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       ? Math.round(durationMinValue * 60) : null;
     if (minDurMinutes == null || minDurMinutes <= 0) return false;
     return voterDayTimeWindows.some((dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
-      dtw.windows.some((w: { min: string; max: string; enabled?: boolean }) => {
-        if (w.enabled === false) return false;
-        const [sh, sm] = w.min.split(':').map(Number);
-        const [eh, em] = w.max.split(':').map(Number);
-        const startMins = sh * 60 + sm;
-        const endMins = eh * 60 + em;
-        const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
-        return dur < minDurMinutes;
-      })
+      dtw.windows.some((w: { min: string; max: string; enabled?: boolean }) =>
+        w.enabled !== false && windowDurationMinutes(w) < minDurMinutes
+      )
     );
   }, [poll.poll_type, voterDayTimeWindows, durationMinEnabled, durationMinValue]);
 
@@ -912,19 +907,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const minDurMinutes = durationMinEnabled && durationMinValue != null
           ? Math.round(durationMinValue * 60) : null;
         if (minDurMinutes != null && minDurMinutes > 0) {
-          const tooShort = enabledWindows.some((w: { min: string; max: string }) => {
-            const [sh, sm] = w.min.split(':').map(Number);
-            const [eh, em] = w.max.split(':').map(Number);
-            const startMins = sh * 60 + sm;
-            const endMins = eh * 60 + em;
-            const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
-            return dur < minDurMinutes;
-          });
+          const tooShort = enabledWindows.some((w: { min: string; max: string }) =>
+            windowDurationMinutes(w) < minDurMinutes
+          );
           if (tooShort) {
-            const hours = Math.floor(minDurMinutes / 60);
-            const mins = minDurMinutes % 60;
-            const label = hours > 0 && mins > 0 ? `${hours}h ${mins}m` : hours > 0 ? `${hours}h` : `${mins}m`;
-            setVoteError(`Each enabled time window must be at least ${label} long.`);
+            setVoteError(`Each enabled time window must be at least ${formatDurationLabel(minDurMinutes)} long.`);
             return;
           }
         }

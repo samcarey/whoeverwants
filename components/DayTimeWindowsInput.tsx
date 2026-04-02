@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
+import { windowDurationMinutes } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
@@ -17,23 +18,6 @@ interface DayTimeWindowsInputProps {
   disabled?: boolean;
   pollWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
   minDurationMinutes?: number | null; // Minimum duration in minutes for validation
-}
-
-/** Convert "HH:MM" to total minutes since midnight */
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
-/** Calculate window duration in minutes, handling cross-midnight */
-function windowDurationMinutes(w: TimeWindow): number {
-  const minMins = timeToMinutes(w.min);
-  const maxMins = timeToMinutes(w.max);
-  if (maxMins <= minMins) {
-    // Cross-midnight or equal (24h)
-    return (1440 - minMins) + maxMins;
-  }
-  return maxMins - minMins;
 }
 
 // Format time in 12-hour format (compact) - returns {time, period}
@@ -124,7 +108,7 @@ export default function DayTimeWindowsInput({
 
   const handleToggleWindow = (index: number) => {
     const updated = windows.map((w, i) =>
-      i === index ? { ...w, enabled: !(w.enabled !== false) } : w
+      i === index ? { ...w, enabled: w.enabled === false } : w
     );
     onChange(updated);
   };

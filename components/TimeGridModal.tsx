@@ -2,18 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import TimeMinMaxCounter from './TimeMinMaxCounter';
+import { timeToMinutes, formatDurationLabel } from '@/lib/timeUtils';
 
 // Duration bar width scaling constants
 const MIN_DURATION = 15; // minutes
 const MAX_DURATION = 24 * 60;
 const MIN_WIDTH_PCT = 10;
 const MAX_WIDTH_PCT = 100;
-
-/** Convert "HH:MM" to total minutes since midnight */
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
 
 /** Convert total minutes since midnight to "HH:MM" */
 function minutesToTime(totalMinutes: number): string {
@@ -74,7 +69,7 @@ export default function TimeGridModal({
   onApply,
   constraintMin,
   constraintMax,
-  minDurationMinutes: minDurationMinutesProp,
+  minDurationMinutes,
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
@@ -188,21 +183,13 @@ export default function TimeGridModal({
     durationMinutes = crossesMidnight
       ? (MAX_DURATION - minMins) + maxMins
       : maxMins - minMins;
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
-    if (hours > 0 && mins > 0) {
-      durationLabel = `${hours}h ${mins}m`;
-    } else if (hours > 0) {
-      durationLabel = `${hours}h`;
-    } else {
-      durationLabel = `${mins}m`;
-    }
+    durationLabel = formatDurationLabel(durationMinutes);
   }
   const widthPct = durationMinutes > 0
     ? MIN_WIDTH_PCT + (MAX_WIDTH_PCT - MIN_WIDTH_PCT) * ((durationMinutes - MIN_DURATION) / (MAX_DURATION - MIN_DURATION))
     : 0;
 
-  const isBelowMinDuration = minDurationMinutesProp != null && minDurationMinutesProp > 0 && durationMinutes > 0 && durationMinutes < minDurationMinutesProp;
+  const isBelowMinDuration = minDurationMinutes != null && minDurationMinutes > 0 && durationMinutes > 0 && durationMinutes < minDurationMinutes;
 
   return (
     <div
@@ -257,7 +244,7 @@ export default function TimeGridModal({
                   : 'text-transparent'
             }`}>
               {isBelowMinDuration
-                ? `Minimum ${Math.floor(minDurationMinutesProp! / 60) > 0 ? `${Math.floor(minDurationMinutesProp! / 60)}h` : ''}${minDurationMinutesProp! % 60 > 0 ? `${minDurationMinutesProp! % 60}m` : ''}`
+                ? `Minimum ${formatDurationLabel(minDurationMinutes!)}`
                 : 'Crosses midnight (+1 day)'}
             </span>
           </div>

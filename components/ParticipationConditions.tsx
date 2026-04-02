@@ -141,7 +141,7 @@ export default function ParticipationConditions({
             maxLimit={enforcedMaxLimit}
             maxRequired={maxRequired}
             disabled={disabled}
-            deferValidation={true}
+
           />
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function ParticipationConditions({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={onDurationMinEnabledChange}
-            deferValidation={true}
+
           />
         </div>
       )}

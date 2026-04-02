@@ -18,7 +18,7 @@ interface MinMaxCounterProps {
   formatValue?: (value: number) => string;
   minCheckboxEnabled?: boolean;
   onMinCheckboxChange?: (enabled: boolean) => void;
-  deferValidation?: boolean;
+
 }
 
 export default function MinMaxCounter({
@@ -37,7 +37,7 @@ export default function MinMaxCounter({
   formatValue,
   minCheckboxEnabled = false,
   onMinCheckboxChange,
-  deferValidation = false,
+
 }: MinMaxCounterProps) {
   const handleMinChange = (newMin: number | null) => {
     onMinChange(newMin);
