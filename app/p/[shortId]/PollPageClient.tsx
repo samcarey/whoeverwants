@@ -131,6 +131,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return participatingVoterIds.includes(userVoteData.id);
   }, [poll.poll_type, userVoteData, participatingVoterIds]);
   
+  // Check if any enabled voter time window is shorter than the minimum duration
+  const hasTimeWindowTooShort = useMemo(() => {
+    if (poll.poll_type !== 'participation') return false;
+    const minDurMinutes = durationMinEnabled && durationMinValue != null
+      ? Math.round(durationMinValue * 60) : null;
+    if (minDurMinutes == null || minDurMinutes <= 0) return false;
+    return voterDayTimeWindows.some((dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
+      dtw.windows.some((w: { min: string; max: string; enabled?: boolean }) => {
+        if (w.enabled === false) return false;
+        const [sh, sm] = w.min.split(':').map(Number);
+        const [eh, em] = w.max.split(':').map(Number);
+        const startMins = sh * 60 + sm;
+        const endMins = eh * 60 + em;
+        const dur = endMins <= startMins ? (1440 - startMins) + endMins : endMins - startMins;
+        return dur < minDurMinutes;
+      })
+    );
+  }, [poll.poll_type, voterDayTimeWindows, durationMinEnabled, durationMinValue]);
+
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
     if (manuallyReopened && !pollClosed) return false;
@@ -1793,6 +1812,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       placeholder="Enter your name..."
                     />
                   </div>
+
+                  {hasTimeWindowTooShort && (
+                    <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded-md">
+                      <p className="text-sm text-red-700 dark:text-red-300">Some time windows are shorter than your minimum duration.</p>
+                    </div>
+                  )}
 
                   <button
                     type="button"
