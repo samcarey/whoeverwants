@@ -102,7 +102,7 @@ export default function MinMaxCounter({
               onChange={handleMinChange}
               increment={increment}
               min={minLimit}
-              max={maxLimit}
+              max={maxEnabled && maxValue !== null ? maxValue : maxLimit}
               disabled={disabled || (onMinCheckboxChange !== undefined && !minCheckboxEnabled)}
               arrowPosition="left"
               formatValue={formatValue}
