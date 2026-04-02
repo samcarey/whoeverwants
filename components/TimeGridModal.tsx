@@ -23,12 +23,46 @@ function minutesToTime(totalMinutes: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
+/** Clamp the "start" time so it can't go below the poll window's min */
+function clampTimeMin(value: string, constraintMin: string, constraintMax: string): string {
+  const crossesMidnight = constraintMax <= constraintMin;
+  if (!crossesMidnight) {
+    // Normal window: min can't go below constraintMin
+    return value < constraintMin ? constraintMin : value;
+  } else {
+    // Cross-midnight: excluded zone is (constraintMax, constraintMin)
+    // If value is in the excluded zone, snap to constraintMin
+    if (value > constraintMax && value < constraintMin) {
+      return constraintMin;
+    }
+    return value;
+  }
+}
+
+/** Clamp the "end" time so it can't go above the poll window's max */
+function clampTimeMax(value: string, constraintMin: string, constraintMax: string): string {
+  const crossesMidnight = constraintMax <= constraintMin;
+  if (!crossesMidnight) {
+    // Normal window: max can't go above constraintMax
+    return value > constraintMax ? constraintMax : value;
+  } else {
+    // Cross-midnight: excluded zone is (constraintMax, constraintMin)
+    // If value is in the excluded zone, snap to constraintMax
+    if (value > constraintMax && value < constraintMin) {
+      return constraintMax;
+    }
+    return value;
+  }
+}
+
 interface TimeGridModalProps {
   isOpen: boolean;
   onClose: () => void;
   minValue: string | null;
   maxValue: string | null;
   onApply: (min: string | null, max: string | null) => void;
+  constraintMin?: string;  // Poll window's min — voter's min can't go below this
+  constraintMax?: string;  // Poll window's max — voter's max can't go above this
 }
 
 export default function TimeGridModal({
@@ -37,6 +71,8 @@ export default function TimeGridModal({
   minValue,
   maxValue,
   onApply,
+  constraintMin,
+  constraintMax,
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
@@ -96,15 +132,23 @@ export default function TimeGridModal({
   }, [minValue, maxValue, isOpen]);
 
   // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
+  // When constraints exist (voter editing a poll window), clamp to poll bounds
+  // Note: min==max prevention is handled by the wheel item filtering in TimeCounterInput
   const handleMinChange = useCallback((newMin: string | null) => {
+    if (newMin && constraintMin && constraintMax) {
+      newMin = clampTimeMin(newMin, constraintMin, constraintMax);
+    }
     setLocalMinTime(newMin);
     setTransitionsEnabled(true);
-  }, []);
+  }, [constraintMin, constraintMax]);
 
   const handleMaxChange = useCallback((newMax: string | null) => {
+    if (newMax && constraintMin && constraintMax) {
+      newMax = clampTimeMax(newMax, constraintMin, constraintMax);
+    }
     setLocalMaxTime(newMax);
     setTransitionsEnabled(true);
-  }, []);
+  }, [constraintMin, constraintMax]);
 
   // Reset transitions when modal reopens so the duration bar doesn't animate on open
   useEffect(() => {
@@ -207,6 +251,8 @@ export default function TimeGridModal({
             onMinChange={handleMinChange}
             onMaxChange={handleMaxChange}
             increment={15}
+            constraintMin={constraintMin}
+            constraintMax={constraintMax}
           />
         </div>
       </div>

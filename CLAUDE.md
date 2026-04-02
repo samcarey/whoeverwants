@@ -837,6 +837,14 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Coalesce requestAnimationFrame calls.** On 120Hz displays, touchmove fires faster than rAF. Use a `rAFPending` flag to skip redundant frames and read the latest value at callback time (not call time).
 - **Touch listeners must go on the scroll container, not document.body.** `e.preventDefault()` on body touchmove doesn't suppress a child scroll container's native overscroll bounce. Attach listeners to the scrollable element directly.
 
+### Constrained Time Wheel Pickers (Voter Response)
+
+- **Voter time ranges must be strict subsets of the poll creator's window.** For non-cross-midnight poll windows (e.g., 9AM–5PM), enforce `voter_min < voter_max` — never allow cross-midnight voter ranges. For cross-midnight poll windows, only exclude exact equality (`min !== max`, which would be 24h). The `isValidVsSibling()` function in `TimeCounterInput.tsx` implements this.
+- **Filter wheel items, don't clamp after the fact.** Clamping after scroll causes visible snap-back. Instead, compute the valid hour/minute sets upfront so invalid values are never shown.
+- **Each picker must know the other picker's value** (`siblingValue` prop) to dynamically filter its options. The min picker shows only times strictly less than the current max, and vice versa. Hours with no valid minutes are hidden entirely.
+- **The AM/PM wheel in constrained mode is non-interactive** — wrapped in `pointerEvents: 'none'`, it auto-follows the selected hour via `selectedIndex`. This keeps hours in chronological order across AM/PM boundaries.
+- **When an hour change invalidates the current minute**, auto-select the minute giving the smallest positive duration to/from the sibling (≈1 increment gap). This avoids jarring jumps to arbitrary times.
+
 ### Cross-Midnight Time Windows
 
 - **Time windows where `max <= min` represent cross-midnight ranges** (e.g., 10 PM–2 AM). Equal start/end means a full 24-hour window. Use `<=` consistently in all cross-midnight detection — `<` misses the equal-times-as-24h case.

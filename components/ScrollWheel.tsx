@@ -188,6 +188,50 @@ export default function ScrollWheel({
     }
   }, [loop, itemHeight, rawToReal, selectedToScroll, items.length, updateItemStyles]);
 
+  // Correct scroll position to match selectedIndex (e.g. after parent clamped the value)
+  const correctPosition = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || suppressScrollHandler.current) return;
+
+    const rawIdx = Math.round(el.scrollTop / itemHeight);
+    const realIdx = loop
+      ? rawToReal(rawIdx)
+      : Math.max(0, Math.min(items.length - 1, rawIdx));
+    const target = selectedIndexRef.current;
+    if (realIdx === target) return;
+
+    lastReportedIndex.current = target;
+    suppressScrollHandler.current = true;
+    let targetScroll: number;
+    if (loop) {
+      const currentRepStart = Math.floor(rawIdx / items.length) * items.length;
+      const candidates = [
+        currentRepStart - items.length + target,
+        currentRepStart + target,
+        currentRepStart + items.length + target,
+      ];
+      let best = candidates[1];
+      let bestDist = Math.abs(candidates[1] - rawIdx);
+      for (const c of candidates) {
+        const dist = Math.abs(c - rawIdx);
+        if (dist < bestDist) { bestDist = dist; best = c; }
+      }
+      targetScroll = best * itemHeight;
+    } else {
+      targetScroll = target * itemHeight;
+    }
+    el.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      suppressScrollHandler.current = false;
+      updateItemStyles();
+    }, SMOOTH_SCROLL_SETTLE_MS);
+  }, [itemHeight, items.length, loop, rawToReal, updateItemStyles]);
+
+  // Keep a ref so touchend handler (created with [] deps) can access latest version
+  const correctPositionRef = useRef(correctPosition);
+  correctPositionRef.current = correctPosition;
+
   const handleScroll = useCallback(() => {
     if (suppressScrollHandler.current) return;
 
@@ -212,22 +256,31 @@ export default function ScrollWheel({
       }
     }
 
-    // Debounced loop re-centering (only needed for loop mode)
-    if (loop) {
-      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
-      scrollTimeout.current = setTimeout(() => {
-        recenterLoop();
-      }, 150);
-    }
+    // Debounced scroll-settle actions (loop re-centering + constraint correction)
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      if (loop) recenterLoop();
+      // After scroll settles, snap to constrained position if parent clamped selectedIndex
+      if (!isTouching.current) {
+        correctPositionRef.current();
+      }
+    }, 150);
   }, [itemHeight, items.length, onChange, updateItemStyles, loop, rawToReal, recenterLoop]);
 
-  // Track touch state
+  // Track touch state — on touch end, schedule a correction check
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const onTouchStart = () => { isTouching.current = true; };
-    const onTouchEnd = () => { isTouching.current = false; };
+    const onTouchEnd = () => {
+      isTouching.current = false;
+      // After touch ends, wait for any momentum scroll to settle, then correct
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      scrollTimeout.current = setTimeout(() => {
+        correctPositionRef.current();
+      }, 150);
+    };
 
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchend', onTouchEnd, { passive: true });

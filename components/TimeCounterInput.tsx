@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useCallback } from 'react';
 import ScrollWheel from './ScrollWheel';
 
 interface TimeCounterInputProps {
@@ -8,6 +8,10 @@ interface TimeCounterInputProps {
   onChange: (value: string | null) => void;
   increment?: number; // minutes (used to generate minute options)
   disabled?: boolean;
+  constraintMin?: string; // HH:MM 24h — lower bound of valid time window
+  constraintMax?: string; // HH:MM 24h — upper bound of valid time window
+  siblingValue?: string | null; // HH:MM 24h — the other picker's current value
+  role?: 'min' | 'max'; // whether this is the min or max time picker
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
@@ -33,11 +37,53 @@ function from24Hour(hour24: number): { hour12: number; period: 'AM' | 'PM' } {
   return { hour12, period };
 }
 
+function timeToMins(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/** Check if a time (in minutes) falls within a window, handling cross-midnight */
+function isInWindow(mins: number, minMins: number, maxMins: number): boolean {
+  if (maxMins <= minMins) {
+    return mins >= minMins || mins <= maxMins;
+  }
+  return mins >= minMins && mins <= maxMins;
+}
+
+/**
+ * Check if a candidate time is valid relative to the sibling picker's value.
+ * For non-cross-midnight poll windows: min must be < max (no cross-midnight voter ranges).
+ * For cross-midnight poll windows: only exclude exact equality (min !== max).
+ */
+function isValidVsSibling(
+  t: number,
+  sibMins: number,
+  role: 'min' | 'max' | undefined,
+  pollCrossesMidnight: boolean,
+): boolean {
+  if (sibMins < 0) return true; // no sibling constraint
+  if (pollCrossesMidnight) {
+    // Cross-midnight poll: only prevent exact 24h (min === max)
+    return t !== sibMins;
+  }
+  // Non-cross-midnight poll: voter's min must be strictly < voter's max
+  if (role === 'min') return t < sibMins;
+  if (role === 'max') return t > sibMins;
+  return t !== sibMins; // fallback
+}
+
+// no-op handler for the locked AM/PM wheel
+function noop() {}
+
 export default function TimeCounterInput({
   value,
   onChange,
   increment = 15,
   disabled = false,
+  constraintMin,
+  constraintMax,
+  siblingValue,
+  role,
 }: TimeCounterInputProps) {
   const minuteOptions = useMemo(() => getMinuteOptions(increment), [increment]);
   const minuteLabels = useMemo(() => minuteOptions.map(m => m.toString().padStart(2, '0')), [minuteOptions]);
@@ -45,28 +91,96 @@ export default function TimeCounterInput({
   const prevHourIndex = useRef<number | null>(null);
   const prevMinuteIndex = useRef<number | null>(null);
 
+  const constrained = !!constraintMin && !!constraintMax;
+  const cMinMins = constrained ? timeToMins(constraintMin!) : 0;
+  const cMaxMins = constrained ? timeToMins(constraintMax!) : 0;
+  const pollCrossesMidnight = constrained && cMaxMins <= cMinMins && cMinMins !== cMaxMins;
+
+  // Only filter against sibling when constraint window is < 24h
+  const constraintIs24h = constrained && cMinMins === cMaxMins;
+  const sibMins = (siblingValue && constrained && !constraintIs24h) ? timeToMins(siblingValue) : -1;
+
   // Parse current value
-  let hourIndex = 8; // default 9 AM -> index 8 (9-1=8 in 0-based)
-  let minuteIndex = 0;
-  let periodIndex = 0; // AM
-
+  let currentHour24 = 9, currentMinute = 0;
   if (value) {
-    const [h24, m] = value.split(':').map(Number);
-    const { hour12, period } = from24Hour(h24);
-    hourIndex = hour12 - 1; // 1-12 -> 0-11
-    minuteIndex = minuteOptions.indexOf(m);
-    if (minuteIndex === -1) {
-      const nearest = minuteOptions.reduce((prev, curr) =>
-        Math.abs(curr - m) < Math.abs(prev - m) ? curr : prev
-      );
-      minuteIndex = minuteOptions.indexOf(nearest);
-    }
-    periodIndex = period === 'AM' ? 0 : 1;
+    [currentHour24, currentMinute] = value.split(':').map(Number);
   }
+  const { hour12: currentHour12, period: currentPeriod } = from24Hour(currentHour24);
 
-  // Keep refs in sync with current parsed values
+  // === UNCONSTRAINED MODE indices ===
+  let hourIndex = currentHour12 - 1; // 1-12 -> 0-11
+  let minuteIndex = minuteOptions.indexOf(currentMinute);
+  if (minuteIndex === -1) {
+    const nearest = minuteOptions.reduce((prev, curr) =>
+      Math.abs(curr - currentMinute) < Math.abs(prev - currentMinute) ? curr : prev
+    );
+    minuteIndex = minuteOptions.indexOf(nearest);
+  }
+  const periodIndex = currentPeriod === 'AM' ? 0 : 1;
+
+  // === CONSTRAINED MODE ===
+  // All valid hours in chronological order across AM/PM.
+  // Hours where no valid minute passes both window and sibling checks are excluded.
+
+  /** Check if time t is valid: in the poll window AND valid vs sibling */
+  const isTimeValid = useCallback((t: number) => {
+    return isInWindow(t, cMinMins, cMaxMins) && isValidVsSibling(t, sibMins, role, pollCrossesMidnight);
+  }, [cMinMins, cMaxMins, sibMins, role, pollCrossesMidnight]);
+
+  const constrainedHours = useMemo(() => {
+    if (!constrained) return [];
+    const items: { label: string; hour24: number }[] = [];
+    const seen = new Set<number>();
+    const startHour = Math.floor(cMinMins / 60);
+    for (let i = 0; i < 24; i++) {
+      const h24 = (startHour + i) % 24;
+      if (seen.has(h24)) continue;
+      let hasValid = false;
+      for (let m = 0; m < 60; m += increment) {
+        if (isTimeValid(h24 * 60 + m)) { hasValid = true; break; }
+      }
+      if (hasValid) {
+        seen.add(h24);
+        const { hour12 } = from24Hour(h24);
+        items.push({ label: String(hour12), hour24: h24 });
+      }
+    }
+    return items;
+  }, [constrained, cMinMins, increment, isTimeValid]);
+
+  const constrainedHourLabels = useMemo(
+    () => constrainedHours.map(h => h.label),
+    [constrainedHours],
+  );
+
+  const constrainedHourIndex = useMemo(() => {
+    const idx = constrainedHours.findIndex(h => h.hour24 === currentHour24);
+    return idx >= 0 ? idx : 0;
+  }, [constrainedHours, currentHour24]);
+
+  // Minutes filtered for the selected constrained hour
+  const constrainedMinutes = useMemo(() => {
+    if (!constrained || constrainedHours.length === 0) return minuteOptions;
+    const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
+    const result = minuteOptions.filter(m => isTimeValid(h24 * 60 + m));
+    return result.length > 0 ? result : minuteOptions;
+  }, [constrained, constrainedHours, constrainedHourIndex, minuteOptions, isTimeValid]);
+
+  const constrainedMinuteLabels = useMemo(
+    () => constrainedMinutes.map(m => m.toString().padStart(2, '0')),
+    [constrainedMinutes],
+  );
+
+  const constrainedMinuteIndex = useMemo(() => {
+    const idx = constrainedMinutes.indexOf(currentMinute);
+    return idx >= 0 ? idx : 0;
+  }, [constrainedMinutes, currentMinute]);
+
+  // Keep refs in sync
   if (prevHourIndex.current === null) prevHourIndex.current = hourIndex;
   if (prevMinuteIndex.current === null) prevMinuteIndex.current = minuteIndex;
+
+  // === EMIT FUNCTIONS ===
 
   const emit = (h: number, m: number, p: number) => {
     if (disabled) return;
@@ -78,17 +192,62 @@ export default function TimeCounterInput({
     onChange(timeStr);
   };
 
+  const handleConstrainedHourChange = useCallback((newIdx: number) => {
+    if (disabled) return;
+    const hourItem = constrainedHours[newIdx];
+    if (!hourItem) return;
+    const h24 = hourItem.hour24;
+    let minute = currentMinute;
+
+    // Check if current minute is valid at this hour
+    if (!isTimeValid(h24 * 60 + minute)) {
+      // Find valid minutes at this hour
+      const validMinutes: number[] = [];
+      for (let m = 0; m < 60; m += increment) {
+        if (isTimeValid(h24 * 60 + m)) validMinutes.push(m);
+      }
+      if (validMinutes.length > 0 && sibMins >= 0) {
+        // Pick the minute giving the smallest positive duration to/from sibling
+        let best = validMinutes[0];
+        let bestDur = Infinity;
+        for (const m of validMinutes) {
+          const t = h24 * 60 + m;
+          let dur: number;
+          if (role === 'min') {
+            dur = sibMins >= t ? sibMins - t : 24 * 60 - t + sibMins;
+          } else {
+            dur = t >= sibMins ? t - sibMins : 24 * 60 - sibMins + t;
+          }
+          if (dur > 0 && dur < bestDur) {
+            bestDur = dur;
+            best = m;
+          }
+        }
+        minute = best;
+      } else if (validMinutes.length > 0) {
+        minute = validMinutes[0];
+      }
+    }
+    onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+  }, [disabled, constrainedHours, currentMinute, increment, onChange, sibMins, role, isTimeValid]);
+
+  const handleConstrainedMinuteChange = useCallback((newIdx: number) => {
+    if (disabled) return;
+    const minute = constrainedMinutes[newIdx];
+    if (minute === undefined) return;
+    const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
+    onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+  }, [disabled, constrainedMinutes, constrainedHours, constrainedHourIndex, onChange]);
+
+  // === UNCONSTRAINED HANDLERS ===
+
   const handleHourChange = (newHourIndex: number) => {
     const prev = prevHourIndex.current ?? hourIndex;
     let newPeriod = periodIndex;
 
-    // Detect crossing the 11↔12 boundary (noon/midnight crossing)
-    // 11 is index 10, 12 is index 11
     if (prev === 10 && newHourIndex === 11) {
-      // Scrolled from 11 → 12 (forward): toggle AM/PM
       newPeriod = periodIndex === 0 ? 1 : 0;
     } else if (prev === 11 && newHourIndex === 10) {
-      // Scrolled from 12 → 11 (backward): toggle AM/PM
       newPeriod = periodIndex === 0 ? 1 : 0;
     }
 
@@ -102,18 +261,13 @@ export default function TimeCounterInput({
     let newHourIdx = hourIndex;
     let newPeriod = periodIndex;
 
-    // Detect minute wraparound (e.g. 45→00 or 00→45)
     if (prev === lastIdx && newMinuteIndex === 0) {
-      // Scrolled past last minute → wrap forward, increment hour
       newHourIdx = (hourIndex + 1) % 12;
-      // If hour crosses 11→12 boundary, toggle AM/PM
       if (hourIndex === 10 && newHourIdx === 11) {
         newPeriod = periodIndex === 0 ? 1 : 0;
       }
     } else if (prev === 0 && newMinuteIndex === lastIdx) {
-      // Scrolled past first minute → wrap backward, decrement hour
       newHourIdx = (hourIndex - 1 + 12) % 12;
-      // If hour crosses 12→11 boundary, toggle AM/PM
       if (hourIndex === 11 && newHourIdx === 10) {
         newPeriod = periodIndex === 0 ? 1 : 0;
       }
@@ -128,42 +282,86 @@ export default function TimeCounterInput({
     emit(hourIndex, minuteIndex, newPeriodIndex);
   };
 
+  // === RENDER ===
+
   const itemHeight = 40;
   const visibleItems = 5;
   const highlightTop = Math.floor(visibleItems / 2) * itemHeight;
 
   return (
-    <div className={`relative flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-      {/* Unified highlight band spanning all wheels */}
-      <div
-        className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
-        style={{ top: highlightTop, height: itemHeight }}
-      />
-      <ScrollWheel
-        items={HOUR_LABELS}
-        selectedIndex={hourIndex}
-        onChange={handleHourChange}
-        width={45}
-        loop
-        hideHighlight
-      />
-      <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
-      <ScrollWheel
-        items={minuteLabels}
-        selectedIndex={minuteIndex}
-        onChange={handleMinuteChange}
-        width={45}
-        loop
-        hideHighlight
-      />
-      <div className="w-1" />
-      <ScrollWheel
-        items={PERIODS}
-        selectedIndex={periodIndex}
-        onChange={handlePeriodChange}
-        width={42}
-        hideHighlight
-      />
+    <div className={`flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+      {constrained ? (
+        <>
+          {/* Hour + minute wheels with highlight band (excludes AM/PM) */}
+          <div className="relative flex items-center gap-0">
+            <div
+              className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
+              style={{ top: highlightTop, height: itemHeight }}
+            />
+            <ScrollWheel
+              key={`h:${constrainedHourLabels.join(',')}`}
+              items={constrainedHourLabels}
+              selectedIndex={constrainedHourIndex}
+              onChange={handleConstrainedHourChange}
+              width={45}
+              hideHighlight
+            />
+            <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
+            <ScrollWheel
+              key={`m:${constrainedMinuteLabels.join(',')}`}
+              items={constrainedMinuteLabels}
+              selectedIndex={constrainedMinuteIndex}
+              onChange={handleConstrainedMinuteChange}
+              width={45}
+              hideHighlight
+            />
+          </div>
+          <div className="w-1" />
+          {/* AM/PM wheel: visible but non-interactive, follows the selected hour */}
+          <div style={{ pointerEvents: 'none' }}>
+            <ScrollWheel
+              items={PERIODS}
+              selectedIndex={periodIndex}
+              onChange={noop}
+              width={42}
+              hideHighlight
+            />
+          </div>
+        </>
+      ) : (
+        <div className="relative flex items-center gap-0">
+          {/* Unified highlight band spanning all wheels */}
+          <div
+            className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
+            style={{ top: highlightTop, height: itemHeight }}
+          />
+          <ScrollWheel
+            items={HOUR_LABELS}
+            selectedIndex={hourIndex}
+            onChange={handleHourChange}
+            width={45}
+            loop
+            hideHighlight
+          />
+          <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
+          <ScrollWheel
+            items={minuteLabels}
+            selectedIndex={minuteIndex}
+            onChange={handleMinuteChange}
+            width={45}
+            loop
+            hideHighlight
+          />
+          <div className="w-1" />
+          <ScrollWheel
+            items={PERIODS}
+            selectedIndex={periodIndex}
+            onChange={handlePeriodChange}
+            width={42}
+            hideHighlight
+          />
+        </div>
+      )}
     </div>
   );
 }
