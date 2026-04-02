@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
+import { windowDurationMinutes } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
   max: string; // HH:MM format
+  enabled?: boolean; // For voter form: whether this window is active (default true)
 }
 
 interface DayTimeWindowsInputProps {
@@ -15,6 +17,7 @@ interface DayTimeWindowsInputProps {
   onDelete: () => void; // Delete entire day
   disabled?: boolean;
   pollWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
+  minDurationMinutes?: number | null; // Minimum duration in minutes for validation
 }
 
 // Format time in 12-hour format (compact) - returns {time, period}
@@ -62,6 +65,7 @@ export default function DayTimeWindowsInput({
   onDelete,
   disabled = false,
   pollWindows,
+  minDurationMinutes,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -102,6 +106,15 @@ export default function DayTimeWindowsInput({
     }
   };
 
+  const handleToggleWindow = (index: number) => {
+    const updated = windows.map((w, i) =>
+      i === index ? { ...w, enabled: w.enabled === false } : w
+    );
+    onChange(updated);
+  };
+
+  const isVoterForm = !!pollWindows;
+
   return (
     <div className="flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       {/* Left: Day display */}
@@ -116,54 +129,77 @@ export default function DayTimeWindowsInput({
 
       {/* Right: Time windows */}
       <div className="flex-1 flex flex-wrap gap-2 items-center justify-end">
-        {windows.map((window, index) => (
-          <div
-            key={index}
-            className="flex items-center gap-2"
-          >
-            <button
-              type="button"
-              onClick={() => handleDeleteWindow(index)}
-              disabled={disabled}
-              className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-label="Delete time window"
+        {windows.map((window, index) => {
+          const isEnabled = window.enabled !== false;
+          const duration = windowDurationMinutes(window);
+          const isTooShort = isEnabled && minDurationMinutes != null && minDurationMinutes > 0 && duration < minDurationMinutes;
+          return (
+            <div
+              key={index}
+              className="flex items-center gap-2"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleEditWindow(index)}
-              disabled={disabled}
-              className="w-[168px] py-1.5 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-full text-sm font-medium border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-center"
-            >
-              {(() => {
-                const minFormatted = formatTime12Hour(window.min);
-                const maxFormatted = formatTime12Hour(window.max);
-                const isCrossMidnight = window.max <= window.min;
-                return (
-                  <>
-                    {minFormatted.time}
-                    <span className={`ml-0.5 ${minFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
-                      {minFormatted.period}
-                    </span>
-                    {' - '}
-                    {maxFormatted.time}
-                    <span className={`ml-0.5 ${maxFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
-                      {maxFormatted.period}
-                    </span>
-                    {isCrossMidnight && (
-                      <span className="ml-0.5 text-amber-600 dark:text-amber-400 text-xs font-semibold">
-                        +1
+              {isVoterForm ? (
+                <label className="flex items-center p-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isEnabled}
+                    onChange={() => handleToggleWindow(index)}
+                    disabled={disabled}
+                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+                  />
+                </label>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteWindow(index)}
+                  disabled={disabled}
+                  className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Delete time window"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => isEnabled && handleEditWindow(index)}
+                disabled={disabled || !isEnabled}
+                className={`w-[168px] py-1.5 rounded-full text-sm font-medium border transition-colors text-center ${
+                  !isEnabled
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-default opacity-50'
+                    : isTooShort
+                      ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-400 dark:border-red-500 hover:bg-red-100 dark:hover:bg-red-900/50'
+                      : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650'
+                } disabled:cursor-not-allowed`}
+              >
+                {(() => {
+                  const minFormatted = formatTime12Hour(window.min);
+                  const maxFormatted = formatTime12Hour(window.max);
+                  const isCrossMidnight = window.max <= window.min;
+                  return (
+                    <>
+                      {minFormatted.time}
+                      <span className={`ml-0.5 ${!isEnabled ? '' : minFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                        {minFormatted.period}
                       </span>
-                    )}
-                  </>
-                );
-              })()}
-            </button>
-          </div>
-        ))}
+                      {' - '}
+                      {maxFormatted.time}
+                      <span className={`ml-0.5 ${!isEnabled ? '' : maxFormatted.period === 'AM' ? 'text-orange-500 dark:text-orange-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                        {maxFormatted.period}
+                      </span>
+                      {isCrossMidnight && isEnabled && (
+                        <span className="ml-0.5 text-amber-600 dark:text-amber-400 text-xs font-semibold">
+                          +1
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </button>
+            </div>
+          );
+        })}
 
         {/* Add button - hidden on voter ballots */}
         {!pollWindows && (
@@ -190,6 +226,7 @@ export default function DayTimeWindowsInput({
         onApply={handleModalApply}
         constraintMin={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].min : undefined}
         constraintMax={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].max : undefined}
+        minDurationMinutes={minDurationMinutes}
       />
     </div>
   );

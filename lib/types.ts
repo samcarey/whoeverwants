@@ -71,6 +71,7 @@ export interface Poll {
 export interface TimeWindow {
   min: string; // HH:MM format
   max: string; // HH:MM format
+  enabled?: boolean; // For voter form: whether this window is active (default true)
 }
 
 export interface DayTimeWindow {

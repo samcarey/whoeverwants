@@ -32,6 +32,7 @@ import ParticipationConditions from "@/components/ParticipationConditions";
 import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
+import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -131,6 +132,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return participatingVoterIds.includes(userVoteData.id);
   }, [poll.poll_type, userVoteData, participatingVoterIds]);
   
+  // Check if any enabled voter time window is shorter than the minimum duration
+  const hasTimeWindowTooShort = useMemo(() => {
+    if (poll.poll_type !== 'participation') return false;
+    const minDurMinutes = durationMinEnabled && durationMinValue != null
+      ? Math.round(durationMinValue * 60) : null;
+    if (minDurMinutes == null || minDurMinutes <= 0) return false;
+    return voterDayTimeWindows.some((dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
+      dtw.windows.some((w: { min: string; max: string; enabled?: boolean }) =>
+        w.enabled !== false && windowDurationMinutes(w) < minDurMinutes
+      )
+    );
+  }, [poll.poll_type, voterDayTimeWindows, durationMinEnabled, durationMinValue]);
+
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
     if (manuallyReopened && !pollClosed) return false;
@@ -873,6 +887,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       await logToServer('suggestion-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
+    }
+
+    // Participation poll time window validation
+    if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
+      const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
+        (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) => dtw.windows.length > 0
+      );
+      if (pollHasTimeWindows) {
+        const enabledWindows = voterDayTimeWindows.flatMap(
+          (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
+            dtw.windows.filter((w: { enabled?: boolean }) => w.enabled !== false)
+        );
+        if (enabledWindows.length === 0) {
+          setVoteError("Please enable at least one time window, or vote No.");
+          return;
+        }
+        // Check minimum duration on enabled windows
+        const minDurMinutes = durationMinEnabled && durationMinValue != null
+          ? Math.round(durationMinValue * 60) : null;
+        if (minDurMinutes != null && minDurMinutes > 0) {
+          const tooShort = enabledWindows.some((w: { min: string; max: string }) =>
+            windowDurationMinutes(w) < minDurMinutes
+          );
+          if (tooShort) {
+            setVoteError(`Each enabled time window must be at least ${formatDurationLabel(minDurMinutes)} long.`);
+            return;
+          }
+        }
+      }
     }
 
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
@@ -1756,6 +1799,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       placeholder="Enter your name..."
                     />
                   </div>
+
+                  {hasTimeWindowTooShort && (
+                    <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded-md">
+                      <p className="text-sm text-red-700 dark:text-red-300">Time window cannot be shorter than minimum duration.</p>
+                    </div>
+                  )}
 
                   <button
                     type="button"

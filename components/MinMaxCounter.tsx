@@ -18,7 +18,7 @@ interface MinMaxCounterProps {
   formatValue?: (value: number) => string;
   minCheckboxEnabled?: boolean;
   onMinCheckboxChange?: (enabled: boolean) => void;
-  deferValidation?: boolean;
+
 }
 
 export default function MinMaxCounter({
@@ -37,33 +37,32 @@ export default function MinMaxCounter({
   formatValue,
   minCheckboxEnabled = false,
   onMinCheckboxChange,
-  deferValidation = false,
+
 }: MinMaxCounterProps) {
   const handleMinChange = (newMin: number | null) => {
     onMinChange(newMin);
-    if (!deferValidation && maxEnabled && maxValue !== null && newMin !== null && newMin > maxValue) {
-      onMaxChange(newMin);
+    // Push max up to stay >= min, within limits
+    if (maxEnabled && maxValue !== null && newMin !== null && newMin > maxValue) {
+      const pushed = maxLimit !== undefined ? Math.min(newMin, maxLimit) : newMin;
+      onMaxChange(pushed);
     }
   };
 
   const handleMaxChange = (newMax: number | null) => {
-    const minVal = minValue ?? minLimit;
-    if (deferValidation) {
-      if (!maxEnabled && newMax !== null) {
-        onMaxEnabledChange(true);
-      }
-      onMaxChange(newMax);
-      return;
+    if (!maxEnabled && newMax !== null) {
+      onMaxEnabledChange(true);
     }
-    if (newMax !== null && newMax >= minVal) {
+    if (newMax !== null) {
       if (maxLimit !== undefined && newMax > maxLimit) {
         newMax = maxLimit;
       }
-      if (!maxEnabled) {
-        onMaxEnabledChange(true);
-      }
       onMaxChange(newMax);
-    } else if (newMax === null) {
+      // Push min down to stay <= max, within limits
+      const minVal = minValue ?? minLimit;
+      if (newMax < minVal) {
+        onMinChange(Math.max(newMax, minLimit));
+      }
+    } else {
       onMaxChange(null);
     }
   };
@@ -117,7 +116,7 @@ export default function MinMaxCounter({
               value={maxEnabled ? maxValue : null}
               onChange={handleMaxChange}
               increment={increment}
-              min={minValue ?? minLimit}
+              min={minLimit}
               max={maxLimit}
               disabled={disabled || !maxEnabled}
               arrowPosition="right"

@@ -19,6 +19,7 @@ import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -448,6 +449,18 @@ function CreatePollContent() {
       const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
       if (emptyDays.length > 0) {
         return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
+      }
+      // Check minimum duration on all time windows
+      if (durationMinEnabled && durationMinValue != null) {
+        const minDurMinutes = Math.round(durationMinValue * 60);
+        if (minDurMinutes > 0) {
+          const tooShort = dayTimeWindows.some(dtw =>
+            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
+          );
+          if (tooShort) {
+            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
+          }
+        }
       }
     }
 
