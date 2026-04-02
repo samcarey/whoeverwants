@@ -3,14 +3,14 @@
 import type { OptionsMetadata } from "@/lib/types";
 import OptionLabel, { isLocationEntry } from "./OptionLabel";
 
-interface Nomination {
+interface Suggestion {
   option: string;
   count: number;
 }
 
-interface NominationsListProps {
-  nominations: Nomination[];
-  userNominations?: string[];
+interface SuggestionsListProps {
+  suggestions: Suggestion[];
+  userSuggestions?: string[];
   showVoteCounts?: boolean;
   showUserIndicator?: boolean;
   className?: string;
@@ -20,9 +20,9 @@ interface NominationsListProps {
   optionsMetadata?: OptionsMetadata | null;
 }
 
-export default function NominationsList({
-  nominations,
-  userNominations = [],
+export default function SuggestionsList({
+  suggestions,
+  userSuggestions = [],
   showVoteCounts = true,
   showUserIndicator = true,
   className = "",
@@ -30,8 +30,8 @@ export default function NominationsList({
   onEditClick,
   isEditDisabled = false,
   optionsMetadata,
-}: NominationsListProps) {
-  if (nominations.length === 0) {
+}: SuggestionsListProps) {
+  if (suggestions.length === 0) {
     return (
       <div className={`text-center py-4 ${className}`}>
         <p className="text-gray-600 dark:text-gray-400">No suggestions yet</p>
@@ -39,14 +39,14 @@ export default function NominationsList({
     );
   }
 
-  const uniqueCount = nominations.length;
+  const uniqueCount = suggestions.length;
 
-  // Sort nominations alphabetically
-  const sortedNominations = [...nominations].sort((a, b) =>
+  // Sort suggestions alphabetically
+  const sortedSuggestions = [...suggestions].sort((a, b) =>
     a.option.localeCompare(b.option)
   );
 
-  const isLocationPoll = nominations.some(n => isLocationEntry(optionsMetadata?.[n.option]));
+  const isLocationPoll = suggestions.some(n => isLocationEntry(optionsMetadata?.[n.option]));
 
   return (
     <div className={className}>
@@ -55,7 +55,7 @@ export default function NominationsList({
           Suggestions {uniqueCount > 0 && `(${uniqueCount})`}
         </h4>
         <div className="flex items-center gap-2">
-          {userNominations.length > 0 && showUserIndicator && (
+          {userSuggestions.length > 0 && showUserIndicator && (
             <>
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
               <span className="text-xs text-gray-600 dark:text-gray-400">
@@ -77,33 +77,33 @@ export default function NominationsList({
 
       {isLocationPoll ? (
         <div className="space-y-2 overflow-hidden">
-          {sortedNominations.map((nomination, index) => {
-            const isUserNomination = userNominations.includes(nomination.option);
-            const meta = optionsMetadata?.[nomination.option];
+          {sortedSuggestions.map((suggestion, index) => {
+            const isUserSuggestion = userSuggestions.includes(suggestion.option);
+            const meta = optionsMetadata?.[suggestion.option];
 
             return (
               <div
                 key={index}
                 className={`flex items-center rounded-xl overflow-hidden ${
-                  isUserNomination
+                  isUserSuggestion
                     ? 'bg-blue-100 dark:bg-blue-900/30'
                     : 'bg-gray-100 dark:bg-gray-700'
                 }`}
               >
                 <div className={`min-w-0 flex-1 px-3 py-1.5 text-sm font-medium overflow-hidden ${
-                  isUserNomination
+                  isUserSuggestion
                     ? 'text-blue-900 dark:text-blue-100'
                     : 'text-gray-900 dark:text-gray-100'
                 }`}>
-                  <OptionLabel text={nomination.option} metadata={meta} />
+                  <OptionLabel text={suggestion.option} metadata={meta} />
                 </div>
                 {showVoteCounts && (
                   <span className={`px-2.5 self-stretch flex items-center text-sm font-bold flex-shrink-0 ${
-                    isUserNomination
+                    isUserSuggestion
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
                   }`}>
-                    {nomination.count}
+                    {suggestion.count}
                   </span>
                 )}
               </div>
@@ -112,33 +112,33 @@ export default function NominationsList({
         </div>
       ) : (
         <div className="flex flex-wrap justify-center gap-2">
-          {sortedNominations.map((nomination, index) => {
-            const isUserNomination = userNominations.includes(nomination.option);
-            const meta = optionsMetadata?.[nomination.option];
+          {sortedSuggestions.map((suggestion, index) => {
+            const isUserSuggestion = userSuggestions.includes(suggestion.option);
+            const meta = optionsMetadata?.[suggestion.option];
 
             return (
               <div
                 key={index}
                 className={`inline-flex items-center rounded-full overflow-hidden ${
-                  isUserNomination
+                  isUserSuggestion
                     ? 'bg-blue-100 dark:bg-blue-900/30'
                     : 'bg-gray-100 dark:bg-gray-700'
                 }`}
               >
                 <div className={`px-3 py-1 text-sm font-medium ${
-                  isUserNomination
+                  isUserSuggestion
                     ? 'text-blue-900 dark:text-blue-100'
                     : 'text-gray-900 dark:text-gray-100'
                 }`}>
-                  <OptionLabel text={nomination.option} metadata={meta} />
+                  <OptionLabel text={suggestion.option} metadata={meta} />
                 </div>
                 {showVoteCounts && (
                   <span className={`px-2.5 self-stretch flex items-center text-sm font-bold ${
-                    isUserNomination
+                    isUserSuggestion
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100'
                   }`}>
-                    {nomination.count}
+                    {suggestion.count}
                   </span>
                 )}
               </div>

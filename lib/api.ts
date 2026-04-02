@@ -39,7 +39,7 @@ export interface ApiVote {
   vote_type: string;
   yes_no_choice: string | null;
   ranked_choices: string[] | null;
-  nominations: string[] | null;
+  suggestions: string[] | null;
   is_abstain: boolean;
   voter_name: string | null;
   min_participants: number | null;
@@ -148,7 +148,7 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     winner: data.winner ?? undefined,
     min_participants: data.min_participants ?? undefined,
     max_participants: data.max_participants ?? undefined,
-    nomination_counts: data.nomination_counts ?? undefined,
+    suggestion_counts: data.suggestion_counts ?? undefined,
     ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
     ranked_choice_winner: data.ranked_choice_winner ?? undefined,
     time_slot_rounds: data.time_slot_rounds ?? undefined,
@@ -244,7 +244,7 @@ export async function apiSubmitVote(pollId: string, params: {
   vote_type: string;
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
-  nominations?: string[] | null;
+  suggestions?: string[] | null;
   is_abstain?: boolean;
   voter_name?: string | null;
   min_participants?: number | null;
@@ -266,7 +266,7 @@ export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
 export async function apiEditVote(pollId: string, voteId: string, params: {
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
-  nominations?: string[] | null;
+  suggestions?: string[] | null;
   is_abstain?: boolean;
   voter_name?: string | null;
   min_participants?: number | null;

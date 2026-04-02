@@ -11,7 +11,7 @@ interface VoteOnItModalProps {
   isOpen: boolean;
   pollId: string;
   pollTitle: string;
-  nominations: string[];
+  suggestions: string[];
   onClose: () => void;
 }
 
@@ -25,7 +25,7 @@ const DEADLINE_OPTIONS = [
   { value: "4hr", label: "4 hours", minutes: 240 },
 ];
 
-export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, onClose }: VoteOnItModalProps) {
+export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, onClose }: VoteOnItModalProps) {
   const router = useRouter();
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,7 +55,7 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
       const poll = await apiCreatePoll({
         title: pollTitle,
         poll_type: "ranked_choice",
-        options: nominations,
+        options: suggestions,
         response_deadline: deadline.toISOString(),
         creator_secret: creatorSecret,
         creator_name: creatorName,
@@ -76,11 +76,11 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, nominations, 
   const handleEdit = () => {
     const voteData = {
       title: pollTitle,
-      options: nominations,
+      options: suggestions,
       followUpTo: pollId,
     };
-    localStorage.setItem(`vote-from-nomination-${pollId}`, JSON.stringify(voteData));
-    router.push(`/create-poll?voteFromNomination=${pollId}`);
+    localStorage.setItem(`vote-from-suggestion-${pollId}`, JSON.stringify(voteData));
+    router.push(`/create-poll?voteFromSuggestion=${pollId}`);
     onClose();
   };
 

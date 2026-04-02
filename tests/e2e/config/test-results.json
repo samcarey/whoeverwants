@@ -139,7 +139,7 @@
           "column": 6,
           "specs": [
             {
-              "title": "should create a nomination poll",
+              "title": "should create a suggestion poll",
               "ok": true,
               "tags": [],
               "tests": [
@@ -173,7 +173,7 @@
               "column": 3
             },
             {
-              "title": "should create a nomination poll",
+              "title": "should create a suggestion poll",
               "ok": true,
               "tags": [],
               "tests": [
@@ -207,7 +207,7 @@
               "column": 3
             },
             {
-              "title": "should create a nomination poll",
+              "title": "should create a suggestion poll",
               "ok": true,
               "tags": [],
               "tests": [
@@ -241,7 +241,7 @@
               "column": 3
             },
             {
-              "title": "should create a nomination poll",
+              "title": "should create a suggestion poll",
               "ok": true,
               "tags": [],
               "tests": [
@@ -275,7 +275,7 @@
               "column": 3
             },
             {
-              "title": "should create a nomination poll",
+              "title": "should create a suggestion poll",
               "ok": true,
               "tags": [],
               "tests": [

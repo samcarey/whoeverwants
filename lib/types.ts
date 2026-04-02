@@ -22,7 +22,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
+  poll_type: 'yes_no' | 'ranked_choice' | 'suggestion' | 'participation';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -92,7 +92,7 @@ export interface Vote {
   created_at: string;
 }
 
-export interface NominationCount {
+export interface SuggestionCount {
   option: string;
   count: number;
 }
@@ -100,7 +100,7 @@ export interface NominationCount {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'nomination' | 'participation';
+  poll_type: 'yes_no' | 'ranked_choice' | 'suggestion' | 'participation';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -115,7 +115,7 @@ export interface PollResults {
   max_participants?: number;
   participants_in_count?: number;
   is_happening?: boolean;
-  nomination_counts?: NominationCount[];
+  suggestion_counts?: SuggestionCount[];
   time_slot_rounds?: TimeSlotResult[];
   participating_vote_ids?: string[];
   participating_voter_names?: string[];

@@ -60,13 +60,13 @@ function CreatePollContent() {
   const followUpToParam = searchParams.get('followUpTo');
   const forkOfParam = searchParams.get('fork');
   const duplicateOfParam = searchParams.get('duplicate');
-  const voteFromNominationParam = searchParams.get('voteFromNomination');
+  const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
 
   // Track duplicate and fork relationships as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [forkOf, setForkOf] = useState<string | null>(null);
-  const [voteFromNomination, setVoteFromNomination] = useState<string | null>(null);
+  const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [pollType, setPollType] = useState<'poll' | 'participation'>('poll');
@@ -346,8 +346,8 @@ function CreatePollContent() {
       localStorage.removeItem('pollFormState');
 
       // Also clean up any special poll creation data
-      if (voteFromNomination) {
-        localStorage.removeItem(`vote-from-nomination-${voteFromNomination}`);
+      if (voteFromSuggestion) {
+        localStorage.removeItem(`vote-from-suggestion-${voteFromSuggestion}`);
       }
       if (forkOf) {
         localStorage.removeItem(`fork-data-${forkOf}`);
@@ -359,7 +359,7 @@ function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'nomination' | 'participation' => {
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'suggestion' | 'participation' => {
     if (pollType === 'participation') {
       return 'participation';
     }
@@ -367,7 +367,7 @@ function CreatePollContent() {
       return 'yes_no';
     }
     const filledOptions = options.filter(opt => opt.trim() !== '');
-    return filledOptions.length === 0 ? 'nomination' : 'ranked_choice';
+    return filledOptions.length === 0 ? 'suggestion' : 'ranked_choice';
   };
 
 
@@ -397,7 +397,7 @@ function CreatePollContent() {
 
     const dbPollType = getPollType();
 
-    // Options validation only applies to ranked_choice — yes_no, nomination,
+    // Options validation only applies to ranked_choice — yes_no, suggestion,
     // and participation polls don't use the options array.
     if (dbPollType === 'ranked_choice') {
       const filledOptions = options.filter(opt => opt.trim() !== '');
@@ -468,12 +468,12 @@ function CreatePollContent() {
 
   // Initialize state from URL params
   useEffect(() => {
-    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromNomination: voteFromNominationParam }, 'CreatePoll');
+    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromSuggestion: voteFromSuggestionParam }, 'CreatePoll');
     if (followUpToParam) setFollowUpTo(followUpToParam);
     if (forkOfParam) setForkOf(forkOfParam);
     if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
-    if (voteFromNominationParam) setVoteFromNomination(voteFromNominationParam);
-  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
+    if (voteFromSuggestionParam) setVoteFromSuggestion(voteFromSuggestionParam);
+  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
 
   // Load poll type preference first (runs once on mount)
   useEffect(() => {
@@ -484,7 +484,7 @@ function CreatePollContent() {
   useEffect(() => {
     setIsClient(true);
 
-    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-nomination
+    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-suggestion
     // (these special cases load their own data from URL params)
     // Load saved user name
     const savedName = getUserName();
@@ -492,7 +492,7 @@ function CreatePollContent() {
       setCreatorName(savedName);
     }
 
-    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromNominationParam) {
+    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
 
       // Initialize dayTimeWindows with today if no saved form state has them
@@ -505,7 +505,7 @@ function CreatePollContent() {
         setDayTimeWindows([{ day: todayStr, windows: [] }]);
       }
     }
-  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromNominationParam]);
+  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
 
   // Save poll type preference and emit poll type changes to update the header
   useEffect(() => {
@@ -556,7 +556,7 @@ function CreatePollContent() {
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
             setPollType('poll');
             setOptions(forkData.options);
-          } else if (forkData.poll_type === 'nomination') {
+          } else if (forkData.poll_type === 'suggestion') {
             setPollType('poll');
             setOptions(['']);
           } else if (forkData.poll_type === 'participation') {
@@ -646,7 +646,7 @@ function CreatePollContent() {
           if (duplicateData.poll_type === 'ranked_choice') {
             setPollType('poll');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.poll_type === 'nomination') {
+          } else if (duplicateData.poll_type === 'suggestion') {
             setPollType('poll');
             setOptions(['']);
           } else if (duplicateData.poll_type === 'participation') {
@@ -710,15 +710,15 @@ function CreatePollContent() {
     }
   }, [duplicateOfParam]);
 
-  // Load vote-from-nomination data if creating preference poll from nominations
+  // Load vote-from-suggestion data if creating preference poll from suggestions
   useEffect(() => {
-    debugLog.logObject('VoteFromNomination useEffect running', { voteFromNominationParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+    debugLog.logObject('VoteFromSuggestion useEffect running', { voteFromSuggestionParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
 
-    if (voteFromNominationParam && typeof window !== 'undefined') {
-      // Set the vote-from-nomination relationship in state
-      setVoteFromNomination(voteFromNominationParam);
+    if (voteFromSuggestionParam && typeof window !== 'undefined') {
+      // Set the vote-from-suggestion relationship in state
+      setVoteFromSuggestion(voteFromSuggestionParam);
 
-      const voteDataKey = `vote-from-nomination-${voteFromNominationParam}`;
+      const voteDataKey = `vote-from-suggestion-${voteFromSuggestionParam}`;
       const savedVoteData = localStorage.getItem(voteDataKey);
 
       debugLog.logObject('Vote data lookup', { voteDataKey, found: !!savedVoteData, data: savedVoteData }, 'CreatePoll');
@@ -741,7 +741,7 @@ function CreatePollContent() {
           // so that refresh doesn't lose the data
           debugLog.info('Loaded vote data from localStorage (will clean up after submission)', 'CreatePoll');
 
-          // Keep the voteFromNomination parameter so refresh works
+          // Keep the voteFromSuggestion parameter so refresh works
           // Also set followUpTo parameter to link the new poll
           if (voteData.followUpTo) {
             const url = new URL(window.location.href);
@@ -749,11 +749,11 @@ function CreatePollContent() {
             window.history.replaceState({}, '', url.toString());
           }
         } catch (error) {
-          console.error('Error loading vote-from-nomination data:', error);
+          console.error('Error loading vote-from-suggestion data:', error);
         }
       }
     }
-  }, [voteFromNominationParam]);
+  }, [voteFromSuggestionParam]);
 
   // Set default date/time values after client initialization
   useEffect(() => {
@@ -804,8 +804,8 @@ function CreatePollContent() {
       if (duplicateOf) {
         localStorage.removeItem(`duplicate-data-${duplicateOf}`);
       }
-      if (voteFromNomination) {
-        localStorage.removeItem(`vote-from-nomination-${voteFromNomination}`);
+      if (voteFromSuggestion) {
+        localStorage.removeItem(`vote-from-suggestion-${voteFromSuggestion}`);
       }
     }
 
@@ -814,9 +814,9 @@ function CreatePollContent() {
     url.searchParams.delete('followUpTo');
     url.searchParams.delete('fork');
     url.searchParams.delete('duplicate');
-    url.searchParams.delete('voteFromNomination');
+    url.searchParams.delete('voteFromSuggestion');
     window.history.replaceState({}, '', url.toString());
-  }, [followUpTo, forkOf, duplicateOf, voteFromNomination]);
+  }, [followUpTo, forkOf, duplicateOf, voteFromSuggestion]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -1038,8 +1038,8 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add category for nomination and ranked_choice polls
-      if ((dbPollType === 'nomination' || dbPollType === 'ranked_choice') && category !== 'custom') {
+      // Add category for suggestion and ranked_choice polls
+      if ((dbPollType === 'suggestion' || dbPollType === 'ranked_choice') && category !== 'custom') {
         pollData.category = category;
       }
 
@@ -1056,13 +1056,13 @@ function CreatePollContent() {
       }
 
       // Add options for ranked choice polls only
-      // For nomination polls, initial options become the creator's vote (not poll content)
+      // For suggestion polls, initial options become the creator's vote (not poll content)
       if (dbPollType === 'ranked_choice') {
         pollData.options = filledOptions;
       }
 
-      // Add auto-create preferences settings for nomination polls
-      if (dbPollType === 'nomination' && autoCreatePreferences) {
+      // Add auto-create preferences settings for suggestion polls
+      if (dbPollType === 'suggestion' && autoCreatePreferences) {
         pollData.auto_create_preferences = true;
         pollData.auto_preferences_deadline_minutes =
           BASE_DEADLINE_OPTIONS.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
@@ -1157,7 +1157,7 @@ function CreatePollContent() {
       // Record poll creation in browser storage
       recordPollCreation(createdPoll.id, creatorSecret);
 
-      // For nomination polls, creators vote after creation like any other participant
+      // For suggestion polls, creators vote after creation like any other participant
       // No initial vote is created
 
       // Trigger poll discovery if this is a follow-up poll

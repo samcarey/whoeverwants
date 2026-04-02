@@ -7,7 +7,7 @@ import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
-import NominationVotingInterface from "@/components/NominationVotingInterface";
+import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -52,15 +52,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [optionsInitialized, setOptionsInitialized] = useState(false);
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
-  const [nominationChoices, setNominationChoices] = useState<string[]>([]);
-  const [nominationMetadata, setNominationMetadata] = useState<OptionsMetadata>({});
+  const [suggestionChoices, setSuggestionChoices] = useState<string[]>([]);
+  const [suggestionMetadata, setSuggestionMetadata] = useState<OptionsMetadata>({});
   const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
 
   // Sync local metadata when poll prop changes (e.g., navigating between polls)
   useEffect(() => {
     setOptionsMetadataLocal(poll.options_metadata ?? null);
   }, [poll.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [existingNominations, setExistingNominations] = useState<string[]>([]);
+  const [existingSuggestions, setExistingSuggestions] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
@@ -96,8 +96,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterListRefresh, setVoterListRefresh] = useState(0);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
   const [showVoteOnItModal, setShowVoteOnItModal] = useState(false);
-  const [nominations, setNominations] = useState<string[]>([]);
-  const [loadingNominations, setLoadingNominations] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const autoCloseTriggeredRef = useRef(false);
 
   // Participation poll voter conditions - initialize with poll's constraints
@@ -233,8 +233,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // ONLY use votes from this browser's localStorage - no cross-browser contamination
       const allVotes = [...userVotes];
 
-      if (poll.poll_type === 'nomination') {
-        // For nominations, use only the LATEST vote (not aggregated)
+      if (poll.poll_type === 'suggestion') {
+        // For suggestions, use only the LATEST vote (not aggregated)
         // When a user edits their vote, the vote record is updated in place
         // So we should only use the most recent version, not combine multiple votes
         const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -242,13 +242,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         const aggregatedVoteData = {
           ...latestVote,
-          nominations: latestVote.nominations || [],
+          suggestions: latestVote.suggestions || [],
           aggregatedFrom: 1
         };
 
         return aggregatedVoteData;
       } else {
-        // For non-nomination polls, just return the most recent vote
+        // For non-suggestion polls, just return the most recent vote
         const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
         return sortedVotes[0];
       }
@@ -300,36 +300,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   useEffect(() => {
     setCurrentTime(new Date());
 
-    // Load existing nominations for nomination polls
-    if (poll.poll_type === 'nomination') {
-      loadExistingNominations();
-      // Also fetch results to show vote counts for nomination polls
+    // Load existing suggestions for suggestion polls
+    if (poll.poll_type === 'suggestion') {
+      loadExistingSuggestions();
+      // Also fetch results to show vote counts for suggestion polls
       fetchPollResults();
     }
   }, [poll.poll_type, fetchPollResults]);
 
-  // Load existing nominations from other votes
-  const loadExistingNominations = async (excludeUserVote = false) => {
+  // Load existing suggestions from other votes
+  const loadExistingSuggestions = async (excludeUserVote = false) => {
     try {
-      // Fetch all votes and filter for nomination votes with nominations
+      // Fetch all votes and filter for suggestion votes with suggestions
       const allVotes = await apiGetVotes(poll.id);
       const votes = allVotes
-        .filter(v => v.nominations && v.nominations.length > 0 && !v.is_abstain)
+        .filter(v => v.suggestions && v.suggestions.length > 0 && !v.is_abstain)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 100);
 
       // Debug logging to understand what votes we're getting
-      console.log('[DEBUG] loadExistingNominations - fetched votes:', votes);
-      console.log('[DEBUG] loadExistingNominations - excludeUserVote:', excludeUserVote, 'userVoteId:', userVoteId);
+      console.log('[DEBUG] loadExistingSuggestions - fetched votes:', votes);
+      console.log('[DEBUG] loadExistingSuggestions - excludeUserVote:', excludeUserVote, 'userVoteId:', userVoteId);
 
-      const allNominations = new Set<string>();
+      const allSuggestions = new Set<string>();
       
       // Add starting options from poll creation
       if (poll.options && Array.isArray(poll.options)) {
-        poll.options.forEach((option: string) => allNominations.add(option));
+        poll.options.forEach((option: string) => allSuggestions.add(option));
       }
       
-      // For nomination polls, to handle edited votes properly, we use only the latest vote
+      // For suggestion polls, to handle edited votes properly, we use only the latest vote
       // If there are multiple voters in the future, this logic would need to be enhanced
       // to track the latest vote per unique voter
       
@@ -340,21 +340,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         validVotes = votes?.filter(vote => vote.id !== userVoteId) || [];
       }
       
-      // Each vote record represents a unique voter's current nominations
+      // Each vote record represents a unique voter's current suggestions
       // When a voter edits their vote, their record is updated in place
-      // So we should aggregate all current nominations from all voters
+      // So we should aggregate all current suggestions from all voters
       validVotes.forEach(vote => {
-        if (vote.nominations && Array.isArray(vote.nominations)) {
-          console.log('[DEBUG] Adding nominations from vote:', vote.id, 'nominations:', vote.nominations);
-          vote.nominations.forEach((nom: string) => allNominations.add(nom));
+        if (vote.suggestions && Array.isArray(vote.suggestions)) {
+          console.log('[DEBUG] Adding suggestions from vote:', vote.id, 'suggestions:', vote.suggestions);
+          vote.suggestions.forEach((nom: string) => allSuggestions.add(nom));
         }
       });
 
-      const nominationsArray = Array.from(allNominations);
-      console.log('[DEBUG] Final aggregated nominations:', nominationsArray);
-      setExistingNominations(nominationsArray);
+      const suggestionsArray = Array.from(allSuggestions);
+      console.log('[DEBUG] Final aggregated suggestions:', suggestionsArray);
+      setExistingSuggestions(suggestionsArray);
     } catch (error) {
-      console.error('Error loading nominations:', error);
+      console.error('Error loading suggestions:', error);
     }
   };
 
@@ -429,8 +429,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID
-      // OR if this is a nomination poll (to handle creator votes and aggregation)
-      if (voteId || poll.poll_type === 'nomination' || poll.poll_type === 'participation') {
+      // OR if this is a suggestion poll (to handle creator votes and aggregation)
+      if (voteId || poll.poll_type === 'suggestion' || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
 
         // For participation polls without a stored vote ID, find the vote via participant name match
@@ -444,7 +444,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         };
 
         let fetchPromise;
-        if (poll.poll_type === 'nomination') {
+        if (poll.poll_type === 'suggestion') {
           fetchPromise = fetchAggregatedVoteData(poll.id);
         } else if (voteId) {
           fetchPromise = fetchVoteData(voteId);
@@ -472,8 +472,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               } catch (e) { /* ignore */ }
             }
 
-            // For nomination polls, fetch results to show vote counts even when poll is open
-            if (poll.poll_type === 'nomination' && !isPollClosed) {
+            // For suggestion polls, fetch results to show vote counts even when poll is open
+            if (poll.poll_type === 'suggestion' && !isPollClosed) {
               fetchPollResults();
             }
             
@@ -508,8 +508,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               }
             } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
               setRankedChoices(voteData.ranked_choices);
-            } else if (poll.poll_type === 'nomination' && voteData.nominations) {
-              setNominationChoices(voteData.nominations);
+            } else if (poll.poll_type === 'suggestion' && voteData.suggestions) {
+              setSuggestionChoices(voteData.suggestions);
             }
           } else {
           }
@@ -560,45 +560,45 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     fetchFollowUpPolls();
   }, [poll.id]);
 
-  // Fetch nominations for nomination polls to show "Vote on it" button
-  const fetchNominations = useCallback(async () => {
-    if (poll.poll_type !== 'nomination') {
-      setNominations([]);
+  // Fetch suggestions for suggestion polls to show "Vote on it" button
+  const fetchSuggestions = useCallback(async () => {
+    if (poll.poll_type !== 'suggestion') {
+      setSuggestions([]);
       return;
     }
 
-    setLoadingNominations(true);
+    setLoadingSuggestions(true);
     try {
       const allVotes = await apiGetVotes(poll.id);
-      const nominationVotes = allVotes.filter(v =>
-        v.vote_type === 'nomination' && !v.is_abstain && v.nominations && v.nominations.length > 0
+      const suggestionVotes = allVotes.filter(v =>
+        v.vote_type === 'suggestion' && !v.is_abstain && v.suggestions && v.suggestions.length > 0
       );
 
-      // Collect all unique nominations
-      const nominationSet = new Set<string>();
-      nominationVotes.forEach(vote => {
-        if (vote.nominations && Array.isArray(vote.nominations)) {
-          vote.nominations.forEach((nom: any) => {
+      // Collect all unique suggestions
+      const suggestionSet = new Set<string>();
+      suggestionVotes.forEach(vote => {
+        if (vote.suggestions && Array.isArray(vote.suggestions)) {
+          vote.suggestions.forEach((nom: any) => {
             const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
             if (nomString) {
-              nominationSet.add(nomString);
+              suggestionSet.add(nomString);
             }
           });
         }
       });
 
-      setNominations(Array.from(nominationSet));
+      setSuggestions(Array.from(suggestionSet));
     } catch (error) {
-      console.error('Error loading nominations:', error);
-      setNominations([]);
+      console.error('Error loading suggestions:', error);
+      setSuggestions([]);
     } finally {
-      setLoadingNominations(false);
+      setLoadingSuggestions(false);
     }
   }, [poll.poll_type, poll.id]);
 
   useEffect(() => {
-    fetchNominations();
-  }, [fetchNominations]);
+    fetchSuggestions();
+  }, [fetchSuggestions]);
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -612,13 +612,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setCurrentTime(now);
 
       // If poll just expired, automatically fetch results.
-      // For nomination polls with auto_create_preferences, the server-side
+      // For suggestion polls with auto_create_preferences, the server-side
       // get_results endpoint auto-closes and activates the preferences poll.
       if (now >= deadline && !isPollClosed) {
         fetchPollResults();
 
         if (
-          poll.poll_type === 'nomination' &&
+          poll.poll_type === 'suggestion' &&
           poll.auto_create_preferences &&
           !autoCloseTriggeredRef.current
         ) {
@@ -719,8 +719,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setRankedChoices([]);
       } else if (poll.poll_type === 'yes_no') {
         setYesNoChoice(null); // Clear yes/no choice to prevent both appearing selected
-      } else if (poll.poll_type === 'nomination') {
-        setNominationChoices([]);
+      } else if (poll.poll_type === 'suggestion') {
+        setSuggestionChoices([]);
       }
     } else {
       // Cancelling abstain
@@ -781,9 +781,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setManuallyReopened(false); // Reset manually reopened flag when closing
         await fetchPollResults();
 
-        // If this nomination poll had auto_create_preferences, find and navigate
+        // If this suggestion poll had auto_create_preferences, find and navigate
         // to the activated preferences poll.
-        if (poll.poll_type === 'nomination' && poll.auto_create_preferences) {
+        if (poll.poll_type === 'suggestion' && poll.auto_create_preferences) {
           try {
             const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
             if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
@@ -840,19 +840,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   };
 
   const handleVoteClick = async () => {
-    await logToServer('nomination-vote', 'info', 'handleVoteClick started', {
+    await logToServer('suggestion-vote', 'info', 'handleVoteClick started', {
       isSubmitting,
       hasVoted,
       isEditingVote,
       isPollClosed,
       pollType: poll.poll_type,
       isAbstaining,
-      nominationChoices: nominationChoices.length,
-      nominationChoicesData: nominationChoices
+      suggestionChoices: suggestionChoices.length,
+      suggestionChoicesData: suggestionChoices
     });
 
     if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
-      await logToServer('nomination-vote', 'warn', 'handleVoteClick early return', {
+      await logToServer('suggestion-vote', 'warn', 'handleVoteClick early return', {
         reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
@@ -860,7 +860,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     // Validate vote choice first
     if ((poll.poll_type === 'yes_no' || poll.poll_type === 'participation') && !yesNoChoice && !isAbstaining) {
-      await logToServer('nomination-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
+      await logToServer('suggestion-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
     }
@@ -868,35 +868,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0) {
-        await logToServer('nomination-vote', 'error', 'Ranked choice validation failed', { rankedChoices, isAbstaining });
+        await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, isAbstaining });
         setVoteError("Please rank at least one option or select Abstain");
         return;
       }
     }
 
-    if (poll.poll_type === 'nomination') {
-      const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
-      await logToServer('nomination-vote', 'info', 'Nomination validation check', {
-        originalNominations: nominationChoices,
-        filteredNominations,
-        willAbstain: filteredNominations.length === 0
+    if (poll.poll_type === 'suggestion') {
+      const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+      await logToServer('suggestion-vote', 'info', 'Suggestion validation check', {
+        originalSuggestions: suggestionChoices,
+        filteredSuggestions,
+        willAbstain: filteredSuggestions.length === 0
       });
-      // No validation error - empty nominations will be treated as abstain
+      // No validation error - empty suggestions will be treated as abstain
     }
 
-    await logToServer('nomination-vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
+    await logToServer('suggestion-vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
       pollType: poll.poll_type,
       isAbstaining,
-      choicesReady: poll.poll_type === 'nomination' ? nominationChoices.filter(choice => choice && choice.trim().length > 0).length : 'n/a'
+      choicesReady: poll.poll_type === 'suggestion' ? suggestionChoices.filter(choice => choice && choice.trim().length > 0).length : 'n/a'
     });
 
     setVoteError(null);
     setShowVoteConfirmModal(true);
   };
 
-  const handleVoteOnNominationsClick = async () => {
+  const handleVoteOnSuggestionsClick = async () => {
     // Check if a follow-up preference poll already exists with the same title
-    setLoadingNominations(true);
+    setLoadingSuggestions(true);
     try {
       const existing = await apiFindDuplicatePoll(poll.title, poll.id);
       if (existing) {
@@ -908,7 +908,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     } catch {
       // If the check fails, fall through to show the modal
     } finally {
-      setLoadingNominations(false);
+      setLoadingSuggestions(false);
     }
 
     // No duplicate found — show the creation modal
@@ -916,7 +916,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   };
 
   const submitVote = async () => {
-    await logToServer('nomination-vote', 'info', 'submitVote started', {
+    await logToServer('suggestion-vote', 'info', 'submitVote started', {
       isSubmitting,
       hasVoted,
       isEditingVote,
@@ -928,7 +928,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setShowVoteConfirmModal(false);
 
     if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
-      await logToServer('nomination-vote', 'warn', 'submitVote early return', {
+      await logToServer('suggestion-vote', 'warn', 'submitVote early return', {
         reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
@@ -939,7 +939,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     let voteData: any = {}; // Initialize voteData outside try block for error logging
 
-    await logToServer('nomination-vote', 'info', 'submitVote setup complete', {
+    await logToServer('suggestion-vote', 'info', 'submitVote setup complete', {
       pollId: poll.id,
       pollType: poll.poll_type,
       isAbstaining,
@@ -1009,41 +1009,41 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
         };
-      } else if (poll.poll_type === 'nomination') {
-        const filteredNominations = nominationChoices.filter(choice => choice && choice.trim().length > 0);
+      } else if (poll.poll_type === 'suggestion') {
+        const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
 
-        await logToServer('nomination-vote', 'info', 'Processing nomination vote data', {
-          originalNominations: nominationChoices,
-          filteredNominations,
+        await logToServer('suggestion-vote', 'info', 'Processing suggestion vote data', {
+          originalSuggestions: suggestionChoices,
+          filteredSuggestions,
           isAbstaining
         });
 
-        // Empty nominations will be treated as abstain
-        const willAbstain = filteredNominations.length === 0;
-        await logToServer('nomination-vote', 'info', 'Nomination vote processing', {
-          nominationChoices,
-          filteredNominations,
+        // Empty suggestions will be treated as abstain
+        const willAbstain = filteredSuggestions.length === 0;
+        await logToServer('suggestion-vote', 'info', 'Suggestion vote processing', {
+          suggestionChoices,
+          filteredSuggestions,
           willAbstain,
           isAbstaining
         });
 
-        // Send null for nominations when abstaining, array with nominations when voting
-        // Abstain if explicitly set OR if no nominations provided
+        // Send null for suggestions when abstaining, array with suggestions when voting
+        // Abstain if explicitly set OR if no suggestions provided
         const finalAbstain = isAbstaining || willAbstain;
         // Filter metadata to only include nominated options
-        const filteredMetadata = Object.keys(nominationMetadata).length > 0
-          ? Object.fromEntries(Object.entries(nominationMetadata).filter(([key]) => filteredNominations.includes(key)))
+        const filteredMetadata = Object.keys(suggestionMetadata).length > 0
+          ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
           : null;
         voteData = {
           poll_id: poll.id,
-          vote_type: 'nomination' as const,
-          nominations: finalAbstain ? null : filteredNominations,
+          vote_type: 'suggestion' as const,
+          suggestions: finalAbstain ? null : filteredSuggestions,
           is_abstain: finalAbstain,
           voter_name: voterName.trim() || null,
           options_metadata: !finalAbstain && filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
         };
 
-        await logToServer('nomination-vote', 'info', 'Nomination voteData created', voteData);
+        await logToServer('suggestion-vote', 'info', 'Suggestion voteData created', voteData);
       }
 
       let voteId: string | undefined;
@@ -1060,7 +1060,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
           : poll.poll_type === 'ranked_choice'
           ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { nominations: voteData.nominations, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
+          : { suggestions: voteData.suggestions, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
         
         
         
@@ -1069,7 +1069,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           const returnedVote = await apiEditVote(poll.id, userVoteId, updateData);
           voteId = userVoteId;
 
-          await logToServer('nomination-vote', 'info', 'Vote update response', {
+          await logToServer('suggestion-vote', 'info', 'Vote update response', {
             returnedVote
           });
 
@@ -1080,25 +1080,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setVoteError("Failed to update vote. Please try again.");
         }
       } else {
-        await logToServer('nomination-vote', 'info', 'Attempting to insert new vote', { voteData });
+        await logToServer('suggestion-vote', 'info', 'Attempting to insert new vote', { voteData });
 
         // Insert new vote via API
         try {
           const insertedVote = await apiSubmitVote(poll.id, voteData);
           voteId = insertedVote.id;
 
-          await logToServer('nomination-vote', 'info', 'Vote insert successful', { voteId });
+          await logToServer('suggestion-vote', 'info', 'Vote insert successful', { voteId });
         } catch (insertErr: any) {
           error = insertErr;
           console.error('Vote insert error:', insertErr);
-          await logToServer('nomination-vote', 'error', 'Database insert error', {
+          await logToServer('suggestion-vote', 'error', 'Database insert error', {
             message: insertErr.message
           });
         }
       }
 
       if (error) {
-        await logToServer('nomination-vote', 'error', 'Vote submission error', {
+        await logToServer('suggestion-vote', 'error', 'Vote submission error', {
           error,
           voteData,
           message: error.message
@@ -1109,7 +1109,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         return;
       }
 
-      await logToServer('nomination-vote', 'info', 'Vote submission successful', {
+      await logToServer('suggestion-vote', 'info', 'Vote submission successful', {
         voteId,
         isEditingVote,
         pollType: poll.poll_type
@@ -1119,23 +1119,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setUserVoteId(voteId ?? null);
 
       // Merge submitted metadata into local state so it's available immediately
-      if (nominationMetadata && Object.keys(nominationMetadata).length > 0) {
-        setOptionsMetadataLocal(prev => ({ ...prev, ...nominationMetadata }));
+      if (suggestionMetadata && Object.keys(suggestionMetadata).length > 0) {
+        setOptionsMetadataLocal(prev => ({ ...prev, ...suggestionMetadata }));
       }
 
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
 
-      // Refresh nomination list for nomination polls with a small delay to ensure DB update is complete
-      if (poll.poll_type === 'nomination') {
+      // Refresh suggestion list for suggestion polls with a small delay to ensure DB update is complete
+      if (poll.poll_type === 'suggestion') {
         // Add a small delay to ensure the database update is fully committed
         setTimeout(async () => {
-          // Refresh nominations after DB update is complete
-          await loadExistingNominations(false);
+          // Refresh suggestions after DB update is complete
+          await loadExistingSuggestions(false);
           // Also fetch poll results to show vote counts
           await fetchPollResults();
-          // Fetch nominations to update "Vote on it" button visibility
-          await fetchNominations();
+          // Fetch suggestions to update "Vote on it" button visibility
+          await fetchSuggestions();
         }, 500);
       }
       
@@ -1153,18 +1153,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       setIsEditingVote(false);
       
-      // Refetch vote data for nomination polls to ensure UI shows latest data
-      if (poll.poll_type === 'nomination' && isEditingVote) {
+      // Refetch vote data for suggestion polls to ensure UI shows latest data
+      if (poll.poll_type === 'suggestion' && isEditingVote) {
         const updatedVoteData = await fetchAggregatedVoteData(poll.id);
         if (updatedVoteData) {
           setUserVoteData(updatedVoteData);
         }
 
-        // CRITICAL FIX: Always refresh results after editing nominations
-        // This ensures that deleted nominations (abstained votes) are removed from display
+        // CRITICAL FIX: Always refresh results after editing suggestions
+        // This ensures that deleted suggestions (abstained votes) are removed from display
         await fetchPollResults();
-        // Fetch nominations to update "Vote on it" button visibility
-        await fetchNominations();
+        // Fetch suggestions to update "Vote on it" button visibility
+        await fetchSuggestions();
       }
 
       // If the poll is closed, fetch results immediately after voting
@@ -1172,7 +1172,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         await fetchPollResults();
       }
     } catch (error) {
-      await logToServer('nomination-vote', 'error', 'Unexpected error in submitVote', {
+      await logToServer('suggestion-vote', 'error', 'Unexpected error in submitVote', {
         error,
         stack: error instanceof Error ? error.stack : 'No stack trace',
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -1181,7 +1181,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       console.error('Unexpected error:', error);
       setVoteError("An unexpected error occurred. Please try again.");
     } finally {
-      await logToServer('nomination-vote', 'info', 'submitVote finally block', { isSubmitting: false });
+      await logToServer('suggestion-vote', 'info', 'submitVote finally block', { isSubmitting: false });
       setIsSubmitting(false);
     }
   };
@@ -1334,13 +1334,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </svg>
                 <span className="font-semibold">Follow up</span>
               </GradientBorderButton>
-            {poll.poll_type === 'nomination' && nominations.length >= 2 && (
+            {poll.poll_type === 'suggestion' && suggestions.length >= 2 && (
               <GradientBorderButton
-                onClick={handleVoteOnNominationsClick}
-                disabled={loadingNominations}
+                onClick={handleVoteOnSuggestionsClick}
+                disabled={loadingSuggestions}
                 gradient="red-orange"
               >
-                {loadingNominations ? (
+                {loadingSuggestions ? (
                   <>
                     <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1467,13 +1467,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
                       <div className="flex items-center gap-2">
-                        {false && nominations.length >= 2 && (
+                        {false && suggestions.length >= 2 && (
                           <GradientBorderButton
-                            onClick={handleVoteOnNominationsClick}
-                            disabled={loadingNominations}
+                            onClick={handleVoteOnSuggestionsClick}
+                            disabled={loadingSuggestions}
                             gradient="red-orange"
                           >
-                          {loadingNominations ? (
+                          {loadingSuggestions ? (
                             <>
                               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -1764,12 +1764,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </>
               )}
             </div>
-          ) : poll.poll_type === 'nomination' ? (
-            <NominationVotingInterface
+          ) : poll.poll_type === 'suggestion' ? (
+            <SuggestionVotingInterface
               poll={poll}
-              existingNominations={existingNominations}
-              nominationChoices={nominationChoices}
-              setNominationChoices={setNominationChoices}
+              existingSuggestions={existingSuggestions}
+              suggestionChoices={suggestionChoices}
+              setSuggestionChoices={setSuggestionChoices}
               isAbstaining={isAbstaining}
               handleAbstain={handleAbstain}
               voteError={voteError}
@@ -1788,14 +1788,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               isLoadingVoteData={isLoadingVoteData}
               pollResults={pollResults}
               loadingResults={loadingResults}
-              loadExistingNominations={loadExistingNominations}
+              loadExistingSuggestions={loadExistingSuggestions}
               onFollowUpClick={() => setShowFollowUpModal(true)}
-              nominations={nominations}
-              loadingNominations={loadingNominations}
-              onVoteOnNominationsClick={handleVoteOnNominationsClick}
+              suggestions={suggestions}
+              loadingSuggestions={loadingSuggestions}
+              onVoteOnSuggestionsClick={handleVoteOnSuggestionsClick}
               autoCreatePreferences={poll.auto_create_preferences}
-              nominationMetadata={nominationMetadata}
-              onNominationMetadataChange={setNominationMetadata}
+              suggestionMetadata={suggestionMetadata}
+              onSuggestionMetadataChange={setSuggestionMetadata}
               optionsMetadata={optionsMetadataLocal}
             />
           ) : (
@@ -1900,13 +1900,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
                       <div className="flex items-center gap-2">
-                        {false && nominations.length >= 2 && (
+                        {false && suggestions.length >= 2 && (
                         <GradientBorderButton
-                          onClick={handleVoteOnNominationsClick}
-                          disabled={loadingNominations}
+                          onClick={handleVoteOnSuggestionsClick}
+                          disabled={loadingSuggestions}
                           gradient="red-orange"
                         >
-                          {loadingNominations ? (
+                          {loadingSuggestions ? (
                             <>
                               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -2082,7 +2082,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? (isAbstaining 
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?`)
-          : poll.poll_type === 'nomination'
+          : poll.poll_type === 'suggestion'
           ? (isAbstaining
               ? `Are you sure you want to abstain from this vote?`
               : isEditingVote
@@ -2146,7 +2146,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         isOpen={showVoteOnItModal}
         pollId={poll.id}
         pollTitle={poll.title}
-        nominations={nominations}
+        suggestions={suggestions}
         onClose={() => setShowVoteOnItModal(false)}
       />
 

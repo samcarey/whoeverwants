@@ -57,28 +57,28 @@ test.describe('Poll Creation', () => {
     await page.screenshot({ path: 'test-results/ranked-choice-poll-created.png' });
   });
 
-  test('should create a nomination poll', async ({ page }) => {
+  test('should create a suggestion poll', async ({ page }) => {
     const homePage = new HomePage(page);
     const createPollPage = new CreatePollPage(page);
     const pollPage = new PollPage(page);
-    
+
     await homePage.goToHomePage();
     await homePage.navigateToCreatePoll();
-    
-    // Create nomination poll
+
+    // Create suggestion poll
     await createPollPage.createPoll({
-      title: testPolls.nomination.title,
-      type: testPolls.nomination.type,
-      options: testPolls.nomination.options,
-      deadline: testPolls.nomination.deadline,
-      creatorName: testPolls.nomination.creatorName
+      title: testPolls.suggestion.title,
+      type: testPolls.suggestion.type,
+      options: testPolls.suggestion.options,
+      deadline: testPolls.suggestion.deadline,
+      creatorName: testPolls.suggestion.creatorName
     });
-    
+
     await createPollPage.verifyRedirectToPoll();
-    await pollPage.verifyPollLoaded(testPolls.nomination.title);
+    await pollPage.verifyPollLoaded(testPolls.suggestion.title);
     await pollPage.verifyVotingInterfaceVisible();
-    
-    await page.screenshot({ path: 'test-results/nomination-poll-created.png' });
+
+    await page.screenshot({ path: 'test-results/suggestion-poll-created.png' });
   });
 
   test('should create poll with custom deadline', async ({ page }) => {

@@ -18,9 +18,9 @@ export class PollPage extends BasePage {
   get votingInterface() {
     // Different interfaces for different poll types - look for any voting interface
     return this.page.locator('text="Select your preference"').or(
-      this.page.locator('text="All nominations:"')
+      this.page.locator('text="All suggestions:"')
     ).or(
-      this.page.locator('text="Add new nominations:"')
+      this.page.locator('text="Add new suggestions:"')
     ).or(
       this.page.locator('text="Reorder from most to least preferred"')
     ).first();
@@ -46,7 +46,7 @@ export class PollPage extends BasePage {
     return this.page.locator('svg.animate-spin, .loading, .spinner');
   }
 
-  // Nomination-specific elements
+  // Suggestion-specific elements
   get editButton() {
     return this.page.locator('button:has-text("Edit")');
   }
@@ -55,20 +55,20 @@ export class PollPage extends BasePage {
     return this.page.locator('button:has-text("Close Poll")');
   }
 
-  get allNominationsHeader() {
-    return this.page.locator('text="All nominations:"');
+  get allSuggestionsHeader() {
+    return this.page.locator('text="All suggestions:"');
   }
 
-  get nominationInputs() {
+  get suggestionInputs() {
     return this.page.locator('input[type="text"]');
   }
 
-  get existingNominationsSection() {
-    return this.page.locator('text="Existing nominations"');
+  get existingSuggestionsSection() {
+    return this.page.locator('text="Existing suggestions"');
   }
 
-  get otherNominationsSection() {
-    return this.page.locator('text="Other nominations"');
+  get otherSuggestionsSection() {
+    return this.page.locator('text="Other suggestions"');
   }
 
   // Abstain-specific elements
@@ -81,7 +81,7 @@ export class PollPage extends BasePage {
   }
 
   get abstainRestrictionMessage() {
-    return this.page.locator('text="To abstain, you must first remove all your nominations."');
+    return this.page.locator('text="To abstain, you must first remove all your suggestions."');
   }
 
   // Actions
@@ -104,25 +104,25 @@ export class PollPage extends BasePage {
     await this.waitForNoLoading();
   }
 
-  // Nomination-specific actions
+  // Suggestion-specific actions
   async enterEditMode() {
     await this.editButton.click();
     await this.page.waitForTimeout(1000); // Wait for edit mode to activate
   }
 
-  async selectExistingNomination(nominationText: string) {
-    const nomination = this.page.locator(`button:has-text("${nominationText}")`);
-    await nomination.click();
+  async selectExistingSuggestion(suggestionText: string) {
+    const suggestion = this.page.locator(`button:has-text("${suggestionText}")`);
+    await suggestion.click();
   }
 
-  async editNominationInput(index: number, newText: string) {
-    const input = this.nominationInputs.nth(index);
+  async editSuggestionInput(index: number, newText: string) {
+    const input = this.suggestionInputs.nth(index);
     await input.fill(newText);
   }
 
-  async addNewNomination(text: string) {
+  async addNewSuggestion(text: string) {
     // Find first empty input or add to the last input
-    const inputs = this.nominationInputs;
+    const inputs = this.suggestionInputs;
     const count = await inputs.count();
     const lastInput = inputs.nth(count - 1);
     await lastInput.fill(text);
@@ -144,8 +144,8 @@ export class PollPage extends BasePage {
     await this.page.waitForTimeout(1000); // Wait for state change
   }
 
-  async clearAllNominations() {
-    const inputs = this.nominationInputs;
+  async clearAllSuggestions() {
+    const inputs = this.suggestionInputs;
     const count = await inputs.count();
     for (let i = 0; i < count; i++) {
       await inputs.nth(i).fill('');
@@ -179,11 +179,11 @@ export class PollPage extends BasePage {
     await expect(this.deadlineInfo).toBeVisible();
   }
 
-  // Nomination-specific assertions
-  async verifyNominationsDisplayed(nominations: string[]) {
-    await expect(this.allNominationsHeader).toBeVisible();
-    for (const nomination of nominations) {
-      await expect(this.page.locator(`text="${nomination}"`)).toBeVisible();
+  // Suggestion-specific assertions
+  async verifySuggestionsDisplayed(suggestions: string[]) {
+    await expect(this.allSuggestionsHeader).toBeVisible();
+    for (const suggestion of suggestions) {
+      await expect(this.page.locator(`text="${suggestion}"`)).toBeVisible();
     }
   }
 
@@ -197,16 +197,16 @@ export class PollPage extends BasePage {
   }
 
   async verifyInEditMode() {
-    await expect(this.page.locator('text="Add new nominations:"')).toBeVisible();
-    await expect(this.nominationInputs.first()).toBeVisible();
+    await expect(this.page.locator('text="Add new suggestions:"')).toBeVisible();
+    await expect(this.suggestionInputs.first()).toBeVisible();
   }
 
-  async verifyNominationSelected(nominationText: string, shouldBeSelected: boolean = true) {
-    const nomination = this.page.locator(`button:has-text("${nominationText}")`);
+  async verifySuggestionSelected(suggestionText: string, shouldBeSelected: boolean = true) {
+    const suggestion = this.page.locator(`button:has-text("${suggestionText}")`);
     if (shouldBeSelected) {
-      await expect(nomination).toHaveClass(/bg-green/);
+      await expect(suggestion).toHaveClass(/bg-green/);
     } else {
-      await expect(nomination).not.toHaveClass(/bg-green/);
+      await expect(suggestion).not.toHaveClass(/bg-green/);
     }
   }
 
@@ -238,7 +238,7 @@ export class PollPage extends BasePage {
   }
 
   async verifyInputsDisabledWhenAbstaining(shouldBeDisabled: boolean = true) {
-    const firstInput = this.nominationInputs.first();
+    const firstInput = this.suggestionInputs.first();
     if (shouldBeDisabled) {
       await expect(firstInput).toBeDisabled();
     } else {

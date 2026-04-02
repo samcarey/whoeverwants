@@ -30,13 +30,13 @@ class TestYesNoValidation:
         with pytest.raises(VoteValidationError, match="ranked_choices not allowed"):
             validate_vote("yes_no", "yes_no", yes_no_choice="yes", ranked_choices=["a"])
 
-    def test_nominations_forbidden(self):
-        with pytest.raises(VoteValidationError, match="nominations not allowed"):
-            validate_vote("yes_no", "yes_no", yes_no_choice="yes", nominations=["a"])
+    def test_suggestions_forbidden(self):
+        with pytest.raises(VoteValidationError, match="suggestions not allowed"):
+            validate_vote("yes_no", "yes_no", yes_no_choice="yes", suggestions=["a"])
 
     def test_wrong_vote_type(self):
         with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("yes_no", "nomination", yes_no_choice="yes")
+            validate_vote("yes_no", "suggestion", yes_no_choice="yes")
 
 
 class TestParticipationValidation:
@@ -60,7 +60,7 @@ class TestParticipationValidation:
 
     def test_wrong_vote_type(self):
         with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("participation", "nomination")
+            validate_vote("participation", "suggestion")
 
 
 class TestRankedChoiceValidation:
@@ -82,40 +82,40 @@ class TestRankedChoiceValidation:
         with pytest.raises(VoteValidationError, match="yes_no_choice not allowed"):
             validate_vote("ranked_choice", "ranked_choice", yes_no_choice="yes", ranked_choices=["a"])
 
-    def test_nominations_forbidden(self):
-        with pytest.raises(VoteValidationError, match="nominations not allowed"):
-            validate_vote("ranked_choice", "ranked_choice", ranked_choices=["a"], nominations=["b"])
+    def test_suggestions_forbidden(self):
+        with pytest.raises(VoteValidationError, match="suggestions not allowed"):
+            validate_vote("ranked_choice", "ranked_choice", ranked_choices=["a"], suggestions=["b"])
 
 
-class TestNominationValidation:
-    def test_valid_nominations(self):
-        validate_vote("nomination", "nomination", nominations=["Alice", "Bob"])
+class TestSuggestionValidation:
+    def test_valid_suggestions(self):
+        validate_vote("suggestion", "suggestion", suggestions=["Alice", "Bob"])
 
-    def test_valid_single_nomination(self):
-        validate_vote("nomination", "nomination", nominations=["Alice"])
+    def test_valid_single_suggestion(self):
+        validate_vote("suggestion", "suggestion", suggestions=["Alice"])
 
     def test_valid_abstain(self):
-        validate_vote("nomination", "nomination", is_abstain=True)
+        validate_vote("suggestion", "suggestion", is_abstain=True)
 
-    def test_missing_nominations(self):
-        with pytest.raises(VoteValidationError, match="nominations is required"):
-            validate_vote("nomination", "nomination")
+    def test_missing_suggestions(self):
+        with pytest.raises(VoteValidationError, match="suggestions is required"):
+            validate_vote("suggestion", "suggestion")
 
-    def test_empty_nominations(self):
-        with pytest.raises(VoteValidationError, match="nominations is required"):
-            validate_vote("nomination", "nomination", nominations=[])
+    def test_empty_suggestions(self):
+        with pytest.raises(VoteValidationError, match="suggestions is required"):
+            validate_vote("suggestion", "suggestion", suggestions=[])
 
     def test_yes_no_choice_forbidden(self):
         with pytest.raises(VoteValidationError, match="yes_no_choice not allowed"):
-            validate_vote("nomination", "nomination", yes_no_choice="yes", nominations=["a"])
+            validate_vote("suggestion", "suggestion", yes_no_choice="yes", suggestions=["a"])
 
     def test_ranked_choices_forbidden(self):
         with pytest.raises(VoteValidationError, match="ranked_choices not allowed"):
-            validate_vote("nomination", "nomination", ranked_choices=["a"], nominations=["b"])
+            validate_vote("suggestion", "suggestion", ranked_choices=["a"], suggestions=["b"])
 
     def test_wrong_vote_type(self):
         with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("nomination", "yes_no", nominations=["a"])
+            validate_vote("suggestion", "yes_no", suggestions=["a"])
 
 
 class TestUnknownPollType:
