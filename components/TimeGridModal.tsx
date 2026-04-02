@@ -63,6 +63,7 @@ interface TimeGridModalProps {
   onApply: (min: string | null, max: string | null) => void;
   constraintMin?: string;  // Poll window's min — voter's min can't go below this
   constraintMax?: string;  // Poll window's max — voter's max can't go above this
+  minDurationMinutes?: number | null; // Minimum required duration in minutes
 }
 
 export default function TimeGridModal({
@@ -73,6 +74,7 @@ export default function TimeGridModal({
   onApply,
   constraintMin,
   constraintMax,
+  minDurationMinutes: minDurationMinutesProp,
 }: TimeGridModalProps) {
   const [localMinTime, setLocalMinTime] = useState<string | null>(minValue);
   const [localMaxTime, setLocalMaxTime] = useState<string | null>(maxValue);
@@ -200,6 +202,8 @@ export default function TimeGridModal({
     ? MIN_WIDTH_PCT + (MAX_WIDTH_PCT - MIN_WIDTH_PCT) * ((durationMinutes - MIN_DURATION) / (MAX_DURATION - MIN_DURATION))
     : 0;
 
+  const isBelowMinDuration = minDurationMinutesProp != null && minDurationMinutesProp > 0 && durationMinutes > 0 && durationMinutes < minDurationMinutesProp;
+
   return (
     <div
       ref={backdropRef}
@@ -230,15 +234,31 @@ export default function TimeGridModal({
         {durationMinutes > 0 && (
           <div className="px-3 pt-1 flex flex-col items-center gap-0.5">
             <div
-              className={`h-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
+              className={`h-7 rounded-full flex items-center justify-center ${
+                isBelowMinDuration
+                  ? 'bg-red-100 dark:bg-red-900/40'
+                  : 'bg-blue-100 dark:bg-blue-900/40'
+              } ${transitionsEnabled ? 'transition-all duration-200' : ''}`}
               style={{ width: `${widthPct}%` }}
             >
-              <span className="text-xs font-medium text-blue-600 dark:text-blue-400 whitespace-nowrap">
+              <span className={`text-xs font-medium whitespace-nowrap ${
+                isBelowMinDuration
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-blue-600 dark:text-blue-400'
+              }`}>
                 {durationLabel}
               </span>
             </div>
-            <span className={`text-xs font-medium ${crossesMidnight ? 'text-amber-600 dark:text-amber-400' : 'text-transparent'}`}>
-              Crosses midnight (+1 day)
+            <span className={`text-xs font-medium ${
+              isBelowMinDuration
+                ? 'text-red-600 dark:text-red-400'
+                : crossesMidnight
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-transparent'
+            }`}>
+              {isBelowMinDuration
+                ? `Minimum ${Math.floor(minDurationMinutesProp! / 60) > 0 ? `${Math.floor(minDurationMinutesProp! / 60)}h` : ''}${minDurationMinutesProp! % 60 > 0 ? `${minDurationMinutesProp! % 60}m` : ''}`
+                : 'Crosses midnight (+1 day)'}
             </span>
           </div>
         )}

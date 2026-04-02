@@ -6,6 +6,7 @@ import DayTimeWindowsInput from './DayTimeWindowsInput';
 export interface TimeWindow {
   min: string;
   max: string;
+  enabled?: boolean; // For voter form: whether this window is active (default true)
 }
 
 export interface DayTimeWindow {
@@ -115,6 +116,11 @@ export default function ParticipationConditions({
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);
   const allowedDays = pollDayTimeWindows?.map(dtw => dtw.day);
 
+  // Convert minimum duration from hours to minutes for time window validation
+  const minDurationMinutes = durationMinEnabled && durationMinValue != null
+    ? Math.round(durationMinValue * 60)
+    : null;
+
   return (
     <div className="space-y-3" data-testid="participation-conditions">
       {/* Participants */}
@@ -193,6 +199,7 @@ export default function ParticipationConditions({
               onDelete={() => handleDeleteDay(dayTimeWindow.day)}
               disabled={disabled}
               pollWindows={pollDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
+              minDurationMinutes={minDurationMinutes}
             />
           ))}
 
