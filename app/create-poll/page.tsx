@@ -383,6 +383,10 @@ function CreatePollContent() {
       return "Title must be 100 characters or less.";
     }
 
+    if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
+      return "Links aren't allowed in the title. Use the Details field for links.";
+    }
+
     // Check custom deadline if selected
     if (deadlineOption === "custom") {
       if (!customDate || !customTime) {

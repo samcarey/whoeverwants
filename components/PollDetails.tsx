@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 interface PollDetailsProps {
   details: string;
@@ -13,10 +13,36 @@ const EXPANDED_LINES = 20;
 const COLLAPSED_HEIGHT = COLLAPSED_LINES * LINE_HEIGHT;
 const EXPANDED_HEIGHT = EXPANDED_LINES * LINE_HEIGHT;
 
+const URL_REGEX = /(https?:\/\/\S+|www\.\S+)/gi;
+
+function renderWithLinks(text: string) {
+  const parts = text.split(URL_REGEX);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // Odd indices are captured URL matches from split
+      const href = part.startsWith('http') ? part : `https://${part}`;
+      return (
+        <a
+          key={i}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-600 dark:text-blue-400 underline break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 export default function PollDetails({ details }: PollDetailsProps) {
   const [expanded, setExpanded] = useState(false);
   const [needsTruncation, setNeedsTruncation] = useState(false);
   const collapsedRef = useRef<HTMLDivElement>(null);
+  const renderedDetails = useMemo(() => renderWithLinks(details), [details]);
 
   useEffect(() => {
     if (collapsedRef.current) {
@@ -42,7 +68,7 @@ export default function PollDetails({ details }: PollDetailsProps) {
             } : {}),
           }}
         >
-          {details}
+          {renderedDetails}
         </div>
       </div>
 
