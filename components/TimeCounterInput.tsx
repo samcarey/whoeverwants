@@ -16,6 +16,9 @@ const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
 const HOUR_LABELS = HOURS.map(String);
 const PERIODS = ['AM', 'PM'];
 
+/** Clock-order sort: 12 comes before 1 (12,1,2,...,11) */
+const CLOCK_ORDER = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
 function getMinuteOptions(increment: number): number[] {
   const options: number[] = [];
   for (let m = 0; m < 60; m += increment) {
@@ -43,7 +46,6 @@ function timeToMins(t: string): number {
 /** Check if a time (in minutes) falls within a window, handling cross-midnight */
 function isInWindow(mins: number, minMins: number, maxMins: number): boolean {
   if (maxMins <= minMins) {
-    // Cross-midnight (e.g., 22:00–02:00): valid if >= min OR <= max
     return mins >= minMins || mins <= maxMins;
   }
   return mins >= minMins && mins <= maxMins;
@@ -85,66 +87,67 @@ export default function TimeCounterInput({
   }
   const periodIndex = currentPeriod === 'AM' ? 0 : 1;
 
-  // === CONSTRAINED MODE: combined hour+period wheel ===
-  // Instead of separate hour and AM/PM wheels, show a single wheel with
-  // entries like "9 AM", "10 AM", ..., "12 PM", "1 PM", ..., "5 PM"
-  // in chronological order within the constraint window.
+  // === CONSTRAINED MODE: filtered 3-wheel items ===
 
-  const constrainedHours = useMemo(() => {
-    if (!constrained) return [];
-    const items: { label: string; hour24: number }[] = [];
-    const seen = new Set<number>();
-    // Start from the constraint min hour to get correct chronological order
-    // (important for cross-midnight windows like 10 PM – 2 AM)
-    const startHour = Math.floor(cMinMins / 60);
-    for (let i = 0; i < 24; i++) {
-      const h24 = (startHour + i) % 24;
-      if (seen.has(h24)) continue;
-      // Check if any minute increment in this hour is valid
-      let hasValid = false;
-      for (let m = 0; m < 60; m += increment) {
-        if (isInWindow(h24 * 60 + m, cMinMins, cMaxMins)) { hasValid = true; break; }
-      }
-      if (hasValid) {
-        seen.add(h24);
-        const { hour12, period } = from24Hour(h24);
-        items.push({ label: `${hour12} ${period}`, hour24: h24 });
-      }
+  const effectivePeriods = useMemo(() => {
+    if (!constrained) return PERIODS;
+    const result: string[] = [];
+    for (let m = 0; m < 720; m += increment) {
+      if (isInWindow(m, cMinMins, cMaxMins)) { result.push('AM'); break; }
     }
-    return items;
+    for (let m = 720; m < 1440; m += increment) {
+      if (isInWindow(m, cMinMins, cMaxMins)) { result.push('PM'); break; }
+    }
+    return result.length > 0 ? result : PERIODS;
   }, [constrained, cMinMins, cMaxMins, increment]);
 
-  const constrainedHourLabels = useMemo(
-    () => constrainedHours.map(h => h.label),
-    [constrainedHours],
-  );
+  const effectivePeriodIndex = constrained
+    ? Math.max(0, effectivePeriods.indexOf(currentPeriod))
+    : periodIndex;
 
-  const constrainedHourIndex = useMemo(() => {
-    const idx = constrainedHours.findIndex(h => h.hour24 === currentHour24);
-    return idx >= 0 ? idx : 0;
-  }, [constrainedHours, currentHour24]);
+  // Valid hours for the current period, in clock order (12, 1, 2, ..., 11)
+  const effectiveHours = useMemo(() => {
+    if (!constrained) return HOURS;
+    const period = effectivePeriods[effectivePeriodIndex] as 'AM' | 'PM';
+    const hours = new Set<number>();
+    for (let m = 0; m < 1440; m += increment) {
+      if (!isInWindow(m, cMinMins, cMaxMins)) continue;
+      const h24 = Math.floor(m / 60);
+      const { hour12, period: p } = from24Hour(h24);
+      if (p === period) hours.add(hour12);
+    }
+    // Use clock order (12, 1, 2, ...) instead of numeric order (1, 2, ..., 12)
+    const result = CLOCK_ORDER.filter(h => hours.has(h));
+    return result.length > 0 ? result : HOURS;
+  }, [constrained, cMinMins, cMaxMins, increment, effectivePeriodIndex, effectivePeriods]);
 
-  // Minutes filtered for the selected constrained hour
-  const constrainedMinutes = useMemo(() => {
-    if (!constrained || constrainedHours.length === 0) return minuteOptions;
-    const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
+  const effectiveHourLabels = useMemo(() => effectiveHours.map(String), [effectiveHours]);
+
+  const effectiveHourIndex = constrained
+    ? Math.max(0, effectiveHours.indexOf(currentHour12))
+    : hourIndex;
+
+  const effectiveMinuteOptions = useMemo(() => {
+    if (!constrained) return minuteOptions;
+    const period = effectivePeriods[effectivePeriodIndex] as 'AM' | 'PM';
+    const hour12 = effectiveHours[Math.min(effectiveHourIndex, effectiveHours.length - 1)];
+    if (!hour12) return minuteOptions;
+    const h24 = to24Hour(hour12, period);
     const result = minuteOptions.filter(m => isInWindow(h24 * 60 + m, cMinMins, cMaxMins));
     return result.length > 0 ? result : minuteOptions;
-  }, [constrained, constrainedHours, constrainedHourIndex, cMinMins, cMaxMins, minuteOptions]);
+  }, [constrained, cMinMins, cMaxMins, effectivePeriodIndex, effectivePeriods, effectiveHourIndex, effectiveHours, minuteOptions]);
 
-  const constrainedMinuteLabels = useMemo(
-    () => constrainedMinutes.map(m => m.toString().padStart(2, '0')),
-    [constrainedMinutes],
-  );
+  const effectiveMinuteLabels = useMemo(() =>
+    effectiveMinuteOptions.map(m => m.toString().padStart(2, '0')),
+    [effectiveMinuteOptions]);
 
-  const constrainedMinuteIndex = useMemo(() => {
-    const idx = constrainedMinutes.indexOf(currentMinute);
-    return idx >= 0 ? idx : 0;
-  }, [constrainedMinutes, currentMinute]);
+  const effectiveMinuteIndex = constrained
+    ? Math.max(0, effectiveMinuteOptions.indexOf(currentMinute))
+    : minuteIndex;
 
   // Keep refs in sync
-  if (prevHourIndex.current === null) prevHourIndex.current = hourIndex;
-  if (prevMinuteIndex.current === null) prevMinuteIndex.current = minuteIndex;
+  if (prevHourIndex.current === null) prevHourIndex.current = constrained ? effectiveHourIndex : hourIndex;
+  if (prevMinuteIndex.current === null) prevMinuteIndex.current = constrained ? effectiveMinuteIndex : minuteIndex;
 
   // === EMIT FUNCTIONS ===
 
@@ -158,36 +161,46 @@ export default function TimeCounterInput({
     onChange(timeStr);
   };
 
-  const handleConstrainedHourChange = useCallback((newIdx: number) => {
+  const emitConstrained = useCallback((periodIdx: number, hourIdx: number, minuteIdx: number) => {
     if (disabled) return;
-    const hourItem = constrainedHours[newIdx];
-    if (!hourItem) return;
-    const h24 = hourItem.hour24;
-    // Keep current minute if still valid for the new hour, otherwise first valid
-    let minute = currentMinute;
-    if (!isInWindow(h24 * 60 + minute, cMinMins, cMaxMins)) {
-      for (let m = 0; m < 60; m += increment) {
-        if (isInWindow(h24 * 60 + m, cMinMins, cMaxMins)) { minute = m; break; }
+    const period = effectivePeriods[periodIdx] as 'AM' | 'PM';
+    let hour12 = effectiveHours[hourIdx];
+    let minute = effectiveMinuteOptions[minuteIdx];
+
+    if (hour12 === undefined) hour12 = effectiveHours[0] || 12;
+    if (minute === undefined) minute = effectiveMinuteOptions[0] || 0;
+
+    const h24 = to24Hour(hour12, period);
+    let timeMins = h24 * 60 + minute;
+
+    // If this combination isn't valid (can happen during period/hour transitions),
+    // find the nearest valid time in the constraint window
+    if (!isInWindow(timeMins, cMinMins, cMaxMins)) {
+      let bestTime = cMinMins;
+      let bestDist = Infinity;
+      for (let m = 0; m < 1440; m += increment) {
+        if (!isInWindow(m, cMinMins, cMaxMins)) continue;
+        const dist = Math.min(Math.abs(m - timeMins), 1440 - Math.abs(m - timeMins));
+        if (dist < bestDist) { bestDist = dist; bestTime = m; }
       }
+      timeMins = bestTime;
     }
-    onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-  }, [disabled, constrainedHours, currentMinute, cMinMins, cMaxMins, increment, onChange]);
 
-  const handleConstrainedMinuteChange = useCallback((newIdx: number) => {
-    if (disabled) return;
-    const minute = constrainedMinutes[newIdx];
-    if (minute === undefined) return;
-    const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
-    onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-  }, [disabled, constrainedMinutes, constrainedHours, constrainedHourIndex, onChange]);
+    const h = Math.floor(timeMins / 60);
+    const min = timeMins % 60;
+    onChange(`${h.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`);
+  }, [disabled, effectivePeriods, effectiveHours, effectiveMinuteOptions, cMinMins, cMaxMins, increment, onChange]);
 
-  // === UNCONSTRAINED HANDLERS ===
+  // === HANDLERS ===
 
   const handleHourChange = (newHourIndex: number) => {
+    if (constrained) {
+      emitConstrained(effectivePeriodIndex, newHourIndex, effectiveMinuteIndex);
+      return;
+    }
     const prev = prevHourIndex.current ?? hourIndex;
     let newPeriod = periodIndex;
 
-    // Detect crossing the 11↔12 boundary (noon/midnight crossing)
     if (prev === 10 && newHourIndex === 11) {
       newPeriod = periodIndex === 0 ? 1 : 0;
     } else if (prev === 11 && newHourIndex === 10) {
@@ -199,6 +212,10 @@ export default function TimeCounterInput({
   };
 
   const handleMinuteChange = (newMinuteIndex: number) => {
+    if (constrained) {
+      emitConstrained(effectivePeriodIndex, effectiveHourIndex, newMinuteIndex);
+      return;
+    }
     const prev = prevMinuteIndex.current ?? minuteIndex;
     const lastIdx = minuteOptions.length - 1;
     let newHourIdx = hourIndex;
@@ -222,6 +239,10 @@ export default function TimeCounterInput({
   };
 
   const handlePeriodChange = (newPeriodIndex: number) => {
+    if (constrained) {
+      emitConstrained(newPeriodIndex, effectiveHourIndex, effectiveMinuteIndex);
+      return;
+    }
     emit(hourIndex, minuteIndex, newPeriodIndex);
   };
 
@@ -231,6 +252,13 @@ export default function TimeCounterInput({
   const visibleItems = 5;
   const highlightTop = Math.floor(visibleItems / 2) * itemHeight;
 
+  const hourItems = constrained ? effectiveHourLabels : HOUR_LABELS;
+  const hourSelIdx = constrained ? effectiveHourIndex : hourIndex;
+  const minItems = constrained ? effectiveMinuteLabels : minuteLabels;
+  const minSelIdx = constrained ? effectiveMinuteIndex : minuteIndex;
+  const periodItems = constrained ? effectivePeriods : PERIODS;
+  const periodSelIdx = constrained ? effectivePeriodIndex : periodIndex;
+
   return (
     <div className={`relative flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       {/* Unified highlight band spanning all wheels */}
@@ -238,55 +266,34 @@ export default function TimeCounterInput({
         className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
         style={{ top: highlightTop, height: itemHeight }}
       />
-      {constrained ? (
-        <>
-          <ScrollWheel
-            key={`ch:${constrainedHourLabels.join(',')}`}
-            items={constrainedHourLabels}
-            selectedIndex={constrainedHourIndex}
-            onChange={handleConstrainedHourChange}
-            width={62}
-            hideHighlight
-          />
-          <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
-          <ScrollWheel
-            key={`cm:${constrainedMinuteLabels.join(',')}`}
-            items={constrainedMinuteLabels}
-            selectedIndex={constrainedMinuteIndex}
-            onChange={handleConstrainedMinuteChange}
-            width={45}
-            hideHighlight
-          />
-        </>
-      ) : (
-        <>
-          <ScrollWheel
-            items={HOUR_LABELS}
-            selectedIndex={hourIndex}
-            onChange={handleHourChange}
-            width={45}
-            loop
-            hideHighlight
-          />
-          <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
-          <ScrollWheel
-            items={minuteLabels}
-            selectedIndex={minuteIndex}
-            onChange={handleMinuteChange}
-            width={45}
-            loop
-            hideHighlight
-          />
-          <div className="w-1" />
-          <ScrollWheel
-            items={PERIODS}
-            selectedIndex={periodIndex}
-            onChange={handlePeriodChange}
-            width={42}
-            hideHighlight
-          />
-        </>
-      )}
+      <ScrollWheel
+        key={constrained ? `h:${hourItems.join(',')}` : 'h'}
+        items={hourItems}
+        selectedIndex={hourSelIdx}
+        onChange={handleHourChange}
+        width={45}
+        loop={!constrained}
+        hideHighlight
+      />
+      <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
+      <ScrollWheel
+        key={constrained ? `m:${minItems.join(',')}` : 'm'}
+        items={minItems}
+        selectedIndex={minSelIdx}
+        onChange={handleMinuteChange}
+        width={45}
+        loop={!constrained}
+        hideHighlight
+      />
+      <div className="w-1" />
+      <ScrollWheel
+        key={constrained ? `p:${periodItems.join(',')}` : 'p'}
+        items={periodItems}
+        selectedIndex={periodSelIdx}
+        onChange={handlePeriodChange}
+        width={42}
+        hideHighlight
+      />
     </div>
   );
 }
