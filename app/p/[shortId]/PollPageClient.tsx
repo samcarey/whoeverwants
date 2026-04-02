@@ -99,6 +99,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const autoCloseTriggeredRef = useRef(false);
+  const fetchResultsInFlight = useRef(false);
 
   // Participation poll voter conditions - initialize with poll's constraints
   const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(poll.min_participants ?? 1);
@@ -279,6 +280,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, []);
 
   const fetchPollResults = useCallback(async () => {
+    if (fetchResultsInFlight.current) return; // Deduplicate concurrent calls
+    fetchResultsInFlight.current = true;
     setLoadingResults(true);
     try {
       const results = await apiGetPollResults(poll.id);
@@ -293,6 +296,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       console.error('Error fetching poll results:', error);
     } finally {
       setLoadingResults(false);
+      fetchResultsInFlight.current = false;
     }
   }, [poll.id, poll.poll_type]);
 
