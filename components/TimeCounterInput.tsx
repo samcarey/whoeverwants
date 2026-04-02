@@ -50,6 +50,28 @@ function isInWindow(mins: number, minMins: number, maxMins: number): boolean {
   return mins >= minMins && mins <= maxMins;
 }
 
+/**
+ * Check if a candidate time is valid relative to the sibling picker's value.
+ * For non-cross-midnight poll windows: min must be < max (no cross-midnight voter ranges).
+ * For cross-midnight poll windows: only exclude exact equality (min !== max).
+ */
+function isValidVsSibling(
+  t: number,
+  sibMins: number,
+  role: 'min' | 'max' | undefined,
+  pollCrossesMidnight: boolean,
+): boolean {
+  if (sibMins < 0) return true; // no sibling constraint
+  if (pollCrossesMidnight) {
+    // Cross-midnight poll: only prevent exact 24h (min === max)
+    return t !== sibMins;
+  }
+  // Non-cross-midnight poll: voter's min must be strictly < voter's max
+  if (role === 'min') return t < sibMins;
+  if (role === 'max') return t > sibMins;
+  return t !== sibMins; // fallback
+}
+
 // no-op handler for the locked AM/PM wheel
 function noop() {}
 
@@ -72,8 +94,9 @@ export default function TimeCounterInput({
   const constrained = !!constraintMin && !!constraintMax;
   const cMinMins = constrained ? timeToMins(constraintMin!) : 0;
   const cMaxMins = constrained ? timeToMins(constraintMax!) : 0;
+  const pollCrossesMidnight = constrained && cMaxMins <= cMinMins && cMinMins !== cMaxMins;
 
-  // Only filter out sibling value when constraint window is < 24h
+  // Only filter against sibling when constraint window is < 24h
   const constraintIs24h = constrained && cMinMins === cMaxMins;
   const sibMins = (siblingValue && constrained && !constraintIs24h) ? timeToMins(siblingValue) : -1;
 
@@ -97,7 +120,12 @@ export default function TimeCounterInput({
 
   // === CONSTRAINED MODE ===
   // All valid hours in chronological order across AM/PM.
-  // Hours where every valid minute equals the sibling value are excluded.
+  // Hours where no valid minute passes both window and sibling checks are excluded.
+
+  /** Check if time t is valid: in the poll window AND valid vs sibling */
+  const isTimeValid = useCallback((t: number) => {
+    return isInWindow(t, cMinMins, cMaxMins) && isValidVsSibling(t, sibMins, role, pollCrossesMidnight);
+  }, [cMinMins, cMaxMins, sibMins, role, pollCrossesMidnight]);
 
   const constrainedHours = useMemo(() => {
     if (!constrained) return [];
@@ -109,8 +137,7 @@ export default function TimeCounterInput({
       if (seen.has(h24)) continue;
       let hasValid = false;
       for (let m = 0; m < 60; m += increment) {
-        const t = h24 * 60 + m;
-        if (isInWindow(t, cMinMins, cMaxMins) && t !== sibMins) { hasValid = true; break; }
+        if (isTimeValid(h24 * 60 + m)) { hasValid = true; break; }
       }
       if (hasValid) {
         seen.add(h24);
@@ -119,7 +146,7 @@ export default function TimeCounterInput({
       }
     }
     return items;
-  }, [constrained, cMinMins, cMaxMins, increment, sibMins]);
+  }, [constrained, cMinMins, increment, isTimeValid]);
 
   const constrainedHourLabels = useMemo(
     () => constrainedHours.map(h => h.label),
@@ -131,16 +158,13 @@ export default function TimeCounterInput({
     return idx >= 0 ? idx : 0;
   }, [constrainedHours, currentHour24]);
 
-  // Minutes filtered for the selected constrained hour, excluding sibling-equal time
+  // Minutes filtered for the selected constrained hour
   const constrainedMinutes = useMemo(() => {
     if (!constrained || constrainedHours.length === 0) return minuteOptions;
     const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
-    const result = minuteOptions.filter(m => {
-      const t = h24 * 60 + m;
-      return isInWindow(t, cMinMins, cMaxMins) && t !== sibMins;
-    });
+    const result = minuteOptions.filter(m => isTimeValid(h24 * 60 + m));
     return result.length > 0 ? result : minuteOptions;
-  }, [constrained, constrainedHours, constrainedHourIndex, cMinMins, cMaxMins, minuteOptions, sibMins]);
+  }, [constrained, constrainedHours, constrainedHourIndex, minuteOptions, isTimeValid]);
 
   const constrainedMinuteLabels = useMemo(
     () => constrainedMinutes.map(m => m.toString().padStart(2, '0')),
@@ -175,16 +199,12 @@ export default function TimeCounterInput({
     const h24 = hourItem.hour24;
     let minute = currentMinute;
 
-    // Check if current minute is valid at this hour (in window and not equal to sibling)
-    const currentTotal = h24 * 60 + minute;
-    if (!isInWindow(currentTotal, cMinMins, cMaxMins) || currentTotal === sibMins) {
-      // Find the best replacement minute — prefer one that gives ~1 increment duration from sibling
+    // Check if current minute is valid at this hour
+    if (!isTimeValid(h24 * 60 + minute)) {
+      // Find valid minutes at this hour
       const validMinutes: number[] = [];
       for (let m = 0; m < 60; m += increment) {
-        const t = h24 * 60 + m;
-        if (isInWindow(t, cMinMins, cMaxMins) && t !== sibMins) {
-          validMinutes.push(m);
-        }
+        if (isTimeValid(h24 * 60 + m)) validMinutes.push(m);
       }
       if (validMinutes.length > 0 && sibMins >= 0) {
         // Pick the minute giving the smallest positive duration to/from sibling
@@ -194,10 +214,8 @@ export default function TimeCounterInput({
           const t = h24 * 60 + m;
           let dur: number;
           if (role === 'min') {
-            // Duration from this (min) to sibling (max)
             dur = sibMins >= t ? sibMins - t : 24 * 60 - t + sibMins;
           } else {
-            // Duration from sibling (min) to this (max)
             dur = t >= sibMins ? t - sibMins : 24 * 60 - sibMins + t;
           }
           if (dur > 0 && dur < bestDur) {
@@ -211,7 +229,7 @@ export default function TimeCounterInput({
       }
     }
     onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-  }, [disabled, constrainedHours, currentMinute, cMinMins, cMaxMins, increment, onChange, sibMins, role]);
+  }, [disabled, constrainedHours, currentMinute, increment, onChange, sibMins, role, isTimeValid]);
 
   const handleConstrainedMinuteChange = useCallback((newIdx: number) => {
     if (disabled) return;
