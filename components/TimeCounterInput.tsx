@@ -228,31 +228,33 @@ export default function TimeCounterInput({
   const highlightTop = Math.floor(visibleItems / 2) * itemHeight;
 
   return (
-    <div className={`relative flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-      {/* Unified highlight band spanning all wheels */}
-      <div
-        className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
-        style={{ top: highlightTop, height: itemHeight }}
-      />
+    <div className={`flex items-center gap-0 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       {constrained ? (
         <>
-          <ScrollWheel
-            key={`h:${constrainedHourLabels.join(',')}`}
-            items={constrainedHourLabels}
-            selectedIndex={constrainedHourIndex}
-            onChange={handleConstrainedHourChange}
-            width={45}
-            hideHighlight
-          />
-          <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
-          <ScrollWheel
-            key={`m:${constrainedMinuteLabels.join(',')}`}
-            items={constrainedMinuteLabels}
-            selectedIndex={constrainedMinuteIndex}
-            onChange={handleConstrainedMinuteChange}
-            width={45}
-            hideHighlight
-          />
+          {/* Hour + minute wheels with highlight band (excludes AM/PM) */}
+          <div className="relative flex items-center gap-0">
+            <div
+              className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
+              style={{ top: highlightTop, height: itemHeight }}
+            />
+            <ScrollWheel
+              key={`h:${constrainedHourLabels.join(',')}`}
+              items={constrainedHourLabels}
+              selectedIndex={constrainedHourIndex}
+              onChange={handleConstrainedHourChange}
+              width={45}
+              hideHighlight
+            />
+            <div className="text-xl font-semibold text-gray-900 dark:text-white px-0.5 self-center">:</div>
+            <ScrollWheel
+              key={`m:${constrainedMinuteLabels.join(',')}`}
+              items={constrainedMinuteLabels}
+              selectedIndex={constrainedMinuteIndex}
+              onChange={handleConstrainedMinuteChange}
+              width={45}
+              hideHighlight
+            />
+          </div>
           <div className="w-1" />
           {/* AM/PM wheel: visible but non-interactive, follows the selected hour */}
           <div style={{ pointerEvents: 'none' }}>
@@ -266,7 +268,12 @@ export default function TimeCounterInput({
           </div>
         </>
       ) : (
-        <>
+        <div className="relative flex items-center gap-0">
+          {/* Unified highlight band spanning all wheels */}
+          <div
+            className="absolute left-0 right-0 pointer-events-none bg-blue-200/50 dark:bg-blue-700/30 z-0 rounded-xl"
+            style={{ top: highlightTop, height: itemHeight }}
+          />
           <ScrollWheel
             items={HOUR_LABELS}
             selectedIndex={hourIndex}
@@ -292,7 +299,7 @@ export default function TimeCounterInput({
             width={42}
             hideHighlight
           />
-        </>
+        </div>
       )}
     </div>
   );

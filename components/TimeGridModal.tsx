@@ -131,25 +131,35 @@ export default function TimeGridModal({
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
 
+  // In constrained mode, the poll window is less than 24h when constraintMin !== constraintMax.
+  // Prevent min == max (which means a 24h window) since that would exceed the poll window.
+  const constraintIs24h = !constraintMin || !constraintMax || constraintMin === constraintMax;
+
   // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
   // When constraints exist (voter editing a poll window), clamp to poll bounds
   const handleMinChange = useCallback((newMin: string | null) => {
     if (newMin && constraintMin && constraintMax) {
-      setLocalMinTime(clampTimeMin(newMin, constraintMin, constraintMax));
-    } else {
-      setLocalMinTime(newMin);
+      newMin = clampTimeMin(newMin, constraintMin, constraintMax);
     }
+    // Prevent min == max in constrained mode (would imply 24h, exceeding poll window)
+    if (newMin && newMin === localMaxTime && !constraintIs24h) {
+      return; // reject — wheel will snap back via correctPosition
+    }
+    setLocalMinTime(newMin);
     setTransitionsEnabled(true);
-  }, [constraintMin, constraintMax]);
+  }, [constraintMin, constraintMax, localMaxTime, constraintIs24h]);
 
   const handleMaxChange = useCallback((newMax: string | null) => {
     if (newMax && constraintMin && constraintMax) {
-      setLocalMaxTime(clampTimeMax(newMax, constraintMin, constraintMax));
-    } else {
-      setLocalMaxTime(newMax);
+      newMax = clampTimeMax(newMax, constraintMin, constraintMax);
     }
+    // Prevent min == max in constrained mode (would imply 24h, exceeding poll window)
+    if (newMax && newMax === localMinTime && !constraintIs24h) {
+      return; // reject — wheel will snap back via correctPosition
+    }
+    setLocalMaxTime(newMax);
     setTransitionsEnabled(true);
-  }, [constraintMin, constraintMax]);
+  }, [constraintMin, constraintMax, localMinTime, constraintIs24h]);
 
   // Reset transitions when modal reopens so the duration bar doesn't animate on open
   useEffect(() => {
