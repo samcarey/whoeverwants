@@ -130,8 +130,8 @@ export default function SuggestionVotingInterface({
   useEffect(() => {
     const filledSuggestions = newSuggestions.filter(n => n.trim() !== '');
     // Filter out duplicates
-    const uniqueNewNoms = filledSuggestions.filter((nom, index, self) =>
-      self.indexOf(nom) === index
+    const uniqueNewSugs = filledSuggestions.filter((sug, index, self) =>
+      self.indexOf(sug) === index
     );
 
     // Update choices with new suggestions
@@ -140,17 +140,17 @@ export default function SuggestionVotingInterface({
         // In edit mode: Combine manually selected existing buttons + new suggestions from text fields
         // Get manually selected existing suggestions (anything from the existing list)
         const manuallySelectedExisting = prevChoices.filter(n =>
-          existingSuggestions.includes(n) && !uniqueNewNoms.includes(n)
+          existingSuggestions.includes(n) && !uniqueNewSugs.includes(n)
         );
 
         // Combine selected existing + new suggestions from text fields
-        return [...manuallySelectedExisting, ...uniqueNewNoms];
+        return [...manuallySelectedExisting, ...uniqueNewSugs];
       } else {
         // Normal mode - don't include suggestions that are already in existingSuggestions
-        const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingSuggestions.includes(nom));
+        const newSugsNotInExisting = uniqueNewSugs.filter(sug => !existingSuggestions.includes(sug));
         // Keep existing selections + new suggestions
         const selectedExisting = prevChoices.filter(n => existingSuggestions.includes(n));
-        const newChoices = [...selectedExisting, ...newNomsNotInExisting];
+        const newChoices = [...selectedExisting, ...newSugsNotInExisting];
         return newChoices;
       }
     });

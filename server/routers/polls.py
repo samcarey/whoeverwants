@@ -362,7 +362,7 @@ def _create_sub_polls_for_field(
                                is_sub_poll, sub_poll_role,
                                parent_participation_poll_id,
                                created_at, updated_at)
-            VALUES (%(title)s, 'ranked_choice', true, %(nom_id)s,
+            VALUES (%(title)s, 'ranked_choice', true, %(sug_id)s,
                     %(creator_secret)s, %(creator_name)s,
                     true, %(sub_poll_role)s,
                     %(parent_id)s,
@@ -370,7 +370,7 @@ def _create_sub_polls_for_field(
             """,
             {
                 "title": sub_title,
-                "nom_id": str(sug_row["id"]),
+                "sug_id": str(sug_row["id"]),
                 "creator_secret": creator_secret,
                 "creator_name": creator_name,
                 "sub_poll_role": f"{field}_preferences",

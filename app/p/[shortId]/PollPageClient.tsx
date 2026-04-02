@@ -346,7 +346,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       validVotes.forEach(vote => {
         if (vote.suggestions && Array.isArray(vote.suggestions)) {
           console.log('[DEBUG] Adding suggestions from vote:', vote.id, 'suggestions:', vote.suggestions);
-          vote.suggestions.forEach((nom: string) => allSuggestions.add(nom));
+          vote.suggestions.forEach((sug: string) => allSuggestions.add(sug));
         }
       });
 
@@ -578,10 +578,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       const suggestionSet = new Set<string>();
       suggestionVotes.forEach(vote => {
         if (vote.suggestions && Array.isArray(vote.suggestions)) {
-          vote.suggestions.forEach((nom: any) => {
-            const nomString = typeof nom === 'string' ? nom : nom?.option || nom?.toString() || '';
-            if (nomString) {
-              suggestionSet.add(nomString);
+          vote.suggestions.forEach((sug: any) => {
+            const sugString = typeof sug === 'string' ? sug : sug?.option || sug?.toString() || '';
+            if (sugString) {
+              suggestionSet.add(sugString);
             }
           });
         }
