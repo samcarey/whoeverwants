@@ -9,6 +9,8 @@ interface TimeMinMaxCounterProps {
   onMaxChange: (value: string | null) => void;
   increment?: number; // minutes
   disabled?: boolean;
+  constraintMin?: string; // HH:MM 24h — poll window lower bound
+  constraintMax?: string; // HH:MM 24h — poll window upper bound
 }
 
 export default function TimeMinMaxCounter({
@@ -18,6 +20,8 @@ export default function TimeMinMaxCounter({
   onMaxChange,
   increment = 15,
   disabled = false,
+  constraintMin,
+  constraintMax,
 }: TimeMinMaxCounterProps) {
   return (
     <div className="flex justify-center items-center gap-1.5">
@@ -26,6 +30,8 @@ export default function TimeMinMaxCounter({
         onChange={onMinChange}
         increment={increment}
         disabled={disabled}
+        constraintMin={constraintMin}
+        constraintMax={constraintMax}
       />
       <span className="text-base text-gray-400 dark:text-gray-500">–</span>
       <TimeCounterInput
@@ -33,6 +39,8 @@ export default function TimeMinMaxCounter({
         onChange={onMaxChange}
         increment={increment}
         disabled={disabled}
+        constraintMin={constraintMin}
+        constraintMax={constraintMax}
       />
     </div>
   );

@@ -252,6 +252,8 @@ export default function TimeGridModal({
             onMinChange={handleMinChange}
             onMaxChange={handleMaxChange}
             increment={15}
+            constraintMin={constraintMin}
+            constraintMax={constraintMax}
           />
         </div>
       </div>
