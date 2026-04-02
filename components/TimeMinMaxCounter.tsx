@@ -32,6 +32,8 @@ export default function TimeMinMaxCounter({
         disabled={disabled}
         constraintMin={constraintMin}
         constraintMax={constraintMax}
+        siblingValue={maxValue}
+        role="min"
       />
       <span className="text-base text-gray-400 dark:text-gray-500">–</span>
       <TimeCounterInput
@@ -41,6 +43,8 @@ export default function TimeMinMaxCounter({
         disabled={disabled}
         constraintMin={constraintMin}
         constraintMax={constraintMax}
+        siblingValue={minValue}
+        role="max"
       />
     </div>
   );

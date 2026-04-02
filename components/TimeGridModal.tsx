@@ -131,35 +131,24 @@ export default function TimeGridModal({
     setLocalMaxTime(initMaxTime);
   }, [minValue, maxValue, isOpen]);
 
-  // In constrained mode, the poll window is less than 24h when constraintMin !== constraintMax.
-  // Prevent min == max (which means a 24h window) since that would exceed the poll window.
-  const constraintIs24h = !constraintMin || !constraintMax || constraintMin === constraintMax;
-
   // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
   // When constraints exist (voter editing a poll window), clamp to poll bounds
+  // Note: min==max prevention is handled by the wheel item filtering in TimeCounterInput
   const handleMinChange = useCallback((newMin: string | null) => {
     if (newMin && constraintMin && constraintMax) {
       newMin = clampTimeMin(newMin, constraintMin, constraintMax);
     }
-    // Prevent min == max in constrained mode (would imply 24h, exceeding poll window)
-    if (newMin && newMin === localMaxTime && !constraintIs24h) {
-      return; // reject — wheel will snap back via correctPosition
-    }
     setLocalMinTime(newMin);
     setTransitionsEnabled(true);
-  }, [constraintMin, constraintMax, localMaxTime, constraintIs24h]);
+  }, [constraintMin, constraintMax]);
 
   const handleMaxChange = useCallback((newMax: string | null) => {
     if (newMax && constraintMin && constraintMax) {
       newMax = clampTimeMax(newMax, constraintMin, constraintMax);
     }
-    // Prevent min == max in constrained mode (would imply 24h, exceeding poll window)
-    if (newMax && newMax === localMinTime && !constraintIs24h) {
-      return; // reject — wheel will snap back via correctPosition
-    }
     setLocalMaxTime(newMax);
     setTransitionsEnabled(true);
-  }, [constraintMin, constraintMax, localMinTime, constraintIs24h]);
+  }, [constraintMin, constraintMax]);
 
   // Reset transitions when modal reopens so the duration bar doesn't animate on open
   useEffect(() => {

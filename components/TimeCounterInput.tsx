@@ -10,6 +10,8 @@ interface TimeCounterInputProps {
   disabled?: boolean;
   constraintMin?: string; // HH:MM 24h — lower bound of valid time window
   constraintMax?: string; // HH:MM 24h — upper bound of valid time window
+  siblingValue?: string | null; // HH:MM 24h — the other picker's current value
+  role?: 'min' | 'max'; // whether this is the min or max time picker
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
@@ -58,6 +60,8 @@ export default function TimeCounterInput({
   disabled = false,
   constraintMin,
   constraintMax,
+  siblingValue,
+  role,
 }: TimeCounterInputProps) {
   const minuteOptions = useMemo(() => getMinuteOptions(increment), [increment]);
   const minuteLabels = useMemo(() => minuteOptions.map(m => m.toString().padStart(2, '0')), [minuteOptions]);
@@ -68,6 +72,10 @@ export default function TimeCounterInput({
   const constrained = !!constraintMin && !!constraintMax;
   const cMinMins = constrained ? timeToMins(constraintMin!) : 0;
   const cMaxMins = constrained ? timeToMins(constraintMax!) : 0;
+
+  // Only filter out sibling value when constraint window is < 24h
+  const constraintIs24h = constrained && cMinMins === cMaxMins;
+  const sibMins = (siblingValue && constrained && !constraintIs24h) ? timeToMins(siblingValue) : -1;
 
   // Parse current value
   let currentHour24 = 9, currentMinute = 0;
@@ -88,8 +96,8 @@ export default function TimeCounterInput({
   const periodIndex = currentPeriod === 'AM' ? 0 : 1;
 
   // === CONSTRAINED MODE ===
-  // All valid hours in chronological order across AM/PM (e.g., 9,10,11,12,1,2,3,4,5).
-  // AM/PM wheel is visible but non-interactive — it follows the selected hour automatically.
+  // All valid hours in chronological order across AM/PM.
+  // Hours where every valid minute equals the sibling value are excluded.
 
   const constrainedHours = useMemo(() => {
     if (!constrained) return [];
@@ -101,7 +109,8 @@ export default function TimeCounterInput({
       if (seen.has(h24)) continue;
       let hasValid = false;
       for (let m = 0; m < 60; m += increment) {
-        if (isInWindow(h24 * 60 + m, cMinMins, cMaxMins)) { hasValid = true; break; }
+        const t = h24 * 60 + m;
+        if (isInWindow(t, cMinMins, cMaxMins) && t !== sibMins) { hasValid = true; break; }
       }
       if (hasValid) {
         seen.add(h24);
@@ -110,7 +119,7 @@ export default function TimeCounterInput({
       }
     }
     return items;
-  }, [constrained, cMinMins, cMaxMins, increment]);
+  }, [constrained, cMinMins, cMaxMins, increment, sibMins]);
 
   const constrainedHourLabels = useMemo(
     () => constrainedHours.map(h => h.label),
@@ -122,13 +131,16 @@ export default function TimeCounterInput({
     return idx >= 0 ? idx : 0;
   }, [constrainedHours, currentHour24]);
 
-  // Minutes filtered for the selected constrained hour
+  // Minutes filtered for the selected constrained hour, excluding sibling-equal time
   const constrainedMinutes = useMemo(() => {
     if (!constrained || constrainedHours.length === 0) return minuteOptions;
     const h24 = constrainedHours[constrainedHourIndex]?.hour24 ?? 0;
-    const result = minuteOptions.filter(m => isInWindow(h24 * 60 + m, cMinMins, cMaxMins));
+    const result = minuteOptions.filter(m => {
+      const t = h24 * 60 + m;
+      return isInWindow(t, cMinMins, cMaxMins) && t !== sibMins;
+    });
     return result.length > 0 ? result : minuteOptions;
-  }, [constrained, constrainedHours, constrainedHourIndex, cMinMins, cMaxMins, minuteOptions]);
+  }, [constrained, constrainedHours, constrainedHourIndex, cMinMins, cMaxMins, minuteOptions, sibMins]);
 
   const constrainedMinuteLabels = useMemo(
     () => constrainedMinutes.map(m => m.toString().padStart(2, '0')),
@@ -162,13 +174,44 @@ export default function TimeCounterInput({
     if (!hourItem) return;
     const h24 = hourItem.hour24;
     let minute = currentMinute;
-    if (!isInWindow(h24 * 60 + minute, cMinMins, cMaxMins)) {
+
+    // Check if current minute is valid at this hour (in window and not equal to sibling)
+    const currentTotal = h24 * 60 + minute;
+    if (!isInWindow(currentTotal, cMinMins, cMaxMins) || currentTotal === sibMins) {
+      // Find the best replacement minute — prefer one that gives ~1 increment duration from sibling
+      const validMinutes: number[] = [];
       for (let m = 0; m < 60; m += increment) {
-        if (isInWindow(h24 * 60 + m, cMinMins, cMaxMins)) { minute = m; break; }
+        const t = h24 * 60 + m;
+        if (isInWindow(t, cMinMins, cMaxMins) && t !== sibMins) {
+          validMinutes.push(m);
+        }
+      }
+      if (validMinutes.length > 0 && sibMins >= 0) {
+        // Pick the minute giving the smallest positive duration to/from sibling
+        let best = validMinutes[0];
+        let bestDur = Infinity;
+        for (const m of validMinutes) {
+          const t = h24 * 60 + m;
+          let dur: number;
+          if (role === 'min') {
+            // Duration from this (min) to sibling (max)
+            dur = sibMins >= t ? sibMins - t : 24 * 60 - t + sibMins;
+          } else {
+            // Duration from sibling (min) to this (max)
+            dur = t >= sibMins ? t - sibMins : 24 * 60 - sibMins + t;
+          }
+          if (dur > 0 && dur < bestDur) {
+            bestDur = dur;
+            best = m;
+          }
+        }
+        minute = best;
+      } else if (validMinutes.length > 0) {
+        minute = validMinutes[0];
       }
     }
     onChange(`${h24.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
-  }, [disabled, constrainedHours, currentMinute, cMinMins, cMaxMins, increment, onChange]);
+  }, [disabled, constrainedHours, currentMinute, cMinMins, cMaxMins, increment, onChange, sibMins, role]);
 
   const handleConstrainedMinuteChange = useCallback((newIdx: number) => {
     if (disabled) return;
