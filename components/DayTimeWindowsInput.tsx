@@ -188,6 +188,8 @@ export default function DayTimeWindowsInput({
         minValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].min : "09:00"}
         maxValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].max : "17:00"}
         onApply={handleModalApply}
+        constraintMin={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].min : undefined}
+        constraintMax={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].max : undefined}
       />
     </div>
   );
