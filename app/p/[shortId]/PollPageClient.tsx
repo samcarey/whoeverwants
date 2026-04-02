@@ -1815,7 +1815,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {hasTimeWindowTooShort && (
                     <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded-md">
-                      <p className="text-sm text-red-700 dark:text-red-300">Some time windows are shorter than your minimum duration.</p>
+                      <p className="text-sm text-red-700 dark:text-red-300">Time window cannot be shorter than minimum duration.</p>
                     </div>
                   )}
 
