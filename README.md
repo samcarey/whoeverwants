@@ -13,7 +13,7 @@ Whoever Wants is a lightweight, anonymous polling app that helps groups make dec
 - **No accounts required** - Create and vote on polls completely anonymously
 - **Yes/No polls** - Simple binary decisions
 - **Ranked choice voting** - Instant-runoff voting with Borda tiebreak for multi-option consensus
-- **Nomination polls** - Let voters suggest and vote on options
+- **Suggestion polls** - Let voters suggest and vote on options
 - **Participation polls** - RSVP with min/max constraints and conditional attendance
 - **Time-limited polls** - Set deadlines to keep decisions moving
 - **Share via link** - Just send the URL to collect responses

@@ -1,7 +1,7 @@
 export interface PollTestData {
   title: string;
   description?: string;
-  type: 'poll' | 'nomination';
+  type: 'poll' | 'suggestion';
   options?: readonly string[];
   deadline?: string;
   customDate?: string;
@@ -25,9 +25,9 @@ export const testPolls = {
     creatorName: 'Movie Buff'
   },
   
-  nomination: {
+  suggestion: {
     title: 'Restaurant recommendations for dinner',
-    type: 'nomination' as const,
+    type: 'suggestion' as const,
     options: ['Italian Place Downtown', 'Sushi Bar'],
     deadline: '4hr',
     creatorName: 'Food Lover'

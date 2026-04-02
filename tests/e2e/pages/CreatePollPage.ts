@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 interface PollData {
   title: string;
   description?: string;
-  type: 'poll' | 'nomination';
+  type: 'poll' | 'suggestion';
   options?: readonly string[];
   deadline?: string;
   customDate?: string;
@@ -131,7 +131,7 @@ export class CreatePollPage extends BasePage {
     // Fill basic poll information
     await this.fillTitle(data.title);
     
-    // Select poll type (nomination is default, so only click if changing to poll)
+    // Select poll type (suggestion is default, so only click if changing to poll)
     if (data.type === 'poll') {
       await this.selectPollType(data.type);
     }

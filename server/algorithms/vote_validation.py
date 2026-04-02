@@ -5,10 +5,10 @@ and no fields belonging to other poll types. Mirrors the database CHECK constrai
 from migration 053.
 
 Rules:
-- yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/nominations
+- yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/suggestions
 - participation: same structure as yes_no (yes_no_choice required)
-- ranked_choice: requires non-empty ranked_choices array, forbids yes_no_choice/nominations
-- nomination: requires non-empty nominations array, forbids yes_no_choice/ranked_choices
+- ranked_choice: requires non-empty ranked_choices array, forbids yes_no_choice/suggestions
+- suggestion: requires non-empty suggestions array, forbids yes_no_choice/ranked_choices
 - All types: is_abstain=True relaxes the "required" field constraint
 """
 
@@ -23,7 +23,7 @@ def validate_vote(
     vote_type: str,
     yes_no_choice: str | None = None,
     ranked_choices: list[str] | None = None,
-    nominations: list[str] | None = None,
+    suggestions: list[str] | None = None,
     is_abstain: bool = False,
 ) -> None:
     """Validate vote structure for a given poll type.
@@ -39,11 +39,11 @@ def validate_vote(
             )
 
     if poll_type == "yes_no" or poll_type == "participation":
-        _validate_yes_no_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
+        _validate_yes_no_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     elif poll_type == "ranked_choice":
-        _validate_ranked_choice_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
-    elif poll_type == "nomination":
-        _validate_nomination_vote(yes_no_choice, ranked_choices, nominations, is_abstain)
+        _validate_ranked_choice_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
+    elif poll_type == "suggestion":
+        _validate_suggestion_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     else:
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
 
@@ -51,14 +51,14 @@ def validate_vote(
 def _validate_yes_no_vote(
     yes_no_choice: str | None,
     ranked_choices: list[str] | None,
-    nominations: list[str] | None,
+    suggestions: list[str] | None,
     is_abstain: bool,
 ) -> None:
     # Forbid other poll type fields
     if ranked_choices:
         raise VoteValidationError("ranked_choices not allowed for yes/no polls")
-    if nominations:
-        raise VoteValidationError("nominations not allowed for yes/no polls")
+    if suggestions:
+        raise VoteValidationError("suggestions not allowed for yes/no polls")
 
     if is_abstain:
         return  # No further validation needed
@@ -74,13 +74,13 @@ def _validate_yes_no_vote(
 def _validate_ranked_choice_vote(
     yes_no_choice: str | None,
     ranked_choices: list[str] | None,
-    nominations: list[str] | None,
+    suggestions: list[str] | None,
     is_abstain: bool,
 ) -> None:
     if yes_no_choice:
         raise VoteValidationError("yes_no_choice not allowed for ranked choice polls")
-    if nominations:
-        raise VoteValidationError("nominations not allowed for ranked choice polls")
+    if suggestions:
+        raise VoteValidationError("suggestions not allowed for ranked choice polls")
 
     if is_abstain:
         return
@@ -91,21 +91,21 @@ def _validate_ranked_choice_vote(
         )
 
 
-def _validate_nomination_vote(
+def _validate_suggestion_vote(
     yes_no_choice: str | None,
     ranked_choices: list[str] | None,
-    nominations: list[str] | None,
+    suggestions: list[str] | None,
     is_abstain: bool,
 ) -> None:
     if yes_no_choice:
-        raise VoteValidationError("yes_no_choice not allowed for nomination polls")
+        raise VoteValidationError("yes_no_choice not allowed for suggestion polls")
     if ranked_choices:
-        raise VoteValidationError("ranked_choices not allowed for nomination polls")
+        raise VoteValidationError("ranked_choices not allowed for suggestion polls")
 
     if is_abstain:
         return
 
-    if not nominations or len(nominations) == 0:
+    if not suggestions or len(suggestions) == 0:
         raise VoteValidationError(
-            "nominations is required and must be non-empty for nomination polls"
+            "suggestions is required and must be non-empty for suggestion polls"
         )

@@ -25,7 +25,7 @@ from models import (
     TimeSlotResponse,
     VoteResponse,
 )
-from algorithms.nomination import count_nomination_votes
+from algorithms.suggestion import count_suggestion_votes
 from algorithms.ranked_choice import calculate_ranked_choice_winner
 from algorithms.vote_validation import VoteValidationError, validate_vote
 from algorithms.participation import calculate_participating_voters
@@ -82,7 +82,7 @@ def _check_auto_close(conn, poll_id: str) -> None:
             closed = True
 
     if closed:
-        # If we just closed a nomination poll, activate the reserved preferences poll
+        # If we just closed a suggestion poll, activate the reserved preferences poll
         if poll.get("auto_create_preferences"):
             now = datetime.now(timezone.utc)
             _activate_reserved_preferences_poll(conn, dict(poll), now)
@@ -93,32 +93,32 @@ def _check_auto_close(conn, poll_id: str) -> None:
 
 
 def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
-    """Activate the reserved ranked_choice follow-up when a nomination poll closes.
+    """Activate the reserved ranked_choice follow-up when a suggestion poll closes.
 
-    Collects all nominations from votes, finds the reserved placeholder poll,
-    and updates it with the nominations as options, a deadline, and opens it.
+    Collects all suggestions from votes, finds the reserved placeholder poll,
+    and updates it with the suggestions as options, a deadline, and opens it.
     """
     import json
 
     parent_id = str(parent_row["id"])
     deadline_minutes = parent_row.get("auto_preferences_deadline_minutes") or 10
 
-    # Collect unique nominations from all votes on the parent poll
+    # Collect unique suggestions from all votes on the parent poll
     votes = conn.execute(
-        "SELECT nominations FROM votes WHERE poll_id = %(poll_id)s AND nominations IS NOT NULL",
+        "SELECT suggestions FROM votes WHERE poll_id = %(poll_id)s AND suggestions IS NOT NULL",
         {"poll_id": parent_id},
     ).fetchall()
 
-    all_nominations: list[str] = []
+    all_suggestions: list[str] = []
     seen: set[str] = set()
     for v in votes:
-        for nom in (v["nominations"] or []):
-            lower = nom.strip().lower()
+        for sug in (v["suggestions"] or []):
+            lower = sug.strip().lower()
             if lower and lower not in seen:
                 seen.add(lower)
-                all_nominations.append(nom.strip())
+                all_suggestions.append(sug.strip())
 
-    if len(all_nominations) == 0:
+    if len(all_suggestions) == 0:
         return
 
     # Find the reserved placeholder poll
@@ -138,12 +138,12 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
     if not reserved:
         return  # No reserved poll found (shouldn't happen)
 
-    # Propagate options_metadata from parent for matching nominations
+    # Propagate options_metadata from parent for matching suggestions
     parent_metadata = parent_row.get("options_metadata") or {}
-    child_metadata = {nom: parent_metadata[nom] for nom in all_nominations if nom in parent_metadata} or None
+    child_metadata = {sug: parent_metadata[sug] for sug in all_suggestions if sug in parent_metadata} or None
 
-    if len(all_nominations) == 1:
-        # Single nomination: activate as already closed with uncontested winner
+    if len(all_suggestions) == 1:
+        # Single suggestion: activate as already closed with uncontested winner
         conn.execute(
             """
             UPDATE polls
@@ -158,7 +158,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
             WHERE id = %(reserved_id)s
             """,
             {
-                "options": json.dumps(all_nominations),
+                "options": json.dumps(all_suggestions),
                 "now": now,
                 "reserved_id": str(reserved["id"]),
                 "options_metadata": json.dumps(child_metadata) if child_metadata else None,
@@ -176,7 +176,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
             _resolve_sub_poll_winner(conn, dict(reserved_poll))
         return
 
-    # 2+ nominations: activate as open ranked choice poll
+    # 2+ suggestions: activate as open ranked choice poll
     from datetime import timedelta
     deadline = now + timedelta(minutes=deadline_minutes)
 
@@ -195,7 +195,7 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
         WHERE id = %(reserved_id)s
         """,
         {
-            "options": json.dumps(all_nominations),
+            "options": json.dumps(all_suggestions),
             "deadline": deadline.isoformat(),
             "now": now,
             "reserved_id": str(reserved["id"]),
@@ -264,7 +264,7 @@ def _row_to_vote(row: dict) -> VoteResponse:
         vote_type=row["vote_type"],
         yes_no_choice=row.get("yes_no_choice"),
         ranked_choices=row.get("ranked_choices"),
-        nominations=row.get("nominations"),
+        suggestions=row.get("suggestions"),
         is_abstain=row.get("is_abstain", False),
         voter_name=row.get("voter_name"),
         min_participants=row.get("min_participants"),
@@ -322,10 +322,10 @@ def _create_sub_polls_for_field(
         )
 
     elif mode == "suggestions":
-        # Create a nomination sub-poll
+        # Create a suggestion sub-poll
         sug_deadline_mins = suggestions_deadline_minutes or 10
         sug_deadline = now + timedelta(minutes=sug_deadline_mins)
-        nom_row = conn.execute(
+        sug_row = conn.execute(
             """
             INSERT INTO polls (title, poll_type, response_deadline,
                                creator_secret, creator_name,
@@ -334,7 +334,7 @@ def _create_sub_polls_for_field(
                                auto_create_preferences,
                                auto_preferences_deadline_minutes,
                                is_closed, created_at, updated_at)
-            VALUES (%(title)s, 'nomination', %(deadline)s,
+            VALUES (%(title)s, 'suggestion', %(deadline)s,
                     %(creator_secret)s, %(creator_name)s,
                     true, %(sub_poll_role)s,
                     %(parent_id)s,
@@ -362,7 +362,7 @@ def _create_sub_polls_for_field(
                                is_sub_poll, sub_poll_role,
                                parent_participation_poll_id,
                                created_at, updated_at)
-            VALUES (%(title)s, 'ranked_choice', true, %(nom_id)s,
+            VALUES (%(title)s, 'ranked_choice', true, %(sug_id)s,
                     %(creator_secret)s, %(creator_name)s,
                     true, %(sub_poll_role)s,
                     %(parent_id)s,
@@ -370,7 +370,7 @@ def _create_sub_polls_for_field(
             """,
             {
                 "title": sub_title,
-                "nom_id": str(nom_row["id"]),
+                "sug_id": str(sug_row["id"]),
                 "creator_secret": creator_secret,
                 "creator_name": creator_name,
                 "sub_poll_role": f"{field}_preferences",
@@ -541,10 +541,10 @@ def create_poll(req: CreatePollRequest):
 
         parent_id = str(row["id"])
 
-        # If this is a nomination poll with auto_create_preferences, reserve a
+        # If this is a suggestion poll with auto_create_preferences, reserve a
         # placeholder ranked_choice follow-up poll so no one else can create a
         # conflicting follow-up with the same title.
-        if req.poll_type == PollType.nomination and req.auto_create_preferences:
+        if req.poll_type == PollType.suggestion and req.auto_create_preferences:
             conn.execute(
                 """
                 INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
@@ -664,7 +664,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 vote_type=req.vote_type,
                 yes_no_choice=req.yes_no_choice,
                 ranked_choices=req.ranked_choices,
-                nominations=req.nominations,
+                suggestions=req.suggestions,
                 is_abstain=req.is_abstain,
             )
         except VoteValidationError as e:
@@ -674,12 +674,12 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         row = conn.execute(
             """
             INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
-                               nominations, is_abstain, voter_name,
+                               suggestions, is_abstain, voter_name,
                                min_participants, max_participants,
                                voter_day_time_windows, voter_duration,
                                created_at, updated_at)
             VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
-                    %(nominations)s, %(is_abstain)s, %(voter_name)s,
+                    %(suggestions)s, %(is_abstain)s, %(voter_name)s,
                     %(min_participants)s, %(max_participants)s,
                     %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
                     %(now)s, %(now)s)
@@ -690,7 +690,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "vote_type": req.vote_type,
                 "yes_no_choice": req.yes_no_choice,
                 "ranked_choices": req.ranked_choices,
-                "nominations": req.nominations,
+                "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
@@ -701,8 +701,8 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
             },
         ).fetchone()
 
-        # Merge nomination metadata into poll's options_metadata
-        if req.options_metadata and req.nominations:
+        # Merge suggestion metadata into poll's options_metadata
+        if req.options_metadata and req.suggestions:
             conn.execute(
                 """
                 UPDATE polls
@@ -765,7 +765,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             UPDATE votes
             SET yes_no_choice = %(yes_no_choice)s,
                 ranked_choices = %(ranked_choices)s,
-                nominations = %(nominations)s,
+                suggestions = %(suggestions)s,
                 is_abstain = %(is_abstain)s,
                 voter_name = %(voter_name)s,
                 min_participants = %(min_participants)s,
@@ -779,7 +779,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             {
                 "yes_no_choice": req.yes_no_choice,
                 "ranked_choices": req.ranked_choices,
-                "nominations": req.nominations,
+                "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
@@ -810,11 +810,11 @@ def get_results(poll_id: str):
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
 
-        # Auto-close nomination polls with auto_create_preferences when deadline
+        # Auto-close suggestion polls with auto_create_preferences when deadline
         # has passed. This activates the reserved preferences poll server-side
         # regardless of which client fetches results first.
         if (
-            poll["poll_type"] == "nomination"
+            poll["poll_type"] == "suggestion"
             and poll.get("auto_create_preferences")
             and not poll["is_closed"]
             and poll.get("response_deadline")
@@ -876,14 +876,14 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             max_participants=poll.get("max_participants"),
         )
 
-    if poll_type == "nomination":
+    if poll_type == "suggestion":
         import json
         raw_options = poll.get("options")
         poll_options = None
         if raw_options:
             poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
 
-        result = count_nomination_votes(votes, poll_options=poll_options)
+        result = count_suggestion_votes(votes, poll_options=poll_options)
         return PollResultsResponse(
             poll_id=str(poll["id"]),
             title=poll["title"],
@@ -895,9 +895,9 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             abstain_count=result.abstain_count,
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),
-            nomination_counts=[
-                {"option": nc.option, "count": nc.count}
-                for nc in result.nomination_counts
+            suggestion_counts=[
+                {"option": sc.option, "count": sc.count}
+                for sc in result.suggestion_counts
             ],
         )
 
@@ -1086,9 +1086,9 @@ def close_poll(poll_id: str, req: ClosePollRequest):
         if not row:
             raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
 
-        # If this is a nomination poll with auto_create_preferences, activate
+        # If this is a suggestion poll with auto_create_preferences, activate
         # the reserved ranked_choice follow-up poll.
-        if row["poll_type"] == "nomination" and row.get("auto_create_preferences"):
+        if row["poll_type"] == "suggestion" and row.get("auto_create_preferences"):
             _activate_reserved_preferences_poll(conn, row, now)
 
         # If this is a ranked_choice sub-poll, resolve the winner to parent
@@ -1137,7 +1137,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                WHERE id = ANY(%(poll_ids)s)
                  AND (is_sub_poll = false OR is_sub_poll IS NULL)
                  AND NOT (
-                   poll_type = 'nomination'
+                   poll_type = 'suggestion'
                    AND auto_create_preferences = true
                    AND is_closed = true
                    AND EXISTS (

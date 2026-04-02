@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
-import NominationsList from "@/components/NominationsList";
+import SuggestionsList from "@/components/SuggestionsList";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
@@ -12,11 +12,11 @@ import GradientBorderButton from "@/components/GradientBorderButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 
-interface NominationVotingInterfaceProps {
+interface SuggestionVotingInterfaceProps {
   poll: any;
-  existingNominations: string[];
-  nominationChoices: string[];
-  setNominationChoices: Dispatch<SetStateAction<string[]>>;
+  existingSuggestions: string[];
+  suggestionChoices: string[];
+  setSuggestionChoices: Dispatch<SetStateAction<string[]>>;
   isAbstaining: boolean;
   handleAbstain: () => void;
   voteError: string | null;
@@ -35,22 +35,22 @@ interface NominationVotingInterfaceProps {
   isLoadingVoteData: boolean;
   pollResults: any;
   loadingResults: boolean;
-  loadExistingNominations: () => void;
+  loadExistingSuggestions: () => void;
   onFollowUpClick: () => void;
-  nominations: string[];
-  loadingNominations: boolean;
-  onVoteOnNominationsClick: () => void;
+  suggestions: string[];
+  loadingSuggestions: boolean;
+  onVoteOnSuggestionsClick: () => void;
   autoCreatePreferences?: boolean;
-  nominationMetadata?: OptionsMetadata;
-  onNominationMetadataChange?: (metadata: OptionsMetadata) => void;
+  suggestionMetadata?: OptionsMetadata;
+  onSuggestionMetadataChange?: (metadata: OptionsMetadata) => void;
   optionsMetadata?: OptionsMetadata | null;
 }
 
-export default function NominationVotingInterface({
+export default function SuggestionVotingInterface({
   poll,
-  existingNominations,
-  nominationChoices,
-  setNominationChoices,
+  existingSuggestions,
+  suggestionChoices,
+  setSuggestionChoices,
   isAbstaining,
   handleAbstain,
   voteError,
@@ -69,99 +69,99 @@ export default function NominationVotingInterface({
   isLoadingVoteData,
   pollResults,
   loadingResults,
-  loadExistingNominations,
+  loadExistingSuggestions,
   onFollowUpClick,
-  nominations,
-  loadingNominations,
-  onVoteOnNominationsClick,
+  suggestions,
+  loadingSuggestions,
+  onVoteOnSuggestionsClick,
   autoCreatePreferences,
-  nominationMetadata,
-  onNominationMetadataChange,
+  suggestionMetadata,
+  onSuggestionMetadataChange,
   optionsMetadata,
-}: NominationVotingInterfaceProps) {
-  const [newNominations, setNewNominations] = useState<string[]>([""]);
-  const [filteredExistingNominations, setFilteredExistingNominations] = useState<string[]>([]);
+}: SuggestionVotingInterfaceProps) {
+  const [newSuggestions, setNewSuggestions] = useState<string[]>([""]);
+  const [filteredExistingSuggestions, setFilteredExistingSuggestions] = useState<string[]>([]);
   const [searchRadius, setSearchRadius] = useState(25);
 
-  // Helper function to convert existingNominations to format expected by NominationsList
-  const getNominationsWithCounts = () => {
-    if (pollResults?.nomination_counts && pollResults.nomination_counts.length > 0) {
-      // Use server-side nomination counts when available
-      return pollResults.nomination_counts;
+  // Helper function to convert existingSuggestions to format expected by SuggestionsList
+  const getSuggestionsWithCounts = () => {
+    if (pollResults?.suggestion_counts && pollResults.suggestion_counts.length > 0) {
+      // Use server-side suggestion counts when available
+      return pollResults.suggestion_counts;
     } else {
-      // Fallback to existingNominations without counts
-      return existingNominations.map(nomination => ({
-        option: nomination,
+      // Fallback to existingSuggestions without counts
+      return existingSuggestions.map(suggestion => ({
+        option: suggestion,
         count: 0
       }));
     }
   };
 
-  // Initialize edit mode - show ALL nominations as selectable buttons, empty text fields for new ones
+  // Initialize edit mode - show ALL suggestions as selectable buttons, empty text fields for new ones
   useEffect(() => {
-    if (isEditingVote && userVoteData?.nominations && Array.isArray(userVoteData.nominations)) {
-      // In edit mode, show ALL existing nominations (user's + others') as toggle buttons
-      setFilteredExistingNominations(existingNominations);
+    if (isEditingVote && userVoteData?.suggestions && Array.isArray(userVoteData.suggestions)) {
+      // In edit mode, show ALL existing suggestions (user's + others') as toggle buttons
+      setFilteredExistingSuggestions(existingSuggestions);
 
-      // Pre-select the user's existing nominations
-      setNominationChoices([...userVoteData.nominations]);
+      // Pre-select the user's existing suggestions
+      setSuggestionChoices([...userVoteData.suggestions]);
 
-      // Start with one empty text field for adding new nominations
-      setNewNominations(['']);
+      // Start with one empty text field for adding new suggestions
+      setNewSuggestions(['']);
     } else {
-      // Not in edit mode, show all existing nominations as secondable buttons
-      setFilteredExistingNominations(existingNominations);
+      // Not in edit mode, show all existing suggestions as secondable buttons
+      setFilteredExistingSuggestions(existingSuggestions);
     }
-  }, [isEditingVote, userVoteData, existingNominations, setNominationChoices]);
+  }, [isEditingVote, userVoteData, existingSuggestions, setSuggestionChoices]);
 
-  // Add existing nomination to choices
-  const addExistingNomination = (nomination: string) => {
-    if (!nominationChoices.includes(nomination)) {
-      setNominationChoices([...nominationChoices, nomination]);
+  // Add existing suggestion to choices
+  const addExistingSuggestion = (suggestion: string) => {
+    if (!suggestionChoices.includes(suggestion)) {
+      setSuggestionChoices([...suggestionChoices, suggestion]);
     }
   };
 
-  // Remove nomination from choices
-  const removeNomination = (nomination: string) => {
-    setNominationChoices(nominationChoices.filter(n => n !== nomination));
+  // Remove suggestion from choices
+  const removeSuggestion = (suggestion: string) => {
+    setSuggestionChoices(suggestionChoices.filter(n => n !== suggestion));
   };
 
-  // Update nomination choices when new nominations change
+  // Update suggestion choices when new suggestions change
   useEffect(() => {
-    const filledNominations = newNominations.filter(n => n.trim() !== '');
+    const filledSuggestions = newSuggestions.filter(n => n.trim() !== '');
     // Filter out duplicates
-    const uniqueNewNoms = filledNominations.filter((nom, index, self) =>
-      self.indexOf(nom) === index
+    const uniqueNewSugs = filledSuggestions.filter((sug, index, self) =>
+      self.indexOf(sug) === index
     );
 
-    // Update choices with new nominations
-    setNominationChoices((prevChoices: string[]) => {
+    // Update choices with new suggestions
+    setSuggestionChoices((prevChoices: string[]) => {
       if (isEditingVote) {
-        // In edit mode: Combine manually selected existing buttons + new nominations from text fields
-        // Get manually selected existing nominations (anything from the existing list)
+        // In edit mode: Combine manually selected existing buttons + new suggestions from text fields
+        // Get manually selected existing suggestions (anything from the existing list)
         const manuallySelectedExisting = prevChoices.filter(n =>
-          existingNominations.includes(n) && !uniqueNewNoms.includes(n)
+          existingSuggestions.includes(n) && !uniqueNewSugs.includes(n)
         );
 
-        // Combine selected existing + new nominations from text fields
-        return [...manuallySelectedExisting, ...uniqueNewNoms];
+        // Combine selected existing + new suggestions from text fields
+        return [...manuallySelectedExisting, ...uniqueNewSugs];
       } else {
-        // Normal mode - don't include nominations that are already in existingNominations
-        const newNomsNotInExisting = uniqueNewNoms.filter(nom => !existingNominations.includes(nom));
-        // Keep existing selections + new nominations
-        const selectedExisting = prevChoices.filter(n => existingNominations.includes(n));
-        const newChoices = [...selectedExisting, ...newNomsNotInExisting];
+        // Normal mode - don't include suggestions that are already in existingSuggestions
+        const newSugsNotInExisting = uniqueNewSugs.filter(sug => !existingSuggestions.includes(sug));
+        // Keep existing selections + new suggestions
+        const selectedExisting = prevChoices.filter(n => existingSuggestions.includes(n));
+        const newChoices = [...selectedExisting, ...newSugsNotInExisting];
         return newChoices;
       }
     });
-  }, [newNominations, existingNominations, setNominationChoices, isEditingVote]);
+  }, [newSuggestions, existingSuggestions, setSuggestionChoices, isEditingVote]);
 
-  // Clear abstain flag when user adds nominations while editing
+  // Clear abstain flag when user adds suggestions while editing
   useEffect(() => {
-    if (isEditingVote && isAbstaining && nominationChoices.length > 0) {
+    if (isEditingVote && isAbstaining && suggestionChoices.length > 0) {
       handleAbstain(); // This will toggle isAbstaining to false
     }
-  }, [nominationChoices, isEditingVote, isAbstaining, handleAbstain]);
+  }, [suggestionChoices, isEditingVote, isAbstaining, handleAbstain]);
 
   // Poll is closed
   if (isPollClosed) {
@@ -208,10 +208,10 @@ export default function NominationVotingInterface({
                 </div>
               ))}
             </div>
-          ) : existingNominations.length > 0 ? (
-            <NominationsList
-              nominations={getNominationsWithCounts()}
-              userNominations={userVoteData?.is_abstain ? [] : (userVoteData?.nominations || [])}
+          ) : existingSuggestions.length > 0 ? (
+            <SuggestionsList
+              suggestions={getSuggestionsWithCounts()}
+              userSuggestions={userVoteData?.is_abstain ? [] : (userVoteData?.suggestions || [])}
               showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
               showUserIndicator={true}
               showEditButton={!isPollClosed}
@@ -247,13 +247,13 @@ export default function NominationVotingInterface({
               </svg>
               <span className="font-semibold">Follow up</span>
             </GradientBorderButton>
-            {nominations.length >= 2 && !autoCreatePreferences && (
+            {suggestions.length >= 2 && !autoCreatePreferences && (
               <GradientBorderButton
-                onClick={onVoteOnNominationsClick}
-                disabled={loadingNominations}
+                onClick={onVoteOnSuggestionsClick}
+                disabled={loadingSuggestions}
                 gradient="red-orange"
               >
-                {loadingNominations ? (
+                {loadingSuggestions ? (
                   <>
                     <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -288,7 +288,7 @@ export default function NominationVotingInterface({
           </div>
         )}
 
-        {/* Voter list for open nomination polls - shown after Follow-up button when voted */}
+        {/* Voter list for open suggestion polls - shown after Follow-up button when voted */}
         {!isPollClosed && !isLoadingVoteData && (
           <div className="mt-8">
             <VoterList pollId={poll.id} refreshTrigger={0} />
@@ -301,15 +301,15 @@ export default function NominationVotingInterface({
   return (
     <>
       <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-        {/* Existing nominations - all can be toggled in edit mode */}
-        {filteredExistingNominations.length > 0 && (
+        {/* Existing suggestions - all can be toggled in edit mode */}
+        {filteredExistingSuggestions.length > 0 && (
           <div className="mb-3">
             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               {isEditingVote ? 'All suggestions (select to second/unsecond):' : 'Existing suggestions (select to second):'}
             </h5>
             <div className="space-y-2">
-              {filteredExistingNominations.map((nomination, index) => {
-                const isSelected = nominationChoices.includes(nomination);
+              {filteredExistingSuggestions.map((suggestion, index) => {
+                const isSelected = suggestionChoices.includes(suggestion);
                 return (
                   <div
                     key={index}
@@ -320,7 +320,7 @@ export default function NominationVotingInterface({
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <OptionLabel text={nomination} metadata={optionsMetadata?.[nomination]} />
+                      <OptionLabel text={suggestion} metadata={optionsMetadata?.[suggestion]} />
                     </div>
                     <input
                       type="checkbox"
@@ -328,9 +328,9 @@ export default function NominationVotingInterface({
                       disabled={isSubmitting}
                       onChange={() => {
                         if (isSelected) {
-                          removeNomination(nomination);
+                          removeSuggestion(suggestion);
                         } else {
-                          addExistingNomination(nomination);
+                          addExistingSuggestion(suggestion);
                         }
                       }}
                       className="w-5 h-5 flex-shrink-0 rounded border-gray-300 dark:border-gray-600 text-green-600 focus:ring-green-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -342,8 +342,8 @@ export default function NominationVotingInterface({
           </div>
         )}
 
-        {/* Add new nominations using shared component */}
-        <div className={filteredExistingNominations.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
+        {/* Add new suggestions using shared component */}
+        <div className={filteredExistingSuggestions.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
           {isLocationLikeCategory(poll.category || '') && poll.reference_latitude && (
             <div className="mb-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
               <span>Search within</span>
@@ -359,14 +359,14 @@ export default function NominationVotingInterface({
             </div>
           )}
           <OptionsInput
-            options={newNominations}
-            setOptions={setNewNominations}
+            options={newSuggestions}
+            setOptions={setNewSuggestions}
             isLoading={isSubmitting}
-            pollType="nomination"
+            pollType="suggestion"
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
             category={poll.category || 'custom'}
-            optionsMetadata={nominationMetadata}
-            onMetadataChange={onNominationMetadataChange}
+            optionsMetadata={suggestionMetadata}
+            onMetadataChange={onSuggestionMetadataChange}
             referenceLatitude={poll.reference_latitude}
             referenceLongitude={poll.reference_longitude}
             searchRadius={searchRadius}
@@ -402,14 +402,14 @@ export default function NominationVotingInterface({
         onClick={handleVoteClick}
         disabled={isSubmitting}
         className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
-          nominationChoices.length === 0 && !isSubmitting
+          suggestionChoices.length === 0 && !isSubmitting
             ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
             : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-400 text-white'
         }`}
       >
         {isSubmitting
           ? 'Submitting...'
-          : nominationChoices.length === 0
+          : suggestionChoices.length === 0
             ? 'Submit (Abstain)'
             : 'Submit Vote'
         }

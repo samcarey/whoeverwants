@@ -54,7 +54,7 @@ describe('Vote Storage and Retrieval', () => {
         vote_type: 'yes_no',
         yes_no_choice: 'yes',
         ranked_choices: null,
-        nominations: null,
+        suggestions: null,
         is_abstain: false,
         voter_name: null,
       }
@@ -70,7 +70,7 @@ describe('Vote Storage and Retrieval', () => {
         vote_type: 'ranked_choice',
         yes_no_choice: null,
         ranked_choices: ['Option A', 'Option B', 'Option C'],
-        nominations: null,
+        suggestions: null,
         is_abstain: false,
         voter_name: null,
       }

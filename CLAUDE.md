@@ -222,12 +222,12 @@ whoeverwants/
 │   ├── PollManagementButtons.tsx   # Creator controls (close/reopen/duplicate)
 │   ├── YesNoAbstainButtons.tsx     # Yes/No/Abstain voting buttons
 │   ├── RankableOptions.tsx         # Drag-to-rank interface
-│   ├── NominationVotingInterface.tsx # Nomination poll voting
-│   ├── NominationsList.tsx         # Display nominations with vote counts
+│   ├── SuggestionVotingInterface.tsx # Suggestion poll voting
+│   ├── SuggestionsList.tsx         # Display suggestions with vote counts
 │   ├── CompactRankedChoiceResults.tsx # Ranked choice round display
 │   ├── MinMaxCounter.tsx           # Participation min/max selectors
 │   ├── ParticipationConditions.tsx # Voter condition UI
-│   ├── OptionsInput.tsx            # Poll options/nominations input
+│   ├── OptionsInput.tsx            # Poll options/suggestions input
 │   ├── Countdown.tsx               # Deadline countdown timer
 │   ├── ConfirmationModal.tsx       # Confirm destructive actions
 │   ├── FollowUpModal.tsx           # Create follow-up poll modal
@@ -267,8 +267,8 @@ whoeverwants/
 │
 ├── database/migrations/            # SQL migration files (001-064, up + down)
 │   ├── 001-015: Core schema (polls, votes, results, ranked choice, RLS)
-│   ├── 016-041: Short IDs, poll access, nomination fields, RLS policies
-│   ├── 042-050: Nomination poll type, vote constraints, editing
+│   ├── 016-041: Short IDs, poll access, suggestion fields, RLS policies
+│   ├── 042-050: Suggestion poll type, vote constraints, editing
 │   ├── 051-056: Participation poll type, auto-close triggers
 │   └── 057-063: Voter conditions, participation priority algorithm
 │
@@ -325,7 +325,7 @@ whoeverwants/
 |------|-------------|-----------|
 | `yes_no` | Simple binary vote | `{ vote: "yes" \| "no" }` |
 | `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak | `{ rankings: string[] }` |
-| `nomination` | Nominate options, then vote on them | `{ nominations: string[] }` |
+| `suggestion` | Suggest options, then vote on them | `{ suggestions: string[] }` |
 | `participation` | RSVP with min/max constraints & voter conditions | `{ participating: boolean, conditions: {...} }` |
 
 ### Access Control Model
@@ -803,7 +803,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c 'S
 3. `vote_structure_valid` - Structure validation for vote types
 
 ### Key Lesson:
-**PostgreSQL only reports the FIRST failing constraint.** After fixing one constraint, ALWAYS test again immediately - another constraint may be blocking. The nomination voting fix required fixing TWO separate constraints that were hiding behind each other.
+**PostgreSQL only reports the FIRST failing constraint.** After fixing one constraint, ALWAYS test again immediately - another constraint may be blocking. The suggestion voting fix required fixing TWO separate constraints that were hiding behind each other.
 
 ### Quick Debug Commands:
 ```bash
@@ -823,7 +823,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### Sub-Poll Architecture (Location/Time Fields)
 
-- **Participation polls support optional Location and Time fields** with three modes: `set` (static value), `preferences` (creator-provided options → ranked choice sub-poll), `suggestions` (nomination sub-poll → auto-created ranked choice).
+- **Participation polls support optional Location and Time fields** with three modes: `set` (static value), `preferences` (creator-provided options → ranked choice sub-poll), `suggestions` (suggestion sub-poll → auto-created ranked choice).
 - **Sub-polls are hidden from the main poll list** via `is_sub_poll = true` and filtered in `get_accessible_polls`. They're only accessible from the parent poll via `SubPollField` component.
 - **Sub-poll resolution**: When a ranked choice sub-poll with `sub_poll_role` closes, `_resolve_sub_poll_winner()` computes the IRV winner and writes it to the parent's `resolved_location` or `resolved_time` column.
 - **Creator secret propagation**: Sub-polls share the parent's `creator_secret`. The browser propagates it via `SubPollField` on page load since localStorage only stores secrets for directly-created polls.
@@ -900,7 +900,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### Auto-Created Follow-Up Polls & Creator Secrets
 
-- **Auto-created polls share the parent's `creator_secret`**, but the browser only stores secrets for polls it created directly. When navigating to an auto-created follow-up poll (e.g., preferences poll from a nomination poll), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `poll.follow_up_to` and propagate if the parent's secret is known).
+- **Auto-created polls share the parent's `creator_secret`**, but the browser only stores secrets for polls it created directly. When navigating to an auto-created follow-up poll (e.g., preferences poll from a suggestion poll), the browser must propagate the parent's secret to the child. Do this both on navigation (in the close handler) and on page load (check `poll.follow_up_to` and propagate if the parent's secret is known).
 - **Use `recordPollCreation()` from `lib/browserPollAccess.ts`** instead of calling `storeCreatorSecret()` + `addAccessiblePollId()` separately. The higher-level function already does both.
 - **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update `buildPollSnapshot()` in `lib/pollCreator.ts` — it's used by `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`.
 - **PWA clients cache old JS bundles** — snapshot structure changes (new fields in `buildPollSnapshot`) won't take effect until users get new JS. Always add backward-compatible detection in the consumer (create-poll page) rather than relying solely on snapshot fields. The `is_auto_title` detection uses a ref-based comparison against `generateTitle()` output to handle old snapshots that lack the field.

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class PollType(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
-    nomination = "nomination"
+    suggestion = "suggestion"
     participation = "participation"
 
 
@@ -51,7 +51,7 @@ class CreatePollRequest(BaseModel):
     # Time windows for participation polls
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
-    # Category for autocomplete (nomination/ranked_choice polls)
+    # Category for autocomplete (suggestion/ranked_choice polls)
     category: str | None = None
     # Metadata for options (thumbnail URLs, info links) keyed by option label
     options_metadata: dict | None = None
@@ -67,21 +67,21 @@ class SubmitVoteRequest(BaseModel):
     vote_type: str
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
-    nominations: list[str] | None = None
+    suggestions: list[str] | None = None
     is_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
-    # Metadata for nominated options (merged into poll's options_metadata)
+    # Metadata for suggested options (merged into poll's options_metadata)
     options_metadata: dict | None = None
 
 
 class EditVoteRequest(BaseModel):
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
-    nominations: list[str] | None = None
+    suggestions: list[str] | None = None
     is_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
@@ -172,7 +172,7 @@ class VoteResponse(BaseModel):
     vote_type: str
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
-    nominations: list[str] | None = None
+    suggestions: list[str] | None = None
     is_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
@@ -183,7 +183,7 @@ class VoteResponse(BaseModel):
     updated_at: str
 
 
-class NominationCountResponse(BaseModel):
+class SuggestionCountResponse(BaseModel):
     option: str
     count: int
 
@@ -216,7 +216,7 @@ class PollResultsResponse(BaseModel):
     winner: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
-    nomination_counts: list[NominationCountResponse] | None = None
+    suggestion_counts: list[SuggestionCountResponse] | None = None
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
     ranked_choice_winner: str | None = None
     time_slot_rounds: list[TimeSlotResponse] | None = None

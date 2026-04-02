@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
-import NominationsList from "./NominationsList";
+import SuggestionsList from "./SuggestionsList";
 
 interface PollResultsProps {
   results: PollResults;
@@ -27,8 +27,8 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
-  if (results.poll_type === 'nomination') {
-    return <NominationResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
+  if (results.poll_type === 'suggestion') {
+    return <SuggestionResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
   return null;
@@ -522,14 +522,14 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: OptionsMetadata | null }) {
-  // Use server-side nomination counts from the results endpoint
-  const nominations = results.nomination_counts || [];
+function SuggestionResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: OptionsMetadata | null }) {
+  // Use server-side suggestion counts from the results endpoint
+  const suggestions = results.suggestion_counts || [];
 
   const totalVoters = results.total_votes;
   
-  // Count of unique nomination items
-  const uniqueNominationCount = nominations.length;
+  // Count of unique suggestion items
+  const uniqueSuggestionCount = suggestions.length;
 
   if (totalVoters === 0) {
     return (
@@ -542,14 +542,14 @@ function NominationResults({ results, isPollClosed, userVoteData, onFollowUpClic
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        {nominations.length === 0 ? (
+        {suggestions.length === 0 ? (
           <p className="text-gray-600 dark:text-gray-400 text-center py-4">
             No suggestions available.
           </p>
         ) : (
-          <NominationsList
-            nominations={nominations}
-            userNominations={userVoteData?.nominations || []}
+          <SuggestionsList
+            suggestions={suggestions}
+            userSuggestions={userVoteData?.suggestions || []}
             showVoteCounts={true}
             showUserIndicator={true}
             optionsMetadata={optionsMetadata}

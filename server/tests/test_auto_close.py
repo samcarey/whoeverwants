@@ -24,8 +24,8 @@ class TestShouldAutoClose:
     def test_does_not_close_ranked_choice_poll(self):
         assert should_auto_close("ranked_choice", False, 3, 3) is False
 
-    def test_does_not_close_nomination_poll(self):
-        assert should_auto_close("nomination", False, 3, 3) is False
+    def test_does_not_close_suggestion_poll(self):
+        assert should_auto_close("suggestion", False, 3, 3) is False
 
     def test_does_not_close_already_closed_poll(self):
         assert should_auto_close("participation", True, 3, 3) is False

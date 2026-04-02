@@ -6,7 +6,7 @@ Participation polls get two new optional fields: **Location** and **Time**. Each
 
 1. **Set** — creator types a value directly
 2. **Ask for Preferences** — creator provides options, system auto-creates a ranked choice sub-poll
-3. **Ask for Suggestions** — system auto-creates a nomination sub-poll, which auto-creates a ranked choice preferences poll when it closes
+3. **Ask for Suggestions** — system auto-creates a suggestion sub-poll, which auto-creates a ranked choice preferences poll when it closes
 
 ### Key Behaviors
 
@@ -15,12 +15,12 @@ Participation polls get two new optional fields: **Location** and **Time**. Each
 - Location and Time sub-polls run in parallel (independent)
 - Creator sets independent durations per phase per field
 - Validation: sub-poll deadlines < participation poll deadline; preferences deadline > suggestions deadline
-- When nomination poll closes → auto-create preferences poll from nominations (existing mechanism)
+- When suggestion poll closes → auto-create preferences poll from suggestions (existing mechanism)
 - When preferences poll closes → resolved value auto-populates on participation poll
 - Resolved values on participation poll link to final results
-- Preferences poll shows nomination results as "Round 0" in rounds navigation
+- Preferences poll shows suggestion results as "Round 0" in rounds navigation
 - "Ask for Preferences" mode opens a modal reusing the existing `OptionsInput` component (no code duplication). When closed, show option count in parentheses after "Preferences"
-- No curation of nominations before they flow into preferences poll
+- No curation of suggestions before they flow into preferences poll
 - Fully automated chain, no creator intervention needed
 
 ---
@@ -111,7 +111,7 @@ After inserting the main participation poll, for each field (location, time):
   - `is_closed=false`
 
 **"suggestions" mode:**
-- Create a nomination sub-poll with:
+- Create a suggestion sub-poll with:
   - `is_sub_poll=true`
   - `sub_poll_role='location_suggestions'` or `'time_suggestions'`
   - `parent_participation_poll_id=<parent_id>`
@@ -123,7 +123,7 @@ After inserting the main participation poll, for each field (location, time):
   - `is_sub_poll=true`
   - `sub_poll_role='location_preferences'` or `'time_preferences'`
   - `parent_participation_poll_id=<parent_id>`
-  - `follow_up_to=<nomination sub-poll id>`
+  - `follow_up_to=<suggestion sub-poll id>`
   - `is_closed=true`, `options=NULL`
   - `auto_preferences_deadline_minutes=<preferences_deadline_minutes>`
 
@@ -149,7 +149,7 @@ Called from:
 - `close_poll()` — after manual close
 - `get_results()` — after deadline-triggered lazy close
 
-Must also propagate `parent_participation_poll_id` and `is_sub_poll=true` in `_activate_reserved_preferences_poll()` when it activates the reserved ranked_choice poll from a nomination sub-poll.
+Must also propagate `parent_participation_poll_id` and `is_sub_poll=true` in `_activate_reserved_preferences_poll()` when it activates the reserved ranked_choice poll from a suggestion sub-poll.
 
 ### 2e. Hide sub-polls from main list
 
@@ -257,8 +257,8 @@ On mount, if poll has `location_mode` or `time_mode` (non-null, not 'set'), call
 Displays a location or time field on the participation poll page:
 
 - **Resolved** (`resolved_location`/`resolved_time` set): Show the value as a clickable link → navigates to the preferences sub-poll results
-- **Sub-poll open** (nomination or ranked_choice): Show "Vote on location"/"Suggest a time" button → navigates to active sub-poll. Show countdown.
-- **Between phases** (nomination closed, preferences pending): Show "Resolving suggestions..." status
+- **Sub-poll open** (suggestion or ranked_choice): Show "Vote on location"/"Suggest a time" button → navigates to active sub-poll. Show countdown.
+- **Between phases** (suggestion closed, preferences pending): Show "Resolving suggestions..." status
 - **Set mode**: Show static value (no link)
 
 ### 5c. Sub-poll back navigation
@@ -271,16 +271,16 @@ When navigating from participation poll to sub-poll, propagate the parent's crea
 
 ---
 
-## Phase 6: Round 0 — Nomination Results in Ranked Choice
+## Phase 6: Round 0 — Suggestion Results in Ranked Choice
 
 ### Update `CompactRankedChoiceResults.tsx`
 
-When the ranked_choice poll has `follow_up_to` pointing to a nomination poll:
+When the ranked_choice poll has `follow_up_to` pointing to a suggestion poll:
 
-1. Detect: check if parent poll is nomination type (fetch parent poll data)
-2. Fetch parent nomination poll results
+1. Detect: check if parent poll is suggestion type (fetch parent poll data)
+2. Fetch parent suggestion poll results
 3. Prepend "Round 0: Suggestions" to the round visualizations
-4. Use the `NominationsList` component (pills with vote counts) for Round 0 display
+4. Use the `SuggestionsList` component (pills with vote counts) for Round 0 display
 5. Adjust round navigation to start from 0
 
 ---
@@ -314,7 +314,7 @@ When the ranked_choice poll has `follow_up_to` pointing to a nomination poll:
 - **Deadline validation**: Multiple nested deadline relationships. Validate all server-side in `create_poll`.
 - **Creator secret propagation**: Sub-polls share parent's `creator_secret`. Frontend must use `recordPollCreation()` when navigating to sub-polls.
 - **Race conditions on resolution**: Use `WHERE is_closed = false` in UPDATE (existing pattern).
-- **`_activate_reserved_preferences_poll` must propagate sub-poll metadata**: When activating the reserved ranked_choice poll, copy `parent_participation_poll_id`, `is_sub_poll`, and `sub_poll_role` from the nomination sub-poll.
+- **`_activate_reserved_preferences_poll` must propagate sub-poll metadata**: When activating the reserved ranked_choice poll, copy `parent_participation_poll_id`, `is_sub_poll`, and `sub_poll_role` from the suggestion sub-poll.
 
 ---
 
@@ -322,10 +322,10 @@ When the ranked_choice poll has `follow_up_to` pointing to a nomination poll:
 
 | Pattern | Where | Reuse How |
 |---------|-------|-----------|
-| `auto_create_preferences` + reserved placeholder | `server/routers/polls.py` lines 246-257 | Nomination → preferences chain for "suggestions" mode |
-| `_activate_reserved_preferences_poll` | `server/routers/polls.py` lines 85-153 | Fires when nomination sub-poll closes |
+| `auto_create_preferences` + reserved placeholder | `server/routers/polls.py` lines 246-257 | Suggestion → preferences chain for "suggestions" mode |
+| `_activate_reserved_preferences_poll` | `server/routers/polls.py` lines 85-153 | Fires when suggestion sub-poll closes |
 | `_check_auto_close` | `server/routers/polls.py` line 369 | Hook resolution logic after auto-close |
 | `OptionsInput` component | `components/OptionsInput.tsx` | Reuse in preferences modal (no duplication) |
-| `NominationsList` component | `components/NominationsList.tsx` | Reuse for Round 0 display |
+| `SuggestionsList` component | `components/SuggestionsList.tsx` | Reuse for Round 0 display |
 | Deadline lazy-close in `get_results` | `server/routers/polls.py` lines 459-475 | Same pattern for sub-poll deadline expiry |
 | `baseDeadlineOptions` | `app/create-poll/page.tsx` | Map deadline dropdown values to minutes |
