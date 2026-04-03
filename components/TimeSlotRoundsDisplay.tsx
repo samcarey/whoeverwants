@@ -288,6 +288,49 @@ export default function TimeSlotRoundsDisplay({
     </div>
   );
 
+  const isFinalRound = currentRound === totalRounds;
+
+  const renderFinalRoundSlot = (slot: TimeSlot) => (
+    <div className="bg-green-50 dark:bg-green-900/30 px-3 py-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            {formatTimeRange(slot)}
+          </span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {formatDuration(slot.duration_hours)}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {slot.participant_names.map((name, idx) => {
+            const voteId = slot.participant_vote_ids[idx];
+            const isCurrentUser = voteId === currentUserVoteId;
+            const colorClass = (voteId && colorMap.get(voteId)) || PARTICIPANT_COLORS[0];
+            const displayName = isCurrentUser
+              ? (name ? `You (${name})` : 'You')
+              : (name || 'Anonymous');
+            return (
+              <span
+                key={voteId || idx}
+                className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                  isCurrentUser ? 'font-bold ring-1 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+                } ${colorClass}`}
+              >
+                {displayName}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 ml-6">
+        {formatDate(slot.slot_date)}
+      </div>
+    </div>
+  );
+
   const renderGroup = (group: SlotGroup, groupIdx: number) => {
     const hasWinner = !!group.winner_slot;
 
@@ -392,18 +435,24 @@ export default function TimeSlotRoundsDisplay({
       </div>
 
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
-        {visibleGroups.map((group, index) => renderGroup(group, index))}
+        {isFinalRound && totalRounds > 1 && currentSlots.find(s => s.is_winner) ? (
+          renderFinalRoundSlot(currentSlots.find(s => s.is_winner)!)
+        ) : (
+          <>
+            {visibleGroups.map((group, index) => renderGroup(group, index))}
 
-        {needsCollapse && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="w-full px-3 py-2 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800"
-          >
-            {expanded
-              ? 'Show less'
-              : `Show ${hiddenGroupCount} more group${hiddenGroupCount === 1 ? '' : 's'}`
-            }
-          </button>
+            {needsCollapse && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="w-full px-3 py-2 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800"
+              >
+                {expanded
+                  ? 'Show less'
+                  : `Show ${hiddenGroupCount} more group${hiddenGroupCount === 1 ? '' : 's'}`
+                }
+              </button>
+            )}
+          </>
         )}
       </div>
 
