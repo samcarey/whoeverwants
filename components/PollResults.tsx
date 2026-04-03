@@ -239,11 +239,16 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     if (yesCount === 0 && totalYesVotes > 0) {
       if (isCurrentUserYesVoter && totalYesVotes === 1) {
+        const conds = formatConditions(userMinParticipants, userMaxParticipants);
+        if (conds) return `You wanted ${conds}, but you were the only volunteer`;
         return 'You were the only volunteer, but your conditions couldn\u2019t be met';
       }
       if (isCurrentUserYesVoter) {
         const othersCount = totalYesVotes - 1;
-        return `You and ${othersCount} other${othersCount !== 1 ? 's' : ''} wanted to join, but everyone\u2019s conditions were incompatible`;
+        const conds = formatConditions(userMinParticipants, userMaxParticipants);
+        const base = `You and ${othersCount} other${othersCount !== 1 ? 's' : ''} wanted to join, but everyone\u2019s conditions were incompatible`;
+        if (conds) return `${base} (you wanted ${conds})`;
+        return base;
       }
       if (totalYesVotes === 1) return '1 person wanted to join but their conditions couldn\u2019t be satisfied';
       return `${totalYesVotes} people wanted to join but their conditions were incompatible`;
