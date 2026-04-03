@@ -1739,33 +1739,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
-                  <div className="mb-4">
-                    <h3 className="text-lg font-semibold mb-4 text-center">Your Conditions</h3>
-                    <ParticipationConditions
-                      minValue={voterMinParticipants}
-                      maxValue={voterMaxParticipants}
-                      maxEnabled={voterMaxEnabled}
-                      onMinChange={setVoterMinParticipants}
-                      onMaxChange={setVoterMaxParticipants}
-                      onMaxEnabledChange={setVoterMaxEnabled}
-                      disabled={isSubmitting}
-                      pollMinParticipants={poll.min_participants}
-                      pollMaxParticipants={poll.max_participants}
-                      durationMinValue={durationMinValue}
-                      durationMaxValue={durationMaxValue}
-                      durationMinEnabled={durationMinEnabled}
-                      durationMaxEnabled={durationMaxEnabled}
-                      onDurationMinChange={setDurationMinValue}
-                      onDurationMaxChange={setDurationMaxValue}
-                      onDurationMinEnabledChange={setDurationMinEnabled}
-                      onDurationMaxEnabledChange={setDurationMaxEnabled}
-                      dayTimeWindows={voterDayTimeWindows}
-                      onDayTimeWindowsChange={setVoterDayTimeWindows}
-                      pollDayTimeWindows={poll.day_time_windows || undefined}
-                      pollDurationWindow={poll.duration_window || undefined}
-                    />
-                  </div>
-
                   <div className="mb-4 text-center">
                     <YesNoAbstainButtons
                       yesNoChoice={yesNoChoice}
@@ -1773,6 +1746,43 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onNoClick={() => handleYesNoVote('no')}
                       disabled={isSubmitting}
                     />
+                  </div>
+
+                  <div
+                    className="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out"
+                    style={{
+                      gridTemplateRows: yesNoChoice === 'no' ? '0fr' : '1fr',
+                      opacity: yesNoChoice === 'no' ? 0 : 1,
+                    }}
+                  >
+                    <div className="overflow-hidden min-h-0">
+                      <div className="mb-4">
+                      <h3 className="text-lg font-semibold mb-4 text-center">Your Conditions</h3>
+                      <ParticipationConditions
+                        minValue={voterMinParticipants}
+                        maxValue={voterMaxParticipants}
+                        maxEnabled={voterMaxEnabled}
+                        onMinChange={setVoterMinParticipants}
+                        onMaxChange={setVoterMaxParticipants}
+                        onMaxEnabledChange={setVoterMaxEnabled}
+                        disabled={isSubmitting}
+                        pollMinParticipants={poll.min_participants}
+                        pollMaxParticipants={poll.max_participants}
+                        durationMinValue={durationMinValue}
+                        durationMaxValue={durationMaxValue}
+                        durationMinEnabled={durationMinEnabled}
+                        durationMaxEnabled={durationMaxEnabled}
+                        onDurationMinChange={setDurationMinValue}
+                        onDurationMaxChange={setDurationMaxValue}
+                        onDurationMinEnabledChange={setDurationMinEnabled}
+                        onDurationMaxEnabledChange={setDurationMaxEnabled}
+                        dayTimeWindows={voterDayTimeWindows}
+                        onDayTimeWindowsChange={setVoterDayTimeWindows}
+                        pollDayTimeWindows={poll.day_time_windows || undefined}
+                        pollDurationWindow={poll.duration_window || undefined}
+                      />
+                      </div>
+                    </div>
                   </div>
 
                   {voteError && (
