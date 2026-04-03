@@ -33,37 +33,13 @@ import ParticipationConditions from "@/components/ParticipationConditions";
 import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
+import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
 
 interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
   pollId: string | null;
-}
-
-// Load a saved ballot draft from localStorage for a given poll
-function loadBallotDraft(pollId: string): Record<string, any> | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(`ballotDraft:${pollId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-// Save ballot draft to localStorage
-function saveBallotDraft(pollId: string, draft: Record<string, any>) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(`ballotDraft:${pollId}`, JSON.stringify(draft));
-  } catch { /* ignore quota errors */ }
-}
-
-// Clear ballot draft from localStorage
-function clearBallotDraft(pollId: string) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.removeItem(`ballotDraft:${pollId}`);
-  } catch { /* ignore */ }
 }
 
 export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
@@ -145,40 +121,38 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (draftRestoredRef.current) return;
     draftRestoredRef.current = true;
     if (poll.poll_type !== 'participation') return;
-    // Don't restore draft if user already voted (DB values will be loaded instead)
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       if (votedPolls[poll.id]) return;
     } catch { /* ignore */ }
     const draft = loadBallotDraft(poll.id);
     if (!draft) return;
-    if (draft.yesNoChoice) setYesNoChoice(draft.yesNoChoice);
-    if (draft.isAbstaining) setIsAbstaining(draft.isAbstaining);
+    if (draft.yesNoChoice !== undefined) setYesNoChoice(draft.yesNoChoice ?? null);
+    if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
     if (draft.voterMinParticipants !== undefined) setVoterMinParticipants(draft.voterMinParticipants);
     if (draft.voterMaxParticipants !== undefined) setVoterMaxParticipants(draft.voterMaxParticipants);
     if (draft.voterMaxEnabled !== undefined) setVoterMaxEnabled(draft.voterMaxEnabled);
-    if (draft.voterDayTimeWindows) setVoterDayTimeWindows(draft.voterDayTimeWindows);
+    if (draft.voterDayTimeWindows !== undefined) setVoterDayTimeWindows(draft.voterDayTimeWindows);
     if (draft.durationMinValue !== undefined) setDurationMinValue(draft.durationMinValue);
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
   }, [poll.id, poll.poll_type]);
 
-  // Persist ballot draft state to localStorage whenever it changes (participation polls)
+  // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (poll.poll_type !== 'participation' || hasVoted) return;
-    saveBallotDraft(poll.id, {
-      yesNoChoice,
-      isAbstaining,
-      voterMinParticipants,
-      voterMaxParticipants,
-      voterMaxEnabled,
-      voterDayTimeWindows,
-      durationMinValue,
-      durationMaxValue,
-      durationMinEnabled,
-      durationMaxEnabled,
-    });
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      saveBallotDraft(poll.id, {
+        yesNoChoice, isAbstaining,
+        voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
+        voterDayTimeWindows,
+        durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled,
+      });
+    }, 300);
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
   }, [poll.id, poll.poll_type, hasVoted, yesNoChoice, isAbstaining,
       voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
       voterDayTimeWindows, durationMinValue, durationMaxValue,

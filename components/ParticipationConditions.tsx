@@ -98,11 +98,11 @@ export default function ParticipationConditions({
     }
 
     const addedDays = newDays.filter(day => !existingDays.includes(day));
-    const newEntries: DayTimeWindow[] = addedDays.map(day => ({
-      day,
-      // Restore cached windows if this day was previously removed
-      windows: removedDaysCache.current[day] || []
-    }));
+    const newEntries: DayTimeWindow[] = addedDays.map(day => {
+      const cached = removedDaysCache.current[day];
+      if (cached) delete removedDaysCache.current[day];
+      return { day, windows: cached || [] };
+    });
 
     const updated = [
       ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
