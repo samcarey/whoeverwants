@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from 'react';
+import { timeToMinutes } from '@/lib/timeUtils';
 
 export interface TimeSlot {
   round_number: number;
@@ -75,7 +76,6 @@ interface StartTimeRange {
   first: string; // HH:MM
   last: string;  // HH:MM
   count: number;
-  step: number;  // minutes between consecutive slots
 }
 
 interface DateRanges {
@@ -93,11 +93,6 @@ interface SlotGroup {
   slotCount: number;
 }
 
-function timeToMinutes(timeStr: string): number {
-  const [h, m] = timeStr.split(':').map(Number);
-  return h * 60 + m;
-}
-
 function minutesToTimeStr(mins: number): string {
   const h = Math.floor(mins / 60) % 24;
   const m = mins % 60;
@@ -107,7 +102,7 @@ function minutesToTimeStr(mins: number): string {
 function findContiguousRanges(sortedMinutes: number[]): StartTimeRange[] {
   if (sortedMinutes.length === 0) return [];
   if (sortedMinutes.length === 1) {
-    return [{ first: minutesToTimeStr(sortedMinutes[0]), last: minutesToTimeStr(sortedMinutes[0]), count: 1, step: 0 }];
+    return [{ first: minutesToTimeStr(sortedMinutes[0]), last: minutesToTimeStr(sortedMinutes[0]), count: 1 }];
   }
 
   // Detect step as minimum positive gap
@@ -127,13 +122,13 @@ function findContiguousRanges(sortedMinutes: number[]): StartTimeRange[] {
       prev = sortedMinutes[i];
       count++;
     } else {
-      ranges.push({ first: minutesToTimeStr(start), last: minutesToTimeStr(prev), count, step: minStep });
+      ranges.push({ first: minutesToTimeStr(start), last: minutesToTimeStr(prev), count });
       start = sortedMinutes[i];
       prev = sortedMinutes[i];
       count = 1;
     }
   }
-  ranges.push({ first: minutesToTimeStr(start), last: minutesToTimeStr(prev), count, step: minStep });
+  ranges.push({ first: minutesToTimeStr(start), last: minutesToTimeStr(prev), count });
 
   return ranges;
 }
@@ -203,7 +198,6 @@ function formatStartTimeRange(range: StartTimeRange): string {
   return `${formatTime(range.first)} ${firstPeriod}\u2013${formatTime(range.last)} ${lastPeriod}`;
 }
 
-
 // --- Component ---
 
 export default function TimeSlotRoundsDisplay({
@@ -231,7 +225,7 @@ export default function TimeSlotRoundsDisplay({
     return map;
   }, [allVoters, allRounds]);
 
-  const { roundsByNumber, totalRounds } = useMemo(() => {
+  const { roundsByNumber, totalRounds, winnerSlot } = useMemo(() => {
     const byNumber = allRounds.reduce((acc, slot) => {
       if (!acc[slot.round_number]) acc[slot.round_number] = [];
       acc[slot.round_number].push(slot);
@@ -240,15 +234,12 @@ export default function TimeSlotRoundsDisplay({
     return {
       roundsByNumber: byNumber,
       totalRounds: Math.max(...Object.keys(byNumber).map(Number)),
+      winnerSlot: allRounds.find(s => s.is_winner) || null,
     };
   }, [allRounds]);
 
-  // The winner slot (first slot in round 1 with is_winner=true)
-  const winnerSlot = useMemo(() => allRounds.find(s => s.is_winner) || null, [allRounds]);
-
   // Virtual "Result" page is totalRounds + 1, shown by default
   const resultPage = totalRounds + 1;
-  const totalPages = resultPage;
   const [currentPage, setCurrentPage] = useState(resultPage);
 
   const isResultPage = currentPage === resultPage;
@@ -257,17 +248,14 @@ export default function TimeSlotRoundsDisplay({
   const participantCount = currentSlots.length > 0 ? currentSlots[0].participant_count : 0;
   const totalSlotCount = currentSlots.length;
 
-  const groups = useMemo(() => buildGroups(currentSlots), [currentSlots]);
-
-  // Check if all groups share a single date so we can show it once as a header
-  const allDates = useMemo(() => {
+  const { groups, singleDate } = useMemo(() => {
+    const g = buildGroups(currentSlots);
     const dates = new Set<string>();
-    for (const g of groups) {
-      for (const dr of g.dateRanges) dates.add(dr.date);
+    for (const group of g) {
+      for (const dr of group.dateRanges) dates.add(dr.date);
     }
-    return [...dates].sort();
-  }, [groups]);
-  const singleDate = allDates.length === 1 ? allDates[0] : null;
+    return { groups: g, singleDate: dates.size === 1 ? [...dates][0] : null };
+  }, [currentSlots]);
 
   const COLLAPSED_GROUPS = 4;
   const needsCollapse = groups.length > COLLAPSED_GROUPS + 1;
@@ -418,7 +406,6 @@ export default function TimeSlotRoundsDisplay({
 
         <button
           onClick={() => currentPage === totalRounds ? setCurrentPage(resultPage) : setCurrentPage(p => p + 1)}
-          disabled={false}
           className="p-1.5 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900"
           aria-label={currentPage === totalRounds ? 'Back to result' : 'Next round'}
         >
