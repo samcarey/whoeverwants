@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import MinMaxCounter from './MinMaxCounter';
 import DaysSelector from './DaysSelector';
 import DayTimeWindowsInput from './DayTimeWindowsInput';
@@ -72,6 +72,8 @@ export default function ParticipationConditions({
   isCreationForm = false,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
+  // Cache windows for removed days so they can be restored on re-add
+  const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
 
   const enforcedMinLimit = pollMinParticipants ?? 1;
   const enforcedMaxLimit = pollMaxParticipants ?? undefined;
@@ -85,12 +87,23 @@ export default function ParticipationConditions({
     if (!onDayTimeWindowsChange) return;
 
     const existingDays = dayTimeWindows.map(dtw => dtw.day);
+    const removedDays = existingDays.filter(day => !newDays.includes(day));
+
+    // Cache windows for removed days before discarding them
+    for (const day of removedDays) {
+      const dtw = dayTimeWindows.find(d => d.day === day);
+      if (dtw && dtw.windows.length > 0) {
+        removedDaysCache.current[day] = dtw.windows;
+      }
+    }
+
     const addedDays = newDays.filter(day => !existingDays.includes(day));
     const newEntries: DayTimeWindow[] = addedDays.map(day => ({
       day,
-      windows: []
+      // Restore cached windows if this day was previously removed
+      windows: removedDaysCache.current[day] || []
     }));
-    const removedDays = existingDays.filter(day => !newDays.includes(day));
+
     const updated = [
       ...dayTimeWindows.filter(dtw => !removedDays.includes(dtw.day)),
       ...newEntries
