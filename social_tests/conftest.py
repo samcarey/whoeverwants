@@ -166,7 +166,10 @@ def result(request):
     r = SocialTestResult()
     r.test_name = request.node.name
     r.category = request.node.module.__name__.replace("test_", "").replace("_scenarios", "")
-    r.docstring = textwrap.dedent(request.node.function.__doc__ or "").strip()
+    raw_doc = request.node.function.__doc__ or ""
+    # First line is flush with """, rest is indented — dedent them separately
+    first, _, rest = raw_doc.strip().partition("\n")
+    r.docstring = (first + "\n" + textwrap.dedent(rest)).strip() if rest else first.strip()
     _test_results.append(r)
     return r
 

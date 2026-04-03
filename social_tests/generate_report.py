@@ -120,20 +120,43 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
             lines.append(f"<details>")
             lines.append(f"<summary>{tech_badge} {soc_badge} <code>{r['test_name']}</code></summary>\n")
 
-            # Docstring (scenario description)
+            # Docstring (scenario description) — style SCENARIO:/EXPECTATION: labels
             if r["docstring"]:
                 lines.append(f"#### Scenario\n")
-                lines.append(r["docstring"])
-                lines.append("")
+                # Split docstring: first line is the title, rest is body
+                doc_lines = r["docstring"].split("\n")
+                title_line = doc_lines[0].strip()
+                body = "\n".join(doc_lines[1:]).strip()
+                if title_line:
+                    lines.append(f"**{title_line}**\n")
+                if body:
+                    # Style SCENARIO:/EXPECTATION:/SOCIAL QUESTION:/NOTE: as bold labels
+                    import re
+                    styled = re.sub(
+                        r"^(SCENARIO|EXPECTATION|SOCIAL QUESTION|NOTE):",
+                        r"**\1:**",
+                        body,
+                        flags=re.MULTILINE,
+                    )
+                    lines.append(styled)
+                    lines.append("")
 
-            # Technical assertions
+            # Technical assertions — only include Detail column if any assertion has one
+            has_details = any(a["detail"] for a in r["assertions"])
             lines.append("#### Technical Results\n")
-            lines.append("| Assertion | Result | Detail |")
-            lines.append("|-----------|--------|--------|")
+            if has_details:
+                lines.append("| Assertion | Result | Detail |")
+                lines.append("|-----------|--------|--------|")
+            else:
+                lines.append("| Assertion | Result |")
+                lines.append("|-----------|--------|")
             for a in r["assertions"]:
                 icon = "&#x2705;" if a["passed"] else "&#x274C;"
-                detail = a["detail"] if a["detail"] else ""
-                lines.append(f"| {a['description']} | {icon} | {detail} |")
+                if has_details:
+                    detail = a["detail"] if a["detail"] else ""
+                    lines.append(f"| {a['description']} | {icon} | {detail} |")
+                else:
+                    lines.append(f"| {a['description']} | {icon} |")
             lines.append("")
 
             if r["failure_message"]:
@@ -145,11 +168,12 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
                 lines.append(f"#### Social Evaluation\n")
                 lines.append(f"> {social_note}\n")
 
-            # AI Critique
+            # AI Critique — only show if it adds value beyond the social note
             critique_key = r["test_name"]
-            if critique_key in critique_map:
+            critique_text = critique_map.get(critique_key, "")
+            if critique_text and critique_text != social_note:
                 lines.append(f"#### Critique\n")
-                lines.append(f"_{critique_map[critique_key]}_\n")
+                lines.append(f"{critique_text}\n")
 
             # Relevant data (collapsed)
             interesting_keys = {"results", "suggestion_map", "participant_names", "winner", "num_rounds"}
@@ -351,11 +375,11 @@ def save_critiques(critiques: dict[str, str]):
 
 
 def generate_critiques(results: list[dict], previous: dict[str, str]) -> dict[str, str]:
-    """Generate AI critiques for each test result.
+    """Generate critiques for each test result.
 
-    This function produces critiques locally by analyzing the test results
-    and social notes. For a full AI-powered critique, the caller can
-    inject critiques from an external LLM call.
+    Focuses on actionable observations. Skips tests that simply pass
+    with FAIR — the social note already covers those. Only emits a
+    critique when there's something worth calling out.
     """
     critiques = {}
     for r in results:
@@ -363,26 +387,22 @@ def generate_critiques(results: list[dict], previous: dict[str, str]) -> dict[st
         social_note = r["details"].get("social_note", "")
         prev = previous.get(name, "")
 
-        # Build a synthetic critique based on the test data
-        parts = []
-
         if not r["technical_pass"]:
-            parts.append(f"Technical failure detected: {r['failure_message']}. This needs investigation before social evaluation is meaningful.")
+            msg = r["failure_message"]
+            critique = f"Technical failure: {msg}. Needs investigation before social evaluation is meaningful."
         elif r["social_badge"] == "AWKWARD":
-            parts.append("This test highlights a genuine UX concern.")
-            if social_note:
-                parts.append(f"The core issue: {social_note}")
+            critique = social_note  # The social note IS the critique for awkward results
         elif r["social_badge"] == "INSIGHT":
-            parts.append("This test reveals an interesting system property worth documenting.")
-            if social_note:
-                parts.append(social_note)
+            critique = social_note
         else:
-            parts.append("System behaves as expected for this social scenario.")
+            # FAIR + PASS — no critique needed, the social eval says it all
+            critique = ""
 
-        if prev:
-            parts.append(f"(Previous assessment: \"{prev[:100]}...\" — assessment {'unchanged' if parts[0] == prev[:len(parts[0])] else 'updated'}.)")
+        # If previous critique existed and was different, note the change (collapsed)
+        if prev and critique and prev != critique:
+            critique += f"\n\n<details><summary>Previous assessment</summary>\n\n{prev}\n\n</details>"
 
-        critiques[name] = " ".join(parts)
+        critiques[name] = critique
 
     return critiques
 

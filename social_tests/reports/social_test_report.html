@@ -60,7 +60,7 @@
 </style>
 </head>
 <body>
-<div id="content"><h1>Social Test Report — 2026-04-03 19:19 UTC</h1>
+<div id="content"><h1>Social Test Report — 2026-04-03 19:35 UTC</h1>
 <details>
 <summary><strong>Testing Philosophy & Strategy</strong></summary>
 <h1>Social Testing Strategy for WhoeverWants</h1>
@@ -104,41 +104,39 @@
 <table>
 <tr><th>Metric</th><th>Count</th></tr>
 <tr><td>Total tests</td><td>33</td></tr>
-<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> Technical pass</td><td>30</td></tr>
-<tr><td><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> Technical fail</td><td>3</td></tr>
-<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> Socially fair</td><td>24</td></tr>
+<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> Technical pass</td><td>31</td></tr>
+<tr><td><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> Technical fail</td><td>2</td></tr>
+<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> Socially fair</td><td>23</td></tr>
 <tr><td><span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> Socially awkward</td><td>2</td></tr>
-<tr><td><span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> Insights</td><td>7</td></tr>
+<tr><td><span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> Insights</td><td>8</td></tr>
 </table>
 <h2>Tests.Casual Decisions</h2>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_majority_yes</code></summary>
 <h4>Scenario</h4>
-<p>Friday drinks: 4 yes, 1 no, 1 abstain.</p>
-<p>SCENARIO: Marcus creates a poll asking "Drinks after work Friday?" Four coworkers say yes (two named, two anonymous). One says no (anonymous — maybe they're shy about being the dissenter). One abstains (they're not sure yet but want to acknowledge the poll).</p>
-<p>EXPECTATION: Clear yes wins. The abstainer shouldn't dilute the percentage. Anonymous dissenters should feel safe.</p>
+<p><strong>Friday drinks: 4 yes, 1 no, 1 abstain.</strong></p>
+<p><strong>SCENARIO:</strong> Marcus creates a poll asking "Drinks after work Friday?" Four coworkers say yes (two named, two anonymous). One says no (anonymous — maybe they're shy about being the dissenter). One abstains (they're not sure yet but want to acknowledge the poll).</p>
+<p><strong>EXPECTATION:</strong> Clear yes wins. The abstainer shouldn't dilute the percentage. Anonymous dissenters should feel safe.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Winner is yes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Yes count is 4</td><td>&#x2705;</td><td></td></tr>
-<tr><td>No count is 1</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Abstain count is 1</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Yes percentage based on total votes (including abstain)</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Winner is yes</td><td>&#x2705;</td></tr>
+<tr><td>Yes count is 4</td><td>&#x2705;</td></tr>
+<tr><td>No count is 1</td><td>&#x2705;</td></tr>
+<tr><td>Abstain count is 1</td><td>&#x2705;</td></tr>
+<tr><td>Yes percentage based on total votes (including abstain)</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Clear majority respected. Anonymous no vote preserved dissenter's comfort.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "99373863-cbb7-45b8-9964-68297baf4d18",
+    "poll_id": "5aac9d66-6272-4dcc-ab00-c77841451807",
     "title": "Drinks after work Friday?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:03.977694+00:00",
+    "created_at": "2026-04-03T19:34:23.216082+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 4,
@@ -165,28 +163,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_exact_tie</code></summary>
 <h4>Scenario</h4>
-<p>Friday drinks: exactly split — 3 yes, 3 no.</p>
-<p>SCENARIO: The group is evenly divided. Three want to go, three don't.</p>
-<p>EXPECTATION: Result should be "tie". The system shouldn't arbitrarily pick a side. This is a socially important case — a forced "yes" when half the group doesn't want to go creates resentment.</p>
+<p><strong>Friday drinks: exactly split — 3 yes, 3 no.</strong></p>
+<p><strong>SCENARIO:</strong> The group is evenly divided. Three want to go, three don't.</p>
+<p><strong>EXPECTATION:</strong> Result should be "tie". The system shouldn't arbitrarily pick a side. This is a socially important case — a forced "yes" when half the group doesn't want to go creates resentment.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Result is tie</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Equal counts</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Result is tie</td><td>&#x2705;</td></tr>
+<tr><td>Equal counts</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Tie correctly reported — group needs to discuss further.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "0a1a8de6-4192-4b87-b45c-0e71cb7bdb8d",
+    "poll_id": "5122edc9-22ed-4257-97db-7542c71e36f9",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:04.961042+00:00",
+    "created_at": "2026-04-03T19:34:24.102518+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 3,
@@ -213,28 +209,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_single_voter</code></summary>
 <h4>Scenario</h4>
-<p>Friday drinks: only the organizer votes.</p>
-<p>SCENARIO: Marcus creates the poll and is the only one who votes yes. Everyone else ignores it.</p>
-<p>SOCIAL QUESTION: Is a 1-0 victory meaningful? Technically yes wins, but socially this means nobody else cared enough to respond.</p>
+<p><strong>Friday drinks: only the organizer votes.</strong></p>
+<p><strong>SCENARIO:</strong> Marcus creates the poll and is the only one who votes yes. Everyone else ignores it.</p>
+<p><strong>SOCIAL QUESTION:</strong> Is a 1-0 victory meaningful? Technically yes wins, but socially this means nobody else cared enough to respond.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Winner is yes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Total votes is 1</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Winner is yes</td><td>&#x2705;</td></tr>
+<tr><td>Total votes is 1</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded').</blockquote>
-<h4>Critique</h4>
-<p>_This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded'). (Previous assessment: "This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a sin..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "29878648-8285-4867-a8d0-7df4e11581fd",
+    "poll_id": "a52006fe-a902-4ba5-934c-357bae3acaaf",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:05.815276+00:00",
+    "created_at": "2026-04-03T19:34:24.921127+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 1,
@@ -261,30 +255,30 @@
 <details>
 <summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_all_abstain</code></summary>
 <h4>Scenario</h4>
-<p>Friday drinks: everyone abstains.</p>
-<p>SCENARIO: People see the poll but nobody commits. Maybe they're waiting to see what others do first.</p>
-<p>EXPECTATION: No winner. The system should handle this gracefully.</p>
+<p><strong>Friday drinks: everyone abstains.</strong></p>
+<p><strong>SCENARIO:</strong> People see the poll but nobody commits. Maybe they're waiting to see what others do first.</p>
+<p><strong>EXPECTATION:</strong> No winner. The system should handle this gracefully.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>No winner when all abstain</td><td>&#x274C;</td><td></td></tr>
-<tr><td>Zero yes votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Zero no votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Abstain count is 3</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>No winner when all abstain</td><td>&#x274C;</td></tr>
+<tr><td>Zero yes votes</td><td>&#x2705;</td></tr>
+<tr><td>Zero no votes</td><td>&#x2705;</td></tr>
+<tr><td>Abstain count is 3</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>All-abstain is a valid social signal: the group is indecisive or uninterested. Showing '0-0 with 3 abstentions' communicates this clearly.</blockquote>
 <h4>Critique</h4>
-<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_</p>
+<p>Technical failure: . Needs investigation before social evaluation is meaningful.</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "d39da08b-3be0-4093-ab21-9d42f1560503",
+    "poll_id": "292c1e02-cff4-411b-a73e-927a30c8a889",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:06.180022+00:00",
+    "created_at": "2026-04-03T19:34:25.279108+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 0,
@@ -311,29 +305,27 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_anonymous_majority</code></summary>
 <h4>Scenario</h4>
-<p>Should we switch to a 4-day work week? All anonymous votes.</p>
-<p>SCENARIO: Someone asks a potentially political workplace question. Everyone votes anonymously because they don't want their boss to know their preference.</p>
-<p>EXPECTATION: Results are clean — just counts, no names.</p>
+<p><strong>Should we switch to a 4-day work week? All anonymous votes.</strong></p>
+<p><strong>SCENARIO:</strong> Someone asks a potentially political workplace question. Everyone votes anonymously because they don't want their boss to know their preference.</p>
+<p><strong>EXPECTATION:</strong> Results are clean — just counts, no names.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Yes wins</td><td>&#x2705;</td><td></td></tr>
-<tr><td>All votes anonymous</td><td>&#x2705;</td><td></td></tr>
-<tr><td>70% yes</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Yes wins</td><td>&#x2705;</td></tr>
+<tr><td>All votes anonymous</td><td>&#x2705;</td></tr>
+<tr><td>70% yes</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Anonymous voting protects voters on sensitive topics. No names leaked.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "0951fe52-ddc5-46ec-9180-5cf023cbad8e",
+    "poll_id": "8c45181e-abbf-42c5-b325-ba98148f3299",
     "title": "Switch to 4-day work week?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:06.786630+00:00",
+    "created_at": "2026-04-03T19:34:25.805108+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 7,
@@ -360,31 +352,29 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_convergent_suggestions</code></summary>
 <h4>Scenario</h4>
-<p>Lunch brainstorm: multiple people suggest the same place.</p>
-<p>SCENARIO: A team of 5 is deciding where to eat. Several people independently suggest the same places, showing organic consensus.</p>
-<p>EXPECTATION: Popular suggestions bubble to the top. The count reflects how many people independently thought of each place.</p>
+<p><strong>Lunch brainstorm: multiple people suggest the same place.</strong></p>
+<p><strong>SCENARIO:</strong> A team of 5 is deciding where to eat. Several people independently suggest the same places, showing organic consensus.</p>
+<p><strong>EXPECTATION:</strong> Popular suggestions bubble to the top. The count reflects how many people independently thought of each place.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Thai Palace is most popular</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Burger Barn has 2 votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Sushi Roll has 2 votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Taco Town has 1 vote</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Results sorted by count descending</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Thai Palace is most popular</td><td>&#x2705;</td></tr>
+<tr><td>Burger Barn has 2 votes</td><td>&#x2705;</td></tr>
+<tr><td>Sushi Roll has 2 votes</td><td>&#x2705;</td></tr>
+<tr><td>Taco Town has 1 vote</td><td>&#x2705;</td></tr>
+<tr><td>Results sorted by count descending</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Organic consensus emerged around Thai Palace. The starter option from the creator didn't get unfair advantage — it was genuinely popular.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "491481df-06ae-4afc-97a6-6bd84c52eec5",
+    "poll_id": "95dc31bd-c87b-4257-95db-b33ce818d2e2",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:13:08.102143+00:00",
+    "created_at": "2026-04-03T19:34:27.088120+00:00",
     "response_deadline": null,
     "options": [
       "Thai Palace"
@@ -436,28 +426,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_all_unique_suggestions</code></summary>
 <h4>Scenario</h4>
-<p>Lunch brainstorm: everyone suggests something different.</p>
-<p>SCENARIO: Nobody agrees. Five people, five completely different ideas.</p>
-<p>SOCIAL QUESTION: When there's no overlap, what does the sorted list communicate? Alphabetical tiebreaking is technically fair but arbitrary — "Arby's" shouldn't win over "Zaxby's" just by name.</p>
+<p><strong>Lunch brainstorm: everyone suggests something different.</strong></p>
+<p><strong>SCENARIO:</strong> Nobody agrees. Five people, five completely different ideas.</p>
+<p><strong>SOCIAL QUESTION:</strong> When there's no overlap, what does the sorted list communicate? Alphabetical tiebreaking is technically fair but arbitrary — "Arby's" shouldn't win over "Zaxby's" just by name.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>All suggestions have count 1</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Tiebreak is alphabetical</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>All suggestions have count 1</td><td>&#x2705;</td></tr>
+<tr><td>Tiebreak is alphabetical</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully.</blockquote>
-<h4>Critique</h4>
-<p>_This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully. (Previous assessment: "This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical ..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "3f783a29-b5bd-4f0f-a9bb-684136f037e2",
+    "poll_id": "46a734bd-04bc-43d0-8f57-95ceba0862f2",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:13:08.946116+00:00",
+    "created_at": "2026-04-03T19:34:27.802143+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": null,
@@ -505,29 +493,27 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_abstainer_in_brainstorm</code></summary>
 <h4>Scenario</h4>
-<p>Lunch brainstorm: one person abstains, signaling they'll go anywhere.</p>
-<p>SCENARIO: Four people suggest places, one person abstains (they're happy with whatever the group picks).</p>
-<p>EXPECTATION: Abstainer doesn't dilute suggestion counts.</p>
+<p><strong>Lunch brainstorm: one person abstains, signaling they'll go anywhere.</strong></p>
+<p><strong>SCENARIO:</strong> Four people suggest places, one person abstains (they're happy with whatever the group picks).</p>
+<p><strong>EXPECTATION:</strong> Abstainer doesn't dilute suggestion counts.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Thai Palace has 2 votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Burger Barn has 1 vote</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Abstain count is 1</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Thai Palace has 2 votes</td><td>&#x2705;</td></tr>
+<tr><td>Burger Barn has 1 vote</td><td>&#x2705;</td></tr>
+<tr><td>Abstain count is 1</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Abstaining in a suggestion poll is a valid social signal: 'I'm flexible.' The abstainer participates without steering the outcome.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test highlights a g..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "6b429d9b-8ca4-4d78-8254-72a9ea23a953",
+    "poll_id": "2ea5a0fd-de78-4688-96d4-d7269363f24a",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:13:09.673472+00:00",
+    "created_at": "2026-04-03T19:34:28.535651+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": null,
@@ -564,28 +550,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_all_anonymous_yes_no</code></summary>
 <h4>Scenario</h4>
-<p>Fully anonymous vote: nobody attaches their name.</p>
-<p>SCENARIO: A group uses the poll for a sensitive decision. All 8 voters are anonymous. The creator didn't name themselves either.</p>
-<p>EXPECTATION: Results should be purely numerical. No way to trace who voted what. This is the privacy promise of the app.</p>
+<p><strong>Fully anonymous vote: nobody attaches their name.</strong></p>
+<p><strong>SCENARIO:</strong> A group uses the poll for a sensitive decision. All 8 voters are anonymous. The creator didn't name themselves either.</p>
+<p><strong>EXPECTATION:</strong> Results should be purely numerical. No way to trace who voted what. This is the privacy promise of the app.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Yes wins (5-3)</td><td>&#x2705;</td><td></td></tr>
-<tr><td>All voters anonymous</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Yes wins (5-3)</td><td>&#x2705;</td></tr>
+<tr><td>All voters anonymous</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Full anonymity maintained. The app provides a safe space for group decisions on sensitive topics where individuals might face pressure for their vote.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "a7780001-54e8-427b-9e05-d27024d899d8",
+    "poll_id": "e8ac9cef-8e85-46a4-acf8-d2f5b2fa9dd3",
     "title": "Should we file a complaint?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:10.315061+00:00",
+    "created_at": "2026-04-03T19:34:29.254507+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 5,
@@ -612,61 +596,55 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_mixed_named_and_anonymous</code></summary>
 <h4>Scenario</h4>
-<p>Mixed poll: some named, some anonymous.</p>
-<p>SCENARIO: In a friend group, some people proudly attach their name to their vote, others prefer anonymity. Does the mix work?</p>
-<p>SOCIAL QUESTION: Can you tell which anonymous votes belong to which people by process of elimination? (If 5 people in a group and 3 named voters, the 2 anonymous ones are identifiable.)</p>
+<p><strong>Mixed poll: some named, some anonymous.</strong></p>
+<p><strong>SCENARIO:</strong> In a friend group, some people proudly attach their name to their vote, others prefer anonymity. Does the mix work?</p>
+<p><strong>SOCIAL QUESTION:</strong> Can you tell which anonymous votes belong to which people by process of elimination? (If 5 people in a group and 3 named voters, the 2 anonymous ones are identifiable.)</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>3 named voters</td><td>&#x2705;</td><td></td></tr>
-<tr><td>1 anonymous voter</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>3 named voters</td><td>&#x2705;</td></tr>
+<tr><td>1 anonymous voter</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX. (Previous assessment: "This test reveals an interesting system property worth documenting. In a known group of 4, the 1 ano..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_change_vote_flips_result</code></summary>
 <h4>Scenario</h4>
-<p>Vote change: a voter switches sides and flips the outcome.</p>
-<p>SCENARIO: 3-2 in favor of yes. One yes-voter changes to no, making it 2-3. The swing voter changed the entire outcome.</p>
-<p>EXPECTATION: Results reflect the final state, not vote history.</p>
+<p><strong>Vote change: a voter switches sides and flips the outcome.</strong></p>
+<p><strong>SCENARIO:</strong> 3-2 in favor of yes. One yes-voter changes to no, making it 2-3. The swing voter changed the entire outcome.</p>
+<p><strong>EXPECTATION:</strong> Results reflect the final state, not vote history.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Result flipped to no</td><td>&#x2705;</td><td></td></tr>
-<tr><td>No count is now 3</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Yes count is now 2</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Result flipped to no</td><td>&#x2705;</td></tr>
+<tr><td>No count is now 3</td><td>&#x2705;</td></tr>
+<tr><td>Yes count is now 2</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Vote editing is transparent — the result reflects current preferences, not historical ones. This is correct for decision-making (you want the group's final answer), though it means early results are unreliable.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_edit_ranked_choice</code></summary>
 <h4>Scenario</h4>
-<p>Ranked choice edit: voter reorders their preferences.</p>
-<p>SCENARIO: A voter initially ranks A > B > C, then changes to C > A > B. This tests that the ranking replacement is clean.</p>
+<p><strong>Ranked choice edit: voter reorders their preferences.</strong></p>
+<p><strong>SCENARIO:</strong> A voter initially ranks A > B > C, then changes to C > A > B. This tests that the ranking replacement is clean.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>C wins after edit</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>C wins after edit</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Vote editing in ranked choice works cleanly. The edited ballot is treated the same as any other ballot — no trace of the original ranking.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "d44c5b73-7c2e-4037-bd18-e5041daf3041",
+    "poll_id": "5874865d-8d4a-40dc-8851-b91972a1cb82",
     "title": "Favorite?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:13.068723+00:00",
+    "created_at": "2026-04-03T19:34:31.804934+00:00",
     "response_deadline": null,
     "options": [
       "A",
@@ -722,28 +700,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_closes_losing_poll</code></summary>
 <h4>Scenario</h4>
-<p>Creator closes a poll they're losing.</p>
-<p>SCENARIO: The creator votes yes on their own poll, but the group votes no. The creator then closes the poll. The result should still reflect the group's decision, not the creator's preference.</p>
-<p>EXPECTATION: Closing a poll doesn't change the outcome.</p>
+<p><strong>Creator closes a poll they're losing.</strong></p>
+<p><strong>SCENARIO:</strong> The creator votes yes on their own poll, but the group votes no. The creator then closes the poll. The result should still reflect the group's decision, not the creator's preference.</p>
+<p><strong>EXPECTATION:</strong> Closing a poll doesn't change the outcome.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>No wins (1-3)</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Result is honest despite creator loss</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>No wins (1-3)</td><td>&#x2705;</td></tr>
+<tr><td>Result is honest despite creator loss</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>The creator can close the poll but can't change the outcome. This is an important integrity guarantee — poll creators have administrative power (close/reopen) but not voting power beyond their single vote.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "32594007-ae2d-49b6-904a-11747d194daa",
+    "poll_id": "541996e8-c681-4ab4-b46e-5ae5856f54e8",
     "title": "My idea is great, right?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:13.857534+00:00",
+    "created_at": "2026-04-03T19:34:32.463026+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 1,
@@ -770,49 +746,45 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_reopens_and_more_votes</code></summary>
 <h4>Scenario</h4>
-<p>Creator reopens a closed poll to collect more votes.</p>
-<p>SCENARIO: Poll is closed at 2-2 tie. Creator reopens it. One more person votes and breaks the tie.</p>
-<p>EXPECTATION: Reopening is legitimate when the creator wants more input.</p>
+<p><strong>Creator reopens a closed poll to collect more votes.</strong></p>
+<p><strong>SCENARIO:</strong> Poll is closed at 2-2 tie. Creator reopens it. One more person votes and breaks the tie.</p>
+<p><strong>EXPECTATION:</strong> Reopening is legitimate when the creator wants more input.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Initially tied</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Yes wins after reopen</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Initially tied</td><td>&#x2705;</td></tr>
+<tr><td>Yes wins after reopen</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Reopening a tied poll to collect a tiebreaker vote is a legitimate use of creator power. The system supports this workflow cleanly.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_twenty_voter_yes_no</code></summary>
 <h4>Scenario</h4>
-<p>Large group: 20 voters on a yes/no question.</p>
-<p>SCENARIO: A class of 20 students votes on whether to have a study session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.</p>
-<p>EXPECTATION: Percentages and counts are correct at scale.</p>
+<p><strong>Large group: 20 voters on a yes/no question.</strong></p>
+<p><strong>SCENARIO:</strong> A class of 20 students votes on whether to have a study session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.</p>
+<p><strong>EXPECTATION:</strong> Percentages and counts are correct at scale.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Yes wins</td><td>&#x2705;</td><td></td></tr>
-<tr><td>12 yes votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>6 no votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>2 abstentions</td><td>&#x2705;</td><td></td></tr>
-<tr><td>20 total votes</td><td>&#x2705;</td><td></td></tr>
-<tr><td>60% yes</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Yes wins</td><td>&#x2705;</td></tr>
+<tr><td>12 yes votes</td><td>&#x2705;</td></tr>
+<tr><td>6 no votes</td><td>&#x2705;</td></tr>
+<tr><td>2 abstentions</td><td>&#x2705;</td></tr>
+<tr><td>20 total votes</td><td>&#x2705;</td></tr>
+<tr><td>60% yes</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Scales cleanly. Mix of named/anonymous voters works at 20-person scale.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "c6bbe294-6c5d-45c8-943e-9477e2773d09",
+    "poll_id": "87f1bddd-2498-49ee-9d33-40796151fc9c",
     "title": "Study session before the exam?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:13:15.463220+00:00",
+    "created_at": "2026-04-03T19:34:34.392200+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 12,
@@ -839,27 +811,25 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_ten_option_ranked_choice</code></summary>
 <h4>Scenario</h4>
-<p>Large ranked choice: 10 options, 8 voters.</p>
-<p>SCENARIO: A group has too many ideas. 10 restaurant options, 8 voters with varied preferences. Tests IRV at higher option counts.</p>
+<p><strong>Large ranked choice: 10 options, 8 voters.</strong></p>
+<p><strong>SCENARIO:</strong> A group has too many ideas. 10 restaurant options, 8 voters with varied preferences. Tests IRV at higher option counts.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Winner determined</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Multiple elimination rounds</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Winner determined</td><td>&#x2705;</td></tr>
+<tr><td>Multiple elimination rounds</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice. (Previous assessment: "This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IR..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "c765c343-20dd-4665-a6f4-09967112f08c",
+    "poll_id": "df1bba8c-0050-4f22-b962-801990cada84",
     "title": "Restaurant for team dinner?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:17.635908+00:00",
+    "created_at": "2026-04-03T19:34:36.563511+00:00",
     "response_deadline": null,
     "options": [
       "Italian",
@@ -1333,27 +1303,25 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_everyone_flexible</code></summary>
 <h4>Scenario</h4>
-<p>Dinner party: 5 people say yes with no constraints.</p>
-<p>SCENARIO: Simple case — everyone's available and flexible about group size. No constraints to conflict.</p>
-<p>EXPECTATION: All 5 should be included.</p>
+<p><strong>Dinner party: 5 people say yes with no constraints.</strong></p>
+<p><strong>SCENARIO:</strong> Simple case — everyone's available and flexible about group size. No constraints to conflict.</p>
+<p><strong>EXPECTATION:</strong> All 5 should be included.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>All 5 participate</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>All 5 participate</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>No constraints means everyone's in. Simple and correct.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "be9758ae-e9c0-4935-91c2-de8772c36706",
+    "poll_id": "559dd689-ded9-4aa9-9cb1-e3578b2092de",
     "title": "Dinner at my place Saturday?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:13:18.605311+00:00",
+    "created_at": "2026-04-03T19:34:37.603941+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 5,
@@ -1371,11 +1339,11 @@
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "cf37ba15-e281-49c4-bbd0-997d59cd3d78",
-      "fe41b013-6ca5-4f89-94d2-b0bc8ae9f5dd",
-      "7e9906e8-0247-413c-8c52-1199e67707ff",
-      "df76d0f3-3cff-4181-bd48-3a56cf8d635d",
-      "4e5f69ef-05ec-4e99-bdf4-a4ce0583b334"
+      "975422af-8f48-42a8-be5c-54d5dce5828b",
+      "d766e894-b0e1-40e0-b4fb-3e433b96399a",
+      "0d36e41a-65af-4b85-bfb5-c03ab2061652",
+      "e553fdcc-58ff-49df-9048-bd2e22d2460d",
+      "c9bad6f2-9be4-491d-bc12-c416ef95168a"
     ],
     "participating_voter_names": [
       "Alice",
@@ -1392,28 +1360,26 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_introvert_vs_extrovert</code></summary>
 <h4>Scenario</h4>
-<p>Dinner party: introvert wants small group, extrovert wants big group.</p>
-<p>SCENARIO: Alice only wants to come if it's intimate (max 3 people). Bob only wants to come if it's a party (min 5 people). Three others are flexible. The poll allows 1-10 participants.</p>
-<p>SOCIAL QUESTION: The algorithm prioritizes flexible voters. Alice (max=3) is restrictive and may get deprioritized. Is that fair? She has a legitimate social preference.</p>
+<p><strong>Dinner party: introvert wants small group, extrovert wants big group.</strong></p>
+<p><strong>SCENARIO:</strong> Alice only wants to come if it's intimate (max 3 people). Bob only wants to come if it's a party (min 5 people). Three others are flexible. The poll allows 1-10 participants.</p>
+<p><strong>SOCIAL QUESTION:</strong> The algorithm prioritizes flexible voters. Alice (max=3) is restrictive and may get deprioritized. Is that fair? She has a legitimate social preference.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>At least 3 participants</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Flexible voters included</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>At least 3 participants</td><td>&#x2705;</td></tr>
+<tr><td>Flexible voters included</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) <em>could</em> fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) <em>could</em> fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core. (Previous assessment: "This test reveals an interesting system property worth documenting. Neither constrained voter was in..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "30ea1957-aade-4805-b4d8-6e7508a79ba4",
+    "poll_id": "cc0b9950-caa7-40d5-8c5b-9ab291aa794c",
     "title": "Dinner party Saturday?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:13:19.434118+00:00",
+    "created_at": "2026-04-03T19:34:38.434405+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 3,
@@ -1431,9 +1397,9 @@
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "4bb5a96d-845c-460c-bd8d-3feba1f04ed7",
-      "a0cf9875-cb76-4840-a40c-c81f8182b0a0",
-      "d493eeab-0ddf-4e8b-99de-ce40dc3de52c"
+      "a3aad173-643d-44f9-8401-adba89c7255c",
+      "69a3a1e4-9559-4a19-a3de-814fd282e5d0",
+      "57e4ed54-99e0-4e4a-8de6-be254f0261c3"
     ],
     "participating_voter_names": [
       "Carol",
@@ -1451,29 +1417,29 @@
 </details>
 </details>
 <details>
-<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_minimum_not_met</code></summary>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_minimum_not_met</code></summary>
 <h4>Scenario</h4>
-<p>Dinner party: not enough people to meet the minimum.</p>
-<p>SCENARIO: Poll requires minimum 4 participants, but only 2 people say yes.</p>
-<p>EXPECTATION: The event doesn't happen (0 participants).</p>
+<p><strong>Dinner party: not enough people to meet the creator's minimum.</strong></p>
+<p><strong>SCENARIO:</strong> The creator sets min_participants=4 (they don't want a dinner party with fewer than 4 people). Only 2 people say yes.</p>
+<p><strong>NOTE:</strong> The participation algorithm only enforces <em>individual voter</em> constraints, not the poll-level min. So Alice and Bob (who have no personal constraints) are both included — count=2.</p>
+<p><strong>SOCIAL QUESTION:</strong> Should the poll-level minimum be enforced? A creator who says "minimum 4" probably expects the event to be cancelled if only 2 people show up.</p>
 <h4>Technical Results</h4>
 <table>
 <tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>No participants (minimum not met)</td><td>&#x274C;</td><td></td></tr>
+<tr><td>Participants returned</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Participant count (2) vs poll min (4)</td><td>&#x2705;</td><td>count=2, poll_min=4</td></tr>
 </table>
 <h4>Social Evaluation</h4>
-<blockquote>Event correctly cancelled — not enough interest. Better to cancel cleanly than to have 2 people show up expecting a group of 4+.</blockquote>
-<h4>Critique</h4>
-<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_</p>
+<blockquote>Only 2 participants vs creator's minimum of 4. The algorithm included willing voters but didn't enforce the poll-level minimum. The creator would see 2 participants and have to decide whether that's enough — the system doesn't auto-cancel for them.</blockquote>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "9bb13d5f-1475-4da8-a350-b4aba2ae36cc",
+    "poll_id": "b217f73f-283b-4199-8ac8-ca47ecd70c84",
     "title": "Dinner party?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:13:20.228865+00:00",
+    "created_at": "2026-04-03T19:34:39.379784+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 2,
@@ -1491,8 +1457,8 @@
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "a0e85263-98d1-4107-8c77-a3b911cab0a2",
-      "37c1d270-9d51-481b-bce5-5fcc31c88c3d"
+      "bbf644e5-5b5c-461c-bd98-79d660ec7487",
+      "0252913a-a55e-4203-9519-13930a6f9dcb"
     ],
     "participating_voter_names": [
       "Alice",
@@ -1506,38 +1472,34 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_mixed_yes_no_and_abstain</code></summary>
 <h4>Scenario</h4>
-<p>Dinner party: mix of yes, no, and abstain votes.</p>
-<p>SCENARIO: 3 yes, 2 no, 1 abstain. Min is 2.</p>
-<p>EXPECTATION: Only yes voters can be participants. No and abstain voters are excluded from the participant pool.</p>
+<p><strong>Dinner party: mix of yes, no, and abstain votes.</strong></p>
+<p><strong>SCENARIO:</strong> 3 yes, 2 no, 1 abstain. Min is 2.</p>
+<p><strong>EXPECTATION:</strong> Only yes voters can be participants. No and abstain voters are excluded from the participant pool.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>3 participants</td><td>&#x2705;</td><td></td></tr>
-<tr><td>All are yes voters</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>3 participants</td><td>&#x2705;</td></tr>
+<tr><td>All are yes voters</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Only willing participants included. No/abstain correctly excluded.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_exactly_one_person_event</code></summary>
 <h4>Scenario</h4>
-<p>Solo activity: 'Anyone want my extra concert ticket?'</p>
-<p>SCENARIO: One ticket available (max=1). Three people want it. With max_participants=1, the poll auto-closes after the first "yes" vote, so only the first responder gets in.</p>
-<p>SOCIAL QUESTION: Is first-come-first-served fair, or should it be random? FCFS rewards people who check their phone more often.</p>
-<p>NOTE: The auto-close behavior means later voters can't even submit. This test verifies that the auto-close works correctly for this case and that the first voter is selected.</p>
+<p><strong>Solo activity: 'Anyone want my extra concert ticket?'</strong></p>
+<p><strong>SCENARIO:</strong> One ticket available (max=1). Three people want it. With max_participants=1, the poll auto-closes after the first "yes" vote, so only the first responder gets in.</p>
+<p><strong>SOCIAL QUESTION:</strong> Is first-come-first-served fair, or should it be random? FCFS rewards people who check their phone more often.</p>
+<p><strong>NOTE:</strong> The auto-close behavior means later voters can't even submit. This test verifies that the auto-close works correctly for this case and that the first voter is selected.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Poll auto-closed</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Exactly 1 participant</td><td>&#x2705;</td><td></td></tr>
-<tr><td>First voter wins</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Poll auto-closed</td><td>&#x2705;</td></tr>
+<tr><td>Exactly 1 participant</td><td>&#x2705;</td></tr>
+<tr><td>First voter wins</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently. (Previous assessment: "This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
@@ -1550,35 +1512,31 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_driver_needs_riders</code></summary>
 <h4>Scenario</h4>
-<p>Carpool: driver needs at least 2 riders to justify the trip.</p>
-<p>SCENARIO: A driver is offering a carpool to an event but only wants to drive if at least 2 other people are coming.</p>
-<p>EXPECTATION: If 2+ people say yes, the carpool happens. Otherwise it doesn't, and the driver knows not to bother.</p>
+<p><strong>Carpool: driver needs at least 2 riders to justify the trip.</strong></p>
+<p><strong>SCENARIO:</strong> A driver is offering a carpool to an event but only wants to drive if at least 2 other people are coming.</p>
+<p><strong>EXPECTATION:</strong> If 2+ people say yes, the carpool happens. Otherwise it doesn't, and the driver knows not to bother.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>3 participants (within capacity)</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>3 participants (within capacity)</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Carpool happens with 3 riders. Driver gets clear confirmation.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_conflicting_rider_constraints</code></summary>
 <h4>Scenario</h4>
-<p>Carpool: riders have conflicting preferences about group size.</p>
-<p>SCENARIO: Car seats 4. Rider A only wants to go with at least 3 others (min=3). Rider B wants a quiet ride (max=2). Riders C and D are flexible.</p>
+<p><strong>Carpool: riders have conflicting preferences about group size.</strong></p>
+<p><strong>SCENARIO:</strong> Car seats 4. Rider A only wants to go with at least 3 others (min=3). Rider B wants a quiet ride (max=2). Riders C and D are flexible.</p>
 <p>The algorithm must choose between satisfying A or B.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>At least 2 participants</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Both flexible riders included</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>At least 2 participants</td><td>&#x2705;</td></tr>
+<tr><td>Both flexible riders included</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them. (Previous assessment: "This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Fl..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
@@ -1596,101 +1554,93 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_suggestion_to_ranked_choice_pipeline</code></summary>
 <h4>Scenario</h4>
-<p>Full pipeline: suggestions collected, then ranked.</p>
-<p>SCENARIO: A team is picking a name for their project. Phase 1: everyone suggests names (suggestion poll). Phase 2: the top suggestions go to a ranked choice vote.</p>
+<p><strong>Full pipeline: suggestions collected, then ranked.</strong></p>
+<p><strong>SCENARIO:</strong> A team is picking a name for their project. Phase 1: everyone suggests names (suggestion poll). Phase 2: the top suggestions go to a ranked choice vote.</p>
 <p>This simulates the manual version of the pipeline (creator creates the follow-up ranked choice poll themselves).</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Top suggestions carried forward</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Ranked choice produced winner</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Follow-up link preserved</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Top suggestions carried forward</td><td>&#x2705;</td></tr>
+<tr><td>Ranked choice produced winner</td><td>&#x2705;</td></tr>
+<tr><td>Follow-up link preserved</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Two-phase process: brainstorm surfaced top ideas, ranked choice picked 'Moonshot'. This mimics natural group decision-making: diverge (suggest), then converge (rank).</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_auto_preferences_workflow</code></summary>
 <h4>Scenario</h4>
-<p>Auto-preferences: suggestion poll automatically creates a follow-up ranked choice.</p>
-<p>SCENARIO: Creator enables auto_create_preferences. When the suggestion poll closes, the server automatically creates a ranked choice poll with the suggestions as options.</p>
-<p>EXPECTATION: The follow-up poll exists, is linked, and contains the right options.</p>
+<p><strong>Auto-preferences: suggestion poll automatically creates a follow-up ranked choice.</strong></p>
+<p><strong>SCENARIO:</strong> Creator enables auto_create_preferences. When the suggestion poll closes, the server automatically creates a ranked choice poll with the suggestions as options.</p>
+<p><strong>EXPECTATION:</strong> The follow-up poll exists, is linked, and contains the right options.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Suggestion poll is closed</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Follow-up is ranked_choice</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Follow-up linked to original</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Follow-up has options from suggestions</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Suggestion poll is closed</td><td>&#x2705;</td></tr>
+<tr><td>Follow-up is ranked_choice</td><td>&#x2705;</td></tr>
+<tr><td>Follow-up linked to original</td><td>&#x2705;</td></tr>
+<tr><td>Follow-up has options from suggestions</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Auto-preferences seamlessly creates the second phase. Users don't need to manually extract suggestions and create a new poll — the workflow handles the transition automatically.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_fork_preserves_context</code></summary>
 <h4>Scenario</h4>
-<p>Fork: someone creates a variant of an existing poll.</p>
-<p>SCENARIO: Original poll asks "Best pizza topping?" with options. Someone forks it to ask "Best pizza topping for KIDS?" — same concept, different audience.</p>
-<p>EXPECTATION: Fork link is preserved. Both polls function independently.</p>
+<p><strong>Fork: someone creates a variant of an existing poll.</strong></p>
+<p><strong>SCENARIO:</strong> Original poll asks "Best pizza topping?" with options. Someone forks it to ask "Best pizza topping for KIDS?" — same concept, different audience.</p>
+<p><strong>EXPECTATION:</strong> Fork link is preserved. Both polls function independently.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Fork linked to original</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Both have winners</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Polls are independent (different option sets)</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Fork linked to original</td><td>&#x2705;</td></tr>
+<tr><td>Both have winners</td><td>&#x2705;</td></tr>
+<tr><td>Polls are independent (different option sets)</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Fork maintains provenance while allowing the new poll to diverge. Different options, different voters, independent results — but the link back to the original provides context for why this poll exists.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 </details>
 <details>
 <summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_follow_up_after_tie</code></summary>
 <h4>Scenario</h4>
-<p>Follow-up: tie leads to a runoff with fewer options.</p>
-<p>SCENARIO: A yes/no poll ties 3-3. The creator creates a follow-up with more context to break the tie.</p>
-<p>EXPECTATION: The follow-up is linked and can reference the tied result.</p>
+<p><strong>Follow-up: tie leads to a runoff with fewer options.</strong></p>
+<p><strong>SCENARIO:</strong> A yes/no poll ties 3-3. The creator creates a follow-up with more context to break the tie.</p>
+<p><strong>EXPECTATION:</strong> The follow-up is linked and can reference the tied result.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>First poll tied</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Second poll has a winner</td><td>&#x274C;</td><td></td></tr>
-<tr><td>Follow-up linked</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>First poll tied</td><td>&#x2705;</td></tr>
+<tr><td>Second poll has a winner</td><td>&#x274C;</td></tr>
+<tr><td>Follow-up linked</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Following up a tie with more context is a natural group behavior. The link between polls preserves the decision history: 'We tied, so we added more info and voted again.' Result: tie (3-3).</blockquote>
 <h4>Critique</h4>
-<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_</p>
+<p>Technical failure: . Needs investigation before social evaluation is meaningful.</p>
 </details>
 <h2>Tests.Ranked Preferences</h2>
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_favorite</code></summary>
 <h4>Scenario</h4>
-<p>Movie night: one film is everyone's top or second pick.</p>
-<p>SCENARIO: Five friends rank movies. "Dune" is everyone's first or second choice, even though first-place votes are split.</p>
-<p>EXPECTATION: Dune should win. IRV should surface the consensus pick even when first-choice votes are fragmented.</p>
+<p><strong>Movie night: one film is everyone's top or second pick.</strong></p>
+<p><strong>SCENARIO:</strong> Five friends rank movies. "Dune" is everyone's first or second choice, even though first-place votes are split.</p>
+<p><strong>EXPECTATION:</strong> Dune should win. IRV should surface the consensus pick even when first-choice votes are fragmented.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Dune wins</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Dune wins</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Dune is the consensus pick — universally liked even if not everyone's #1. IRV correctly identifies the 'least objectionable' choice.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "27b70cd2-0633-4a23-acd1-fa158b377727",
+    "poll_id": "06b97367-8cff-4894-84a4-c34dde5f7539",
     "title": "What movie should we watch?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:28.333811+00:00",
+    "created_at": "2026-04-03T19:34:47.321879+00:00",
     "response_deadline": null,
     "options": [
       "Dune",
@@ -1755,27 +1705,25 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_condorcet_scenario</code></summary>
 <h4>Scenario</h4>
-<p>Movie night: the group is polarized but there's a compromise option.</p>
-<p>SCENARIO: Half the group loves action, half loves comedy. A dramedy (mix) is everyone's second choice. In a simple plurality vote, the dramedy would lose. Does IRV find it?</p>
+<p><strong>Movie night: the group is polarized but there's a compromise option.</strong></p>
+<p><strong>SCENARIO:</strong> Half the group loves action, half loves comedy. A dramedy (mix) is everyone's second choice. In a simple plurality vote, the dramedy would lose. Does IRV find it?</p>
 <p>This is the classic case where ranked choice voting should outperform simple majority.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>A winner was determined</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>A winner was determined</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner.</blockquote>
-<h4>Critique</h4>
-<p>_This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner. (Previous assessment: "This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' ins..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "c6fbcd44-055c-4204-9935-4f1825a6e402",
+    "poll_id": "913c94fc-97df-4ee1-87ee-c5f604855c87",
     "title": "Movie genre tonight?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:29.006646+00:00",
+    "created_at": "2026-04-03T19:34:48.057681+00:00",
     "response_deadline": null,
     "options": [
       "Action Blockbuster",
@@ -1848,8 +1796,8 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_spoiler_effect</code></summary>
 <h4>Scenario</h4>
-<p>Movie night: a niche option splits the vote of similar options.</p>
-<p>SCENARIO: Two sci-fi films and one comedy. Sci-fi fans split between the two sci-fi options, potentially letting comedy win even though sci-fi is more popular overall.</p>
+<p><strong>Movie night: a niche option splits the vote of similar options.</strong></p>
+<p><strong>SCENARIO:</strong> Two sci-fi films and one comedy. Sci-fi fans split between the two sci-fi options, potentially letting comedy win even though sci-fi is more popular overall.</p>
 <p>Does IRV handle vote-splitting better than plurality?</p>
 <h4>Technical Results</h4>
 <table>
@@ -1859,17 +1807,15 @@
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>IRV correctly consolidates the sci-fi vote after eliminating the weaker sci-fi option. In simple plurality, Mean Girls would have won despite 4/7 voters preferring sci-fi.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "f6302ed6-19d4-4f16-ac01-1f7dd7cde60e",
+    "poll_id": "216b41d8-cf3b-4926-b697-8f61bd54000f",
     "title": "Movie pick?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:29.883234+00:00",
+    "created_at": "2026-04-03T19:34:48.925904+00:00",
     "response_deadline": null,
     "options": [
       "Dune",
@@ -1942,27 +1888,25 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_partial_rankings</code></summary>
 <h4>Scenario</h4>
-<p>Movie night: some people only rank their top picks.</p>
-<p>SCENARIO: Not everyone ranks all options. Some people only care about their top 1-2 choices and don't bother ranking the rest.</p>
-<p>EXPECTATION: Partial ballots should still count. Exhausted ballots (all ranked options eliminated) are handled gracefully.</p>
+<p><strong>Movie night: some people only rank their top picks.</strong></p>
+<p><strong>SCENARIO:</strong> Not everyone ranks all options. Some people only care about their top 1-2 choices and don't bother ranking the rest.</p>
+<p><strong>EXPECTATION:</strong> Partial ballots should still count. Exhausted ballots (all ranked options eliminated) are handled gracefully.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>Winner determined</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>Winner determined</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Partial rankings are a natural expression of preference: 'I only care about these options.' The system should respect this rather than forcing voters to rank options they're indifferent about.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "a0a69513-5eb6-4df4-8706-727bb6db7a26",
+    "poll_id": "a571847c-5924-49ba-bc58-76268eced53f",
     "title": "Movie?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:30.783987+00:00",
+    "created_at": "2026-04-03T19:34:49.854464+00:00",
     "response_deadline": null,
     "options": [
       "A",
@@ -2075,27 +2019,25 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_unanimity</code></summary>
 <h4>Scenario</h4>
-<p>Movie night: everyone agrees on the same first choice.</p>
-<p>SCENARIO: Rare but it happens — everyone wants the same thing. Should resolve in round 1 with no eliminations.</p>
+<p><strong>Movie night: everyone agrees on the same first choice.</strong></p>
+<p><strong>SCENARIO:</strong> Rare but it happens — everyone wants the same thing. Should resolve in round 1 with no eliminations.</p>
 <h4>Technical Results</h4>
 <table>
-<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
-<tr><td>The Matrix wins</td><td>&#x2705;</td><td></td></tr>
-<tr><td>Decided in round 1</td><td>&#x2705;</td><td></td></tr>
+<tr><th>Assertion</th><th>Result</th></tr>
+<tr><td>The Matrix wins</td><td>&#x2705;</td></tr>
+<tr><td>Decided in round 1</td><td>&#x2705;</td></tr>
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Unanimous agreement resolved instantly. No wasted rounds.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "a216c3c9-1da2-4138-b0d1-142d37784ad9",
+    "poll_id": "ae65b08f-adcb-40a3-b80d-19f2ae4891a1",
     "title": "Movie?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:32.800654+00:00",
+    "created_at": "2026-04-03T19:34:50.589834+00:00",
     "response_deadline": null,
     "options": [
       "The Matrix",
@@ -2151,9 +2093,9 @@
 <details>
 <summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_borda_tiebreaker</code></summary>
 <h4>Scenario</h4>
-<p>Team retreat: three-way tie in first-place votes, broken by Borda.</p>
-<p>SCENARIO: 9 team members, 3 destinations. Each destination has exactly 3 first-place votes. The Borda count (positional scoring) breaks the tie by considering all ranking positions.</p>
-<p>EXPECTATION: The destination with the best overall rankings wins, not just the one with the most first-place votes.</p>
+<p><strong>Team retreat: three-way tie in first-place votes, broken by Borda.</strong></p>
+<p><strong>SCENARIO:</strong> 9 team members, 3 destinations. Each destination has exactly 3 first-place votes. The Borda count (positional scoring) breaks the tie by considering all ranking positions.</p>
+<p><strong>EXPECTATION:</strong> The destination with the best overall rankings wins, not just the one with the most first-place votes.</p>
 <h4>Technical Results</h4>
 <table>
 <tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
@@ -2162,17 +2104,15 @@
 </table>
 <h4>Social Evaluation</h4>
 <blockquote>Mountain Lodge is ranked 1st or 2nd by everyone — the Borda tiebreaker correctly identifies it as the most broadly acceptable choice.</blockquote>
-<h4>Critique</h4>
-<p>_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_</p>
 <details>
 <summary>Raw data</summary>
 <pre><code>
 {
   "results": {
-    "poll_id": "900ed44f-49a4-461d-85e3-f540194c7d50",
+    "poll_id": "dbe04b7f-b2d7-4437-b157-8538dbc77098",
     "title": "Team retreat destination?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:13:33.494069+00:00",
+    "created_at": "2026-04-03T19:34:51.289521+00:00",
     "response_deadline": null,
     "options": [
       "Lake House",
