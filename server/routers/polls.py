@@ -1,6 +1,7 @@
 """Poll API endpoints."""
 
 import logging
+import os
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -592,6 +593,18 @@ def get_sub_polls(poll_id: str):
             {"poll_id": poll_id},
         ).fetchall()
     return [_row_to_poll(r) for r in rows]
+
+
+@router.get("/dev/all-ids")
+def get_all_poll_ids():
+    """Return all poll IDs in the database. Only available in dev environments."""
+    if os.environ.get("DISABLE_RATE_LIMIT") != "1":
+        raise HTTPException(status_code=404, detail="Not found")
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id FROM polls WHERE is_sub_poll = false ORDER BY created_at DESC"
+        ).fetchall()
+    return {"poll_ids": [row["id"] for row in rows]}
 
 
 @router.get("/find-duplicate", response_model=PollResponse)

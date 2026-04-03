@@ -1,5 +1,6 @@
 """Rate limiting middleware for FastAPI."""
 
+import os
 import time
 from collections import defaultdict
 from threading import Lock
@@ -52,6 +53,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return True
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Skip rate limiting entirely if disabled (for testing)
+        if os.environ.get("DISABLE_RATE_LIMIT") == "1":
+            return await call_next(request)
+
         # Skip rate limiting for health checks
         if request.url.path == "/health":
             return await call_next(request)

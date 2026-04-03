@@ -1,0 +1,17 @@
+[project]
+name = "social-tests"
+version = "0.1.0"
+description = "Social scenario testing for WhoeverWants"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pytest>=8.3.5",
+    "pytest-xdist>=3.5.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
