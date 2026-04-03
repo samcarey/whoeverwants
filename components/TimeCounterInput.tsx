@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo, useCallback, useEffect } from 'react';
 import ScrollWheel from './ScrollWheel';
 
 interface TimeCounterInputProps {
@@ -120,7 +120,12 @@ export default function TimeCounterInput({
     minuteIndex = minuteOptions.indexOf(nearest);
   }
   const periodIndex = currentPeriod === 'AM' ? 0 : 1;
-  periodRef.current = periodIndex;
+
+  // Sync periodRef after render so it reflects the latest prop-derived value.
+  // Handlers update it eagerly for intra-render-cycle consistency.
+  useEffect(() => {
+    periodRef.current = periodIndex;
+  }, [periodIndex]);
 
   // === CONSTRAINED MODE ===
   // All valid hours in chronological order across AM/PM.
