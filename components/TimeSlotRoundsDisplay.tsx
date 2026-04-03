@@ -265,14 +265,6 @@ export default function TimeSlotRoundsDisplay({
   const visibleGroups = showAll ? groups : groups.slice(0, COLLAPSED_GROUPS);
   const hiddenGroupCount = groups.length - visibleGroups.length;
 
-  if (allRounds.length === 0) {
-    return (
-      <div className="text-center text-gray-600 dark:text-gray-400">
-        No time slots available
-      </div>
-    );
-  }
-
   const renderParticipantPills = (group: SlotGroup) => (
     <div className="flex flex-wrap gap-1">
       {group.participant_names.map((name, idx) => {
@@ -299,46 +291,49 @@ export default function TimeSlotRoundsDisplay({
 
   // (result page rendering handled separately below)
 
-  const renderFinalRoundSlot = (slot: TimeSlot) => (
-    <div className="bg-green-50 dark:bg-green-900/30 px-3 py-2.5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {formatTimeRange(slot)}
-          </span>
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {formatDuration(slot.duration_hours)}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {slot.participant_names.map((name, idx) => {
-            const voteId = slot.participant_vote_ids[idx];
-            const isCurrentUser = voteId === currentUserVoteId;
-            const colorClass = (voteId && colorMap.get(voteId)) || PARTICIPANT_COLORS[0];
-            const displayName = isCurrentUser
-              ? (name ? `You (${name})` : 'You')
-              : (name || 'Anonymous');
-            return (
-              <span
-                key={voteId || idx}
-                className={`inline-block px-2 py-0.5 rounded-full text-xs ${
-                  isCurrentUser ? 'font-bold ring-1 ring-blue-500 dark:ring-blue-400' : 'font-medium'
-                } ${colorClass}`}
-              >
-                {displayName}
-              </span>
-            );
-          })}
+  if (allRounds.length === 0) {
+    return (
+      <div className="text-center text-gray-600 dark:text-gray-400">
+        No time slots available
+      </div>
+    );
+  }
+
+  // Result page: simple labeled layout with a back arrow to see rounds
+  if (isResultPage && winnerSlot) {
+    return (
+      <div className="w-full max-w-2xl mx-auto">
+        <div className="border rounded-lg overflow-hidden dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="px-4 py-2.5 flex items-start justify-between">
+            <div className="space-y-1">
+              <div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Time</span>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {formatTimeRange(winnerSlot)} <span className="font-normal text-gray-400 dark:text-gray-500">{formatDuration(winnerSlot.duration_hours)}</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">Date</span>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {formatDate(winnerSlot.slot_date)}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setCurrentPage(totalRounds)}
+              className="p-1 rounded text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label="View rounds"
+              title="View considered time slots"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
-      <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 ml-6">
-        {formatDate(slot.slot_date)}
-      </div>
-    </div>
-  );
+    );
+  }
 
   // Check if all groups share a single date so we can show it once as a header
   const allDates = useMemo(() => {
@@ -415,31 +410,19 @@ export default function TimeSlotRoundsDisplay({
         </button>
 
         <div className="text-center flex-1">
-          {isResultPage ? (
-            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
-              Result
-            </div>
-          ) : (
-            <>
-              <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                Round {currentPage} of {totalRounds}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                {participantCount} {participantCount === 1 ? 'participant' : 'participants'} &middot; {totalSlotCount} time slot{totalSlotCount !== 1 ? 's' : ''}
-              </div>
-            </>
-          )}
+          <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Round {currentPage} of {totalRounds}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {participantCount} {participantCount === 1 ? 'participant' : 'participants'} &middot; {totalSlotCount} time slot{totalSlotCount !== 1 ? 's' : ''}
+          </div>
         </div>
 
         <button
-          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-          disabled={currentPage === totalPages}
-          className={`p-1.5 rounded ${
-            currentPage === totalPages
-              ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-              : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900'
-          }`}
-          aria-label="Next round"
+          onClick={() => currentPage === totalRounds ? setCurrentPage(resultPage) : setCurrentPage(p => p + 1)}
+          disabled={false}
+          className="p-1.5 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900"
+          aria-label={currentPage === totalRounds ? 'Back to result' : 'Next round'}
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -448,48 +431,25 @@ export default function TimeSlotRoundsDisplay({
       </div>
 
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
-        {isResultPage && winnerSlot ? (
-          renderFinalRoundSlot(winnerSlot)
-        ) : (
-          <>
-            {singleDate && (
-              <div className="px-3 py-1 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {formatDate(singleDate)}
-              </div>
-            )}
-            {visibleGroups.map((group, index) => renderGroup(group, index))}
+        {singleDate && (
+          <div className="px-3 py-1 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            {formatDate(singleDate)}
+          </div>
+        )}
+        {visibleGroups.map((group, index) => renderGroup(group, index))}
 
-            {needsCollapse && (
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="w-full px-3 py-2 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800"
-              >
-                {expanded
-                  ? 'Show less'
-                  : `Show ${hiddenGroupCount} more group${hiddenGroupCount === 1 ? '' : 's'}`
-                }
-              </button>
-            )}
-          </>
+        {needsCollapse && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full px-3 py-2 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800"
+          >
+            {expanded
+              ? 'Show less'
+              : `Show ${hiddenGroupCount} more group${hiddenGroupCount === 1 ? '' : 's'}`
+            }
+          </button>
         )}
       </div>
-
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-3">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-            <button
-              key={pageNum}
-              onClick={() => setCurrentPage(pageNum)}
-              className={`w-2 h-2 rounded-full ${
-                pageNum === currentPage
-                  ? 'bg-blue-600 dark:bg-blue-400'
-                  : 'bg-gray-300 dark:bg-gray-600'
-              }`}
-              aria-label={pageNum === resultPage ? 'Go to result' : `Go to round ${pageNum}`}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
