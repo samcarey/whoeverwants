@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
+import CompactNameField from "@/components/CompactNameField";
 import TypeFieldInput, { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -93,8 +94,6 @@ function CreatePollContent() {
   const isSubmittingRef = useRef(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [creatorName, setCreatorName] = useState<string>("");
-  const [isEditingName, setIsEditingName] = useState(false);
-  const nameInputRef = useRef<HTMLInputElement>(null);
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
@@ -191,13 +190,6 @@ function CreatePollContent() {
     }
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue, locationOptions]);
-
-  // Focus name input when switching to edit mode
-  useEffect(() => {
-    if (isEditingName) {
-      nameInputRef.current?.focus();
-    }
-  }, [isEditingName]);
 
   // Focus details textarea when opening
   useEffect(() => {
@@ -937,11 +929,6 @@ function CreatePollContent() {
     return ` (${displayParts.join(', ')})`;
   };
 
-  const handleEditName = () => {
-    setIsEditingName(true);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
-  };
-
   const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1586,46 +1573,7 @@ function CreatePollContent() {
             )}
           </div>
 
-          <div>
-            {isEditingName ? (
-              <>
-                <label htmlFor="creatorName" className="block text-sm font-medium mb-1">
-                  Your Name{!creatorName.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
-                </label>
-                <input
-                  ref={nameInputRef}
-                  type="text"
-                  id="creatorName"
-                  value={creatorName}
-                  onChange={(e) => setCreatorName(e.target.value)}
-                  onBlur={() => setIsEditingName(false)}
-                  disabled={isLoading}
-                  maxLength={50}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder="Enter your name..."
-                />
-              </>
-            ) : creatorName.trim() ? (
-              <button
-                type="button"
-                onClick={handleEditName}
-                className="block text-sm font-medium text-left"
-              >
-                Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{creatorName.trim()}</span>
-              </button>
-            ) : (
-              <div className="text-sm font-medium">
-                Your Name <span className="font-normal">(optional)</span>:{' '}
-                <button
-                  type="button"
-                  onClick={handleEditName}
-                  className="font-normal text-blue-600 dark:text-blue-400"
-                >
-                  Add
-                </button>
-              </div>
-            )}
-          </div>
+          <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
           
           {!isFormValid() && !isLoading && (
             <div className="text-center text-red-600 dark:text-red-400 text-sm mb-3">

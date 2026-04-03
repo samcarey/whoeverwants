@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
+import CompactNameField from "@/components/CompactNameField";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
@@ -132,6 +133,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return participatingVoterIds.includes(userVoteData.id);
   }, [poll.poll_type, userVoteData, participatingVoterIds]);
   
+  // Check if poll has time windows but none are enabled (voter voted Yes with all days unchecked)
+  const hasNoEnabledTimeWindows = useMemo(() => {
+    if (poll.poll_type !== 'participation') return false;
+    if (!poll.day_time_windows?.some((dtw: DayTimeWindow) => dtw.windows.length > 0)) return false;
+    return !voterDayTimeWindows.some(
+      (dtw: DayTimeWindow) => dtw.windows.some(w => w.enabled !== false)
+    );
+  }, [poll.poll_type, poll.day_time_windows, voterDayTimeWindows]);
+
   // Check if any enabled voter time window is shorter than the minimum duration
   const hasTimeWindowTooShort = useMemo(() => {
     if (poll.poll_type !== 'participation') return false;
@@ -1594,20 +1604,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
-                      Your Name (optional)
-                    </label>
-                    <input
-                      type="text"
-                      id="voterName"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="Enter your name..."
-                      maxLength={50}
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
-                  
+
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
@@ -1783,19 +1782,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
-                      Your Name <span className="text-gray-500 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="voterName"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      disabled={isSubmitting}
-                      maxLength={30}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder="Enter your name..."
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
                   </div>
 
                   {hasTimeWindowTooShort && (
@@ -1804,10 +1791,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
+                  {yesNoChoice === 'yes' && hasNoEnabledTimeWindows && (
+                    <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded-md">
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300">Enable at least one time window, or vote No.</p>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || (yesNoChoice === 'yes' && hasNoEnabledTimeWindows)}
                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
@@ -2070,18 +2063,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mt-4">
-                    <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-1">
-                      Your Name (optional)
-                    </label>
-                    <input
-                      type="text"
-                      id="voterNameRanked"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="Enter your name..."
-                      maxLength={50}
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
                   
                   <button
