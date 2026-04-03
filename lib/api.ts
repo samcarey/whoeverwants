@@ -142,6 +142,7 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     options: data.options ?? undefined,
     yes_count: data.yes_count ?? undefined,
     no_count: data.no_count ?? undefined,
+    total_yes_votes: data.total_yes_votes ?? undefined,
     total_votes: data.total_votes,
     yes_percentage: data.yes_percentage ?? undefined,
     no_percentage: data.no_percentage ?? undefined,

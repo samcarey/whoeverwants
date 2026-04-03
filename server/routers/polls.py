@@ -1011,6 +1011,7 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             yes_count=participating_count,
             no_count=no_count,
             abstain_count=abstain_count,
+            total_yes_votes=yes_count,
             total_votes=len(votes),
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),

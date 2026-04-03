@@ -160,6 +160,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
 function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
+  const totalYesVotes = results.total_yes_votes ?? yesCount;
   const totalVotes = results.total_votes;
   const minParticipants = results.min_participants;
   const maxParticipants = results.max_participants;
@@ -209,21 +210,47 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   // Determine if the event is happening based on participant count being in range
   let isHappening = yesCount > 0;
-  let statusMessage = '';
 
   if (minParticipants !== undefined && minParticipants !== null) {
     if (yesCount < minParticipants) {
       isHappening = false;
-      statusMessage = `Need at least ${minParticipants} participants`;
     }
   }
 
   if (maxParticipants !== undefined && maxParticipants !== null) {
     if (yesCount > maxParticipants) {
       isHappening = false;
-      statusMessage = `Maximum ${maxParticipants} participants exceeded`;
     }
   }
+
+  // Generate a detailed reason for why the event isn't happening
+  const getFailureReason = (): string => {
+    // Nobody responded at all
+    if (totalVotes === 0) return 'No responses received';
+
+    // People responded but nobody said yes
+    if (totalYesVotes === 0) {
+      if (noCount > 0) return `Everyone declined (${noCount} no${noCount !== 1 ? "'s" : ''})`;
+      return 'No one volunteered';
+    }
+
+    // People said yes but the algorithm couldn't form a compatible group
+    if (yesCount === 0 && totalYesVotes > 0) {
+      return `${totalYesVotes} wanted to participate but their conditions were incompatible`;
+    }
+
+    // Some participants selected but below minimum
+    if (minParticipants && yesCount < minParticipants) {
+      return `Only ${yesCount} of ${minParticipants} required participants`;
+    }
+
+    // Over maximum (shouldn't normally happen, but just in case)
+    if (maxParticipants && yesCount > maxParticipants) {
+      return `${yesCount} participants exceeded the maximum of ${maxParticipants}`;
+    }
+
+    return '';
+  };
 
   const userVotedYes = userVoteData?.yes_no_choice === 'yes';
   const userVotedNo = userVoteData?.yes_no_choice === 'no';
@@ -299,7 +326,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
         <div className="text-center">
           <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
-            Not happening
+            ✗ Not happening
           </div>
           <div className="text-sm text-red-700 dark:text-red-300">
             No responses received
@@ -364,11 +391,25 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
     if (isHappening && userVotedYes && !userIsInParticipantList) {
+      // Explain why the user was excluded
+      const userExclusionReason = (() => {
+        if (userMaxParticipants !== null && userMaxParticipants !== undefined && yesCount > userMaxParticipants) {
+          return `Too many participants for your conditions (max ${userMaxParticipants})`;
+        }
+        if (userMinParticipants !== null && userMinParticipants !== undefined && yesCount < userMinParticipants) {
+          return `Not enough participants for your conditions (min ${userMinParticipants})`;
+        }
+        return 'Your conditions were incompatible with the group';
+      })();
+
       return (
         <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 px-4 py-3">
           <div className="text-center">
             <div className="text-xl font-bold mb-1 text-yellow-800 dark:text-yellow-200">
               You&apos;re not participating
+            </div>
+            <div className="text-sm text-yellow-700 dark:text-yellow-300 mb-1">
+              {userExclusionReason}
             </div>
             <div className="flex flex-wrap items-center justify-center gap-1.5">
               <span className="text-sm text-yellow-700 dark:text-yellow-300">
@@ -436,18 +477,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event NOT happening, user voted YES
     if (!isHappening && userVotedYes) {
-      // If no one is participating at all, use simplified message
-      if (yesCount === 0) {
-        return (
-          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
-            <div className="text-center">
-              <div className="text-xl font-bold text-red-800 dark:text-red-200">
-                No one is participating
-              </div>
-            </div>
-          </div>
-        );
-      }
+      const failureReason = getFailureReason();
 
       const userNeedsText = userMinParticipants && userMaxParticipants
         ? `${userMinParticipants}-${userMaxParticipants}`
@@ -463,15 +493,14 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
               ✗ Not happening
             </div>
-            <div className="text-sm text-red-700 dark:text-red-300 mb-2">
-              Final: {yesCount} participant{yesCount !== 1 ? "s" : ""}
-              {(minParticipants || maxParticipants) && (
-                <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
-              )}
-            </div>
-            {userNeedsText && (
+            {failureReason && (
+              <div className="text-sm text-red-700 dark:text-red-300 mb-1">
+                {failureReason}
+              </div>
+            )}
+            {!userIsInParticipantList && userNeedsText && (
               <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
-                Your needs weren&apos;t met ({userNeedsText})
+                Your conditions weren&apos;t met ({userNeedsText} participants)
               </div>
             )}
           </div>
@@ -481,18 +510,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event NOT happening, user voted NO or didn't vote
     if (!isHappening) {
-      // Check if there are no participants at all
-      if (yesCount === 0) {
-        return (
-          <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
-            <div className="text-center">
-              <div className="text-xl font-bold text-red-800 dark:text-red-200">
-                No one is participating
-              </div>
-            </div>
-          </div>
-        );
-      }
+      const failureReason = getFailureReason();
 
       return (
         <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
@@ -500,12 +518,11 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             <div className="text-xl font-bold mb-1 text-red-800 dark:text-red-200">
               ✗ Not happening
             </div>
-            <div className="text-sm text-red-700 dark:text-red-300">
-              Final: {yesCount} participant{yesCount !== 1 ? "s" : ""}
-              {(minParticipants || maxParticipants) && (
-                <> (needed {minParticipants && maxParticipants ? `${minParticipants}-${maxParticipants}` : minParticipants ? `${minParticipants}+` : `up to ${maxParticipants}`})</>
-              )}
-            </div>
+            {failureReason && (
+              <div className="text-sm text-red-700 dark:text-red-300">
+                {failureReason}
+              </div>
+            )}
           </div>
         </div>
       );
