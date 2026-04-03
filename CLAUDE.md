@@ -288,6 +288,18 @@ whoeverwants/
 │   ├── helpers/                    # Test utilities
 │   └── setup.js                    # Vitest setup (dotenv, mocks)
 │
+├── social_tests/                   # Social scenario testing framework
+│   ├── conftest.py                 # Fixtures, PollHelper, result collection
+│   ├── generate_report.py          # Test runner → MD → HTML → droplet deploy
+│   ├── testing_strategy.md         # Philosophy doc (embedded in report)
+│   ├── reports/                    # Generated reports (gitignored)
+│   └── tests/                      # Scenario test modules
+│       ├── test_casual_decisions.py    # Yes/no & suggestion polls
+│       ├── test_ranked_preferences.py  # Ranked choice / IRV scenarios
+│       ├── test_event_planning.py      # Participation polls with constraints
+│       ├── test_edge_cases.py          # Anonymity, editing, large groups
+│       └── test_multi_stage.py         # Multi-poll workflows (fork, follow-up)
+│
 ├── scripts/                        # Utility scripts
 │   ├── remote.sh                   # Execute commands on droplet
 │   ├── publish.sh                  # Full deployment workflow
@@ -370,6 +382,12 @@ npm run debug:react [id] [act] # Debug React component state
 
 # Deployment
 npm run publish                # Full workflow: commit, merge, push, migrate
+
+# Social Tests (run from social_tests/ directory)
+# Runs scenario tests against a live API and generates an HTML report
+cd social_tests && uv run python generate_report.py  # Full pipeline: test → report → deploy
+cd social_tests && uv run python generate_report.py --skip-deploy  # Local report only
+cd social_tests && uv run pytest tests/ -v           # Run tests without report
 
 # Python Server (run from server/ directory)
 uv run pytest                  # Run Python tests
