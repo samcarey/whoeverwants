@@ -160,25 +160,23 @@ class SocialTestResult:
 
 
 @pytest.fixture
-def result():
+def result(request):
     """A SocialTestResult for the current test to populate."""
     r = SocialTestResult()
-    yield r
+    r.test_name = request.node.name
+    r.category = request.node.module.__name__.replace("test_", "").replace("_scenarios", "")
+    r.docstring = (request.node.function.__doc__ or "").strip()
     _test_results.append(r)
+    return r
 
 
 def pytest_runtest_makereport(item, call):
-    """Capture test docstrings and failure info into results."""
-    if call.when == "call":
-        # Find the SocialTestResult for this test if it exists
+    """Capture failure info into the test's SocialTestResult."""
+    if call.when == "call" and call.excinfo:
         for r in _test_results:
-            if not r.test_name:
-                r.test_name = item.name
-                r.category = item.module.__name__.replace("test_", "").replace("_scenarios", "")
-                r.docstring = (item.function.__doc__ or "").strip()
-                if call.excinfo:
-                    r.technical_pass = False
-                    r.failure_message = str(call.excinfo.value)
+            if r.test_name == item.name:
+                r.technical_pass = False
+                r.failure_message = str(call.excinfo.value)
                 break
 
 
