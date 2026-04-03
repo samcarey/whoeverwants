@@ -211,7 +211,6 @@ export default function TimeSlotRoundsDisplay({
   allVoters,
   currentUserVoteId,
 }: TimeSlotRoundsDisplayProps) {
-  const [currentRound, setCurrentRound] = useState(1);
   const [expanded, setExpanded] = useState(false);
 
   const colorMap = useMemo(() => {
@@ -244,7 +243,17 @@ export default function TimeSlotRoundsDisplay({
     };
   }, [allRounds]);
 
-  const currentSlots = roundsByNumber[currentRound] || [];
+  // The winner slot (first slot in round 1 with is_winner=true)
+  const winnerSlot = useMemo(() => allRounds.find(s => s.is_winner) || null, [allRounds]);
+
+  // Virtual "Result" page is totalRounds + 1, shown by default
+  const resultPage = totalRounds + 1;
+  const totalPages = resultPage;
+  const [currentPage, setCurrentPage] = useState(resultPage);
+
+  const isResultPage = currentPage === resultPage;
+  const currentRoundNumber = isResultPage ? totalRounds : currentPage;
+  const currentSlots = roundsByNumber[currentRoundNumber] || [];
   const participantCount = currentSlots.length > 0 ? currentSlots[0].participant_count : 0;
   const totalSlotCount = currentSlots.length;
 
@@ -288,7 +297,7 @@ export default function TimeSlotRoundsDisplay({
     </div>
   );
 
-  const isFinalRound = currentRound === totalRounds;
+  // (result page rendering handled separately below)
 
   const renderFinalRoundSlot = (slot: TimeSlot) => (
     <div className="bg-green-50 dark:bg-green-900/30 px-3 py-2.5">
@@ -391,10 +400,10 @@ export default function TimeSlotRoundsDisplay({
     <div className="w-full max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-3">
         <button
-          onClick={() => setCurrentRound(r => Math.max(1, r - 1))}
-          disabled={currentRound === 1}
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
           className={`p-1.5 rounded ${
-            currentRound === 1
+            currentPage === 1
               ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
               : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900'
           }`}
@@ -406,19 +415,27 @@ export default function TimeSlotRoundsDisplay({
         </button>
 
         <div className="text-center flex-1">
-          <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
-            Round {currentRound} of {totalRounds}
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {participantCount} {participantCount === 1 ? 'participant' : 'participants'} &middot; {totalSlotCount} time slot{totalSlotCount !== 1 ? 's' : ''}
-          </div>
+          {isResultPage ? (
+            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+              Result
+            </div>
+          ) : (
+            <>
+              <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Round {currentPage} of {totalRounds}
+              </div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {participantCount} {participantCount === 1 ? 'participant' : 'participants'} &middot; {totalSlotCount} time slot{totalSlotCount !== 1 ? 's' : ''}
+              </div>
+            </>
+          )}
         </div>
 
         <button
-          onClick={() => setCurrentRound(r => Math.min(totalRounds, r + 1))}
-          disabled={currentRound === totalRounds}
+          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
           className={`p-1.5 rounded ${
-            currentRound === totalRounds
+            currentPage === totalPages
               ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
               : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900'
           }`}
@@ -431,8 +448,8 @@ export default function TimeSlotRoundsDisplay({
       </div>
 
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
-        {isFinalRound && currentSlots.find(s => s.is_winner) ? (
-          renderFinalRoundSlot(currentSlots.find(s => s.is_winner)!)
+        {isResultPage && winnerSlot ? (
+          renderFinalRoundSlot(winnerSlot)
         ) : (
           <>
             {singleDate && (
@@ -457,18 +474,18 @@ export default function TimeSlotRoundsDisplay({
         )}
       </div>
 
-      {totalRounds > 1 && (
+      {totalPages > 1 && (
         <div className="flex justify-center gap-2 mt-3">
-          {Array.from({ length: totalRounds }, (_, i) => i + 1).map((roundNum) => (
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
             <button
-              key={roundNum}
-              onClick={() => setCurrentRound(roundNum)}
+              key={pageNum}
+              onClick={() => setCurrentPage(pageNum)}
               className={`w-2 h-2 rounded-full ${
-                roundNum === currentRound
+                pageNum === currentPage
                   ? 'bg-blue-600 dark:bg-blue-400'
                   : 'bg-gray-300 dark:bg-gray-600'
               }`}
-              aria-label={`Go to round ${roundNum}`}
+              aria-label={pageNum === resultPage ? 'Go to result' : `Go to round ${pageNum}`}
             />
           ))}
         </div>
