@@ -33,7 +33,7 @@ class TestFridayDrinks:
         api.vote(poll["id"], vote_type="yes_no", yes_no_choice="yes")  # anonymous
         api.vote(poll["id"], vote_type="yes_no", yes_no_choice="yes")  # anonymous
         api.vote(poll["id"], vote_type="yes_no", yes_no_choice="no")   # anonymous dissenter
-        api.vote(poll["id"], vote_type="yes_no", yes_no_choice="yes", is_abstain=True)  # unsure
+        api.vote(poll["id"], vote_type="yes_no", is_abstain=True)  # unsure
 
         api.close_poll(poll["id"], creator_secret)
         results = api.get_results(poll["id"])

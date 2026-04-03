@@ -1,0 +1,2829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Test Report — WhoeverWants</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --border: #30363d;
+    --accent: #58a6ff;
+    --surface: #161b22;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    padding: 16px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.5em; margin: 16px 0; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h2 { font-size: 1.25em; margin: 20px 0 10px; color: var(--accent); }
+  h3, h4 { font-size: 1em; margin: 12px 0 6px; }
+  p { margin: 8px 0; }
+  code { background: var(--surface); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: var(--surface); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  th, td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+  th { background: var(--surface); }
+  details { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; }
+  details > summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    background: var(--surface);
+    border-radius: 8px;
+    font-weight: 500;
+  }
+  details[open] > summary { border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+  details > :not(summary) { padding: 0 14px; }
+  details > p:last-child, details > div:last-child { padding-bottom: 14px; }
+  blockquote {
+    border-left: 3px solid var(--accent);
+    padding: 4px 12px;
+    margin: 8px 0;
+    color: var(--muted);
+    font-style: italic;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  em { color: var(--muted); }
+  /* Badge alignment */
+  summary span { vertical-align: middle; }
+  summary code { vertical-align: middle; }
+</style>
+</head>
+<body>
+<div id="content"><h1>Social Test Report — 2026-04-03 18:00 UTC</h1>
+
+<details>
+<summary><strong>Testing Philosophy & Strategy</strong></summary>
+
+<h1>Social Testing Strategy for WhoeverWants</h1>
+
+<h2>Philosophy</h2>
+
+<p>WhoeverWants is a tool for <em>people</em> making <em>group decisions</em>. Technical correctness is necessary but not sufficient — the app must also produce results that feel <strong>fair, intuitive, and socially appropriate</strong> to the humans using it.</p>
+
+<p>This test suite evaluates the application across two dimensions:</p>
+
+<h3>1. Technical Soundness</h3>
+<p>- Do vote counts add up correctly?</p>
+<p>- Are algorithmic guarantees (IRV majority, participation priority) upheld?</p>
+<p>- Do edge cases (ties, abstentions, empty polls) resolve without errors?</p>
+<p>- Is data integrity maintained across create → vote → close → results lifecycle?</p>
+
+<h3>2. Social Conventions</h3>
+<p>- When there's a clear group consensus, does the result reflect it?</p>
+<p>- When preferences conflict, does the resolution feel fair to reasonable people?</p>
+<p>- Do anonymous voters and named voters have equal influence?</p>
+<p>- Does the system handle awkward social dynamics gracefully (e.g., only one person shows up, everyone abstains, the organizer's suggestion loses)?</p>
+<p>- Would a person looking at these results feel the tool helped or hindered their group?</p>
+
+<h2>Methodology</h2>
+
+<p>Each test simulates a <strong>realistic social scenario</strong> with a cast of characters making decisions together. Tests are written as stories: who are these people, what are they deciding, and what do they each want?</p>
+
+<h3>Test Categories</h3>
+
+<table>
+<tr><th>Category</th><th>Focus</th><th>Poll Types</th></tr>
+<tr><td>**Casual Decisions**</td><td>Friend groups making low-stakes choices</td><td>yes/no, suggestion</td></tr>
+<tr><td>**Ranked Preferences**</td><td>Groups with diverse, ordered preferences</td><td>ranked_choice</td></tr>
+<tr><td>**Event Planning**</td><td>Scheduling with availability constraints</td><td>participation</td></tr>
+<tr><td>**Edge Cases & Dynamics**</td><td>Adversarial inputs, social pressure, anonymity</td><td>all types</td></tr>
+<tr><td>**Multi-Stage Workflows**</td><td>Suggestion → preference pipelines, follow-ups</td><td>suggestion + ranked_choice</td></tr>
+</table>
+
+<h3>Voter Archetypes</h3>
+
+<p>Tests use recurring voter archetypes to model real group dynamics:</p>
+
+<p>- <strong>The Organizer</strong> — Creates polls, has opinions but tries to be fair</p>
+<p>- <strong>The Enthusiast</strong> — Votes quickly, has strong preferences, uses their name</p>
+<p>- <strong>The Lurker</strong> — Votes anonymously, minimal engagement</p>
+<p>- <strong>The Contrarian</strong> — Often disagrees with the majority</p>
+<p>- <strong>The Peacemaker</strong> — Votes to maximize group harmony (middle options, abstains on controversy)</p>
+<p>- <strong>The Late Joiner</strong> — Votes last, sometimes after seeing partial results</p>
+<p>- <strong>The Flake</strong> — RSVPs yes then doesn't follow through (for participation polls)</p>
+
+<h3>Evaluation Criteria</h3>
+
+<p>Each test produces a result evaluated on:</p>
+
+<table>
+<tr><th>Badge</th><th>Meaning</th></tr>
+<tr><td>`PASS`</td><td>Technical assertion passed</td></tr>
+<tr><td>`FAIL`</td><td>Technical assertion failed</td></tr>
+<tr><td>`FAIR`</td><td>Result is socially reasonable</td></tr>
+<tr><td>`AWKWARD`</td><td>Result is technically correct but socially suboptimal</td></tr>
+<tr><td>`INSIGHT`</td><td>Test reveals an interesting property of the system</td></tr>
+</table>
+
+<h3>Report Format</h3>
+
+<p>The generated report includes:</p>
+<p>1. This strategy document (collapsible)</p>
+<p>2. Per-test sections with scenario description, technical results, and social critique</p>
+<p>3. Badges summarizing each dimension at a glance</p>
+<p>4. An AI-generated critique considering fairness, clarity, and user experience</p>
+
+<h3>Iterative Refinement</h3>
+
+<p>Reports are tracked over time. Each iteration:</p>
+<p>1. Runs all tests against the current API</p>
+<p>2. Compares critique to previous iteration</p>
+<p>3. Notes improvements, regressions, and persistent issues</p>
+<p>4. Updates the critique only where warranted — stability in assessment is valued</p>
+
+
+</details>
+
+<h2>Summary</h2>
+
+<table>
+<tr><th>Metric</th><th>Count</th></tr>
+<tr><td>Total tests</td><td>33</td></tr>
+<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> Technical pass</td><td>30</td></tr>
+<tr><td><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> Technical fail</td><td>3</td></tr>
+<tr><td><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> Socially fair</td><td>24</td></tr>
+<tr><td><span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> Socially awkward</td><td>2</td></tr>
+<tr><td><span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> Insights</td><td>7</td></tr>
+</table>
+
+<h2>Tests.Casual Decisions</h2>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_exact_tie</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Friday drinks: exactly split — 3 yes, 3 no.</p>
+
+<p>        SCENARIO: The group is evenly divided. Three want to go, three don't.</p>
+
+<p>        EXPECTATION: Result should be "tie". The system shouldn't arbitrarily</p>
+<p>        pick a side. This is a socially important case — a forced "yes" when</p>
+<p>        half the group doesn't want to go creates resentment.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Winner is yes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Yes count is 4</td><td>&#x2705;</td><td></td></tr>
+<tr><td>No count is 1</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Abstain count is 1</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Yes percentage based on total votes (including abstain)</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Clear majority respected. Anonymous no vote preserved dissenter's comfort.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "536cf307-39e4-4092-b35a-6e41a522042b",
+    "title": "Drinks after work Friday?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:00.151706+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 4,
+    "no_count": 1,
+    "abstain_count": 1,
+    "total_yes_votes": null,
+    "total_votes": 6,
+    "yes_percentage": 67,
+    "no_percentage": 17,
+    "winner": "yes",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_single_voter</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Friday drinks: only the organizer votes.</p>
+
+<p>        SCENARIO: Marcus creates the poll and is the only one who votes yes.</p>
+<p>        Everyone else ignores it.</p>
+
+<p>        SOCIAL QUESTION: Is a 1-0 victory meaningful? Technically yes wins,</p>
+<p>        but socially this means nobody else cared enough to respond.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Result is tie</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Equal counts</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Tie correctly reported — group needs to discuss further.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "9268bfe6-8bd3-44c0-9b03-84804985aac8",
+    "title": "Drinks after work?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:01.250568+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 3,
+    "no_count": 3,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 6,
+    "yes_percentage": 50,
+    "no_percentage": 50,
+    "winner": "tie",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_all_abstain</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Friday drinks: everyone abstains.</p>
+
+<p>        SCENARIO: People see the poll but nobody commits. Maybe they're</p>
+<p>        waiting to see what others do first.</p>
+
+<p>        EXPECTATION: No winner. The system should handle this gracefully.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Winner is yes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Total votes is 1</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded').</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded')._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "e5b232bf-2fcf-46f8-a98d-00735c0ebc84",
+    "title": "Drinks after work?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:02.146538+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 1,
+    "no_count": 0,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 1,
+    "yes_percentage": 100,
+    "no_percentage": 0,
+    "winner": "yes",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_anonymous_majority</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Should we switch to a 4-day work week? All anonymous votes.</p>
+
+<p>        SCENARIO: Someone asks a potentially political workplace question.</p>
+<p>        Everyone votes anonymously because they don't want their boss</p>
+<p>        to know their preference.</p>
+
+<p>        EXPECTATION: Results are clean — just counts, no names.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>No winner when all abstain</td><td>&#x274C;</td><td></td></tr>
+<tr><td>Zero yes votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Zero no votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Abstain count is 3</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>All-abstain is a valid social signal: the group is indecisive or uninterested. Showing '0-0 with 3 abstentions' communicates this clearly.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "d0ddb020-e849-42c9-92a0-4b2f28709b95",
+    "title": "Drinks after work?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:02.717651+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 0,
+    "no_count": 0,
+    "abstain_count": 3,
+    "total_yes_votes": null,
+    "total_votes": 3,
+    "yes_percentage": 0,
+    "no_percentage": 0,
+    "winner": "tie",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_convergent_suggestions</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Lunch brainstorm: multiple people suggest the same place.</p>
+
+<p>        SCENARIO: A team of 5 is deciding where to eat. Several people</p>
+<p>        independently suggest the same places, showing organic consensus.</p>
+
+<p>        EXPECTATION: Popular suggestions bubble to the top. The count</p>
+<p>        reflects how many people independently thought of each place.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Yes wins</td><td>&#x2705;</td><td></td></tr>
+<tr><td>All votes anonymous</td><td>&#x2705;</td><td></td></tr>
+<tr><td>70% yes</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Anonymous voting protects voters on sensitive topics. No names leaked.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "6042366d-f7d9-4be8-9a98-d41c3938dd44",
+    "title": "Switch to 4-day work week?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:04.751436+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 7,
+    "no_count": 3,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 10,
+    "yes_percentage": 70,
+    "no_percentage": 30,
+    "winner": "yes",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_all_unique_suggestions</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Lunch brainstorm: everyone suggests something different.</p>
+
+<p>        SCENARIO: Nobody agrees. Five people, five completely different ideas.</p>
+
+<p>        SOCIAL QUESTION: When there's no overlap, what does the sorted list</p>
+<p>        communicate? Alphabetical tiebreaking is technically fair but</p>
+<p>        arbitrary — "Arby's" shouldn't win over "Zaxby's" just by name.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Thai Palace is most popular</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Burger Barn has 2 votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Sushi Roll has 2 votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Taco Town has 1 vote</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Results sorted by count descending</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Organic consensus emerged around Thai Palace. The starter option from the creator didn't get unfair advantage — it was genuinely popular.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "b289aa0f-99a2-4e45-9805-04079580cac3",
+    "title": "Where should we eat?",
+    "poll_type": "suggestion",
+    "created_at": "2026-04-03T17:56:21.890851+00:00",
+    "response_deadline": null,
+    "options": [
+      "Thai Palace"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": [
+      {
+        "option": "Thai Palace",
+        "count": 4
+      },
+      {
+        "option": "Burger Barn",
+        "count": 2
+      },
+      {
+        "option": "Sushi Roll",
+        "count": 2
+      },
+      {
+        "option": "Taco Town",
+        "count": 1
+      }
+    ],
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  },
+  "suggestion_map": {
+    "Thai Palace": 4,
+    "Burger Barn": 2,
+    "Sushi Roll": 2,
+    "Taco Town": 1
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_abstainer_in_brainstorm</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Lunch brainstorm: one person abstains, signaling they'll go anywhere.</p>
+
+<p>        SCENARIO: Four people suggest places, one person abstains (they're</p>
+<p>        happy with whatever the group picks).</p>
+
+<p>        EXPECTATION: Abstainer doesn't dilute suggestion counts.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>All suggestions have count 1</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Tiebreak is alphabetical</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "c37016a6-7226-4976-bde9-4467d54f8c84",
+    "title": "Where should we eat?",
+    "poll_type": "suggestion",
+    "created_at": "2026-04-03T17:56:22.621464+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": [
+      {
+        "option": "Arby's",
+        "count": 1
+      },
+      {
+        "option": "KFC",
+        "count": 1
+      },
+      {
+        "option": "McDonald's",
+        "count": 1
+      },
+      {
+        "option": "Wendy's",
+        "count": 1
+      },
+      {
+        "option": "Zaxby's",
+        "count": 1
+      }
+    ],
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<h2>Tests.Edge Cases</h2>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_all_anonymous_yes_no</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Fully anonymous vote: nobody attaches their name.</p>
+
+<p>        SCENARIO: A group uses the poll for a sensitive decision.</p>
+<p>        All 8 voters are anonymous. The creator didn't name themselves either.</p>
+
+<p>        EXPECTATION: Results should be purely numerical. No way to trace</p>
+<p>        who voted what. This is the privacy promise of the app.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Thai Palace has 2 votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Burger Barn has 1 vote</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Abstain count is 1</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Abstaining in a suggestion poll is a valid social signal: 'I'm flexible.' The abstainer participates without steering the outcome.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "67c3b701-82c8-4c05-9b00-bce01923653a",
+    "title": "Where should we eat?",
+    "poll_type": "suggestion",
+    "created_at": "2026-04-03T17:56:23.325596+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": 1,
+    "total_yes_votes": null,
+    "total_votes": 4,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": [
+      {
+        "option": "Thai Palace",
+        "count": 2
+      },
+      {
+        "option": "Burger Barn",
+        "count": 1
+      }
+    ],
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_mixed_named_and_anonymous</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Mixed poll: some named, some anonymous.</p>
+
+<p>        SCENARIO: In a friend group, some people proudly attach their name</p>
+<p>        to their vote, others prefer anonymity. Does the mix work?</p>
+
+<p>        SOCIAL QUESTION: Can you tell which anonymous votes belong to which</p>
+<p>        people by process of elimination? (If 5 people in a group and 3</p>
+<p>        named voters, the 2 anonymous ones are identifiable.)</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Yes wins (5-3)</td><td>&#x2705;</td><td></td></tr>
+<tr><td>All voters anonymous</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Full anonymity maintained. The app provides a safe space for group decisions on sensitive topics where individuals might face pressure for their vote.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "26cbcaaa-c22e-4b53-877d-5027b085cd12",
+    "title": "Should we file a complaint?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:23.976168+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 5,
+    "no_count": 3,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 8,
+    "yes_percentage": 62,
+    "no_percentage": 38,
+    "winner": "yes",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_change_vote_flips_result</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Vote change: a voter switches sides and flips the outcome.</p>
+
+<p>        SCENARIO: 3-2 in favor of yes. One yes-voter changes to no,</p>
+<p>        making it 2-3. The swing voter changed the entire outcome.</p>
+
+<p>        EXPECTATION: Results reflect the final state, not vote history.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>3 named voters</td><td>&#x2705;</td><td></td></tr>
+<tr><td>1 anonymous voter</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_edit_ranked_choice</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Ranked choice edit: voter reorders their preferences.</p>
+
+<p>        SCENARIO: A voter initially ranks A > B > C, then changes to C > A > B.</p>
+<p>        This tests that the ranking replacement is clean.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Result flipped to no</td><td>&#x2705;</td><td></td></tr>
+<tr><td>No count is now 3</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Yes count is now 2</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Vote editing is transparent — the result reflects current preferences, not historical ones. This is correct for decision-making (you want the group's final answer), though it means early results are unreliable.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_closes_losing_poll</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Creator closes a poll they're losing.</p>
+
+<p>        SCENARIO: The creator votes yes on their own poll, but the group</p>
+<p>        votes no. The creator then closes the poll. The result should</p>
+<p>        still reflect the group's decision, not the creator's preference.</p>
+
+<p>        EXPECTATION: Closing a poll doesn't change the outcome.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>C wins after edit</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Vote editing in ranked choice works cleanly. The edited ballot is treated the same as any other ballot — no trace of the original ranking.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "edddaffc-4f8d-4ab1-90e6-187951fb4262",
+    "title": "Favorite?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T17:56:42.034153+00:00",
+    "response_deadline": null,
+    "options": [
+      "A",
+      "B",
+      "C"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 3,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "C",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "C",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "A",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "B",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "C",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_reopens_and_more_votes</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Creator reopens a closed poll to collect more votes.</p>
+
+<p>        SCENARIO: Poll is closed at 2-2 tie. Creator reopens it.</p>
+<p>        One more person votes and breaks the tie.</p>
+
+<p>        EXPECTATION: Reopening is legitimate when the creator wants more input.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>No wins (1-3)</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Result is honest despite creator loss</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>The creator can close the poll but can't change the outcome. This is an important integrity guarantee — poll creators have administrative power (close/reopen) but not voting power beyond their single vote.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "885941ac-5488-47d0-983d-675b6e58699c",
+    "title": "My idea is great, right?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:42.637269+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 1,
+    "no_count": 3,
+    "abstain_count": 0,
+    "total_yes_votes": null,
+    "total_votes": 4,
+    "yes_percentage": 25,
+    "no_percentage": 75,
+    "winner": "no",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_twenty_voter_yes_no</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Large group: 20 voters on a yes/no question.</p>
+
+<p>        SCENARIO: A class of 20 students votes on whether to have a study</p>
+<p>        session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.</p>
+
+<p>        EXPECTATION: Percentages and counts are correct at scale.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Initially tied</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Yes wins after reopen</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Reopening a tied poll to collect a tiebreaker vote is a legitimate use of creator power. The system supports this workflow cleanly.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_ten_option_ranked_choice</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Large ranked choice: 10 options, 8 voters.</p>
+
+<p>        SCENARIO: A group has too many ideas. 10 restaurant options,</p>
+<p>        8 voters with varied preferences. Tests IRV at higher option counts.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Yes wins</td><td>&#x2705;</td><td></td></tr>
+<tr><td>12 yes votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>6 no votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>2 abstentions</td><td>&#x2705;</td><td></td></tr>
+<tr><td>20 total votes</td><td>&#x2705;</td><td></td></tr>
+<tr><td>60% yes</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Scales cleanly. Mix of named/anonymous voters works at 20-person scale.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "07058d14-cc61-4f2c-a06b-f0ea5d07f75d",
+    "title": "Study session before the exam?",
+    "poll_type": "yes_no",
+    "created_at": "2026-04-03T17:56:59.588086+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 12,
+    "no_count": 6,
+    "abstain_count": 2,
+    "total_yes_votes": null,
+    "total_votes": 20,
+    "yes_percentage": 60,
+    "no_percentage": 30,
+    "winner": "yes",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<h2>Tests.Event Planning</h2>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_everyone_flexible</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Dinner party: 5 people say yes with no constraints.</p>
+
+<p>        SCENARIO: Simple case — everyone's available and flexible about</p>
+<p>        group size. No constraints to conflict.</p>
+
+<p>        EXPECTATION: All 5 should be included.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Winner determined</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Multiple elimination rounds</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "86c7fd1e-d2dd-44a9-a84c-8e2d86260bc0",
+    "title": "Restaurant for team dinner?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T17:57:17.264231+00:00",
+    "response_deadline": null,
+    "options": [
+      "Italian",
+      "Thai",
+      "Mexican",
+      "Indian",
+      "Chinese",
+      "Japanese",
+      "Korean",
+      "Ethiopian",
+      "Greek",
+      "American"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 8,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "Thai",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "American",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Ethiopian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Indian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Mexican",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Chinese",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": 25,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "Greek",
+        "vote_count": 0,
+        "is_eliminated": true,
+        "borda_score": 18,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "Japanese",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": 26,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 2,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "American",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Ethiopian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Indian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Mexican",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Chinese",
+        "vote_count": 0,
+        "is_eliminated": true,
+        "borda_score": 25,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 2,
+        "option_name": "Japanese",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": 26,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 3,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "American",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Ethiopian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Indian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Mexican",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "Japanese",
+        "vote_count": 0,
+        "is_eliminated": true,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 4,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 4,
+        "option_name": "American",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": 18,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "Ethiopian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 23,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "Indian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 26,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 65,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 24,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "Mexican",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 27,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 5,
+        "option_name": "Mexican",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 5,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 5,
+        "option_name": "Ethiopian",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": 23,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 5,
+        "option_name": "Indian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 26,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 5,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 65,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 5,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 24,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 6,
+        "option_name": "Indian",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 6,
+        "option_name": "Mexican",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 6,
+        "option_name": "Thai",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 6,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 65,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 6,
+        "option_name": "Korean",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": 24,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 7,
+        "option_name": "Thai",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 7,
+        "option_name": "Indian",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 7,
+        "option_name": "Mexican",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 7,
+        "option_name": "Italian",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 8,
+        "option_name": "Thai",
+        "vote_count": 4,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 8,
+        "option_name": "Indian",
+        "vote_count": 2,
+        "is_eliminated": true,
+        "borda_score": 26,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 8,
+        "option_name": "Mexican",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": 27,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 9,
+        "option_name": "Thai",
+        "vote_count": 6,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 9,
+        "option_name": "Mexican",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "Thai",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  },
+  "winner": "Thai",
+  "num_rounds": 9
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_introvert_vs_extrovert</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Dinner party: introvert wants small group, extrovert wants big group.</p>
+
+<p>        SCENARIO: Alice only wants to come if it's intimate (max 3 people).</p>
+<p>        Bob only wants to come if it's a party (min 5 people). Three others</p>
+<p>        are flexible. The poll allows 1-10 participants.</p>
+
+<p>        SOCIAL QUESTION: The algorithm prioritizes flexible voters. Alice</p>
+<p>        (max=3) is restrictive and may get deprioritized. Is that fair?</p>
+<p>        She has a legitimate social preference.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>All 5 participate</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>No constraints means everyone's in. Simple and correct.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "68cb0c64-22a1-4ea4-a466-5413f7d2a8e4",
+    "title": "Dinner at my place Saturday?",
+    "poll_type": "participation",
+    "created_at": "2026-04-03T17:57:18.270598+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 5,
+    "no_count": 0,
+    "abstain_count": 0,
+    "total_yes_votes": 5,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": 2,
+    "max_participants": 10,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": [
+      "352aab61-c47a-4145-9860-ac40b93113fb",
+      "f02efb8c-4d97-4b18-a0b2-13ac144aa2e7",
+      "d47be2b4-7299-49e1-8171-652a25de0752",
+      "51585bab-f9de-4f5e-9c66-7ae3d52a08aa",
+      "e47b8e84-3c43-413a-9d95-f60cbf8f7c46"
+    ],
+    "participating_voter_names": [
+      "Alice",
+      "Bob",
+      "Carol",
+      "Dave",
+      "Eve"
+    ]
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_minimum_not_met</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Dinner party: not enough people to meet the minimum.</p>
+
+<p>        SCENARIO: Poll requires minimum 4 participants, but only 2 people</p>
+<p>        say yes.</p>
+
+<p>        EXPECTATION: The event doesn't happen (0 participants).</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>At least 3 participants</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Flexible voters included</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) *could* fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) <em>could</em> fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "a23cb4f2-5f26-48de-8051-19b834ca49d0",
+    "title": "Dinner party Saturday?",
+    "poll_type": "participation",
+    "created_at": "2026-04-03T17:57:18.998850+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 3,
+    "no_count": 0,
+    "abstain_count": 0,
+    "total_yes_votes": 5,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": 1,
+    "max_participants": 10,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": [
+      "4f4216a5-1c90-4e7f-8c71-5990bdb67bbd",
+      "14121eea-2293-440f-a37f-b490103f982c",
+      "605201e7-bf86-4bfb-bc88-32ae69e140ed"
+    ],
+    "participating_voter_names": [
+      "Carol",
+      "Dave",
+      "Eve"
+    ]
+  },
+  "participant_names": [
+    "Carol",
+    "Dave",
+    "Eve"
+  ]
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_mixed_yes_no_and_abstain</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Dinner party: mix of yes, no, and abstain votes.</p>
+
+<p>        SCENARIO: 3 yes, 2 no, 1 abstain. Min is 2.</p>
+
+<p>        EXPECTATION: Only yes voters can be participants. No and abstain</p>
+<p>        voters are excluded from the participant pool.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>No participants (minimum not met)</td><td>&#x274C;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Event correctly cancelled — not enough interest. Better to cancel cleanly than to have 2 people show up expecting a group of 4+.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "c4cc4331-a2f6-4d03-b6de-e0308cd1dc3e",
+    "title": "Dinner party?",
+    "poll_type": "participation",
+    "created_at": "2026-04-03T17:57:19.798627+00:00",
+    "response_deadline": null,
+    "options": null,
+    "yes_count": 2,
+    "no_count": 1,
+    "abstain_count": 0,
+    "total_yes_votes": 2,
+    "total_votes": 3,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": null,
+    "min_participants": 4,
+    "max_participants": 10,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": null,
+    "ranked_choice_winner": null,
+    "time_slot_rounds": null,
+    "participating_vote_ids": [
+      "d07c6331-8fa4-4a66-9ccc-37b4e08cc396",
+      "410ef5e8-d2bf-4e42-a0f3-a15680f31c8f"
+    ],
+    "participating_voter_names": [
+      "Alice",
+      "Bob"
+    ]
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_exactly_one_person_event</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Solo activity: 'Anyone want my extra concert ticket?'</p>
+
+<p>        SCENARIO: One ticket available (max=1). Three people want it.</p>
+<p>        With max_participants=1, the poll auto-closes after the first</p>
+<p>        "yes" vote, so only the first responder gets in.</p>
+
+<p>        SOCIAL QUESTION: Is first-come-first-served fair, or should it</p>
+<p>        be random? FCFS rewards people who check their phone more often.</p>
+
+<p>        NOTE: The auto-close behavior means later voters can't even submit.</p>
+<p>        This test verifies that the auto-close works correctly for this case</p>
+<p>        and that the first voter is selected.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>3 participants</td><td>&#x2705;</td><td></td></tr>
+<tr><td>All are yes voters</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Only willing participants included. No/abstain correctly excluded.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_driver_needs_riders</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Carpool: driver needs at least 2 riders to justify the trip.</p>
+
+<p>        SCENARIO: A driver is offering a carpool to an event but only</p>
+<p>        wants to drive if at least 2 other people are coming.</p>
+
+<p>        EXPECTATION: If 2+ people say yes, the carpool happens. Otherwise</p>
+<p>        it doesn't, and the driver knows not to bother.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Poll auto-closed</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Exactly 1 participant</td><td>&#x2705;</td><td></td></tr>
+<tr><td>First voter wins</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "winner": "Eager Eve"
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_conflicting_rider_constraints</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Carpool: riders have conflicting preferences about group size.</p>
+
+<p>        SCENARIO: Car seats 4. Rider A only wants to go with at least 3</p>
+<p>        others (min=3). Rider B wants a quiet ride (max=2). Riders C and D</p>
+<p>        are flexible.</p>
+
+<p>        The algorithm must choose between satisfying A or B.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>3 participants (within capacity)</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Carpool happens with 3 riders. Driver gets clear confirmation.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<h2>Tests.Multi Stage</h2>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_suggestion_to_ranked_choice_pipeline</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Full pipeline: suggestions collected, then ranked.</p>
+
+<p>        SCENARIO: A team is picking a name for their project. Phase 1:</p>
+<p>        everyone suggests names (suggestion poll). Phase 2: the top</p>
+<p>        suggestions go to a ranked choice vote.</p>
+
+<p>        This simulates the manual version of the pipeline (creator</p>
+<p>        creates the follow-up ranked choice poll themselves).</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>At least 2 participants</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Both flexible riders included</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "participant_names": [
+    "Flex Chris",
+    "Flex Dana",
+    "Social Sam"
+  ]
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_auto_preferences_workflow</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Auto-preferences: suggestion poll automatically creates a follow-up ranked choice.</p>
+
+<p>        SCENARIO: Creator enables auto_create_preferences. When the</p>
+<p>        suggestion poll closes, the server automatically creates a</p>
+<p>        ranked choice poll with the suggestions as options.</p>
+
+<p>        EXPECTATION: The follow-up poll exists, is linked, and contains</p>
+<p>        the right options.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Top suggestions carried forward</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Ranked choice produced winner</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Follow-up link preserved</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Two-phase process: brainstorm surfaced top ideas, ranked choice picked 'Moonshot'. This mimics natural group decision-making: diverge (suggest), then converge (rank).</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_fork_preserves_context</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Fork: someone creates a variant of an existing poll.</p>
+
+<p>        SCENARIO: Original poll asks "Best pizza topping?" with options.</p>
+<p>        Someone forks it to ask "Best pizza topping for KIDS?" — same</p>
+<p>        concept, different audience.</p>
+
+<p>        EXPECTATION: Fork link is preserved. Both polls function independently.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Suggestion poll is closed</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Follow-up is ranked_choice</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Follow-up linked to original</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Follow-up has options from suggestions</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Auto-preferences seamlessly creates the second phase. Users don't need to manually extract suggestions and create a new poll — the workflow handles the transition automatically.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_follow_up_after_tie</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Follow-up: tie leads to a runoff with fewer options.</p>
+
+<p>        SCENARIO: A yes/no poll ties 3-3. The creator creates a follow-up</p>
+<p>        with more context to break the tie.</p>
+
+<p>        EXPECTATION: The follow-up is linked and can reference the tied result.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Fork linked to original</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Both have winners</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Polls are independent (different option sets)</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Fork maintains provenance while allowing the new poll to diverge. Different options, different voters, independent results — but the link back to the original provides context for why this poll exists.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+
+</details>
+
+<h2>Tests.Ranked Preferences</h2>
+
+<details>
+<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_favorite</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Movie night: one film is everyone's top or second pick.</p>
+
+<p>        SCENARIO: Five friends rank movies. "Dune" is everyone's first or</p>
+<p>        second choice, even though first-place votes are split.</p>
+
+<p>        EXPECTATION: Dune should win. IRV should surface the consensus</p>
+<p>        pick even when first-choice votes are fragmented.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>First poll tied</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Second poll has a winner</td><td>&#x274C;</td><td></td></tr>
+<tr><td>Follow-up linked</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Following up a tie with more context is a natural group behavior. The link between polls preserves the decision history: 'We tied, so we added more info and voted again.' Result: tie (3-3).</blockquote>
+
+<h4>Critique</h4>
+
+<p>_Technical failure detected: . This needs investigation before social evaluation is meaningful._</p>
+
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_condorcet_scenario</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Movie night: the group is polarized but there's a compromise option.</p>
+
+<p>        SCENARIO: Half the group loves action, half loves comedy.</p>
+<p>        A dramedy (mix) is everyone's second choice. In a simple</p>
+<p>        plurality vote, the dramedy would lose. Does IRV find it?</p>
+
+<p>        This is the classic case where ranked choice voting should</p>
+<p>        outperform simple majority.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Dune wins</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Dune is the consensus pick — universally liked even if not everyone's #1. IRV correctly identifies the 'least objectionable' choice.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "01c18771-1e15-4693-887d-acc2ffc7b172",
+    "title": "What movie should we watch?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T17:59:02.430670+00:00",
+    "response_deadline": null,
+    "options": [
+      "Dune",
+      "Barbie",
+      "Oppenheimer",
+      "Spider-Verse"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "Dune",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "Dune",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Barbie",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Oppenheimer",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Spider-Verse",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "Dune",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_spoiler_effect</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Movie night: a niche option splits the vote of similar options.</p>
+
+<p>        SCENARIO: Two sci-fi films and one comedy. Sci-fi fans split</p>
+<p>        between the two sci-fi options, potentially letting comedy win</p>
+<p>        even though sci-fi is more popular overall.</p>
+
+<p>        Does IRV handle vote-splitting better than plurality?</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>A winner was determined</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "f66efcd6-2c53-46d9-bf97-280fbda5ca7f",
+    "title": "Movie genre tonight?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T17:59:03.144042+00:00",
+    "response_deadline": null,
+    "options": [
+      "Action Blockbuster",
+      "Romantic Comedy",
+      "Dramedy"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 7,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "Romantic Comedy",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "Action Blockbuster",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Romantic Comedy",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Dramedy",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Romantic Comedy",
+        "vote_count": 4,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Action Blockbuster",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "Romantic Comedy",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  },
+  "winner": "Romantic Comedy"
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_partial_rankings</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Movie night: some people only rank their top picks.</p>
+
+<p>        SCENARIO: Not everyone ranks all options. Some people only care</p>
+<p>        about their top 1-2 choices and don't bother ranking the rest.</p>
+
+<p>        EXPECTATION: Partial ballots should still count. Exhausted ballots</p>
+<p>        (all ranked options eliminated) are handled gracefully.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>A winner exists</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Sci-fi wins (IRV resolves vote splitting)</td><td>&#x2705;</td><td>Winner was Interstellar</td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>IRV correctly consolidates the sci-fi vote after eliminating the weaker sci-fi option. In simple plurality, Mean Girls would have won despite 4/7 voters preferring sci-fi.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "9ea9ac38-cbc7-4f5f-a2b5-16260c2d406a",
+    "title": "Movie pick?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T17:59:04.087716+00:00",
+    "response_deadline": null,
+    "options": [
+      "Dune",
+      "Interstellar",
+      "Mean Girls"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 7,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "Interstellar",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "Mean Girls",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Dune",
+        "vote_count": 2,
+        "is_eliminated": true,
+        "borda_score": 14,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "Interstellar",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": 15,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 2,
+        "option_name": "Interstellar",
+        "vote_count": 4,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Mean Girls",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "Interstellar",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  },
+  "winner": "Interstellar"
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_unanimity</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Movie night: everyone agrees on the same first choice.</p>
+
+<p>        SCENARIO: Rare but it happens — everyone wants the same thing.</p>
+<p>        Should resolve in round 1 with no eliminations.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Winner determined</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Partial rankings are a natural expression of preference: 'I only care about these options.' The system should respect this rather than forcing voters to rank options they're indifferent about.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "01738a3e-812f-4f76-9953-feb6cc61da32",
+    "title": "Movie?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T18:00:07.669092+00:00",
+    "response_deadline": null,
+    "options": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "C",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "C",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "A",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 7,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "B",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": 7,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "D",
+        "vote_count": 1,
+        "is_eliminated": false,
+        "borda_score": 10,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 2,
+        "option_name": "A",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "C",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "D",
+        "vote_count": 1,
+        "is_eliminated": true,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 3,
+        "option_name": "A",
+        "vote_count": 2,
+        "is_eliminated": true,
+        "borda_score": 7,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 3,
+        "option_name": "C",
+        "vote_count": 2,
+        "is_eliminated": false,
+        "borda_score": 11,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 4,
+        "option_name": "C",
+        "vote_count": 4,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "C",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_borda_tiebreaker</code></summary>
+
+<h4>Scenario</h4>
+
+<p>Team retreat: three-way tie in first-place votes, broken by Borda.</p>
+
+<p>        SCENARIO: 9 team members, 3 destinations. Each destination has</p>
+<p>        exactly 3 first-place votes. The Borda count (positional scoring)</p>
+<p>        breaks the tie by considering all ranking positions.</p>
+
+<p>        EXPECTATION: The destination with the best overall rankings wins,</p>
+<p>        not just the one with the most first-place votes.</p>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>The Matrix wins</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Decided in round 1</td><td>&#x2705;</td><td></td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Unanimous agreement resolved instantly. No wasted rounds.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "95a283f6-7691-4597-8d2a-893adf3530b3",
+    "title": "Movie?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T18:00:09.058353+00:00",
+    "response_deadline": null,
+    "options": [
+      "The Matrix",
+      "Star Wars",
+      "Titanic"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 5,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "The Matrix",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "The Matrix",
+        "vote_count": 5,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Star Wars",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 1,
+        "option_name": "Titanic",
+        "vote_count": 0,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "The Matrix",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  }
+}
+</code></pre>
+
+</details>
+
+</details>
+
+<h2></h2>
+
+<details>
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code></code></summary>
+
+<h4>Technical Results</h4>
+
+<table>
+<tr><th>Assertion</th><th>Result</th><th>Detail</th></tr>
+<tr><td>Winner determined</td><td>&#x2705;</td><td></td></tr>
+<tr><td>Mountain Lodge wins (best overall ranking)</td><td>&#x2705;</td><td>Actual winner: Mountain Lodge</td></tr>
+</table>
+
+<h4>Social Evaluation</h4>
+
+<blockquote>Mountain Lodge is ranked 1st or 2nd by everyone — the Borda tiebreaker correctly identifies it as the most broadly acceptable choice.</blockquote>
+
+<h4>Critique</h4>
+
+<p>_System behaves as expected for this social scenario._</p>
+
+<details>
+<summary>Raw data</summary>
+
+<pre><code>
+{
+  "results": {
+    "poll_id": "66ab91a3-9bea-40b4-89c9-5f24e7895ae0",
+    "title": "Team retreat destination?",
+    "poll_type": "ranked_choice",
+    "created_at": "2026-04-03T18:00:10.249862+00:00",
+    "response_deadline": null,
+    "options": [
+      "Lake House",
+      "Mountain Lodge",
+      "Beach Resort"
+    ],
+    "yes_count": null,
+    "no_count": null,
+    "abstain_count": null,
+    "total_yes_votes": null,
+    "total_votes": 9,
+    "yes_percentage": null,
+    "no_percentage": null,
+    "winner": "Mountain Lodge",
+    "min_participants": null,
+    "max_participants": null,
+    "suggestion_counts": null,
+    "ranked_choice_rounds": [
+      {
+        "round_number": 1,
+        "option_name": "Beach Resort",
+        "vote_count": 3,
+        "is_eliminated": true,
+        "borda_score": 15,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "Lake House",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": 18,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 1,
+        "option_name": "Mountain Lodge",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": 21,
+        "tie_broken_by_borda": true
+      },
+      {
+        "round_number": 2,
+        "option_name": "Mountain Lodge",
+        "vote_count": 6,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      },
+      {
+        "round_number": 2,
+        "option_name": "Lake House",
+        "vote_count": 3,
+        "is_eliminated": false,
+        "borda_score": null,
+        "tie_broken_by_borda": false
+      }
+    ],
+    "ranked_choice_winner": "Mountain Lodge",
+    "time_slot_rounds": null,
+    "participating_vote_ids": null,
+    "participating_voter_names": null
+  },
+  "winner": "Mountain Lodge"
+}
+</code></pre>
+
+</details>
+
+</details>
+</div>
+</body>
+</html>
