@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
+import { apiGetAllPollIds } from "@/lib/api";
+import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import PollList from "@/components/PollList";
 
 // Fun activity phrases (max 25 chars)
@@ -124,7 +126,26 @@ export default function Home() {
       try {
         setLoading(true);
         setError(null);
-        
+
+        // Dev mode: if ?dev=1 in URL, import all poll IDs from the database
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('dev') === '1') {
+            const allIds = await apiGetAllPollIds();
+            if (allIds.length > 0) {
+              for (const id of allIds) {
+                addAccessiblePollId(id);
+              }
+              // Remove ?dev=1 from URL without reload
+              params.delete('dev');
+              const newUrl = params.toString()
+                ? `${window.location.pathname}?${params}`
+                : window.location.pathname;
+              window.history.replaceState({}, '', newUrl);
+            }
+          }
+        }
+
         // First, discover any new follow-up polls
         try {
           const discoveryResult = await discoverRelatedPolls();

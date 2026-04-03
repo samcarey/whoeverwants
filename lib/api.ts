@@ -349,6 +349,17 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
   });
 }
 
+// --- Dev: fetch all poll IDs (dev environments only) ---
+
+export async function apiGetAllPollIds(): Promise<string[]> {
+  try {
+    const data: { poll_ids: string[] } = await apiFetch('/dev/all-ids');
+    return data.poll_ids;
+  } catch {
+    return [];
+  }
+}
+
 // --- Search/autocomplete ---
 
 export interface SearchResult {
