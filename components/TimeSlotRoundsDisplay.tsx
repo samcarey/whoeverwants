@@ -259,11 +259,65 @@ export default function TimeSlotRoundsDisplay({
 
   const groups = useMemo(() => buildGroups(currentSlots), [currentSlots]);
 
+  // Check if all groups share a single date so we can show it once as a header
+  const allDates = useMemo(() => {
+    const dates = new Set<string>();
+    for (const g of groups) {
+      for (const dr of g.dateRanges) dates.add(dr.date);
+    }
+    return [...dates].sort();
+  }, [groups]);
+  const singleDate = allDates.length === 1 ? allDates[0] : null;
+
   const COLLAPSED_GROUPS = 4;
   const needsCollapse = groups.length > COLLAPSED_GROUPS + 1;
   const showAll = expanded || !needsCollapse;
   const visibleGroups = showAll ? groups : groups.slice(0, COLLAPSED_GROUPS);
   const hiddenGroupCount = groups.length - visibleGroups.length;
+
+  if (allRounds.length === 0) {
+    return (
+      <div className="text-center text-gray-600 dark:text-gray-400">
+        No time slots available
+      </div>
+    );
+  }
+
+  // Result page: simple labeled layout with a back arrow to see rounds
+  if (isResultPage && winnerSlot) {
+    return (
+      <div className="w-full max-w-2xl mx-auto">
+        <div className="border rounded-lg overflow-hidden dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="px-4 py-2.5 flex items-center">
+            <button
+              onClick={() => setCurrentPage(totalRounds)}
+              className="p-1.5 -ml-1 mr-2 rounded text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+              aria-label="View considered time slots"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div className="flex-1 space-y-0.5">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400 w-8">Time</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {formatTimeRange(winnerSlot)}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{formatDuration(winnerSlot.duration_hours)}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-gray-500 dark:text-gray-400 w-8">Date</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {formatDate(winnerSlot.slot_date)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const renderParticipantPills = (group: SlotGroup) => (
     <div className="flex flex-wrap gap-1">
@@ -288,62 +342,6 @@ export default function TimeSlotRoundsDisplay({
       })}
     </div>
   );
-
-  // (result page rendering handled separately below)
-
-  if (allRounds.length === 0) {
-    return (
-      <div className="text-center text-gray-600 dark:text-gray-400">
-        No time slots available
-      </div>
-    );
-  }
-
-  // Result page: simple labeled layout with a back arrow to see rounds
-  if (isResultPage && winnerSlot) {
-    return (
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="border rounded-lg overflow-hidden dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="px-4 py-2.5 flex items-start justify-between">
-            <div className="space-y-1">
-              <div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">Time</span>
-                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {formatTimeRange(winnerSlot)} <span className="font-normal text-gray-400 dark:text-gray-500">{formatDuration(winnerSlot.duration_hours)}</span>
-                </div>
-              </div>
-              <div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">Date</span>
-                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {formatDate(winnerSlot.slot_date)}
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setCurrentPage(totalRounds)}
-              className="p-1 rounded text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-              aria-label="View rounds"
-              title="View considered time slots"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Check if all groups share a single date so we can show it once as a header
-  const allDates = useMemo(() => {
-    const dates = new Set<string>();
-    for (const g of groups) {
-      for (const dr of g.dateRanges) dates.add(dr.date);
-    }
-    return [...dates].sort();
-  }, [groups]);
-  const singleDate = allDates.length === 1 ? allDates[0] : null;
 
   const formatGroupRanges = (group: SlotGroup): string => {
     return group.dateRanges.map(dr => {
