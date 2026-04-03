@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 API_URL = os.environ.get("SOCIAL_TEST_API_URL", "https://whoeverwants.com")
+REPORT_URL = os.environ.get("SOCIAL_TEST_REPORT_URL", "")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -38,8 +39,9 @@ def creator_secret():
 class PollHelper:
     """Convenience wrapper for poll API operations with rate-limit retry."""
 
-    def __init__(self, client: httpx.Client):
+    def __init__(self, client: httpx.Client, result: "SocialTestResult | None" = None):
         self.client = client
+        self._result = result
 
     def _request(self, method: str, url: str, expected: int, err_prefix: str, **kwargs) -> httpx.Response:
         """Make a request with automatic rate-limit retry."""
@@ -54,9 +56,17 @@ class PollHelper:
         raise AssertionError(f"{err_prefix}: rate limited after 8 retries")
 
     def create_poll(self, title: str, poll_type: str, creator_secret: str, **kwargs) -> dict:
+        # Inject report back-link into poll details if report URL is configured
+        if REPORT_URL and self._result and "details" not in kwargs:
+            anchor = self._result.test_name
+            kwargs["details"] = f"Test: {anchor}\n{REPORT_URL}#{anchor}"
         payload = {"title": title, "poll_type": poll_type, "creator_secret": creator_secret, **kwargs}
         resp = self._request("POST", "/api/polls", 201, "Failed to create poll", json=payload)
-        return resp.json()
+        data = resp.json()
+        # Record the first poll's ID for report linking
+        if self._result and "poll_id" not in self._result.details:
+            self._result.record("poll_id", data.get("id"))
+        return data
 
     def vote(self, poll_id: str, voter_name: str | None = None, **kwargs) -> dict:
         payload = {**kwargs}
@@ -105,9 +115,9 @@ class PollHelper:
 
 
 @pytest.fixture
-def api(http_client):
+def api(http_client, result):
     """PollHelper instance for convenient API calls."""
-    return PollHelper(http_client)
+    return PollHelper(http_client, result)
 
 
 # ── Result collection for report generation ───────────────────────────────────

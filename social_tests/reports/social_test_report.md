@@ -1,4 +1,4 @@
-# Social Test Report — 2026-04-03 19:35 UTC
+# Social Test Report — 2026-04-03 20:09 UTC
 
 <details>
 <summary><strong>Testing Philosophy & Strategy</strong></summary>
@@ -94,8 +94,8 @@ Reports are tracked over time. Each iteration:
 
 ## Tests.Casual Decisions
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_majority_yes</code></summary>
+<details id="test_clear_majority_yes">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_majority_yes</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/bf536fe2-4950-49f1-a9ac-52a06dda0622/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -129,10 +129,10 @@ percentage. Anonymous dissenters should feel safe.
 ```json
 {
   "results": {
-    "poll_id": "5aac9d66-6272-4dcc-ab00-c77841451807",
+    "poll_id": "bf536fe2-4950-49f1-a9ac-52a06dda0622",
     "title": "Drinks after work Friday?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:23.216082+00:00",
+    "created_at": "2026-04-03T20:09:07.128524+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 4,
@@ -159,8 +159,8 @@ percentage. Anonymous dissenters should feel safe.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_exact_tie</code></summary>
+<details id="test_exact_tie">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_exact_tie</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/78af0ea2-5ce0-49a2-93b1-6a9dc322ea28/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -189,10 +189,10 @@ half the group doesn't want to go creates resentment.
 ```json
 {
   "results": {
-    "poll_id": "5122edc9-22ed-4257-97db-7542c71e36f9",
+    "poll_id": "78af0ea2-5ce0-49a2-93b1-6a9dc322ea28",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:24.102518+00:00",
+    "created_at": "2026-04-03T20:09:07.936755+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 3,
@@ -219,8 +219,8 @@ half the group doesn't want to go creates resentment.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_single_voter</code></summary>
+<details id="test_single_voter">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_single_voter</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/ab8f632d-a2e9-4996-9b30-107dbf1fcc03/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -249,10 +249,10 @@ but socially this means nobody else cared enough to respond.
 ```json
 {
   "results": {
-    "poll_id": "a52006fe-a902-4ba5-934c-357bae3acaaf",
+    "poll_id": "ab8f632d-a2e9-4996-9b30-107dbf1fcc03",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:24.921127+00:00",
+    "created_at": "2026-04-03T20:09:08.907646+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 1,
@@ -279,8 +279,8 @@ but socially this means nobody else cared enough to respond.
 
 </details>
 
-<details>
-<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_all_abstain</code></summary>
+<details id="test_all_abstain">
+<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_all_abstain</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/10690a2a-ae4f-461b-b9e6-915b729d33e1/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -314,10 +314,10 @@ Technical failure: . Needs investigation before social evaluation is meaningful.
 ```json
 {
   "results": {
-    "poll_id": "292c1e02-cff4-411b-a73e-927a30c8a889",
+    "poll_id": "10690a2a-ae4f-461b-b9e6-915b729d33e1",
     "title": "Drinks after work?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:25.279108+00:00",
+    "created_at": "2026-04-03T20:09:09.308866+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 0,
@@ -344,8 +344,8 @@ Technical failure: . Needs investigation before social evaluation is meaningful.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_anonymous_majority</code></summary>
+<details id="test_anonymous_majority">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_anonymous_majority</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/b0857f4d-b0f0-4173-b38e-f3049455d0d4/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -375,10 +375,10 @@ to know their preference.
 ```json
 {
   "results": {
-    "poll_id": "8c45181e-abbf-42c5-b325-ba98148f3299",
+    "poll_id": "b0857f4d-b0f0-4173-b38e-f3049455d0d4",
     "title": "Switch to 4-day work week?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:25.805108+00:00",
+    "created_at": "2026-04-03T20:09:09.879982+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 7,
@@ -405,8 +405,8 @@ to know their preference.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_convergent_suggestions</code></summary>
+<details id="test_convergent_suggestions">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_convergent_suggestions</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/b3b538ac-e333-4016-baba-a6f621594e17/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -438,10 +438,10 @@ reflects how many people independently thought of each place.
 ```json
 {
   "results": {
-    "poll_id": "95dc31bd-c87b-4257-95db-b33ce818d2e2",
+    "poll_id": "b3b538ac-e333-4016-baba-a6f621594e17",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:34:27.088120+00:00",
+    "created_at": "2026-04-03T20:09:11.077305+00:00",
     "response_deadline": null,
     "options": [
       "Thai Palace"
@@ -493,8 +493,8 @@ reflects how many people independently thought of each place.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_all_unique_suggestions</code></summary>
+<details id="test_all_unique_suggestions">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#f0883e;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">AWKWARD</span> <code>test_all_unique_suggestions</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/a5b5e3e6-ea1f-48ff-858d-90ad06216164/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -523,10 +523,10 @@ arbitrary — "Arby's" shouldn't win over "Zaxby's" just by name.
 ```json
 {
   "results": {
-    "poll_id": "46a734bd-04bc-43d0-8f57-95ceba0862f2",
+    "poll_id": "a5b5e3e6-ea1f-48ff-858d-90ad06216164",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:34:27.802143+00:00",
+    "created_at": "2026-04-03T20:09:11.767476+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": null,
@@ -574,8 +574,8 @@ arbitrary — "Arby's" shouldn't win over "Zaxby's" just by name.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_abstainer_in_brainstorm</code></summary>
+<details id="test_abstainer_in_brainstorm">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_abstainer_in_brainstorm</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/407eeeac-0784-4012-af2e-301a2304440f/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -604,10 +604,10 @@ happy with whatever the group picks).
 ```json
 {
   "results": {
-    "poll_id": "2ea5a0fd-de78-4688-96d4-d7269363f24a",
+    "poll_id": "407eeeac-0784-4012-af2e-301a2304440f",
     "title": "Where should we eat?",
     "poll_type": "suggestion",
-    "created_at": "2026-04-03T19:34:28.535651+00:00",
+    "created_at": "2026-04-03T20:09:12.491872+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": null,
@@ -645,8 +645,8 @@ happy with whatever the group picks).
 
 ## Tests.Edge Cases
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_all_anonymous_yes_no</code></summary>
+<details id="test_all_anonymous_yes_no">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_all_anonymous_yes_no</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/c0998f3b-605e-4bed-b707-ba3b33f3583a/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -675,10 +675,10 @@ who voted what. This is the privacy promise of the app.
 ```json
 {
   "results": {
-    "poll_id": "e8ac9cef-8e85-46a4-acf8-d2f5b2fa9dd3",
+    "poll_id": "c0998f3b-605e-4bed-b707-ba3b33f3583a",
     "title": "Should we file a complaint?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:29.254507+00:00",
+    "created_at": "2026-04-03T20:09:13.333649+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 5,
@@ -705,8 +705,8 @@ who voted what. This is the privacy promise of the app.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_mixed_named_and_anonymous</code></summary>
+<details id="test_mixed_named_and_anonymous">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_mixed_named_and_anonymous</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/9afc77ed-850f-4f71-8878-f413dec16b8c/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -733,8 +733,8 @@ named voters, the 2 anonymous ones are identifiable.)
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_change_vote_flips_result</code></summary>
+<details id="test_change_vote_flips_result">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_change_vote_flips_result</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/a6284b1a-a224-406e-ad9b-7f4df0dd3814/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -760,8 +760,8 @@ making it 2-3. The swing voter changed the entire outcome.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_edit_ranked_choice</code></summary>
+<details id="test_edit_ranked_choice">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_edit_ranked_choice</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/b3b3fc25-49b7-4dcc-bdad-995be23d0195/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -786,10 +786,10 @@ This tests that the ranking replacement is clean.
 ```json
 {
   "results": {
-    "poll_id": "5874865d-8d4a-40dc-8851-b91972a1cb82",
+    "poll_id": "b3b3fc25-49b7-4dcc-bdad-995be23d0195",
     "title": "Favorite?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:31.804934+00:00",
+    "created_at": "2026-04-03T20:09:15.828670+00:00",
     "response_deadline": null,
     "options": [
       "A",
@@ -845,8 +845,8 @@ This tests that the ranking replacement is clean.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_closes_losing_poll</code></summary>
+<details id="test_creator_closes_losing_poll">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_closes_losing_poll</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/1aeb093a-f921-45a5-953f-d562d6feeb86/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -875,10 +875,10 @@ still reflect the group's decision, not the creator's preference.
 ```json
 {
   "results": {
-    "poll_id": "541996e8-c681-4ab4-b46e-5ae5856f54e8",
+    "poll_id": "1aeb093a-f921-45a5-953f-d562d6feeb86",
     "title": "My idea is great, right?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:32.463026+00:00",
+    "created_at": "2026-04-03T20:09:16.427962+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 1,
@@ -905,8 +905,8 @@ still reflect the group's decision, not the creator's preference.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_reopens_and_more_votes</code></summary>
+<details id="test_creator_reopens_and_more_votes">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_creator_reopens_and_more_votes</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/855a5016-48b6-447c-93a9-491de1c84f7c/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -931,8 +931,8 @@ One more person votes and breaks the tie.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_twenty_voter_yes_no</code></summary>
+<details id="test_twenty_voter_yes_no">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_twenty_voter_yes_no</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/d6aba2ae-433d-4866-825e-f5ef42ce1655/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -964,10 +964,10 @@ session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.
 ```json
 {
   "results": {
-    "poll_id": "87f1bddd-2498-49ee-9d33-40796151fc9c",
+    "poll_id": "d6aba2ae-433d-4866-825e-f5ef42ce1655",
     "title": "Study session before the exam?",
     "poll_type": "yes_no",
-    "created_at": "2026-04-03T19:34:34.392200+00:00",
+    "created_at": "2026-04-03T20:09:17.947115+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 12,
@@ -994,8 +994,8 @@ session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_ten_option_ranked_choice</code></summary>
+<details id="test_ten_option_ranked_choice">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_ten_option_ranked_choice</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/f8e69e6e-fc82-4889-bb7b-241dea2bb136/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1021,10 +1021,10 @@ session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.
 ```json
 {
   "results": {
-    "poll_id": "df1bba8c-0050-4f22-b962-801990cada84",
+    "poll_id": "f8e69e6e-fc82-4889-bb7b-241dea2bb136",
     "title": "Restaurant for team dinner?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:36.563511+00:00",
+    "created_at": "2026-04-03T20:09:19.984154+00:00",
     "response_deadline": null,
     "options": [
       "Italian",
@@ -1499,8 +1499,8 @@ session. 12 yes (mix of named/anonymous), 6 no, 2 abstain.
 
 ## Tests.Event Planning
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_everyone_flexible</code></summary>
+<details id="test_everyone_flexible">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_everyone_flexible</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/39448a87-0ad3-48a2-bede-22f67837c567/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1527,10 +1527,10 @@ group size. No constraints to conflict.
 ```json
 {
   "results": {
-    "poll_id": "559dd689-ded9-4aa9-9cb1-e3578b2092de",
+    "poll_id": "39448a87-0ad3-48a2-bede-22f67837c567",
     "title": "Dinner at my place Saturday?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:34:37.603941+00:00",
+    "created_at": "2026-04-03T20:09:22.053435+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 5,
@@ -1548,11 +1548,11 @@ group size. No constraints to conflict.
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "975422af-8f48-42a8-be5c-54d5dce5828b",
-      "d766e894-b0e1-40e0-b4fb-3e433b96399a",
-      "0d36e41a-65af-4b85-bfb5-c03ab2061652",
-      "e553fdcc-58ff-49df-9048-bd2e22d2460d",
-      "c9bad6f2-9be4-491d-bc12-c416ef95168a"
+      "c45146f2-3f4b-4e50-a979-2b65abbc8a42",
+      "b75291ed-f0eb-4d81-9e76-1d44c1cf8cde",
+      "ca4dc56a-3abb-4f07-9c2b-31d64ea63501",
+      "904e0a43-901b-48cf-b59d-6d33164abe3b",
+      "654530fa-795f-4cb3-ba44-7d39cca5471e"
     ],
     "participating_voter_names": [
       "Alice",
@@ -1569,8 +1569,8 @@ group size. No constraints to conflict.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_introvert_vs_extrovert</code></summary>
+<details id="test_introvert_vs_extrovert">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_introvert_vs_extrovert</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/ed4c2fca-0370-42d8-9ca5-2048d6ad2997/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1601,10 +1601,10 @@ She has a legitimate social preference.
 ```json
 {
   "results": {
-    "poll_id": "cc0b9950-caa7-40d5-8c5b-9ab291aa794c",
+    "poll_id": "ed4c2fca-0370-42d8-9ca5-2048d6ad2997",
     "title": "Dinner party Saturday?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:34:38.434405+00:00",
+    "created_at": "2026-04-03T20:09:22.841077+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 3,
@@ -1622,9 +1622,9 @@ She has a legitimate social preference.
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "a3aad173-643d-44f9-8401-adba89c7255c",
-      "69a3a1e4-9559-4a19-a3de-814fd282e5d0",
-      "57e4ed54-99e0-4e4a-8de6-be254f0261c3"
+      "c2156815-4e08-4a97-8719-b74b9b8915a4",
+      "65e72325-b96b-4d1b-b0dc-982020d32836",
+      "acc585b0-1cff-47f0-a1ee-daec068b90a9"
     ],
     "participating_voter_names": [
       "Carol",
@@ -1644,8 +1644,8 @@ She has a legitimate social preference.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_minimum_not_met</code></summary>
+<details id="test_minimum_not_met">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_minimum_not_met</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/de26d5be-5288-4229-9346-2346de380d57/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1679,10 +1679,10 @@ only 2 people show up.
 ```json
 {
   "results": {
-    "poll_id": "b217f73f-283b-4199-8ac8-ca47ecd70c84",
+    "poll_id": "de26d5be-5288-4229-9346-2346de380d57",
     "title": "Dinner party?",
     "poll_type": "participation",
-    "created_at": "2026-04-03T19:34:39.379784+00:00",
+    "created_at": "2026-04-03T20:09:23.589962+00:00",
     "response_deadline": null,
     "options": null,
     "yes_count": 2,
@@ -1700,8 +1700,8 @@ only 2 people show up.
     "ranked_choice_winner": null,
     "time_slot_rounds": null,
     "participating_vote_ids": [
-      "bbf644e5-5b5c-461c-bd98-79d660ec7487",
-      "0252913a-a55e-4203-9519-13930a6f9dcb"
+      "6b745386-57ed-4781-82fd-de4e569d7fd0",
+      "a0960465-e1f9-470c-b914-aad9369c530a"
     ],
     "participating_voter_names": [
       "Alice",
@@ -1715,8 +1715,8 @@ only 2 people show up.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_mixed_yes_no_and_abstain</code></summary>
+<details id="test_mixed_yes_no_and_abstain">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_mixed_yes_no_and_abstain</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/65ecffd7-d576-4655-a268-f33f1334fd7b/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1741,8 +1741,8 @@ voters are excluded from the participant pool.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_exactly_one_person_event</code></summary>
+<details id="test_exactly_one_person_event">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_exactly_one_person_event</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/f72b6046-aca6-4582-abf3-3ba2be05c8f0/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1784,8 +1784,8 @@ and that the first voter is selected.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_driver_needs_riders</code></summary>
+<details id="test_driver_needs_riders">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_driver_needs_riders</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/f3a61ea0-b578-4540-b179-6f2a6df8adc1/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1810,8 +1810,8 @@ it doesn't, and the driver knows not to bother.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_conflicting_rider_constraints</code></summary>
+<details id="test_conflicting_rider_constraints">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_conflicting_rider_constraints</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/a10d5713-298b-4860-abfb-af88ba77ff80/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1853,8 +1853,8 @@ The algorithm must choose between satisfying A or B.
 
 ## Tests.Multi Stage
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_suggestion_to_ranked_choice_pipeline</code></summary>
+<details id="test_suggestion_to_ranked_choice_pipeline">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_suggestion_to_ranked_choice_pipeline</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/d8497599-7678-4ccd-a6c4-55a9bf3e9cfa/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1882,8 +1882,8 @@ creates the follow-up ranked choice poll themselves).
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_auto_preferences_workflow</code></summary>
+<details id="test_auto_preferences_workflow">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_auto_preferences_workflow</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/dd4ac2f9-5717-4734-8e35-d476737cdb35/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1912,8 +1912,8 @@ the right options.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_fork_preserves_context</code></summary>
+<details id="test_fork_preserves_context">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_fork_preserves_context</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/61e31430-c3d8-4c16-ae6f-70f7e1d2719d/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1940,8 +1940,8 @@ concept, different audience.
 
 </details>
 
-<details>
-<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_follow_up_after_tie</code></summary>
+<details id="test_follow_up_after_tie">
+<summary><span style="background:#dc3545;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIL</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_follow_up_after_tie</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/492bcd56-a95e-4678-ba7a-6e923b73df6a/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -1973,8 +1973,8 @@ Technical failure: . Needs investigation before social evaluation is meaningful.
 
 ## Tests.Ranked Preferences
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_favorite</code></summary>
+<details id="test_clear_favorite">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_clear_favorite</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/157322f6-cee7-4c04-9528-9244600d3eb8/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2002,10 +2002,10 @@ pick even when first-choice votes are fragmented.
 ```json
 {
   "results": {
-    "poll_id": "06b97367-8cff-4894-84a4-c34dde5f7539",
+    "poll_id": "157322f6-cee7-4c04-9528-9244600d3eb8",
     "title": "What movie should we watch?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:47.321879+00:00",
+    "created_at": "2026-04-03T20:09:31.229976+00:00",
     "response_deadline": null,
     "options": [
       "Dune",
@@ -2070,8 +2070,8 @@ pick even when first-choice votes are fragmented.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_condorcet_scenario</code></summary>
+<details id="test_condorcet_scenario">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#8b5cf6;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">INSIGHT</span> <code>test_condorcet_scenario</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/3769d9a0-10be-436e-b18d-a8ddd7510330/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2100,10 +2100,10 @@ outperform simple majority.
 ```json
 {
   "results": {
-    "poll_id": "913c94fc-97df-4ee1-87ee-c5f604855c87",
+    "poll_id": "3769d9a0-10be-436e-b18d-a8ddd7510330",
     "title": "Movie genre tonight?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:48.057681+00:00",
+    "created_at": "2026-04-03T20:09:31.948217+00:00",
     "response_deadline": null,
     "options": [
       "Action Blockbuster",
@@ -2176,8 +2176,8 @@ outperform simple majority.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_spoiler_effect</code></summary>
+<details id="test_spoiler_effect">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_spoiler_effect</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/c3d25b93-95ae-4c69-868c-b94c0cb87c27/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2206,10 +2206,10 @@ Does IRV handle vote-splitting better than plurality?
 ```json
 {
   "results": {
-    "poll_id": "216b41d8-cf3b-4926-b697-8f61bd54000f",
+    "poll_id": "c3d25b93-95ae-4c69-868c-b94c0cb87c27",
     "title": "Movie pick?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:48.925904+00:00",
+    "created_at": "2026-04-03T20:09:32.842777+00:00",
     "response_deadline": null,
     "options": [
       "Dune",
@@ -2282,8 +2282,8 @@ Does IRV handle vote-splitting better than plurality?
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_partial_rankings</code></summary>
+<details id="test_partial_rankings">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_partial_rankings</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/24ce599e-c563-428f-bd28-517c083bc8a8/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2311,10 +2311,10 @@ about their top 1-2 choices and don't bother ranking the rest.
 ```json
 {
   "results": {
-    "poll_id": "a571847c-5924-49ba-bc58-76268eced53f",
+    "poll_id": "24ce599e-c563-428f-bd28-517c083bc8a8",
     "title": "Movie?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:49.854464+00:00",
+    "created_at": "2026-04-03T20:09:33.750370+00:00",
     "response_deadline": null,
     "options": [
       "A",
@@ -2427,8 +2427,8 @@ about their top 1-2 choices and don't bother ranking the rest.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_unanimity</code></summary>
+<details id="test_unanimity">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_unanimity</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/b0c7eb78-d1a3-4e14-85f7-d85a5b60f2d1/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2454,10 +2454,10 @@ Should resolve in round 1 with no eliminations.
 ```json
 {
   "results": {
-    "poll_id": "ae65b08f-adcb-40a3-b80d-19f2ae4891a1",
+    "poll_id": "b0c7eb78-d1a3-4e14-85f7-d85a5b60f2d1",
     "title": "Movie?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:50.589834+00:00",
+    "created_at": "2026-04-03T20:09:34.490527+00:00",
     "response_deadline": null,
     "options": [
       "The Matrix",
@@ -2513,8 +2513,8 @@ Should resolve in round 1 with no eliminations.
 
 </details>
 
-<details>
-<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_borda_tiebreaker</code></summary>
+<details id="test_borda_tiebreaker">
+<summary><span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">PASS</span> <span style="background:#28a745;color:white;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600">FAIR</span> <code>test_borda_tiebreaker</code> <a href="https://test-at-test-com.dev.whoeverwants.com/p/c3467c92-44b0-49f2-87b5-9b84baab2868/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a></summary>
 
 #### Scenario
 
@@ -2544,10 +2544,10 @@ not just the one with the most first-place votes.
 ```json
 {
   "results": {
-    "poll_id": "dbe04b7f-b2d7-4437-b157-8538dbc77098",
+    "poll_id": "c3467c92-44b0-49f2-87b5-9b84baab2868",
     "title": "Team retreat destination?",
     "poll_type": "ranked_choice",
-    "created_at": "2026-04-03T19:34:51.289521+00:00",
+    "created_at": "2026-04-03T20:09:35.187227+00:00",
     "response_deadline": null,
     "options": [
       "Lake House",

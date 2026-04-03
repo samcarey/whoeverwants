@@ -67,10 +67,11 @@ def social_badge_color(badge: str) -> str:
     return {"FAIR": "green", "AWKWARD": "orange", "INSIGHT": "purple"}.get(badge, "gray")
 
 
-def build_markdown(results: list[dict], critique_map: dict[str, str] | None = None) -> str:
+def build_markdown(results: list[dict], critique_map: dict[str, str] | None = None, site_url: str = "") -> str:
     """Build the full Markdown report."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     critique_map = critique_map or {}
+    site_url = site_url.rstrip("/")
 
     # Read strategy document
     strategy_text = STRATEGY_PATH.read_text() if STRATEGY_PATH.exists() else "*Strategy document not found.*"
@@ -117,8 +118,14 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
             soc_color = social_badge_color(r["social_badge"])
             soc_badge = badge_html(r["social_badge"], soc_color)
 
-            lines.append(f"<details>")
-            lines.append(f"<summary>{tech_badge} {soc_badge} <code>{r['test_name']}</code></summary>\n")
+            anchor = r["test_name"]
+            poll_id = r["details"].get("poll_id")
+            poll_link = ""
+            if poll_id and site_url:
+                poll_link = f' <a href="{site_url}/p/{poll_id}/" style="font-size:12px;color:#58a6ff;text-decoration:none">view poll &#x2197;</a>'
+
+            lines.append(f'<details id="{anchor}">')
+            lines.append(f"<summary>{tech_badge} {soc_badge} <code>{anchor}</code>{poll_link}</summary>\n")
 
             # Docstring (scenario description) — style SCENARIO:/EXPECTATION: labels
             if r["docstring"]:
@@ -464,6 +471,7 @@ def main():
     parser.add_argument("--skip-tests", action="store_true", help="Use cached test results")
     parser.add_argument("--skip-critique", action="store_true", help="Skip AI critique generation")
     parser.add_argument("--skip-deploy", action="store_true", help="Skip deploying to droplet")
+    parser.add_argument("--site-url", default=os.environ.get("SOCIAL_TEST_API_URL", ""), help="Dev site URL for poll links")
     args = parser.parse_args()
 
     REPORT_DIR.mkdir(exist_ok=True)
@@ -490,7 +498,7 @@ def main():
         print(f"Generated {len(critique_map)} critiques")
 
     # Step 3: Build report
-    md_content = build_markdown(results, critique_map)
+    md_content = build_markdown(results, critique_map, site_url=args.site_url)
     md_path = REPORT_DIR / "social_test_report.md"
     md_path.write_text(md_content)
     print(f"Markdown report: {md_path}")
