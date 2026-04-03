@@ -27,10 +27,12 @@ STRATEGY_PATH = Path(__file__).parent / "testing_strategy.md"
 CRITIQUE_PATH = REPORT_DIR / "previous_critique.json"
 
 
-def run_tests() -> list[dict]:
+def run_tests(site_url: str = "") -> list[dict]:
     """Execute pytest and return collected results."""
     env = os.environ.copy()
     env["SOCIAL_TEST_RESULTS_PATH"] = str(RESULTS_PATH)
+    if site_url:
+        env["SOCIAL_TEST_REPORT_URL"] = f"{site_url.rstrip('/')}/social_test_report.html"
 
     print("Running social tests...")
     proc = subprocess.run(
@@ -494,7 +496,7 @@ def main():
             results = json.load(f)
         print(f"Using cached results: {len(results)} tests")
     else:
-        results = run_tests()
+        results = run_tests(site_url=args.site_url)
         print(f"Collected {len(results)} test results")
 
     if not results:
