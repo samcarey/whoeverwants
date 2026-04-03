@@ -158,12 +158,14 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: 
 
 
 function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
-  const yesCount = results.yes_count || 0;
+  const yesCount = results.yes_count || 0;        // participants selected by algorithm
   const noCount = results.no_count || 0;
-  const totalYesVotes = results.total_yes_votes ?? yesCount;
+  const abstainCount = results.abstain_count || 0;
+  const totalYesVotes = results.total_yes_votes ?? yesCount;  // raw yes votes before algorithm
   const totalVotes = results.total_votes;
   const minParticipants = results.min_participants;
   const maxParticipants = results.max_participants;
+  const excludedYesVoters = totalYesVotes - yesCount;  // said yes but didn't make the cut
 
   const [participants, setParticipants] = useState<{id: string, voter_name: string | null, vote_id?: string}[]>([]);
   const [allVoters, setAllVoters] = useState<{id: string, voter_name: string | null}[]>([]);
@@ -225,31 +227,51 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   // Generate a detailed reason for why the event isn't happening
   const getFailureReason = (): string => {
-    // Nobody responded at all
     if (totalVotes === 0) return 'No responses received';
 
-    // People responded but nobody said yes
     if (totalYesVotes === 0) {
-      if (noCount > 0) return `Everyone declined (${noCount} no${noCount !== 1 ? "'s" : ''})`;
+      if (noCount > 0 && abstainCount > 0) return `${noCount} declined, ${abstainCount} abstained — no one volunteered`;
+      if (noCount > 0) return `All ${noCount} respondent${noCount !== 1 ? 's' : ''} declined`;
+      if (abstainCount > 0) return `All ${abstainCount} respondent${abstainCount !== 1 ? 's' : ''} abstained`;
       return 'No one volunteered';
     }
 
-    // People said yes but the algorithm couldn't form a compatible group
     if (yesCount === 0 && totalYesVotes > 0) {
-      return `${totalYesVotes} wanted to participate but their conditions were incompatible`;
+      if (totalYesVotes === 1) return '1 person wanted to join but their conditions couldn\u2019t be satisfied';
+      return `${totalYesVotes} people wanted to join but their conditions were incompatible`;
     }
 
-    // Some participants selected but below minimum
     if (minParticipants && yesCount < minParticipants) {
-      return `Only ${yesCount} of ${minParticipants} required participants`;
+      const shortBy = minParticipants - yesCount;
+      return `${yesCount} participant${yesCount !== 1 ? 's' : ''} — ${shortBy} short of the ${minParticipants} required`;
     }
 
-    // Over maximum (shouldn't normally happen, but just in case)
     if (maxParticipants && yesCount > maxParticipants) {
       return `${yesCount} participants exceeded the maximum of ${maxParticipants}`;
     }
 
     return '';
+  };
+
+  // Build a compact vote breakdown string
+  const getVoteBreakdown = (): string => {
+    const parts: string[] = [];
+    if (totalYesVotes > 0) parts.push(`${totalYesVotes} yes`);
+    if (noCount > 0) parts.push(`${noCount} no`);
+    if (abstainCount > 0) parts.push(`${abstainCount} abstain`);
+    if (parts.length === 0) return '';
+    return parts.join(', ');
+  };
+
+  // Build explanation for why the user specifically was excluded
+  const getUserExclusionReason = (): string => {
+    if (userMaxParticipants !== null && userMaxParticipants !== undefined && yesCount > userMaxParticipants) {
+      return `You set a max of ${userMaxParticipants} participant${userMaxParticipants !== 1 ? 's' : ''}, but ${yesCount} were selected`;
+    }
+    if (userMinParticipants !== null && userMinParticipants !== undefined && yesCount < userMinParticipants) {
+      return `You required at least ${userMinParticipants} participant${userMinParticipants !== 1 ? 's' : ''}, but only ${yesCount} ${yesCount !== 1 ? 'were' : 'was'} selected`;
+    }
+    return 'Your conditions were incompatible with the selected group';
   };
 
   const userVotedYes = userVoteData?.yes_no_choice === 'yes';
@@ -346,6 +368,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
         (!p.voter_name || p.voter_name.trim() === '') && p.vote_id !== userVoteId
       ).length;
       const isAlone = participants.length === 1;
+      const breakdown = getVoteBreakdown();
 
       return (
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 px-4 py-3">
@@ -355,7 +378,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             </div>
             {isAlone ? (
               <div className="text-sm text-green-700 dark:text-green-300">
-                😢 All alone
+                Just you so far
+                {excludedYesVoters > 0 && ` — ${excludedYesVoters} other${excludedYesVoters !== 1 ? 's' : ''} wanted to but couldn\u2019t`}
               </div>
             ) : (
               <div>
@@ -382,6 +406,16 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                     </div>
                   )}
                 </div>
+                {excludedYesVoters > 0 && (
+                  <div className="text-xs text-green-600 dark:text-green-400 opacity-75 mt-1">
+                    {excludedYesVoters} other{excludedYesVoters !== 1 ? 's' : ''} wanted to join but couldn&apos;t
+                  </div>
+                )}
+              </div>
+            )}
+            {breakdown && (
+              <div className="text-xs text-green-600 dark:text-green-400 opacity-75 mt-1">
+                Responses: {breakdown}
               </div>
             )}
           </div>
@@ -391,16 +425,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event IS happening, user voted YES but is NOT in participant list (needs weren't met)
     if (isHappening && userVotedYes && !userIsInParticipantList) {
-      // Explain why the user was excluded
-      const userExclusionReason = (() => {
-        if (userMaxParticipants !== null && userMaxParticipants !== undefined && yesCount > userMaxParticipants) {
-          return `Too many participants for your conditions (max ${userMaxParticipants})`;
-        }
-        if (userMinParticipants !== null && userMinParticipants !== undefined && yesCount < userMinParticipants) {
-          return `Not enough participants for your conditions (min ${userMinParticipants})`;
-        }
-        return 'Your conditions were incompatible with the group';
-      })();
+      const exclusionReason = getUserExclusionReason();
+      const breakdown = getVoteBreakdown();
 
       return (
         <div className="rounded-lg border-2 bg-yellow-100 dark:bg-yellow-900 border-yellow-400 dark:border-yellow-600 px-4 py-3">
@@ -408,12 +434,12 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
             <div className="text-xl font-bold mb-1 text-yellow-800 dark:text-yellow-200">
               You&apos;re not participating
             </div>
-            <div className="text-sm text-yellow-700 dark:text-yellow-300 mb-1">
-              {userExclusionReason}
+            <div className="text-sm text-yellow-700 dark:text-yellow-300 mb-2">
+              {exclusionReason}
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
               <span className="text-sm text-yellow-700 dark:text-yellow-300">
-                but these are
+                Going without you:
               </span>
               {/* Named participants */}
               {namedParticipants.map((participant) => (
@@ -434,6 +460,12 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 </div>
               )}
             </div>
+            {breakdown && (
+              <div className="text-xs text-yellow-600 dark:text-yellow-400 opacity-75">
+                Responses: {breakdown}
+                {excludedYesVoters > 0 && ` (${excludedYesVoters} other${excludedYesVoters !== 1 ? 's' : ''} also excluded)`}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -441,16 +473,24 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event IS happening, user voted NO or didn't vote
     if (isHappening && (userVotedNo || !userVoteData)) {
+      const breakdown = getVoteBreakdown();
+      const userAbstained = userVoteData?.is_abstain;
+      const statusLine = userAbstained
+        ? 'You abstained'
+        : userVotedNo
+        ? 'You declined'
+        : 'You didn\u2019t vote';
+
       return (
         <div className="rounded-lg border-2 bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 px-4 py-3">
           <div className="text-center">
             <div className="text-xl font-bold mb-1 text-green-800 dark:text-green-200">
-              You&apos;re not participating
+              It&apos;s happening!
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
-              <span className="text-sm text-green-700 dark:text-green-300">
-                but these are
-              </span>
+            <div className="text-sm text-green-700 dark:text-green-300 mb-1">
+              {statusLine} — {yesCount} participant{yesCount !== 1 ? 's' : ''} going
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
               {/* Named participants */}
               {namedParticipants.map((participant) => (
                 <span
@@ -470,6 +510,11 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 </div>
               )}
             </div>
+            {breakdown && (
+              <div className="text-xs text-green-600 dark:text-green-400 opacity-75">
+                Responses: {breakdown}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -478,13 +523,17 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     // Scenario: Event NOT happening, user voted YES
     if (!isHappening && userVotedYes) {
       const failureReason = getFailureReason();
+      const breakdown = getVoteBreakdown();
 
-      const userNeedsText = userMinParticipants && userMaxParticipants
-        ? `${userMinParticipants}-${userMaxParticipants}`
-        : userMinParticipants
-        ? `${userMinParticipants}+`
-        : userMaxParticipants
-        ? `up to ${userMaxParticipants}`
+      // Show the user's own conditions if they had any
+      const userHadConditions = (userMinParticipants !== null && userMinParticipants !== undefined)
+        || (userMaxParticipants !== null && userMaxParticipants !== undefined);
+      const userConditionsLine = userHadConditions
+        ? `Your conditions: ${userMinParticipants && userMaxParticipants
+            ? `${userMinParticipants}–${userMaxParticipants} participants`
+            : userMinParticipants
+            ? `at least ${userMinParticipants} participant${userMinParticipants !== 1 ? 's' : ''}`
+            : `at most ${userMaxParticipants} participant${userMaxParticipants !== 1 ? 's' : ''}`}`
         : null;
 
       return (
@@ -498,9 +547,14 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 {failureReason}
               </div>
             )}
-            {!userIsInParticipantList && userNeedsText && (
-              <div className="text-sm text-red-700 dark:text-red-300 opacity-75">
-                Your conditions weren&apos;t met ({userNeedsText} participants)
+            {userConditionsLine && (
+              <div className="text-sm text-red-700 dark:text-red-300 opacity-75 mb-1">
+                {userConditionsLine}
+              </div>
+            )}
+            {breakdown && (
+              <div className="text-xs text-red-600 dark:text-red-400 opacity-75">
+                Responses: {breakdown}
               </div>
             )}
           </div>
@@ -511,6 +565,7 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     // Scenario: Event NOT happening, user voted NO or didn't vote
     if (!isHappening) {
       const failureReason = getFailureReason();
+      const breakdown = getVoteBreakdown();
 
       return (
         <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
@@ -519,8 +574,13 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
               ✗ Not happening
             </div>
             {failureReason && (
-              <div className="text-sm text-red-700 dark:text-red-300">
+              <div className="text-sm text-red-700 dark:text-red-300 mb-1">
                 {failureReason}
+              </div>
+            )}
+            {breakdown && (
+              <div className="text-xs text-red-600 dark:text-red-400 opacity-75">
+                Responses: {breakdown}
               </div>
             )}
           </div>
