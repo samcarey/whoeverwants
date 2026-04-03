@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 
 export interface TimeSlot {
   round_number: number;
@@ -22,87 +22,142 @@ interface TimeSlotRoundsDisplayProps {
 
 const COLLAPSED_VISIBLE = 3;
 
-/**
- * Displays elimination rounds for participation poll time slots.
- * Shows winner + a few rows by default, expandable to see all.
- */
+const PARTICIPANT_COLORS = [
+  'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+  'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+];
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00');
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
+function formatTime(timeStr: string, showNextDay?: boolean): string {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const displayHours = hours % 12 || 12;
+  const suffix = showNextDay ? '+1' : '';
+  return `${displayHours}:${minutes.toString().padStart(2, '0')}${suffix}`;
+}
+
+function formatPeriod(timeStr: string): string {
+  const [hours] = timeStr.split(':').map(Number);
+  return hours >= 12 ? 'PM' : 'AM';
+}
+
+function formatDuration(hours: number): string {
+  return hours === 1 ? '1h' : `${hours}h`;
+}
+
+function formatTimeRange(slot: TimeSlot): string {
+  const startPeriod = formatPeriod(slot.slot_start_time);
+  const isNextDay = slot.slot_end_time <= slot.slot_start_time;
+  const endPeriod = formatPeriod(slot.slot_end_time);
+  const start = formatTime(slot.slot_start_time);
+  const end = formatTime(slot.slot_end_time, isNextDay);
+
+  if (startPeriod === endPeriod && !isNextDay) {
+    return `${start}\u2013${end} ${endPeriod}`;
+  }
+  return `${start} ${startPeriod}\u2013${end} ${endPeriod}`;
+}
+
+interface DisplaySlot {
+  slot: TimeSlot;
+  date: string;
+  isFirstInDate: boolean;
+}
+
 export default function TimeSlotRoundsDisplay({
   allRounds,
   allVoters,
   currentUserVoteId,
 }: TimeSlotRoundsDisplayProps) {
-  const getParticipantColor = (voteId: string) => {
-    const colors = [
-      'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-      'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
-      'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-      'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
-      'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
-    ];
-
-    const voterIndex = allVoters.findIndex(v => v.id === voteId);
-    if (voterIndex === -1) return colors[0];
-    return colors[voterIndex % colors.length];
-  };
-
-  // Group slots by round number
-  const roundsByNumber = allRounds.reduce((acc, slot) => {
-    if (!acc[slot.round_number]) {
-      acc[slot.round_number] = [];
-    }
-    acc[slot.round_number].push(slot);
-    return acc;
-  }, {} as Record<number, TimeSlot[]>);
-
-  const totalRounds = Math.max(...Object.keys(roundsByNumber).map(Number));
   const [currentRound, setCurrentRound] = useState(1);
   const [expanded, setExpanded] = useState(false);
+
+  // Build a vote ID -> color index map from allVoters (or fallback to stable ordering from data)
+  const colorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (allVoters.length > 0) {
+      allVoters.forEach((v, i) => map.set(v.id, PARTICIPANT_COLORS[i % PARTICIPANT_COLORS.length]));
+    } else {
+      // Derive unique vote IDs from all rounds in stable order
+      const seen = new Set<string>();
+      for (const slot of allRounds) {
+        for (const id of slot.participant_vote_ids) {
+          if (id && !seen.has(id)) {
+            map.set(id, PARTICIPANT_COLORS[seen.size % PARTICIPANT_COLORS.length]);
+            seen.add(id);
+          }
+        }
+      }
+    }
+    return map;
+  }, [allVoters, allRounds]);
+
+  const { roundsByNumber, totalRounds } = useMemo(() => {
+    const byNumber = allRounds.reduce((acc, slot) => {
+      if (!acc[slot.round_number]) acc[slot.round_number] = [];
+      acc[slot.round_number].push(slot);
+      return acc;
+    }, {} as Record<number, TimeSlot[]>);
+    return {
+      roundsByNumber: byNumber,
+      totalRounds: Math.max(...Object.keys(byNumber).map(Number)),
+    };
+  }, [allRounds]);
 
   const currentSlots = roundsByNumber[currentRound] || [];
   const participantCount = currentSlots.length > 0 ? currentSlots[0].participant_count : 0;
 
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
-
-  const formatTime = (timeStr: string, showNextDay?: boolean): string => {
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const period = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const suffix = showNextDay ? '+1' : '';
-    return `${displayHours}:${minutes.toString().padStart(2, '0')}${suffix}`;
-  };
-
-  const formatPeriod = (timeStr: string): string => {
-    const [hours] = timeStr.split(':').map(Number);
-    return hours >= 12 ? 'PM' : 'AM';
-  };
-
-  const formatDuration = (hours: number): string => {
-    if (hours === 1) return '1h';
-    return `${hours}h`;
-  };
-
-  const formatTimeRange = (slot: TimeSlot) => {
-    const startPeriod = formatPeriod(slot.slot_start_time);
-    const isNextDay = slot.slot_end_time <= slot.slot_start_time;
-    const endPeriod = formatPeriod(slot.slot_end_time);
-    const start = formatTime(slot.slot_start_time);
-    const end = formatTime(slot.slot_end_time, isNextDay);
-
-    if (startPeriod === endPeriod && !isNextDay) {
-      return `${start}\u2013${end} ${endPeriod}`;
+  const { allDisplaySlots, winnerIdx } = useMemo(() => {
+    const slots: DisplaySlot[] = [];
+    let winner = -1;
+    // Group by date and flatten in one pass
+    let prevDate = '';
+    for (const slot of currentSlots) {
+      const isFirst = slot.slot_date !== prevDate;
+      if (slot.is_winner) winner = slots.length;
+      slots.push({ slot, date: slot.slot_date, isFirstInDate: isFirst });
+      prevDate = slot.slot_date;
     }
-    return `${start} ${startPeriod}\u2013${end} ${endPeriod}`;
-  };
+    return { allDisplaySlots: slots, winnerIdx: winner };
+  }, [currentSlots]);
+
+  const needsCollapse = allDisplaySlots.length > COLLAPSED_VISIBLE + 1;
+  const showAll = expanded || !needsCollapse;
+
+  const visibleSlots = useMemo(() => {
+    if (showAll) return allDisplaySlots;
+    // Show winner (if exists) + first COLLAPSED_VISIBLE other slots
+    const visible: DisplaySlot[] = [];
+    let added = 0;
+    for (let i = 0; i < allDisplaySlots.length && (added < COLLAPSED_VISIBLE || i === winnerIdx); i++) {
+      if (i === winnerIdx) {
+        visible.push(allDisplaySlots[i]);
+      } else if (added < COLLAPSED_VISIBLE) {
+        visible.push(allDisplaySlots[i]);
+        added++;
+      }
+    }
+    // Ensure winner is included even if beyond COLLAPSED_VISIBLE range
+    if (winnerIdx >= 0 && !visible.includes(allDisplaySlots[winnerIdx])) {
+      visible.push(allDisplaySlots[winnerIdx]);
+    }
+    return visible;
+  }, [allDisplaySlots, winnerIdx, showAll]);
+
+  const hiddenCount = allDisplaySlots.length - visibleSlots.length;
 
   if (allRounds.length === 0) {
     return (
@@ -112,44 +167,7 @@ export default function TimeSlotRoundsDisplay({
     );
   }
 
-  // Group current slots by date, with winner slots first within each date
-  const slotsByDate = currentSlots.reduce((acc, slot) => {
-    if (!acc[slot.slot_date]) acc[slot.slot_date] = [];
-    acc[slot.slot_date].push(slot);
-    return acc;
-  }, {} as Record<string, TimeSlot[]>);
-
-  // Flatten into display order: all date groups with slots
-  const allDisplaySlots: { slot: TimeSlot; date: string; isFirstInDate: boolean }[] = [];
-  for (const [date, slots] of Object.entries(slotsByDate)) {
-    slots.forEach((slot, i) => {
-      allDisplaySlots.push({ slot, date, isFirstInDate: i === 0 });
-    });
-  }
-
-  // Determine which slots to show: winner always visible, then first few
-  const winnerIdx = allDisplaySlots.findIndex(s => s.slot.is_winner);
-  const needsCollapse = allDisplaySlots.length > COLLAPSED_VISIBLE + 1;
-  const showAll = expanded || !needsCollapse;
-
-  let visibleSlots: typeof allDisplaySlots;
-  if (showAll) {
-    visibleSlots = allDisplaySlots;
-  } else {
-    // Show winner + first COLLAPSED_VISIBLE non-winner slots
-    const nonWinnerSlots = allDisplaySlots.filter((_, i) => i !== winnerIdx);
-    const visible = new Set<number>();
-    if (winnerIdx >= 0) visible.add(winnerIdx);
-    for (let i = 0; i < Math.min(COLLAPSED_VISIBLE, nonWinnerSlots.length); i++) {
-      const origIdx = allDisplaySlots.indexOf(nonWinnerSlots[i]);
-      visible.add(origIdx);
-    }
-    visibleSlots = allDisplaySlots.filter((_, i) => visible.has(i));
-  }
-
-  const hiddenCount = allDisplaySlots.length - visibleSlots.length;
-
-  const renderSlotRow = (item: typeof allDisplaySlots[0], index: number) => {
+  const renderSlotRow = (item: DisplaySlot, index: number) => {
     const { slot, date, isFirstInDate } = item;
     const isWinner = slot.is_winner;
     return (
@@ -166,7 +184,6 @@ export default function TimeSlotRoundsDisplay({
               : 'bg-white dark:bg-gray-800'
           }`}
         >
-          {/* Winner checkmark */}
           <div className="w-5 flex-shrink-0">
             {isWinner && (
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
@@ -175,7 +192,6 @@ export default function TimeSlotRoundsDisplay({
             )}
           </div>
 
-          {/* Time range */}
           <div className={`flex-1 min-w-0 ${isWinner ? 'font-semibold' : ''}`}>
             <span className="text-sm text-gray-900 dark:text-gray-100">
               {formatTimeRange(slot)}
@@ -185,12 +201,11 @@ export default function TimeSlotRoundsDisplay({
             </span>
           </div>
 
-          {/* Participant badges */}
           <div className="flex flex-wrap gap-1 justify-end ml-2">
             {slot.participant_names.map((name, idx) => {
               const voteId = slot.participant_vote_ids[idx];
               const isCurrentUser = voteId === currentUserVoteId;
-              const colorClass = voteId ? getParticipantColor(voteId) : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+              const colorClass = (voteId && colorMap.get(voteId)) || PARTICIPANT_COLORS[0];
               const displayName = isCurrentUser
                 ? (name ? `You (${name})` : 'You')
                 : (name || 'Anonymous');
@@ -214,7 +229,6 @@ export default function TimeSlotRoundsDisplay({
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      {/* Round header with navigation */}
       <div className="flex items-center justify-between mb-3">
         <button
           onClick={() => setCurrentRound(r => Math.max(1, r - 1))}
@@ -256,11 +270,9 @@ export default function TimeSlotRoundsDisplay({
         </button>
       </div>
 
-      {/* Compact time slots */}
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
         {visibleSlots.map((item, index) => renderSlotRow(item, index))}
 
-        {/* Expand/collapse toggle */}
         {needsCollapse && (
           <button
             onClick={() => setExpanded(!expanded)}
@@ -274,7 +286,6 @@ export default function TimeSlotRoundsDisplay({
         )}
       </div>
 
-      {/* Round indicator dots */}
       {totalRounds > 1 && (
         <div className="flex justify-center gap-2 mt-3">
           {Array.from({ length: totalRounds }, (_, i) => i + 1).map((roundNum) => (
