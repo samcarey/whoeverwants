@@ -1,4 +1,4 @@
-# Social Test Report — 2026-04-03 19:13 UTC
+# Social Test Report — 2026-04-03 19:19 UTC
 
 <details>
 <summary><strong>Testing Philosophy & Strategy</strong></summary>
@@ -125,7 +125,7 @@ Friday drinks: 4 yes, 1 no, 1 abstain.
 
 #### Critique
 
-_System behaves as expected for this social scenario._
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -189,7 +189,7 @@ Friday drinks: exactly split — 3 yes, 3 no.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -253,7 +253,7 @@ Friday drinks: only the organizer votes.
 
 #### Critique
 
-_This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded'). (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a single-voter poll suggests the group didn't engage. The app could surface low participation as a signal (e.g., '1 of ? responded'). (Previous assessment: "This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a sin..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -318,7 +318,7 @@ Friday drinks: everyone abstains.
 
 #### Critique
 
-_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "This test highlights a genuine UX concern. The core issue: Technically yes wins with 100%, but a sin..." — assessment updated.)_
+_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -383,7 +383,7 @@ Should we switch to a 4-day work week? All anonymous votes.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful...." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -450,7 +450,7 @@ Lunch brainstorm: multiple people suggest the same place.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -539,7 +539,7 @@ Lunch brainstorm: everyone suggests something different.
 
 #### Critique
 
-_This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical tiebreak means 'Arby's' appears first not because anyone prefers it more, but because of its name. This is where a follow-up ranked choice poll is essential to resolve the deadlock meaningfully. (Previous assessment: "This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical ..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -624,7 +624,7 @@ Lunch brainstorm: one person abstains, signaling they'll go anywhere.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test highlights a genuine UX concern. The core issue: All-unique suggestions with alphabetical ..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test highlights a g..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -699,7 +699,7 @@ Fully anonymous vote: nobody attaches their name.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -764,7 +764,7 @@ Mixed poll: some named, some anonymous.
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. In a known group of 4, the 1 anonymous voter is trivially identifiable (it's whoever isn't Alice, Bob, or Dave). The app can't prevent social deduction in small groups — this is a fundamental limitation of anonymous voting when the voter pool is known. Consider noting this in UX. (Previous assessment: "This test reveals an interesting system property worth documenting. In a known group of 4, the 1 ano..." — assessment unchanged.)_
 
 
 </details>
@@ -795,7 +795,7 @@ Vote change: a voter switches sides and flips the outcome.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test reveals an interesting system property worth documenting. In a known group of 4, the 1 ano..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_
 
 
 </details>
@@ -822,7 +822,7 @@ Ranked choice edit: voter reorders their preferences.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -915,7 +915,7 @@ Creator closes a poll they're losing.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -978,7 +978,7 @@ Creator reopens a closed poll to collect more votes.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 
 </details>
@@ -1012,7 +1012,7 @@ Large group: 20 voters on a yes/no question.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1073,7 +1073,7 @@ Large ranked choice: 10 options, 8 voters.
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IRV took 9 rounds to find winner: Thai. Italian and Thai appear frequently across ballots — the winner likely has broad second/third choice support, which is the whole point of ranked choice. (Previous assessment: "This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IR..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1583,7 +1583,7 @@ Dinner party: 5 people say yes with no constraints.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test reveals an interesting system property worth documenting. With 10 options and 8 voters, IR..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1661,7 +1661,7 @@ Dinner party: introvert wants small group, extrovert wants big group.
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) *could* fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. Neither constrained voter was included. The algorithm prioritized the 3 flexible voters, giving count=3. Alice (max=3) *could* fit, but the algorithm may not have tried her. Worth investigating if the algorithm should attempt to include constrained voters after selecting the flexible core. (Previous assessment: "This test reveals an interesting system property worth documenting. Neither constrained voter was in..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1736,7 +1736,7 @@ Dinner party: not enough people to meet the minimum.
 
 #### Critique
 
-_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "This test reveals an interesting system property worth documenting. Neither constrained voter was in..." — assessment updated.)_
+_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1805,7 +1805,7 @@ Dinner party: mix of yes, no, and abstain votes.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful...." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_
 
 
 </details>
@@ -1842,7 +1842,7 @@ Solo activity: 'Anyone want my extra concert ticket?'
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With max_participants=1, the poll auto-closes immediately after the first 'yes' vote — later respondents can't even submit. This is effectively first-come-first-served enforced by the system. Transparent, but may feel unfair to people in different time zones or who check their phone less frequently. (Previous assessment: "This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1882,7 +1882,7 @@ Carpool: driver needs at least 2 riders to justify the trip.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test reveals an interesting system property worth documenting. 'Eager Eve' got the ticket. With..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_
 
 
 </details>
@@ -1913,7 +1913,7 @@ Carpool: riders have conflicting preferences about group size.
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Flex Dana', 'Social Sam']. The algorithm prioritizes flexible voters, then tries to include constrained voters. Social Sam (min=3) and Quiet Quinn (max=2) have fundamentally incompatible preferences — the system can satisfy at most one of them. (Previous assessment: "This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Fl..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -1962,7 +1962,7 @@ Full pipeline: suggestions collected, then ranked.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test reveals an interesting system property worth documenting. Participants: ['Flex Chris', 'Fl..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_
 
 
 </details>
@@ -1996,7 +1996,7 @@ Auto-preferences: suggestion poll automatically creates a follow-up ranked choic
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 
 </details>
@@ -2028,7 +2028,7 @@ Fork: someone creates a variant of an existing poll.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 
 </details>
@@ -2059,7 +2059,7 @@ Follow-up: tie leads to a runoff with fewer options.
 
 #### Critique
 
-_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_Technical failure detected: . This needs investigation before social evaluation is meaningful. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful. (Prev..." — assessment unchanged.)_
 
 
 </details>
@@ -2091,7 +2091,7 @@ Movie night: one film is everyone's top or second pick.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "Technical failure detected: . This needs investigation before social evaluation is meaningful...." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "Technical failure detect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -2193,7 +2193,7 @@ Movie night: the group is polarized but there's a compromise option.
 
 #### Critique
 
-_This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner. (Previous assessment: "System behaves as expected for this social scenario...." — assessment updated.)_
+_This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' instead of the compromise 'Dramedy'. This can happen when the compromise is eliminated first (having fewest first-place votes). This is a known limitation of IRV — it doesn't always find the Condorcet winner. (Previous assessment: "This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' ins..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -2303,7 +2303,7 @@ Movie night: a niche option splits the vote of similar options.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "This test reveals an interesting system property worth documenting. IRV picked 'Romantic Comedy' ins..." — assessment updated.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "This test reveals an int..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -2412,7 +2412,7 @@ Movie night: some people only rank their top picks.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -2559,7 +2559,7 @@ Movie night: everyone agrees on the same first choice.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>
@@ -2653,7 +2653,7 @@ Team retreat: three-way tie in first-place votes, broken by Borda.
 
 #### Critique
 
-_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario...." — assessment unchanged.)_
+_System behaves as expected for this social scenario. (Previous assessment: "System behaves as expected for this social scenario. (Previous assessment: "System behaves as expect..." — assessment unchanged.)_
 
 <details>
 <summary>Raw data</summary>

@@ -241,21 +241,33 @@ def _md_to_html(md: str) -> str:
     """Minimal markdown-to-HTML conversion that preserves inline HTML."""
     import re
 
+    def inline_fmt(text: str) -> str:
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+        text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+        text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+        return text
+
     lines = md.split("\n")
     html_lines = []
     in_code = False
     in_table = False
     table_header_done = False
+    para_buf: list[str] = []  # accumulate consecutive text lines
+
+    def flush_para():
+        if para_buf:
+            html_lines.append(f"<p>{inline_fmt(' '.join(para_buf))}</p>")
+            para_buf.clear()
 
     for line in lines:
         # Code blocks
         if line.strip().startswith("```"):
+            flush_para()
             if in_code:
                 html_lines.append("</code></pre>")
                 in_code = False
             else:
-                lang = line.strip().removeprefix("```").strip()
-                html_lines.append(f"<pre><code>")
+                html_lines.append("<pre><code>")
                 in_code = True
             continue
 
@@ -263,15 +275,18 @@ def _md_to_html(md: str) -> str:
             html_lines.append(line.replace("<", "&lt;").replace(">", "&gt;"))
             continue
 
+        stripped = line.strip()
+
         # Close table if non-table line
-        if in_table and not line.strip().startswith("|"):
+        if in_table and not stripped.startswith("|"):
             html_lines.append("</table>")
             in_table = False
             table_header_done = False
 
         # Table rows
-        if line.strip().startswith("|"):
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if stripped.startswith("|"):
+            flush_para()
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
             if all(set(c) <= {"-", " ", ":"} for c in cells):
                 table_header_done = True
                 continue
@@ -284,35 +299,34 @@ def _md_to_html(md: str) -> str:
             continue
 
         # HTML pass-through
-        stripped = line.strip()
         if stripped.startswith("<"):
+            flush_para()
             html_lines.append(line)
             continue
 
         # Headers
         m = re.match(r"^(#{1,4})\s+(.*)", line)
         if m:
+            flush_para()
             level = len(m.group(1))
             html_lines.append(f"<h{level}>{m.group(2)}</h{level}>")
             continue
 
         # Blockquote
         if stripped.startswith("> "):
-            html_lines.append(f"<blockquote>{stripped[2:]}</blockquote>")
+            flush_para()
+            html_lines.append(f"<blockquote>{inline_fmt(stripped[2:])}</blockquote>")
             continue
 
-        # Empty line → paragraph break
+        # Empty line → end of paragraph
         if not stripped:
-            html_lines.append("")
+            flush_para()
             continue
 
-        # Inline formatting
-        text = line
-        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-        text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-        text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
-        html_lines.append(f"<p>{text}</p>")
+        # Accumulate text lines into a paragraph
+        para_buf.append(stripped)
 
+    flush_para()
     if in_table:
         html_lines.append("</table>")
     if in_code:

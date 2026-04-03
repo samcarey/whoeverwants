@@ -6,6 +6,7 @@ Set SOCIAL_TEST_API_URL to target a specific server.
 
 import json
 import os
+import textwrap
 import time
 import uuid
 
@@ -165,7 +166,7 @@ def result(request):
     r = SocialTestResult()
     r.test_name = request.node.name
     r.category = request.node.module.__name__.replace("test_", "").replace("_scenarios", "")
-    r.docstring = (request.node.function.__doc__ or "").strip()
+    r.docstring = textwrap.dedent(request.node.function.__doc__ or "").strip()
     _test_results.append(r)
     return r
 
