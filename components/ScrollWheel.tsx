@@ -34,12 +34,26 @@ export default function ScrollWheel({
   const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const isTouching = useRef(false);
   const scrollTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+  const suppressSafetyTimeout = useRef<ReturnType<typeof setTimeout>>(null);
   const lastReportedIndex = useRef(selectedIndex);
   const didMount = useRef(false);
   const rAFId = useRef<number | null>(null);
   const suppressScrollHandler = useRef(false);
   const selectedIndexRef = useRef(selectedIndex); // always tracks latest prop
   selectedIndexRef.current = selectedIndex;
+
+  // Safely set suppressScrollHandler with a safety timeout that guarantees it gets cleared.
+  // This prevents the flag from getting permanently stuck (e.g., when recenterLoop sets it
+  // and the clearing rAF/timeout is overwritten by a subsequent touch interaction).
+  const setSuppressed = useCallback((value: boolean) => {
+    suppressScrollHandler.current = value;
+    if (suppressSafetyTimeout.current) clearTimeout(suppressSafetyTimeout.current);
+    if (value) {
+      suppressSafetyTimeout.current = setTimeout(() => {
+        suppressScrollHandler.current = false;
+      }, 500);
+    }
+  }, []);
 
   const padding = Math.floor(visibleItems / 2) * itemHeight;
   const containerHeight = visibleItems * itemHeight;
@@ -129,7 +143,7 @@ export default function ScrollWheel({
     lastReportedIndex.current = selectedIndex;
     const el = containerRef.current;
     if (el) {
-      suppressScrollHandler.current = true;
+      setSuppressed(true);
       // For looping wheels, scroll to the nearest occurrence of the target index
       // instead of always jumping to the center repetition. This prevents the
       // wheel from scrolling the long way around (e.g., 12→1 going backwards).
@@ -157,14 +171,14 @@ export default function ScrollWheel({
       el.scrollTo({ top: targetScroll, behavior: 'smooth' });
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       scrollTimeout.current = setTimeout(() => {
-        suppressScrollHandler.current = false;
+        setSuppressed(false);
         updateItemStyles();
       }, SMOOTH_SCROLL_SETTLE_MS);
     }
     return () => {
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     };
-  }, [selectedIndex, selectedToScroll, items, updateItemStyles, loop, itemHeight]);
+  }, [selectedIndex, selectedToScroll, items, updateItemStyles, loop, itemHeight, setSuppressed]);
 
   // Re-center the loop scroll position silently after scrolling stops
   const recenterLoop = useCallback(() => {
@@ -178,15 +192,15 @@ export default function ScrollWheel({
 
     // Only re-center if we've drifted far from center
     if (Math.abs(el.scrollTop - centerScroll) > items.length * itemHeight * 2) {
-      suppressScrollHandler.current = true;
+      setSuppressed(true);
       el.scrollTop = centerScroll;
       // Allow the scroll handler to fire again after the jump settles
       requestAnimationFrame(() => {
-        suppressScrollHandler.current = false;
+        setSuppressed(false);
         updateItemStyles();
       });
     }
-  }, [loop, itemHeight, rawToReal, selectedToScroll, items.length, updateItemStyles]);
+  }, [loop, itemHeight, rawToReal, selectedToScroll, items.length, updateItemStyles, setSuppressed]);
 
   // Correct scroll position to match selectedIndex (e.g. after parent clamped the value)
   const correctPosition = useCallback(() => {
@@ -201,7 +215,7 @@ export default function ScrollWheel({
     if (realIdx === target) return;
 
     lastReportedIndex.current = target;
-    suppressScrollHandler.current = true;
+    setSuppressed(true);
     let targetScroll: number;
     if (loop) {
       const currentRepStart = Math.floor(rawIdx / items.length) * items.length;
@@ -223,10 +237,10 @@ export default function ScrollWheel({
     el.scrollTo({ top: targetScroll, behavior: 'smooth' });
     if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     scrollTimeout.current = setTimeout(() => {
-      suppressScrollHandler.current = false;
+      setSuppressed(false);
       updateItemStyles();
     }, SMOOTH_SCROLL_SETTLE_MS);
-  }, [itemHeight, items.length, loop, rawToReal, updateItemStyles]);
+  }, [itemHeight, items.length, loop, rawToReal, updateItemStyles, setSuppressed]);
 
   // Keep a ref so touchend handler (created with [] deps) can access latest version
   const correctPositionRef = useRef(correctPosition);
@@ -260,9 +274,17 @@ export default function ScrollWheel({
     if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     scrollTimeout.current = setTimeout(() => {
       if (loop) recenterLoop();
-      // After scroll settles, snap to constrained position if parent clamped selectedIndex
+      // After scroll settles, snap to constrained position if parent clamped selectedIndex.
+      // If recenterLoop just set suppressScrollHandler, defer correctPosition until after
+      // the suppression clears (via rAF) to avoid it bailing out immediately.
       if (!isTouching.current) {
-        correctPositionRef.current();
+        if (suppressScrollHandler.current) {
+          requestAnimationFrame(() => {
+            if (!isTouching.current) correctPositionRef.current();
+          });
+        } else {
+          correctPositionRef.current();
+        }
       }
     }, 150);
   }, [itemHeight, items.length, onChange, updateItemStyles, loop, rawToReal, recenterLoop]);
@@ -298,6 +320,7 @@ export default function ScrollWheel({
     return () => {
       if (rAFId.current !== null) cancelAnimationFrame(rAFId.current);
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      if (suppressSafetyTimeout.current) clearTimeout(suppressSafetyTimeout.current);
     };
   }, []);
 

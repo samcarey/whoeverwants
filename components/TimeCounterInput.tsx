@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo, useCallback, useEffect } from 'react';
 import ScrollWheel from './ScrollWheel';
 
 interface TimeCounterInputProps {
@@ -90,6 +90,9 @@ export default function TimeCounterInput({
 
   const prevHourIndex = useRef<number | null>(null);
   const prevMinuteIndex = useRef<number | null>(null);
+  // Track period via ref so rapid scroll events within a single render cycle
+  // always see the latest AM/PM state (not the stale render-scope periodIndex).
+  const periodRef = useRef(0);
 
   const constrained = !!constraintMin && !!constraintMax;
   const cMinMins = constrained ? timeToMins(constraintMin!) : 0;
@@ -117,6 +120,12 @@ export default function TimeCounterInput({
     minuteIndex = minuteOptions.indexOf(nearest);
   }
   const periodIndex = currentPeriod === 'AM' ? 0 : 1;
+
+  // Sync periodRef after render so it reflects the latest prop-derived value.
+  // Handlers update it eagerly for intra-render-cycle consistency.
+  useEffect(() => {
+    periodRef.current = periodIndex;
+  }, [periodIndex]);
 
   // === CONSTRAINED MODE ===
   // All valid hours in chronological order across AM/PM.
@@ -243,15 +252,16 @@ export default function TimeCounterInput({
 
   const handleHourChange = (newHourIndex: number) => {
     const prev = prevHourIndex.current ?? hourIndex;
-    let newPeriod = periodIndex;
+    let newPeriod = periodRef.current;
 
     if (prev === 10 && newHourIndex === 11) {
-      newPeriod = periodIndex === 0 ? 1 : 0;
+      newPeriod = newPeriod === 0 ? 1 : 0;
     } else if (prev === 11 && newHourIndex === 10) {
-      newPeriod = periodIndex === 0 ? 1 : 0;
+      newPeriod = newPeriod === 0 ? 1 : 0;
     }
 
     prevHourIndex.current = newHourIndex;
+    periodRef.current = newPeriod;
     emit(newHourIndex, minuteIndex, newPeriod);
   };
 
@@ -259,22 +269,23 @@ export default function TimeCounterInput({
     const prev = prevMinuteIndex.current ?? minuteIndex;
     const lastIdx = minuteOptions.length - 1;
     let newHourIdx = hourIndex;
-    let newPeriod = periodIndex;
+    let newPeriod = periodRef.current;
 
     if (prev === lastIdx && newMinuteIndex === 0) {
       newHourIdx = (hourIndex + 1) % 12;
       if (hourIndex === 10 && newHourIdx === 11) {
-        newPeriod = periodIndex === 0 ? 1 : 0;
+        newPeriod = newPeriod === 0 ? 1 : 0;
       }
     } else if (prev === 0 && newMinuteIndex === lastIdx) {
       newHourIdx = (hourIndex - 1 + 12) % 12;
       if (hourIndex === 11 && newHourIdx === 10) {
-        newPeriod = periodIndex === 0 ? 1 : 0;
+        newPeriod = newPeriod === 0 ? 1 : 0;
       }
     }
 
     prevMinuteIndex.current = newMinuteIndex;
     prevHourIndex.current = newHourIdx;
+    periodRef.current = newPeriod;
     emit(newHourIdx, newMinuteIndex, newPeriod);
   };
 
