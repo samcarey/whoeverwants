@@ -210,20 +210,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     fetchParticipants();
   }, [results.poll_id]);
 
-  // Determine if the event is happening based on participant count being in range
-  let isHappening = yesCount > 0;
-
-  if (minParticipants !== undefined && minParticipants !== null) {
-    if (yesCount < minParticipants) {
-      isHappening = false;
-    }
-  }
-
-  if (maxParticipants !== undefined && maxParticipants !== null) {
-    if (yesCount > maxParticipants) {
-      isHappening = false;
-    }
-  }
+  const isHappening = yesCount > 0
+    && (minParticipants == null || yesCount >= minParticipants)
+    && (maxParticipants == null || yesCount <= maxParticipants);
 
   // Generate a detailed reason for why the event isn't happening
   // When isCurrentUserYesVoter is true, uses "you" language instead of third-person
@@ -291,10 +280,10 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
   // Build explanation for why the user specifically was excluded
   const getUserExclusionReason = (): string => {
-    if (userMaxParticipants !== null && userMaxParticipants !== undefined && yesCount > userMaxParticipants) {
+    if (userMaxParticipants != null && yesCount > userMaxParticipants) {
       return `You set a max of ${userMaxParticipants} participant${userMaxParticipants !== 1 ? 's' : ''}, but ${yesCount} were selected`;
     }
-    if (userMinParticipants !== null && userMinParticipants !== undefined && yesCount < userMinParticipants) {
+    if (userMinParticipants != null && yesCount < userMinParticipants) {
       return `You required at least ${userMinParticipants} participant${userMinParticipants !== 1 ? 's' : ''}, but only ${yesCount} ${yesCount !== 1 ? 'were' : 'was'} selected`;
     }
     return 'Your conditions were incompatible with the selected group';
@@ -303,13 +292,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   const userVotedYes = userVoteData?.yes_no_choice === 'yes';
   const userVotedNo = userVoteData?.yes_no_choice === 'no';
 
-  // Check if user's personal conditions were met
   const userMinParticipants = userVoteData?.min_participants;
   const userMaxParticipants = userVoteData?.max_participants;
-  const userConditionsMet = userVotedYes && (
-    (userMinParticipants === null || userMinParticipants === undefined || yesCount >= userMinParticipants) &&
-    (userMaxParticipants === null || userMaxParticipants === undefined || yesCount <= userMaxParticipants)
-  );
 
   // Check if current user is in the participant list (by vote ID)
   const userVoteId = userVoteData?.id;
