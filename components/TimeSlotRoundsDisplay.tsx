@@ -203,14 +203,6 @@ function formatStartTimeRange(range: StartTimeRange): string {
   return `${formatTime(range.first)} ${firstPeriod}\u2013${formatTime(range.last)} ${lastPeriod}`;
 }
 
-function formatStep(minutes: number): string {
-  if (minutes <= 0) return '';
-  if (minutes >= 60 && minutes % 60 === 0) {
-    const hours = minutes / 60;
-    return hours === 1 ? 'every hr' : `every ${hours}h`;
-  }
-  return `every ${minutes}m`;
-}
 
 // --- Component ---
 
@@ -341,15 +333,11 @@ export default function TimeSlotRoundsDisplay({
                 {formatDate(dr.date)}
               </span>
               <div className="text-sm text-gray-900 dark:text-gray-100 ml-1 mt-0.5">
+                <span className="text-xs text-gray-400 dark:text-gray-500">Starts: </span>
                 {dr.ranges.map((r, i) => (
                   <span key={i}>
                     {i > 0 && <span className="text-gray-400 dark:text-gray-500">,{' '}</span>}
                     {formatStartTimeRange(r)}
-                    {r.count > 1 && r.step > 0 && (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
-                        {formatStep(r.step)}
-                      </span>
-                    )}
                   </span>
                 ))}
               </div>
