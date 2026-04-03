@@ -21,7 +21,7 @@ import GradientBorderButton from "@/components/GradientBorderButton";
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
-import { Poll, PollResults, OptionsMetadata } from "@/lib/types";
+import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
 import VoteOnItModal from "@/components/VoteOnItModal";
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -138,8 +138,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const minDurMinutes = durationMinEnabled && durationMinValue != null
       ? Math.round(durationMinValue * 60) : null;
     if (minDurMinutes == null || minDurMinutes <= 0) return false;
-    return voterDayTimeWindows.some((dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
-      dtw.windows.some((w: { min: string; max: string; enabled?: boolean }) =>
+    return voterDayTimeWindows.some((dtw: DayTimeWindow) =>
+      dtw.windows.some(w =>
         w.enabled !== false && windowDurationMinutes(w) < minDurMinutes
       )
     );
@@ -892,22 +892,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // Participation poll time window validation
     if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
       const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
-        (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) => dtw.windows.length > 0
+        (dtw: DayTimeWindow) => dtw.windows.length > 0
       );
       if (pollHasTimeWindows) {
         const enabledWindows = voterDayTimeWindows.flatMap(
-          (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
-            dtw.windows.filter((w: { enabled?: boolean }) => w.enabled !== false)
+          (dtw: DayTimeWindow) => dtw.windows.filter(w => w.enabled !== false)
         );
         if (enabledWindows.length === 0) {
           setVoteError("Please enable at least one time window, or vote No.");
           return;
         }
-        // Check minimum duration on enabled windows
         const minDurMinutes = durationMinEnabled && durationMinValue != null
           ? Math.round(durationMinValue * 60) : null;
         if (minDurMinutes != null && minDurMinutes > 0) {
-          const tooShort = enabledWindows.some((w: { min: string; max: string }) =>
+          const tooShort = enabledWindows.some(w =>
             windowDurationMinutes(w) < minDurMinutes
           );
           if (tooShort) {
