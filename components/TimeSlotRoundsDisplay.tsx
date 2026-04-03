@@ -20,9 +20,11 @@ interface TimeSlotRoundsDisplayProps {
   currentUserVoteId: string | null;
 }
 
+const COLLAPSED_VISIBLE = 3;
+
 /**
  * Displays elimination rounds for participation poll time slots.
- * Compact table-like layout with one row per time slot.
+ * Shows winner + a few rows by default, expandable to see all.
  */
 export default function TimeSlotRoundsDisplay({
   allRounds,
@@ -57,6 +59,7 @@ export default function TimeSlotRoundsDisplay({
 
   const totalRounds = Math.max(...Object.keys(roundsByNumber).map(Number));
   const [currentRound, setCurrentRound] = useState(1);
+  const [expanded, setExpanded] = useState(false);
 
   const currentSlots = roundsByNumber[currentRound] || [];
   const participantCount = currentSlots.length > 0 ? currentSlots[0].participant_count : 0;
@@ -88,6 +91,19 @@ export default function TimeSlotRoundsDisplay({
     return `${hours}h`;
   };
 
+  const formatTimeRange = (slot: TimeSlot) => {
+    const startPeriod = formatPeriod(slot.slot_start_time);
+    const isNextDay = slot.slot_end_time <= slot.slot_start_time;
+    const endPeriod = formatPeriod(slot.slot_end_time);
+    const start = formatTime(slot.slot_start_time);
+    const end = formatTime(slot.slot_end_time, isNextDay);
+
+    if (startPeriod === endPeriod && !isNextDay) {
+      return `${start}\u2013${end} ${endPeriod}`;
+    }
+    return `${start} ${startPeriod}\u2013${end} ${endPeriod}`;
+  };
+
   if (allRounds.length === 0) {
     return (
       <div className="text-center text-gray-600 dark:text-gray-400">
@@ -96,26 +112,104 @@ export default function TimeSlotRoundsDisplay({
     );
   }
 
-  // Group current slots by date
+  // Group current slots by date, with winner slots first within each date
   const slotsByDate = currentSlots.reduce((acc, slot) => {
     if (!acc[slot.slot_date]) acc[slot.slot_date] = [];
     acc[slot.slot_date].push(slot);
     return acc;
   }, {} as Record<string, TimeSlot[]>);
 
-  // Check if start/end AM/PM are same for a compact format
-  const formatTimeRange = (slot: TimeSlot) => {
-    const startPeriod = formatPeriod(slot.slot_start_time);
-    const isNextDay = slot.slot_end_time <= slot.slot_start_time;
-    const endPeriod = formatPeriod(slot.slot_end_time);
-    const start = formatTime(slot.slot_start_time);
-    const end = formatTime(slot.slot_end_time, isNextDay);
+  // Flatten into display order: all date groups with slots
+  const allDisplaySlots: { slot: TimeSlot; date: string; isFirstInDate: boolean }[] = [];
+  for (const [date, slots] of Object.entries(slotsByDate)) {
+    slots.forEach((slot, i) => {
+      allDisplaySlots.push({ slot, date, isFirstInDate: i === 0 });
+    });
+  }
 
-    // If same period, only show it on the end time
-    if (startPeriod === endPeriod && !isNextDay) {
-      return `${start}\u2013${end} ${endPeriod}`;
+  // Determine which slots to show: winner always visible, then first few
+  const winnerIdx = allDisplaySlots.findIndex(s => s.slot.is_winner);
+  const needsCollapse = allDisplaySlots.length > COLLAPSED_VISIBLE + 1;
+  const showAll = expanded || !needsCollapse;
+
+  let visibleSlots: typeof allDisplaySlots;
+  if (showAll) {
+    visibleSlots = allDisplaySlots;
+  } else {
+    // Show winner + first COLLAPSED_VISIBLE non-winner slots
+    const nonWinnerSlots = allDisplaySlots.filter((_, i) => i !== winnerIdx);
+    const visible = new Set<number>();
+    if (winnerIdx >= 0) visible.add(winnerIdx);
+    for (let i = 0; i < Math.min(COLLAPSED_VISIBLE, nonWinnerSlots.length); i++) {
+      const origIdx = allDisplaySlots.indexOf(nonWinnerSlots[i]);
+      visible.add(origIdx);
     }
-    return `${start} ${startPeriod}\u2013${end} ${endPeriod}`;
+    visibleSlots = allDisplaySlots.filter((_, i) => visible.has(i));
+  }
+
+  const hiddenCount = allDisplaySlots.length - visibleSlots.length;
+
+  const renderSlotRow = (item: typeof allDisplaySlots[0], index: number) => {
+    const { slot, date, isFirstInDate } = item;
+    const isWinner = slot.is_winner;
+    return (
+      <React.Fragment key={`${date}-${index}`}>
+        {isFirstInDate && (
+          <div className="px-3 py-1 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide border-t border-gray-100 dark:border-gray-700 first:border-t-0">
+            {formatDate(date)}
+          </div>
+        )}
+        <div
+          className={`flex items-center px-3 py-1.5 border-t border-gray-100 dark:border-gray-700 ${
+            isWinner
+              ? 'bg-green-50 dark:bg-green-900/30'
+              : 'bg-white dark:bg-gray-800'
+          }`}
+        >
+          {/* Winner checkmark */}
+          <div className="w-5 flex-shrink-0">
+            {isWinner && (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </div>
+
+          {/* Time range */}
+          <div className={`flex-1 min-w-0 ${isWinner ? 'font-semibold' : ''}`}>
+            <span className="text-sm text-gray-900 dark:text-gray-100">
+              {formatTimeRange(slot)}
+            </span>
+            <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">
+              {formatDuration(slot.duration_hours)}
+            </span>
+          </div>
+
+          {/* Participant badges */}
+          <div className="flex flex-wrap gap-1 justify-end ml-2">
+            {slot.participant_names.map((name, idx) => {
+              const voteId = slot.participant_vote_ids[idx];
+              const isCurrentUser = voteId === currentUserVoteId;
+              const colorClass = voteId ? getParticipantColor(voteId) : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
+              const displayName = isCurrentUser
+                ? (name ? `You (${name})` : 'You')
+                : (name || 'Anonymous');
+
+              return (
+                <span
+                  key={voteId || idx}
+                  className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                    isCurrentUser ? 'font-bold ring-1 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+                  } ${colorClass}`}
+                >
+                  {displayName}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </React.Fragment>
+    );
   };
 
   return (
@@ -142,7 +236,7 @@ export default function TimeSlotRoundsDisplay({
             Round {currentRound} of {totalRounds}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400">
-            {participantCount} {participantCount === 1 ? 'participant' : 'participants'}
+            {participantCount} {participantCount === 1 ? 'participant' : 'participants'} &middot; {allDisplaySlots.length} time slots
           </div>
         </div>
 
@@ -162,77 +256,22 @@ export default function TimeSlotRoundsDisplay({
         </button>
       </div>
 
-      {/* Compact time slots grouped by date */}
+      {/* Compact time slots */}
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
-        {Object.entries(slotsByDate).map(([date, slots], groupIdx) => (
-          <div key={date}>
-            {/* Date header */}
-            <div className={`px-3 py-1.5 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide ${
-              groupIdx > 0 ? 'border-t dark:border-gray-700' : ''
-            }`}>
-              {formatDate(date)}
-            </div>
+        {visibleSlots.map((item, index) => renderSlotRow(item, index))}
 
-            {/* Slot rows */}
-            {slots.map((slot, index) => {
-              const isWinner = slot.is_winner;
-              return (
-                <div
-                  key={index}
-                  className={`flex items-center px-3 py-2 ${
-                    index > 0 ? 'border-t border-gray-100 dark:border-gray-750' : ''
-                  } ${
-                    isWinner
-                      ? 'bg-green-50 dark:bg-green-900/30'
-                      : 'bg-white dark:bg-gray-800'
-                  }`}
-                >
-                  {/* Winner indicator */}
-                  <div className="w-5 flex-shrink-0">
-                    {isWinner && (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </div>
-
-                  {/* Time range */}
-                  <div className={`flex-1 min-w-0 ${isWinner ? 'font-semibold' : ''}`}>
-                    <span className="text-sm text-gray-900 dark:text-gray-100">
-                      {formatTimeRange(slot)}
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">
-                      {formatDuration(slot.duration_hours)}
-                    </span>
-                  </div>
-
-                  {/* Participant badges - compact */}
-                  <div className="flex flex-wrap gap-1 justify-end ml-2">
-                    {slot.participant_names.map((name, idx) => {
-                      const voteId = slot.participant_vote_ids[idx];
-                      const isCurrentUser = voteId === currentUserVoteId;
-                      const colorClass = voteId ? getParticipantColor(voteId) : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-                      const displayName = isCurrentUser
-                        ? (name ? `You (${name})` : 'You')
-                        : (name || 'Anonymous');
-
-                      return (
-                        <span
-                          key={voteId || idx}
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs ${
-                            isCurrentUser ? 'font-bold ring-1 ring-blue-500 dark:ring-blue-400' : 'font-medium'
-                          } ${colorClass}`}
-                        >
-                          {displayName}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+        {/* Expand/collapse toggle */}
+        {needsCollapse && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full px-3 py-2 text-center text-sm text-blue-600 dark:text-blue-400 hover:bg-gray-50 dark:hover:bg-gray-700 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800"
+          >
+            {expanded
+              ? 'Show less'
+              : `Show ${hiddenCount} more time slot${hiddenCount === 1 ? '' : 's'}`
+            }
+          </button>
+        )}
       </div>
 
       {/* Round indicator dots */}
