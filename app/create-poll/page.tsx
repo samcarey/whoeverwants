@@ -191,7 +191,6 @@ function CreatePollContent() {
     return "Who's in?";
   }, [pollType, category, options, locationMode, locationValue, locationOptions]);
 
-
   // Focus details textarea when opening
   useEffect(() => {
     if (detailsOpen) {
@@ -929,7 +928,6 @@ function CreatePollContent() {
     
     return ` (${displayParts.join(', ')})`;
   };
-
 
   const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();

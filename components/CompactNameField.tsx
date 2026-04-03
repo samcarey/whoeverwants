@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 
 interface CompactNameFieldProps {
   name: string;
@@ -12,6 +12,7 @@ interface CompactNameFieldProps {
 export default function CompactNameField({ name, setName, disabled = false, maxLength = 50 }: CompactNameFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const id = useId();
 
   useEffect(() => {
     if (isEditing) {
@@ -19,21 +20,16 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
     }
   }, [isEditing]);
 
-  const handleEdit = () => {
-    setIsEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
   if (isEditing) {
     return (
       <div>
-        <label htmlFor="compactName" className="block text-sm font-medium mb-1">
-          Your Name{!name.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
+        <label htmlFor={id} className="block text-sm font-medium mb-1">
+          Your Name{!name.trim() && <> <span className="font-normal">(optional)</span></>}
         </label>
         <input
           ref={inputRef}
           type="text"
-          id="compactName"
+          id={id}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => setIsEditing(false)}
@@ -50,7 +46,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
     return (
       <button
         type="button"
-        onClick={handleEdit}
+        onClick={() => setIsEditing(true)}
         className="block text-sm font-medium text-left"
       >
         Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{name.trim()}</span>
@@ -63,7 +59,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
       Your Name <span className="font-normal">(optional)</span>:{' '}
       <button
         type="button"
-        onClick={handleEdit}
+        onClick={() => setIsEditing(true)}
         className="font-normal text-blue-600 dark:text-blue-400"
       >
         Add

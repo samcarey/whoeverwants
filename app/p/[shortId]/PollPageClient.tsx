@@ -136,15 +136,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Check if poll has time windows but none are enabled (voter voted Yes with all days unchecked)
   const hasNoEnabledTimeWindows = useMemo(() => {
     if (poll.poll_type !== 'participation') return false;
-    const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
-      (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) => dtw.windows.length > 0
+    if (!poll.day_time_windows?.some((dtw: DayTimeWindow) => dtw.windows.length > 0)) return false;
+    return !voterDayTimeWindows.some(
+      (dtw: DayTimeWindow) => dtw.windows.some(w => w.enabled !== false)
     );
-    if (!pollHasTimeWindows) return false;
-    const enabledWindows = voterDayTimeWindows.flatMap(
-      (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
-        dtw.windows.filter((w: { enabled?: boolean }) => w.enabled !== false)
-    );
-    return enabledWindows.length === 0;
   }, [poll.poll_type, poll.day_time_windows, voterDayTimeWindows]);
 
   // Check if any enabled voter time window is shorter than the minimum duration
