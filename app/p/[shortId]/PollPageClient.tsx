@@ -1749,13 +1749,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div
-                    className="overflow-hidden transition-all duration-300 ease-in-out"
+                    className="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out"
                     style={{
-                      maxHeight: yesNoChoice === 'no' ? '0px' : '2000px',
+                      gridTemplateRows: yesNoChoice === 'no' ? '0fr' : '1fr',
                       opacity: yesNoChoice === 'no' ? 0 : 1,
                     }}
                   >
-                    <div className="mb-4">
+                    <div className="overflow-hidden min-h-0">
+                      <div className="mb-4">
                       <h3 className="text-lg font-semibold mb-4 text-center">Your Conditions</h3>
                       <ParticipationConditions
                         minValue={voterMinParticipants}
@@ -1780,6 +1781,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         pollDayTimeWindows={poll.day_time_windows || undefined}
                         pollDurationWindow={poll.duration_window || undefined}
                       />
+                      </div>
                     </div>
                   </div>
 
