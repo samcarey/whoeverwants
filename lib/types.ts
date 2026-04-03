@@ -107,6 +107,8 @@ export interface PollResults {
   options?: string[];
   yes_count?: number;
   no_count?: number;
+  abstain_count?: number;
+  total_yes_votes?: number;
   total_votes: number;
   yes_percentage?: number;
   no_percentage?: number;

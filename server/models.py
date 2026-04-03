@@ -210,6 +210,7 @@ class PollResultsResponse(BaseModel):
     yes_count: int | None = None
     no_count: int | None = None
     abstain_count: int | None = None
+    total_yes_votes: int | None = None
     total_votes: int = 0
     yes_percentage: int | None = None
     no_percentage: int | None = None
