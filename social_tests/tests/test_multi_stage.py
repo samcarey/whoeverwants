@@ -246,8 +246,8 @@ class TestFollowUpChains:
         # Some people change their mind with new info
         api.vote(second_poll["id"], voter_name="A", vote_type="yes_no", yes_no_choice="yes")
         api.vote(second_poll["id"], voter_name="B", vote_type="yes_no", yes_no_choice="yes")
-        api.vote(second_poll["id"], voter_name="C", vote_type="yes_no", yes_no_choice="no")  # Changed
-        api.vote(second_poll["id"], voter_name="D", vote_type="yes_no", yes_no_choice="yes")  # Changed
+        api.vote(second_poll["id"], voter_name="C", vote_type="yes_no", yes_no_choice="yes")  # Changed with budget context
+        api.vote(second_poll["id"], voter_name="D", vote_type="yes_no", yes_no_choice="yes")  # Changed with budget context
         api.vote(second_poll["id"], voter_name="E", vote_type="yes_no", yes_no_choice="no")
         api.vote(second_poll["id"], voter_name="F", vote_type="yes_no", yes_no_choice="no")
 
