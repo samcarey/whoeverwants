@@ -431,7 +431,7 @@ export default function TimeSlotRoundsDisplay({
       </div>
 
       <div className="border rounded-lg overflow-hidden dark:border-gray-700">
-        {isFinalRound && totalRounds > 1 && currentSlots.find(s => s.is_winner) ? (
+        {isFinalRound && currentSlots.find(s => s.is_winner) ? (
           renderFinalRoundSlot(currentSlots.find(s => s.is_winner)!)
         ) : (
           <>
