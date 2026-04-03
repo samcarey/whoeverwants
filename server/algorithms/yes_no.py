@@ -63,7 +63,9 @@ def count_yes_no_votes(votes: list[dict]) -> YesNoResult:
     yes_percentage = round((yes_count / total_votes) * 100)
     no_percentage = round((no_count / total_votes) * 100)
 
-    if yes_count > no_count:
+    if yes_count == 0 and no_count == 0:
+        winner = None
+    elif yes_count > no_count:
         winner = "yes"
     elif no_count > yes_count:
         winner = "no"

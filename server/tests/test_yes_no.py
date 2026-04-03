@@ -88,7 +88,7 @@ class TestCountYesNoVotes:
         assert result.total_votes == 2
         assert result.yes_percentage == 0
         assert result.no_percentage == 0
-        assert result.winner == "tie"
+        assert result.winner is None
 
     def test_abstain_affects_percentages(self):
         """Abstain votes are in the denominator, lowering yes/no percentages."""
