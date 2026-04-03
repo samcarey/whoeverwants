@@ -331,61 +331,57 @@ export default function TimeSlotRoundsDisplay({
     </div>
   );
 
+  // Check if all groups share a single date so we can show it once as a header
+  const allDates = useMemo(() => {
+    const dates = new Set<string>();
+    for (const g of groups) {
+      for (const dr of g.dateRanges) dates.add(dr.date);
+    }
+    return [...dates].sort();
+  }, [groups]);
+  const singleDate = allDates.length === 1 ? allDates[0] : null;
+
+  const formatGroupRanges = (group: SlotGroup): string => {
+    return group.dateRanges.map(dr => {
+      const datePrefix = singleDate ? '' : `${formatDate(dr.date)}: `;
+      const ranges = dr.ranges.map(r => formatStartTimeRange(r)).join(', ');
+      return `${datePrefix}${ranges}`;
+    }).join(' · ');
+  };
+
   const renderGroup = (group: SlotGroup, groupIdx: number) => {
     const hasWinner = !!group.winner_slot;
 
     return (
       <div
         key={groupIdx}
-        className={`${groupIdx > 0 ? 'border-t border-gray-200 dark:border-gray-600' : ''} ${
+        className={`flex items-center px-3 py-1.5 ${groupIdx > 0 ? 'border-t border-gray-100 dark:border-gray-700' : ''} ${
           hasWinner ? 'bg-green-50 dark:bg-green-900/30' : 'bg-white dark:bg-gray-800'
         }`}
       >
-        {/* Header: duration, slot count, participants */}
-        <div className="px-3 pt-2.5 pb-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {hasWinner && (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              )}
-              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {formatDuration(group.duration_hours)}
-              </span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">
-                {group.slotCount} slot{group.slotCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-            {renderParticipantPills(group)}
-          </div>
-
-          {/* Winner callout */}
-          {hasWinner && group.winner_slot && (
-            <div className="mt-1 text-xs font-medium text-green-700 dark:text-green-300">
-              Winner: {formatTimeRange(group.winner_slot)}, {formatDate(group.winner_slot.slot_date)}
-            </div>
+        <div className="w-5 flex-shrink-0">
+          {hasWinner && (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600 dark:text-green-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
           )}
         </div>
 
-        {/* Date + start time ranges */}
-        <div className="px-3 pb-2.5">
-          {group.dateRanges.map((dr) => (
-            <div key={dr.date} className="mt-1">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {formatDate(dr.date)}
-              </span>
-              <div className="text-sm text-gray-900 dark:text-gray-100 ml-1 mt-0.5">
-                <span className="text-xs text-gray-400 dark:text-gray-500">Starts: </span>
-                {dr.ranges.map((r, i) => (
-                  <span key={i}>
-                    {i > 0 && <span className="text-gray-400 dark:text-gray-500">,{' '}</span>}
-                    {formatStartTimeRange(r)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className={`flex-1 min-w-0 ${hasWinner ? 'font-semibold' : ''}`}>
+          <span className="text-sm text-gray-900 dark:text-gray-100">
+            {formatDuration(group.duration_hours)}
+          </span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 mx-1.5">&middot;</span>
+          <span className="text-sm text-gray-900 dark:text-gray-100">
+            {formatGroupRanges(group)}
+          </span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 ml-1.5">
+            {group.slotCount} slot{group.slotCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-1 justify-end ml-2">
+          {renderParticipantPills(group)}
         </div>
       </div>
     );
@@ -439,6 +435,11 @@ export default function TimeSlotRoundsDisplay({
           renderFinalRoundSlot(currentSlots.find(s => s.is_winner)!)
         ) : (
           <>
+            {singleDate && (
+              <div className="px-3 py-1 bg-gray-50 dark:bg-gray-800 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                {formatDate(singleDate)}
+              </div>
+            )}
             {visibleGroups.map((group, index) => renderGroup(group, index))}
 
             {needsCollapse && (
