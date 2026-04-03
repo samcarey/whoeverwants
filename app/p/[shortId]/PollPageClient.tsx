@@ -146,7 +146,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     draftRestoredRef.current = true;
     if (poll.poll_type !== 'participation') return;
     // Don't restore draft if user already voted (DB values will be loaded instead)
-    if (hasVotedOnPoll(poll.id)) return;
+    try {
+      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+      if (votedPolls[poll.id]) return;
+    } catch { /* ignore */ }
     const draft = loadBallotDraft(poll.id);
     if (!draft) return;
     if (draft.yesNoChoice) setYesNoChoice(draft.yesNoChoice);
@@ -159,7 +162,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
-  }, [poll.id, poll.poll_type, hasVotedOnPoll]);
+  }, [poll.id, poll.poll_type]);
 
   // Persist ballot draft state to localStorage whenever it changes (participation polls)
   useEffect(() => {
