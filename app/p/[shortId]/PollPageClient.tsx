@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
+import CompactNameField from "@/components/CompactNameField";
 import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
@@ -1594,20 +1595,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
-                      Your Name (optional)
-                    </label>
-                    <input
-                      type="text"
-                      id="voterName"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="Enter your name..."
-                      maxLength={50}
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
-                  
+
                   <button
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
@@ -1783,19 +1773,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   <div className="mb-4">
-                    <label htmlFor="voterName" className="block text-sm font-medium mb-1">
-                      Your Name <span className="text-gray-500 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="voterName"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      disabled={isSubmitting}
-                      maxLength={30}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder="Enter your name..."
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
                   </div>
 
                   {hasTimeWindowTooShort && (
@@ -2070,18 +2048,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   </div>
 
                   <div className="mt-4">
-                    <label htmlFor="voterNameRanked" className="block text-sm font-medium mb-1">
-                      Your Name (optional)
-                    </label>
-                    <input
-                      type="text"
-                      id="voterNameRanked"
-                      value={voterName}
-                      onChange={(e) => setVoterName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
-                      placeholder="Enter your name..."
-                      maxLength={50}
-                    />
+                    <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
                   
                   <button

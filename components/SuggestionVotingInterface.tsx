@@ -5,6 +5,7 @@ import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import SuggestionsList from "@/components/SuggestionsList";
+import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
@@ -383,18 +384,7 @@ export default function SuggestionVotingInterface({
 
       {/* Voter Name Input */}
       <div className="mb-3">
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
-          Your name (optional)
-        </label>
-        <input
-          type="text"
-          value={voterName}
-          onChange={(e) => setVoterName(e.target.value)}
-          disabled={isSubmitting}
-          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          placeholder="Enter your name (optional)"
-          maxLength={50}
-        />
+        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
       </div>
 
       {/* Submit Button */}
