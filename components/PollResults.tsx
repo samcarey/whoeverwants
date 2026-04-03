@@ -231,17 +231,17 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     if (totalVotes === 0) return 'No responses received';
 
     if (totalYesVotes === 0) {
-      if (noCount > 0 && abstainCount > 0) return `${noCount} declined, ${abstainCount} abstained — no one volunteered`;
+      if (noCount > 0 && abstainCount > 0) return `${noCount} declined, ${abstainCount} abstained — no one said yes`;
       if (noCount > 0) return `All ${noCount} respondent${noCount !== 1 ? 's' : ''} declined`;
       if (abstainCount > 0) return `All ${abstainCount} respondent${abstainCount !== 1 ? 's' : ''} abstained`;
-      return 'No one volunteered';
+      return 'No one said yes';
     }
 
     if (yesCount === 0 && totalYesVotes > 0) {
       if (isCurrentUserYesVoter && totalYesVotes === 1) {
         const conds = formatConditions(userMinParticipants, userMaxParticipants);
-        if (conds) return `You wanted ${conds}, but you were the only volunteer`;
-        return 'You were the only volunteer, but your conditions couldn\u2019t be met';
+        if (conds) return `You wanted ${conds}, but no one else said yes`;
+        return 'No one else said yes, so your conditions couldn\u2019t be met';
       }
       if (isCurrentUserYesVoter) {
         const othersCount = totalYesVotes - 1;
