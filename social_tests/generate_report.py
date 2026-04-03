@@ -25,14 +25,15 @@ RESULTS_PATH = Path("/tmp/social_test_results.json")
 REPORT_DIR = Path(__file__).parent / "reports"
 STRATEGY_PATH = Path(__file__).parent / "testing_strategy.md"
 CRITIQUE_PATH = REPORT_DIR / "previous_critique.json"
+REPORT_FILENAME = "social_test_report"
 
 
-def run_tests(site_url: str = "") -> list[dict]:
+def run_tests(site_url: str | None = None) -> list[dict]:
     """Execute pytest and return collected results."""
     env = os.environ.copy()
     env["SOCIAL_TEST_RESULTS_PATH"] = str(RESULTS_PATH)
     if site_url:
-        env["SOCIAL_TEST_REPORT_URL"] = f"{site_url.rstrip('/')}/social_test_report.html"
+        env["SOCIAL_TEST_REPORT_URL"] = f"{site_url.rstrip('/')}/{REPORT_FILENAME}.html"
 
     print("Running social tests...")
     proc = subprocess.run(
@@ -513,12 +514,12 @@ def main():
 
     # Step 3: Build report
     md_content = build_markdown(results, critique_map, site_url=args.site_url)
-    md_path = REPORT_DIR / "social_test_report.md"
+    md_path = REPORT_DIR / f"{REPORT_FILENAME}.md"
     md_path.write_text(md_content)
     print(f"Markdown report: {md_path}")
 
     html_content = build_html(md_content)
-    html_path = REPORT_DIR / "social_test_report.html"
+    html_path = REPORT_DIR / f"{REPORT_FILENAME}.html"
     html_path.write_text(html_content)
     print(f"HTML report: {html_path}")
 
