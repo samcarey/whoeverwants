@@ -15,6 +15,7 @@ Steps:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -85,13 +86,21 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
     lines.append(strategy_text)
     lines.append("\n</details>\n")
 
-    # Summary
+    # Summary — single pass for badge counts
     total = len(results)
-    passed = sum(1 for r in results if r["technical_pass"])
-    failed = total - passed
-    fair = sum(1 for r in results if r["social_badge"] == "FAIR")
-    awkward = sum(1 for r in results if r["social_badge"] == "AWKWARD")
-    insight = sum(1 for r in results if r["social_badge"] == "INSIGHT")
+    passed = failed = fair = awkward = insight = 0
+    for r in results:
+        if r["technical_pass"]:
+            passed += 1
+        else:
+            failed += 1
+        badge = r["social_badge"]
+        if badge == "FAIR":
+            fair += 1
+        elif badge == "AWKWARD":
+            awkward += 1
+        elif badge == "INSIGHT":
+            insight += 1
 
     lines.append("## Summary\n")
     lines.append(f"| Metric | Count |")
@@ -137,8 +146,6 @@ def build_markdown(results: list[dict], critique_map: dict[str, str] | None = No
                 if title_line:
                     lines.append(f"**{title_line}**\n")
                 if body:
-                    # Style SCENARIO:/EXPECTATION:/SOCIAL QUESTION:/NOTE: as bold labels
-                    import re
                     styled = re.sub(
                         r"^(SCENARIO|EXPECTATION|SOCIAL QUESTION|NOTE):",
                         r"**\1:**",
@@ -268,14 +275,19 @@ def build_html(md_content: str) -> str:
 </html>"""
 
 
+_RE_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_RE_ITALIC = re.compile(r"\*(.+?)\*")
+_RE_CODE = re.compile(r"`(.+?)`")
+_RE_HEADER = re.compile(r"^(#{1,4})\s+(.*)")
+
+
 def _md_to_html(md: str) -> str:
     """Minimal markdown-to-HTML conversion that preserves inline HTML."""
-    import re
 
     def inline_fmt(text: str) -> str:
-        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-        text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-        text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+        text = _RE_BOLD.sub(r"<strong>\1</strong>", text)
+        text = _RE_ITALIC.sub(r"<em>\1</em>", text)
+        text = _RE_CODE.sub(r"<code>\1</code>", text)
         return text
 
     lines = md.split("\n")
@@ -336,7 +348,7 @@ def _md_to_html(md: str) -> str:
             continue
 
         # Headers
-        m = re.match(r"^(#{1,4})\s+(.*)", line)
+        m = _RE_HEADER.match(line)
         if m:
             flush_para()
             level = len(m.group(1))
@@ -426,42 +438,42 @@ def deploy_to_droplet(html_content: str):
 
     remote_script = Path(__file__).parent.parent / "scripts" / "remote.sh"
 
-    # Create directory on droplet
-    subprocess.run(
-        ["bash", str(remote_script), "mkdir -p /var/www/reports"],
-        capture_output=True,
-        text=True,
-    )
-
-    # Base64 encode and transfer
-    with open(tmp_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-
-    # Write in chunks if needed (remote.sh has command length limits)
-    chunk_size = 50000
-    chunks = [b64[i:i + chunk_size] for i in range(0, len(b64), chunk_size)]
-
-    # Clear any previous file
-    subprocess.run(
-        ["bash", str(remote_script), "rm -f /var/www/reports/social_tests.html"],
-        capture_output=True,
-    )
-
-    for i, chunk in enumerate(chunks):
-        op = ">>" if i > 0 else ">"
+    try:
+        # Create directory on droplet
         subprocess.run(
-            ["bash", str(remote_script), f"echo -n '{chunk}' {op} /tmp/report_b64.txt"],
+            ["bash", str(remote_script), "mkdir -p /var/www/reports"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Base64 encode and transfer
+        with open(tmp_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+
+        # Write in chunks if needed (remote.sh has command length limits)
+        chunk_size = 50000
+        chunks = [b64[i:i + chunk_size] for i in range(0, len(b64), chunk_size)]
+
+        # Clear any previous file
+        subprocess.run(
+            ["bash", str(remote_script), "rm -f /var/www/reports/social_tests.html"],
             capture_output=True,
         )
 
-    # Decode on droplet
-    subprocess.run(
-        ["bash", str(remote_script), "base64 -d /tmp/report_b64.txt > /var/www/reports/social_tests.html && rm /tmp/report_b64.txt"],
-        capture_output=True,
-    )
+        for i, chunk in enumerate(chunks):
+            op = ">>" if i > 0 else ">"
+            subprocess.run(
+                ["bash", str(remote_script), f"echo -n '{chunk}' {op} /tmp/report_b64.txt"],
+                capture_output=True,
+            )
 
-    # Clean up
-    os.unlink(tmp_path)
+        # Decode on droplet
+        subprocess.run(
+            ["bash", str(remote_script), "base64 -d /tmp/report_b64.txt > /var/www/reports/social_tests.html && rm /tmp/report_b64.txt"],
+            capture_output=True,
+        )
+    finally:
+        os.unlink(tmp_path)
 
     print("Report deployed to droplet at /var/www/reports/social_tests.html")
 

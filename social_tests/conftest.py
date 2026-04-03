@@ -16,6 +16,9 @@ import pytest
 API_URL = os.environ.get("SOCIAL_TEST_API_URL", "https://whoeverwants.com")
 REPORT_URL = os.environ.get("SOCIAL_TEST_REPORT_URL", "")
 
+MAX_RETRIES = 8
+MAX_BACKOFF_SECONDS = 30
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -45,15 +48,15 @@ class PollHelper:
 
     def _request(self, method: str, url: str, expected: int, err_prefix: str, **kwargs) -> httpx.Response:
         """Make a request with automatic rate-limit retry."""
-        for attempt in range(8):
+        for attempt in range(MAX_RETRIES):
             resp = self.client.request(method, url, **kwargs)
             if resp.status_code == 429:
-                wait = min(2 ** attempt, 30)
+                wait = min(2 ** attempt, MAX_BACKOFF_SECONDS)
                 time.sleep(wait)
                 continue
             assert resp.status_code == expected, f"{err_prefix}: {resp.text}"
             return resp
-        raise AssertionError(f"{err_prefix}: rate limited after 8 retries")
+        raise AssertionError(f"{err_prefix}: rate limited after {MAX_RETRIES} retries")
 
     def create_poll(self, title: str, poll_type: str, creator_secret: str, **kwargs) -> dict:
         # Inject report back-link into poll details if report URL is configured
