@@ -133,6 +133,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return participatingVoterIds.includes(userVoteData.id);
   }, [poll.poll_type, userVoteData, participatingVoterIds]);
   
+  // Check if poll has time windows but none are enabled (voter voted Yes with all days unchecked)
+  const hasNoEnabledTimeWindows = useMemo(() => {
+    if (poll.poll_type !== 'participation') return false;
+    const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
+      (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) => dtw.windows.length > 0
+    );
+    if (!pollHasTimeWindows) return false;
+    const enabledWindows = voterDayTimeWindows.flatMap(
+      (dtw: { windows: { min: string; max: string; enabled?: boolean }[] }) =>
+        dtw.windows.filter((w: { enabled?: boolean }) => w.enabled !== false)
+    );
+    return enabledWindows.length === 0;
+  }, [poll.poll_type, poll.day_time_windows, voterDayTimeWindows]);
+
   // Check if any enabled voter time window is shorter than the minimum duration
   const hasTimeWindowTooShort = useMemo(() => {
     if (poll.poll_type !== 'participation') return false;
@@ -1782,10 +1796,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
+                  {yesNoChoice === 'yes' && hasNoEnabledTimeWindows && (
+                    <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded-md">
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300">Enable at least one time window, or vote No.</p>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={handleVoteClick}
-                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
+                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || (yesNoChoice === 'yes' && hasNoEnabledTimeWindows)}
                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
