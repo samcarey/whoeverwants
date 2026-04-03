@@ -226,7 +226,8 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   }
 
   // Generate a detailed reason for why the event isn't happening
-  const getFailureReason = (): string => {
+  // When isCurrentUserYesVoter is true, uses "you" language instead of third-person
+  const getFailureReason = (isCurrentUserYesVoter: boolean = false): string => {
     if (totalVotes === 0) return 'No responses received';
 
     if (totalYesVotes === 0) {
@@ -237,6 +238,13 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     }
 
     if (yesCount === 0 && totalYesVotes > 0) {
+      if (isCurrentUserYesVoter && totalYesVotes === 1) {
+        return 'You were the only volunteer, but your conditions couldn\u2019t be met';
+      }
+      if (isCurrentUserYesVoter) {
+        const othersCount = totalYesVotes - 1;
+        return `You and ${othersCount} other${othersCount !== 1 ? 's' : ''} wanted to join, but everyone\u2019s conditions were incompatible`;
+      }
       if (totalYesVotes === 1) return '1 person wanted to join but their conditions couldn\u2019t be satisfied';
       return `${totalYesVotes} people wanted to join but their conditions were incompatible`;
     }
@@ -261,6 +269,19 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
     if (abstainCount > 0) parts.push(`${abstainCount} abstain`);
     if (parts.length === 0) return '';
     return parts.join(', ');
+  };
+
+  // Format a min/max constraint as readable text
+  const formatConditions = (min: number | null | undefined, max: number | null | undefined): string | null => {
+    const hasMin = min !== null && min !== undefined;
+    const hasMax = max !== null && max !== undefined;
+    if (!hasMin && !hasMax) return null;
+    if (hasMin && hasMax) {
+      if (min === max) return `exactly ${min} participant${min !== 1 ? 's' : ''}`;
+      return `${min}–${max} participants`;
+    }
+    if (hasMin) return `at least ${min} participant${min !== 1 ? 's' : ''}`;
+    return `at most ${max} participant${max !== 1 ? 's' : ''}`;
   };
 
   // Build explanation for why the user specifically was excluded
@@ -522,19 +543,15 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
 
     // Scenario: Event NOT happening, user voted YES
     if (!isHappening && userVotedYes) {
-      const failureReason = getFailureReason();
+      const failureReason = getFailureReason(true);
       const breakdown = getVoteBreakdown();
+      const userConditionsText = formatConditions(userMinParticipants, userMaxParticipants);
 
-      // Show the user's own conditions if they had any
-      const userHadConditions = (userMinParticipants !== null && userMinParticipants !== undefined)
-        || (userMaxParticipants !== null && userMaxParticipants !== undefined);
-      const userConditionsLine = userHadConditions
-        ? `Your conditions: ${userMinParticipants && userMaxParticipants
-            ? `${userMinParticipants}–${userMaxParticipants} participants`
-            : userMinParticipants
-            ? `at least ${userMinParticipants} participant${userMinParticipants !== 1 ? 's' : ''}`
-            : `at most ${userMaxParticipants} participant${userMaxParticipants !== 1 ? 's' : ''}`}`
-        : null;
+      // Only show the user's conditions separately if the failure reason doesn't already
+      // explain them (i.e. it's a poll-level constraint failure, not a user-conditions failure)
+      const showUserConditions = userConditionsText
+        && yesCount > 0  // if yesCount === 0, the failure reason already covers conditions
+        && minParticipants && yesCount < minParticipants;  // poll-level min not met
 
       return (
         <div className="rounded-lg border-2 bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 px-4 py-3">
@@ -547,9 +564,9 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
                 {failureReason}
               </div>
             )}
-            {userConditionsLine && (
+            {showUserConditions && (
               <div className="text-sm text-red-700 dark:text-red-300 opacity-75 mb-1">
-                {userConditionsLine}
+                Your conditions: {userConditionsText}
               </div>
             )}
             {breakdown && (
