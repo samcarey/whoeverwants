@@ -347,12 +347,11 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
           </button>
         </div>
       ) : (
-        <div className="text-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{currentRound.title}</h3>
-          {results.total_votes === 0 && results.winner && results.winner !== 'tie' && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Uncontested</p>
-          )}
-        </div>
+        results.total_votes === 0 && results.winner && results.winner !== 'tie' ? (
+          <div className="text-center mb-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Uncontested</p>
+          </div>
+        ) : null
       )}
 
       {/* Swipeable content area */}

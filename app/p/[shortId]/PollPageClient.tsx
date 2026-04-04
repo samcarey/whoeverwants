@@ -1963,11 +1963,24 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
+                        {/* Inline bubble for 2-option polls */}
+                        {pollOptions.length === 2 && !isLoadingVoteData && !(userVoteData?.is_abstain || isAbstaining) && rankedChoices[0] && (
+                          <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
+                            {rankedChoices[0]}
+                          </span>
+                        )}
+                        {pollOptions.length === 2 && !isLoadingVoteData && (userVoteData?.is_abstain || isAbstaining) && (
+                          <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
+                            Abstained
+                          </span>
+                        )}
+                      </div>
                       {!isPollClosed && !isLoadingVoteData && (
                         <button
                           onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
                         >
                           Edit
                         </button>
@@ -1989,39 +2002,33 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {userVoteData?.is_abstain || isAbstaining ? (
-                          <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                            </span>
-                            <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
-                          </div>
-                        ) : pollOptions.length === 2 ? (
-                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                            <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
-                              ✓
-                            </span>
-                            <div className="min-w-0 overflow-hidden">
-                              <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
+                      {/* For 2-option polls, choice/abstain is shown inline in the header row above */}
+                      {pollOptions.length > 2 && (
+                        <div className="space-y-2">
+                          {userVoteData?.is_abstain || isAbstaining ? (
+                            <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                              <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
+                              </span>
+                              <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                             </div>
-                          </div>
-                        ) : (
-                          rankedChoices.map((choice, index) => (
-                            <div key={index} className="flex items-center gap-2">
-                              <div className="flex-shrink-0" style={{ width: '32px' }}>
-                                <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                  {index + 1}
-                                </span>
-                              </div>
-                              <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                                <div className="min-w-0 overflow-hidden">
-                                  <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                          ) : (
+                            rankedChoices.map((choice, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <div className="flex-shrink-0" style={{ width: '32px' }}>
+                                  <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                                    {index + 1}
+                                  </span>
+                                </div>
+                                <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                                  <div className="min-w-0 overflow-hidden">
+                                    <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     )}
                   </div>
 
