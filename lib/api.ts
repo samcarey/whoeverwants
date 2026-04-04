@@ -128,6 +128,8 @@ function toPoll(data: any): Poll {
     reference_latitude: data.reference_latitude ?? undefined,
     reference_longitude: data.reference_longitude ?? undefined,
     reference_location_label: data.reference_location_label ?? undefined,
+    min_responses: data.min_responses ?? undefined,
+    show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
   };
 }
@@ -204,6 +206,8 @@ export async function apiCreatePoll(params: {
   reference_latitude?: number;
   reference_longitude?: number;
   reference_location_label?: string;
+  min_responses?: number;
+  show_preliminary_results?: boolean;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',

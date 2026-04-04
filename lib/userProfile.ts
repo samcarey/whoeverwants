@@ -1,5 +1,6 @@
 const USER_NAME_KEY = 'whoeverwants_user_name';
 const USER_LOCATION_KEY = 'whoeverwants_user_location';
+const USER_MIN_RESPONSES_KEY = 'whoeverwants_min_responses';
 
 export interface UserLocation {
   latitude: number;
@@ -45,6 +46,19 @@ export function getUserLocation(): UserLocation | null {
 export function clearUserLocation() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(USER_LOCATION_KEY);
+}
+
+export function saveUserMinResponses(value: number) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(USER_MIN_RESPONSES_KEY, String(value));
+}
+
+export function getUserMinResponses(): number | null {
+  if (typeof window === 'undefined') return null;
+  const stored = localStorage.getItem(USER_MIN_RESPONSES_KEY);
+  if (!stored) return null;
+  const num = parseInt(stored, 10);
+  return isNaN(num) ? null : num;
 }
 
 export function getUserInitials(name: string | null): string {

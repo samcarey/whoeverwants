@@ -93,6 +93,8 @@ export function buildPollSnapshot(poll: Poll) {
     category: poll.category,
     options_metadata: poll.options_metadata,
     is_auto_title: poll.is_auto_title,
+    min_responses: poll.min_responses,
+    show_preliminary_results: poll.show_preliminary_results,
   };
 }
 

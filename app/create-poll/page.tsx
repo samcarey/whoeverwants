@@ -13,9 +13,11 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
-import { getUserName, saveUserName } from "@/lib/userProfile";
+import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
+import CompactMinResponsesField from "@/components/CompactMinResponsesField";
+import ExpirationConditionsModal, { EXPIRATION_DEADLINE_OPTIONS } from "@/components/ExpirationConditionsModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
@@ -124,6 +126,10 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
+  // Minimum responses / preliminary results / expiration modal
+  const [minResponses, setMinResponses] = useState<number>(1);
+  const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
+  const [showExpirationModal, setShowExpirationModal] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -230,6 +236,25 @@ function CreatePollContent() {
     }
   }, []);
 
+  // Set default deadline based on poll type
+  const isPreferencePoll = pollType === 'poll' && category !== 'yes_no';
+  const prevIsPreferencePollRef = useRef(isPreferencePoll);
+  useEffect(() => {
+    if (isPreferencePoll === prevIsPreferencePollRef.current) return;
+    prevIsPreferencePollRef.current = isPreferencePoll;
+    if (isPreferencePoll) {
+      // Switching to preference/suggestion poll: default to 4 weeks
+      if (BASE_DEADLINE_OPTIONS.some(o => o.value === deadlineOption)) {
+        setDeadlineOption('4weeks');
+      }
+    } else {
+      // Switching away: revert to inline default if it's an expiration modal option
+      if (EXPIRATION_DEADLINE_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
+        setDeadlineOption('10min');
+      }
+    }
+  }, [isPreferencePoll, deadlineOption]);
+
   // Save poll type preference separately (persists across submissions)
   const savePollTypePreference = useCallback((type: 'poll' | 'participation') => {
     if (typeof window !== 'undefined') {
@@ -257,11 +282,13 @@ function CreatePollContent() {
         durationMaxValue,
         durationMinEnabled,
         durationMaxEnabled,
-        dayTimeWindows
+        dayTimeWindows,
+        minResponses,
+        showPreliminaryResults,
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -322,6 +349,8 @@ function CreatePollContent() {
           if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
           if (formState.durationMaxEnabled !== undefined) setDurationMaxEnabled(formState.durationMaxEnabled);
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
+          if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
+          if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
 
           return formState;
         } catch (error) {
@@ -500,6 +529,10 @@ function CreatePollContent() {
     if (savedName) {
       setCreatorName(savedName);
     }
+    const savedMinResponses = getUserMinResponses();
+    if (savedMinResponses !== null) {
+      setMinResponses(savedMinResponses);
+    }
 
     if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
@@ -617,6 +650,8 @@ function CreatePollContent() {
           if (forkData.options_metadata) {
             setOptionsMetadata(forkData.options_metadata);
           }
+          if (forkData.min_responses != null) setMinResponses(forkData.min_responses);
+          if (forkData.show_preliminary_results != null) setShowPreliminaryResults(forkData.show_preliminary_results);
         } catch (error) {
           console.error('Error loading fork data:', error);
         }
@@ -707,6 +742,8 @@ function CreatePollContent() {
           if (duplicateData.options_metadata) {
             setOptionsMetadata(duplicateData.options_metadata);
           }
+          if (duplicateData.min_responses != null) setMinResponses(duplicateData.min_responses);
+          if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
 
           // Don't clean up the duplicate data yet - keep it until poll is created
           // so that refresh doesn't lose the data
@@ -852,23 +889,28 @@ function CreatePollContent() {
 
   const calculateDeadline = () => {
     const now = new Date();
-    
+
+    // No deadline if disabled via expiration modal
+    if (deadlineOption === "none") return null;
+
     if (deadlineOption === "custom") {
       if (!customDate || !customTime) return null;
       const dateTimeString = `${customDate}T${customTime}`;
       const customDateTime = new Date(dateTimeString);
-      
+
       // Check if the selected time is in the past
       if (customDateTime <= now) {
         return null; // Will be caught by validation
       }
-      
+
       return customDateTime.toISOString();
     }
-    
-    const option = deadlineOptions.find(opt => opt.value === deadlineOption);
+
+    // Check both inline deadline options and expiration modal options
+    const option = deadlineOptions.find(opt => opt.value === deadlineOption)
+      || EXPIRATION_DEADLINE_OPTIONS.find(opt => opt.value === deadlineOption);
     if (!option) return null;
-    
+
     const deadline = new Date(now.getTime() + option.minutes * 60 * 1000);
     return deadline.toISOString();
   };
@@ -1132,6 +1174,12 @@ function CreatePollContent() {
         pollData.auto_close_after = autoCloseAfter;
       }
 
+      // Add min_responses and show_preliminary_results for preference/suggestion polls
+      if (dbPollType === 'ranked_choice' || dbPollType === 'suggestion') {
+        pollData.min_responses = minResponses;
+        pollData.show_preliminary_results = showPreliminaryResults;
+      }
+
       // Check for duplicate follow-up poll before creating
       if (followUpTo) {
         try {
@@ -1354,90 +1402,137 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Auto-close + Response Deadline */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Close After</label>
-            <div className="flex items-center gap-2 min-w-0">
-              <input
-                type="number"
-                min="1"
-                value={autoCloseAfter ?? ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
+          {/* Preference/suggestion polls: min responses, preliminary results, expiration modal */}
+          {isPreferencePoll && (
+            <>
+              <CompactMinResponsesField
+                value={minResponses}
+                setValue={(val) => {
+                  setMinResponses(val);
+                  saveUserMinResponses(val);
                 }}
                 disabled={isLoading}
-                placeholder="—"
-                className="w-16 shrink-0 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
               />
-              <span className="text-sm text-gray-600 dark:text-gray-400 shrink-0">votes or</span>
-              <select
-                id="deadline"
-                value={deadlineOption}
-                onChange={(e) => setDeadlineOption(e.target.value)}
-                disabled={isLoading}
-                className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm truncate"
-              >
-                {deadlineOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {isClient ? getTimeLabel(option.value) : option.label}
-                  </option>
-                ))}
-              </select>
-              {autoCloseAfter !== null && (
-                <button
-                  type="button"
-                  onClick={() => setAutoCloseAfter(null)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
-                  title="Disable auto-close"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {deadlineOption === "custom" && (
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPreliminaryResults}
+                  onChange={(e) => setShowPreliminaryResults(e.target.checked)}
+                  disabled={isLoading}
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Show preliminary results
+                </span>
               </label>
-              <div className="flex justify-between gap-2">
-                <div className="w-auto">
-                  <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">
-                    Date
-                  </label>
+              <button
+                type="button"
+                onClick={() => setShowExpirationModal(true)}
+                disabled={isLoading}
+                className="w-full py-3 px-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Expiration Conditions
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">
+                  ({deadlineOption === 'none' ? 'none' :
+                    EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                    deadlineOptions.find(o => o.value === deadlineOption)?.label ||
+                    deadlineOption}{autoCloseAfter ? ` + ${autoCloseAfter} votes` : ''})
+                </span>
+              </button>
+            </>
+          )}
+
+          {/* Auto-close + Response Deadline (for yes_no and participation polls) */}
+          {!isPreferencePoll && (
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1">Close After</label>
+                <div className="flex items-center gap-2 min-w-0">
                   <input
-                    type="date"
-                    id="customDate"
-                    value={customDate}
-                    onChange={(e) => setCustomDate(e.target.value)}
+                    type="number"
+                    min="1"
+                    value={autoCloseAfter ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
+                    }}
                     disabled={isLoading}
-                    min={isClient ? getTodayDate() : ''}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                    style={{ fontSize: '14px' }}
-                    required
+                    placeholder="—"
+                    className="w-16 shrink-0 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
                   />
-                </div>
-                <div className="w-auto">
-                  <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">
-                    Time
-                  </label>
-                  <input
-                    type="time"
-                    id="customTime"
-                    value={customTime}
-                    onChange={(e) => setCustomTime(e.target.value)}
+                  <span className="text-sm text-gray-600 dark:text-gray-400 shrink-0">votes or</span>
+                  <select
+                    id="deadline"
+                    value={deadlineOption}
+                    onChange={(e) => setDeadlineOption(e.target.value)}
                     disabled={isLoading}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                    style={{ fontSize: '14px' }}
-                    required
-                  />
+                    className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm truncate"
+                  >
+                    {deadlineOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {isClient ? getTimeLabel(option.value) : option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {autoCloseAfter !== null && (
+                    <button
+                      type="button"
+                      onClick={() => setAutoCloseAfter(null)}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
+                      title="Disable auto-close"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
-            </div>
+
+              {deadlineOption === "custom" && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
+                  </label>
+                  <div className="flex justify-between gap-2">
+                    <div className="w-auto">
+                      <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        id="customDate"
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        disabled={isLoading}
+                        min={isClient ? getTodayDate() : ''}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                        required
+                      />
+                    </div>
+                    <div className="w-auto">
+                      <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">
+                        Time
+                      </label>
+                      <input
+                        type="time"
+                        id="customTime"
+                        value={customTime}
+                        onChange={(e) => setCustomTime(e.target.value)}
+                        disabled={isLoading}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
@@ -1645,6 +1740,21 @@ function CreatePollContent() {
         message={`Are you sure you want to create "${title}"?`}
         confirmText="Create"
         cancelText="Cancel"
+      />
+
+      <ExpirationConditionsModal
+        isOpen={showExpirationModal}
+        onClose={() => setShowExpirationModal(false)}
+        deadlineOption={deadlineOption}
+        setDeadlineOption={setDeadlineOption}
+        customDate={customDate}
+        setCustomDate={setCustomDate}
+        customTime={customTime}
+        setCustomTime={setCustomTime}
+        autoCloseAfter={autoCloseAfter}
+        setAutoCloseAfter={setAutoCloseAfter}
+        isClient={isClient}
+        disabled={isLoading}
       />
 
     </div>

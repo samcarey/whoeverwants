@@ -254,6 +254,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         reference_longitude=row.get("reference_longitude"),
         reference_location_label=row.get("reference_location_label"),
         is_auto_title=row.get("is_auto_title", False),
+        min_responses=row.get("min_responses"),
+        show_preliminary_results=row.get("show_preliminary_results", True),
     )
 
 
@@ -480,6 +482,7 @@ def create_poll(req: CreatePollRequest):
                                reference_latitude, reference_longitude,
                                reference_location_label,
                                is_auto_title,
+                               min_responses, show_preliminary_results,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -498,6 +501,7 @@ def create_poll(req: CreatePollRequest):
                     %(reference_latitude)s, %(reference_longitude)s,
                     %(reference_location_label)s,
                     %(is_auto_title)s,
+                    %(min_responses)s, %(show_preliminary_results)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -536,6 +540,8 @@ def create_poll(req: CreatePollRequest):
                 "reference_longitude": req.reference_longitude,
                 "reference_location_label": req.reference_location_label,
                 "is_auto_title": req.is_auto_title,
+                "min_responses": req.min_responses,
+                "show_preliminary_results": req.show_preliminary_results,
                 "now": now,
             },
         ).fetchone()
@@ -647,9 +653,17 @@ def get_poll(poll_id: str):
             "SELECT * FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Poll not found")
-    return _row_to_poll(row)
+        if not row:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        poll_resp = _row_to_poll(row)
+        # Include response count for open polls (used for min_responses threshold)
+        if not row.get("is_closed", False):
+            count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()["cnt"]
+            poll_resp.response_count = count
+    return poll_resp
 
 
 # --- Voting ---
@@ -1190,7 +1204,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                 if pid in votes_by_poll:
                     votes_by_poll[pid].append(v)
 
-        # Count responses for open polls
+        # Count responses for open polls and fetch votes for those meeting min_responses
         response_counts: dict[str, int] = {}
         if open_poll_ids:
             count_rows = conn.execute(
@@ -1199,6 +1213,27 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             ).fetchall()
             for cr in count_rows:
                 response_counts[str(cr["poll_id"])] = cr["cnt"]
+
+        # Identify open polls that qualify for preliminary results
+        preliminary_poll_ids = []
+        rows_by_id = {str(r["id"]): r for r in rows}
+        for pid in open_poll_ids:
+            r = rows_by_id[pid]
+            min_resp = r.get("min_responses")
+            show_prelim = r.get("show_preliminary_results", True)
+            if show_prelim and min_resp is not None and response_counts.get(pid, 0) >= min_resp:
+                preliminary_poll_ids.append(pid)
+
+        if preliminary_poll_ids:
+            prelim_vote_rows = conn.execute(
+                "SELECT * FROM votes WHERE poll_id = ANY(%(poll_ids)s)",
+                {"poll_ids": preliminary_poll_ids},
+            ).fetchall()
+            for v in prelim_vote_rows:
+                pid = str(v["poll_id"])
+                if pid not in votes_by_poll:
+                    votes_by_poll[pid] = []
+                votes_by_poll[pid].append(v)
 
     results = []
     for r in rows:
