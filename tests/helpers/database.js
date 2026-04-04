@@ -107,6 +107,22 @@ export async function apiGetVotes(pollId) {
   return res.json()
 }
 
+/**
+ * Helper: edit an existing vote via the Python API.
+ */
+export async function apiEditTestVote(pollId, voteId, params) {
+  const res = await fetch(`${TEST_API_BASE}/${pollId}/votes/${voteId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const detail = await res.text()
+    throw new Error(`Failed to edit vote: ${res.status} ${detail}`)
+  }
+  return res.json()
+}
+
 // Legacy stubs — no longer needed
 export function getTestDatabase() {
   throw new Error('Supabase removed. Use API helpers from this module.')
