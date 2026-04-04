@@ -1411,20 +1411,10 @@ function CreatePollContent() {
                   setMinResponses(val);
                   saveUserMinResponses(val);
                 }}
+                showPreliminary={showPreliminaryResults}
+                setShowPreliminary={setShowPreliminaryResults}
                 disabled={isLoading}
               />
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showPreliminaryResults}
-                  onChange={(e) => setShowPreliminaryResults(e.target.checked)}
-                  disabled={isLoading}
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Show preliminary results
-                </span>
-              </label>
               <button
                 type="button"
                 onClick={() => setShowExpirationModal(true)}
