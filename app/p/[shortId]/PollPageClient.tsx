@@ -2116,8 +2116,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                               onClick={(e) => {
                                 // Don't trigger vote when clicking the restaurant/place name (opens detail modal instead)
                                 if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                                const other = pollOptions.find((o: string) => o !== option)!;
-                                handleRankingChange([option, other]);
+                                handleRankingChange([option]);
                                 setIsAbstaining(false);
                               }}
                               disabled={isSubmitting}

@@ -398,7 +398,7 @@ function CreatePollContent() {
   const getValidationError = (): string | null => {
     // Check title first
     if (!title.trim()) {
-      return "Please enter a title.";
+      return isAutoTitle ? "Please enter a category or title." : "Please enter a title.";
     }
     
     if (title.length > 100) {
