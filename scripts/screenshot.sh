@@ -41,10 +41,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REMOTE="$SCRIPT_DIR/remote.sh"
 
-# Default viewport (iPhone 14 Pro Max)
+REMOTE_DIR="/tmp/screenshots"
 DEFAULT_WIDTH=430
 DEFAULT_HEIGHT=932
 DEFAULT_WAIT=2000
+
+# Validate name/slug contain only safe characters (alphanumeric, hyphens, underscores)
+validate_safe_string() {
+    local label="$1" value="$2"
+    if [[ ! "$value" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "ERROR: ${label} contains unsafe characters: ${value}" >&2
+        echo "Only alphanumeric, hyphens, and underscores are allowed." >&2
+        exit 1
+    fi
+}
+
+screenshot_url() {
+    local slug="$1" name="$2"
+    echo "https://${slug}.dev.whoeverwants.com/screenshots/${name}.png"
+}
 
 usage() {
     sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
@@ -55,6 +70,8 @@ take_screenshot() {
     local port="$1"; shift
     local path="$1"; shift
     local name="$1"; shift
+
+    validate_safe_string "name" "$name"
 
     local width=$DEFAULT_WIDTH
     local height=$DEFAULT_HEIGHT
@@ -72,11 +89,19 @@ take_screenshot() {
     done
 
     local url="http://localhost:${port}${path}"
-    local remote_path="/tmp/screenshots/${name}.png"
+    local remote_path="${REMOTE_DIR}/${name}.png"
+    local serve_cmd=""
+
+    # If serving, copy to public dir in the same remote call as the screenshot
+    if [[ -n "$serve_slug" ]]; then
+        validate_safe_string "slug" "$serve_slug"
+        local public_dir="/root/dev-servers/${serve_slug}/public/screenshots"
+        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png"
+    fi
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
 
-    bash "$REMOTE" "mkdir -p /tmp/screenshots && cd /root/whoeverwants && node -e \"
+    bash "$REMOTE" "mkdir -p ${REMOTE_DIR} && cd /root/whoeverwants && node -e \"
 const { chromium } = require('playwright');
 (async () => {
   const browser = await chromium.launch();
@@ -87,9 +112,8 @@ const { chromium } = require('playwright');
   console.log('Screenshot saved: ${remote_path}');
   await browser.close();
 })().catch(e => { console.error(e.message); process.exit(1); });
-\"" /root 30
+\"${serve_cmd}" /root 30
 
-    # Transfer to local /tmp via base64
     echo "Transferring to local machine..."
     local b64
     b64=$(bash "$REMOTE" "base64 -w0 ${remote_path}" /root 15)
@@ -102,55 +126,40 @@ const { chromium } = require('playwright');
     echo "$b64" | base64 -d > "/tmp/${name}.png"
     echo "Local: /tmp/${name}.png"
 
-    # Optionally serve via dev server
     if [[ -n "$serve_slug" ]]; then
-        serve_screenshot "$name" "$serve_slug"
+        echo "URL: $(screenshot_url "$serve_slug" "$name")"
     fi
 }
 
 serve_screenshot() {
-    local name="$1"
-    local slug="$2"
+    local name="$1" slug="$2"
+    validate_safe_string "name" "$name"
+    validate_safe_string "slug" "$slug"
+
     local public_dir="/root/dev-servers/${slug}/public/screenshots"
 
     echo "Serving screenshot to ${slug}..."
-    bash "$REMOTE" "mkdir -p ${public_dir} && cp /tmp/screenshots/${name}.png ${public_dir}/${name}.png" /root 10
-
-    local url="https://${slug}.dev.whoeverwants.com/screenshots/${name}.png"
-    echo "URL: ${url}"
-}
-
-get_url() {
-    local name="$1"
-    local slug="$2"
-    echo "https://${slug}.dev.whoeverwants.com/screenshots/${name}.png"
-}
-
-assess_path() {
-    local name="$1"
-    echo "/tmp/${name}.png"
+    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png" /root 10
+    echo "URL: $(screenshot_url "$slug" "$name")"
 }
 
 compare_screenshots() {
-    local before="$1"
-    local after="$2"
-    local slug="$3"
+    local before="$1" after="$2" slug="$3"
 
     echo "=== Screenshot Comparison ==="
-    echo "Before: https://${slug}.dev.whoeverwants.com/screenshots/${before}.png"
-    echo "After:  https://${slug}.dev.whoeverwants.com/screenshots/${after}.png"
+    echo "Before: $(screenshot_url "$slug" "$before")"
+    echo "After:  $(screenshot_url "$slug" "$after")"
     echo ""
     echo "Local assessment:"
     echo "  Before: /tmp/${before}.png"
     echo "  After:  /tmp/${after}.png"
 }
 
-# Main dispatch
 case "${1:-}" in
     take)    shift; take_screenshot "$@" ;;
     serve)   shift; serve_screenshot "$@" ;;
-    url)     shift; get_url "$@" ;;
-    assess)  shift; assess_path "$@" ;;
+    url)     shift; screenshot_url "$2" "$1" ;;
+    assess)  shift; echo "/tmp/${1}.png" ;;
     compare) shift; compare_screenshots "$@" ;;
     *)       usage ;;
 esac
