@@ -122,7 +122,7 @@ test.describe('Poll Creation', () => {
     await expect(submitButton).toBeDisabled();
     
     // Verify the validation message appears (match actual error text from UI)
-    const errorMsg = page.locator('text="Please enter a poll title."');
+    const errorMsg = page.locator('text="Please enter a category or title."');
     await expect(errorMsg).toBeVisible();
     
     await page.screenshot({ path: 'test-results/validation-error.png' });
