@@ -1320,6 +1320,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   };
 
+  const editVoteButton = !isPollClosed && !isLoadingVoteData ? (
+    <button
+      onClick={() => setIsEditingVote(true)}
+      className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
+    >
+      Edit
+    </button>
+  ) : null;
+
+  const preliminaryResultsBlock = (className: string) => (
+    showPrelimResults && !isPollClosed ? (
+      <div className={className}>
+        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
+          Preliminary Results
+        </div>
+        {loadingResults ? (
+          <div className="flex justify-center items-center py-3">
+            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        ) : pollResults ? (
+          <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
+        ) : null}
+      </div>
+    ) : null
+  );
+
   return (
     <>
       <div className="poll-content">
@@ -1425,24 +1454,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return null;
         })()}
         
-        {/* Preliminary results for open polls - shown ABOVE ballot only if user has already voted */}
-        {showPrelimResults && !isPollClosed && hasVoted && !isEditingVote && (
-          <div className="pt-2.5">
-            <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-              Preliminary Results
-            </div>
-            {loadingResults ? (
-              <div className="flex justify-center items-center py-3">
-                <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-            ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
-            ) : null}
-          </div>
-        )}
+        {/* Preliminary results shown ABOVE ballot when user has already voted */}
+        {hasVoted && !isEditingVote && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1566,14 +1579,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your vote:</h4>
-                      {!isPollClosed && !isLoadingVoteData && (
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1728,14 +1734,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your response:</h4>
-                      {!isPollClosed && !isLoadingVoteData && (
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1965,26 +1964,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
-                        {/* Inline bubble for 2-option polls */}
-                        {pollOptions.length === 2 && !isLoadingVoteData && !(userVoteData?.is_abstain || isAbstaining) && rankedChoices[0] && (
-                          <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
-                            {rankedChoices[0]}
-                          </span>
-                        )}
-                        {pollOptions.length === 2 && !isLoadingVoteData && (userVoteData?.is_abstain || isAbstaining) && (
-                          <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
-                            Abstained
-                          </span>
+                        {pollOptions.length === 2 && !isLoadingVoteData && (
+                          (userVoteData?.is_abstain || isAbstaining) ? (
+                            <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
+                              Abstained
+                            </span>
+                          ) : rankedChoices[0] ? (
+                            <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
+                              {rankedChoices[0]}
+                            </span>
+                          ) : null
                         )}
                       </div>
-                      {!isPollClosed && !isLoadingVoteData && (
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
@@ -2002,7 +1994,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
                       </div>
                     ) : pollOptions.length > 2 ? (
-                      /* For 2-option polls, choice/abstain is shown inline in the header row above */
+                      /* 2-option choice is shown inline in the header */
                       <div className="space-y-2">
                         {userVoteData?.is_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
@@ -2146,24 +2138,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
 
-          {/* Preliminary results for open polls - shown BELOW ballot when user hasn't voted yet */}
-          {showPrelimResults && !isPollClosed && (!hasVoted || isEditingVote) && (
-            <div className="mt-6">
-              <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-                Preliminary Results
-              </div>
-              {loadingResults ? (
-                <div className="flex justify-center items-center py-3">
-                  <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </div>
-              ) : pollResults ? (
-                <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
-              ) : null}
-            </div>
-          )}
+          {/* Preliminary results shown BELOW ballot when user hasn't voted yet */}
+          {(!hasVoted || isEditingVote) && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
