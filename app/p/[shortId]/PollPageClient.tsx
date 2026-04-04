@@ -1302,7 +1302,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       // If the poll is closed or preliminary results threshold met, fetch results
-      if ((isPollClosed || showPrelimResults) && !isEditingVote) {
+      if (isPollClosed || showPrelimResults) {
         await fetchPollResults();
       }
     } catch (error) {
