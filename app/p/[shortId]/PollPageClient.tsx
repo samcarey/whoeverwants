@@ -1302,7 +1302,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
 
       // If the poll is closed or preliminary results threshold met, fetch results
-      if ((isPollClosed || showPrelimResults) && !isEditingVote) {
+      if (isPollClosed || showPrelimResults) {
         await fetchPollResults();
       }
     } catch (error) {
@@ -1319,6 +1319,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setIsSubmitting(false);
     }
   };
+
+  const editVoteButton = !isPollClosed && !isLoadingVoteData ? (
+    <button
+      onClick={() => setIsEditingVote(true)}
+      className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
+    >
+      Edit
+    </button>
+  ) : null;
+
+  const preliminaryResultsBlock = (className: string) => (
+    showPrelimResults && !isPollClosed ? (
+      <div className={className}>
+        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
+          Preliminary Results
+        </div>
+        {loadingResults ? (
+          <div className="flex justify-center items-center py-3">
+            <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        ) : pollResults ? (
+          <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
+        ) : null}
+      </div>
+    ) : null
+  );
 
   return (
     <>
@@ -1425,24 +1454,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return null;
         })()}
         
-        {/* Preliminary results for open polls that have met the threshold */}
-        {showPrelimResults && !isPollClosed && (
-          <div className="pt-2.5">
-            <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-              Preliminary Results
-            </div>
-            {loadingResults ? (
-              <div className="flex justify-center items-center py-3">
-                <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-            ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
-            ) : null}
-          </div>
-        )}
+        {/* Preliminary results shown ABOVE ballot when user has already voted */}
+        {hasVoted && !isEditingVote && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1566,6 +1579,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your vote:</h4>
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1607,7 +1621,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {/* Follow Up Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
@@ -1619,38 +1633,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <div className="flex items-center gap-2">
-                        {false && suggestions.length >= 2 && (
-                          <GradientBorderButton
-                            onClick={handleVoteOnSuggestionsClick}
-                            disabled={loadingSuggestions}
-                            gradient="red-orange"
-                          >
-                          {loadingSuggestions ? (
-                            <>
-                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              <span className="font-semibold">Loading...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-semibold">Vote on it</span>
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                              </svg>
-                            </>
-                          )}
-                          </GradientBorderButton>
-                        )}
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      </div>
                     </div>
                   )}
 
@@ -1752,6 +1734,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your response:</h4>
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1806,12 +1789,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <button
-                        onClick={() => setIsEditingVote(true)}
-                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                      >
-                        Edit
-                      </button>
                     </div>
                   )}
 
@@ -1985,7 +1962,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
+                        {pollOptions.length === 2 && !isLoadingVoteData && (
+                          (userVoteData?.is_abstain || isAbstaining) ? (
+                            <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
+                              Abstained
+                            </span>
+                          ) : rankedChoices[0] ? (
+                            <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
+                              {rankedChoices[0]}
+                            </span>
+                          ) : null
+                        )}
+                      </div>
+                      {editVoteButton}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
@@ -2002,22 +1993,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         ))}
                         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
                       </div>
-                    ) : (
+                    ) : pollOptions.length > 2 ? (
+                      /* 2-option choice is shown inline in the header */
                       <div className="space-y-2">
                         {userVoteData?.is_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                             <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
-                          </div>
-                        ) : pollOptions.length === 2 ? (
-                          <div className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                            <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium mr-2">
-                              ✓
-                            </span>
-                            <div className="min-w-0 overflow-hidden">
-                              <OptionLabel text={rankedChoices[0]} metadata={optionsMetadataLocal?.[rankedChoices[0]]} />
-                            </div>
                           </div>
                         ) : (
                           rankedChoices.map((choice, index) => (
@@ -2036,10 +2019,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           ))
                         )}
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
-                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {/* Follow Up Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
@@ -2051,38 +2034,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <div className="flex items-center gap-2">
-                        {false && suggestions.length >= 2 && (
-                        <GradientBorderButton
-                          onClick={handleVoteOnSuggestionsClick}
-                          disabled={loadingSuggestions}
-                          gradient="red-orange"
-                        >
-                          {loadingSuggestions ? (
-                            <>
-                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              <span className="font-semibold">Loading...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-semibold">Vote on it</span>
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                              </svg>
-                            </>
-                          )}
-                        </GradientBorderButton>
-                        )}
-                        <button
-                        onClick={() => setIsEditingVote(true)}
-                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                      >
-                        Edit
-                      </button>
-                      </div>
                     </div>
                   )}
 
@@ -2186,6 +2137,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
+
+          {/* Preliminary results shown BELOW ballot when user hasn't voted yet */}
+          {(!hasVoted || isEditingVote) && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
