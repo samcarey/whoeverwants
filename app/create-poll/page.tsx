@@ -1429,18 +1429,42 @@ function CreatePollContent() {
                 type="button"
                 onClick={() => setShowExpirationModal(true)}
                 disabled={isLoading}
-                className="w-full py-3 px-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Expiration Conditions
-                <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">
-                  ({deadlineOption === 'none' ? 'none' :
-                    EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
-                    deadlineOptions.find(o => o.value === deadlineOption)?.label ||
-                    deadlineOption}{autoCloseAfter ? ` + ${autoCloseAfter} votes` : ''})
-                </span>
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Expiration Conditions
+                </div>
+                {(() => {
+                  const timeLabel = deadlineOption !== 'none'
+                    ? (EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                       deadlineOptions.find(o => o.value === deadlineOption)?.label ||
+                       deadlineOption)
+                    : null;
+                  const voteLabel = autoCloseAfter ? `${autoCloseAfter} votes` : null;
+                  if (!timeLabel && !voteLabel) return (
+                    <span className="text-xs text-gray-400 dark:text-gray-500 font-normal mt-1">none</span>
+                  );
+                  return (
+                    <div className="flex items-center justify-center gap-1.5 mt-1.5 flex-wrap">
+                      {timeLabel && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                          {timeLabel}
+                        </span>
+                      )}
+                      {timeLabel && voteLabel && (
+                        <span className="text-xs text-gray-400 dark:text-gray-500 font-normal">or</span>
+                      )}
+                      {voteLabel && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                          {voteLabel}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </button>
             </>
           )}
