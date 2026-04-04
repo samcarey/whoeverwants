@@ -3,16 +3,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import ModalPortal from '@/components/ModalPortal';
 
-// Rescaled deadline options with 4 weeks in the middle
+// Deadline options starting small and scaling up to 1 month
 const EXPIRATION_DEADLINE_OPTIONS = [
+  { value: "5min", label: "5 min", minutes: 5 },
+  { value: "10min", label: "10 min", minutes: 10 },
+  { value: "15min", label: "15 min", minutes: 15 },
+  { value: "30min", label: "30 min", minutes: 30 },
+  { value: "1hr", label: "1 hr", minutes: 60 },
+  { value: "2hr", label: "2 hr", minutes: 120 },
+  { value: "4hr", label: "4 hr", minutes: 240 },
   { value: "1day", label: "1 day", minutes: 1440 },
   { value: "3days", label: "3 days", minutes: 4320 },
   { value: "1week", label: "1 week", minutes: 10080 },
   { value: "2weeks", label: "2 weeks", minutes: 20160 },
-  { value: "4weeks", label: "4 weeks", minutes: 40320 },
-  { value: "2months", label: "2 months", minutes: 87840 },
-  { value: "3months", label: "3 months", minutes: 131400 },
-  { value: "6months", label: "6 months", minutes: 262800 },
+  { value: "1month", label: "1 month", minutes: 43200 },
   { value: "custom", label: "Custom", minutes: 0 },
 ];
 
@@ -97,7 +101,7 @@ export default function ExpirationConditionsModal({
                     // Clear deadline - set to a sentinel value
                     setDeadlineOption('none');
                   } else {
-                    setDeadlineOption('4weeks');
+                    setDeadlineOption('1month');
                   }
                 }}
                 disabled={disabled}
