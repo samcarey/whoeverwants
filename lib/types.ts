@@ -64,6 +64,8 @@ export interface Poll {
   reference_longitude?: number | null;
   reference_location_label?: string | null;
   is_auto_title?: boolean;
+  min_responses?: number | null;
+  show_preliminary_results?: boolean;
   response_count?: number | null;
   results?: PollResults | null;
 }

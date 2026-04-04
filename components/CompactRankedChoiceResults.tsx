@@ -196,7 +196,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
           
           visualizations.push({
             roundNumber: roundNum,
-            title: roundNum === totalRounds ? 'Final Result' : `Round ${roundNum} of ${totalRounds}`,
+            title: roundNum === totalRounds ? 'Final Round' : `Round ${roundNum} of ${totalRounds}`,
             candidates,
             eliminatedCandidates,
             userPreference,

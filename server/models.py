@@ -61,6 +61,10 @@ class CreatePollRequest(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    # Minimum responses before results are shown (preference/suggestion polls)
+    min_responses: int | None = None
+    # Whether to show preliminary results once min_responses is met
+    show_preliminary_results: bool = True
 
 
 class SubmitVoteRequest(BaseModel):
@@ -162,6 +166,8 @@ class PollResponse(BaseModel):
     reference_longitude: float | None = None
     reference_location_label: str | None = None
     is_auto_title: bool = False
+    min_responses: int | None = None
+    show_preliminary_results: bool = True
     response_count: int | None = None
     results: "PollResultsResponse | None" = None
 

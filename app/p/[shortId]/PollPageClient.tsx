@@ -202,10 +202,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
     if (manuallyReopened && !pollClosed) return false;
-    
+
     // Otherwise, use normal logic: manual close OR deadline expiration
     return pollClosed || isPollExpired;
   }, [pollClosed, isPollExpired, manuallyReopened]);
+
+  // Track response count for preliminary results
+  const [responseCount, setResponseCount] = useState<number>(poll.response_count ?? 0);
+
+  // Whether preliminary results should be shown (open poll, threshold met)
+  const showPrelimResults = useMemo(() => {
+    if (isPollClosed) return false; // Closed polls show results via the normal path
+    if (!poll.show_preliminary_results) return false;
+    const minResp = poll.min_responses ?? 1;
+    return responseCount >= minResp;
+  }, [isPollClosed, poll.show_preliminary_results, poll.min_responses, responseCount]);
 
   // Check if user has voted on this poll (stored in localStorage)
   const hasVotedOnPoll = useCallback((pollId: string): boolean => {
@@ -385,6 +396,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       fetchPollResults();
     }
   }, [poll.poll_type, fetchPollResults]);
+
+  // Fetch preliminary results when threshold is met
+  useEffect(() => {
+    if (showPrelimResults && !pollResults) {
+      fetchPollResults();
+    }
+  }, [showPrelimResults, pollResults, fetchPollResults]);
 
   // Load existing suggestions from other votes
   const loadExistingSuggestions = async (excludeUserVote = false) => {
@@ -737,6 +755,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           setPollClosed(true);
           setManuallyReopened(false); // Reset flag when closed
           fetchPollResults();
+        }
+        // Update response count for preliminary results
+        if (pollData?.response_count != null) {
+          setResponseCount(pollData.response_count);
         }
       } catch (error) {
         console.error('Polling error:', error);
@@ -1223,6 +1245,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
 
+      // Update response count for preliminary results
+      if (!isEditingVote) {
+        setResponseCount(prev => prev + 1);
+      }
+
       // Merge submitted metadata into local state so it's available immediately
       if (suggestionMetadata && Object.keys(suggestionMetadata).length > 0) {
         setOptionsMetadataLocal(prev => ({ ...prev, ...suggestionMetadata }));
@@ -1274,8 +1301,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         await fetchSuggestions();
       }
 
-      // If the poll is closed, fetch results immediately after voting
-      if (isPollClosed && !isEditingVote) {
+      // If the poll is closed or preliminary results threshold met, fetch results
+      if ((isPollClosed || showPrelimResults) && !isEditingVote) {
         await fetchPollResults();
       }
     } catch (error) {
@@ -1398,6 +1425,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return null;
         })()}
         
+        {/* Preliminary results for open polls that have met the threshold */}
+        {showPrelimResults && !isPollClosed && (
+          <div className="pt-2.5">
+            <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
+              Preliminary Results
+            </div>
+            {loadingResults ? (
+              <div className="flex justify-center items-center py-3">
+                <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            ) : pollResults ? (
+              <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
+            ) : null}
+          </div>
+        )}
+
         {/* For closed polls, show results first */}
         {isPollClosed && (
           <div className="pt-2.5">
