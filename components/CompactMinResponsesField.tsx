@@ -58,6 +58,7 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
         Min Responses: <span className="font-normal text-blue-600 dark:text-blue-400">{value}</span>
       </button>
       <label htmlFor={checkboxId} className="flex items-center gap-1.5 cursor-pointer">
+        <span className="text-xs text-gray-500 dark:text-gray-400">then show results</span>
         <input
           type="checkbox"
           id={checkboxId}
@@ -66,7 +67,6 @@ export default function CompactMinResponsesField({ value, setValue, showPrelimin
           disabled={disabled}
           className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
-        <span className="text-xs text-gray-500 dark:text-gray-400">Show preliminary</span>
       </label>
     </div>
   );
