@@ -1566,6 +1566,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your vote:</h4>
+                      {!isPollClosed && !isLoadingVoteData && (
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1607,7 +1615,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {/* Follow Up Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
@@ -1619,38 +1627,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <div className="flex items-center gap-2">
-                        {false && suggestions.length >= 2 && (
-                          <GradientBorderButton
-                            onClick={handleVoteOnSuggestionsClick}
-                            disabled={loadingSuggestions}
-                            gradient="red-orange"
-                          >
-                          {loadingSuggestions ? (
-                            <>
-                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              <span className="font-semibold">Loading...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-semibold">Vote on it</span>
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                              </svg>
-                            </>
-                          )}
-                          </GradientBorderButton>
-                        )}
-                        <button
-                          onClick={() => setIsEditingVote(true)}
-                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                        >
-                          Edit
-                        </button>
-                      </div>
                     </div>
                   )}
 
@@ -1752,6 +1728,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">Your response:</h4>
+                      {!isPollClosed && !isLoadingVoteData && (
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
@@ -1806,12 +1790,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <button
-                        onClick={() => setIsEditingVote(true)}
-                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                      >
-                        Edit
-                      </button>
                     </div>
                   )}
 
@@ -1986,6 +1964,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
+                      {!isPollClosed && !isLoadingVoteData && (
+                        <button
+                          onClick={() => setIsEditingVote(true)}
+                          className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
                     {isLoadingVoteData ? (
                       <div className="space-y-2">
@@ -2039,7 +2025,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {/* Follow Up Button and Edit Button row - shown when poll is open and user has voted */}
+                  {/* Follow Up Button row - shown when poll is open and user has voted */}
                   {!isPollClosed && !isLoadingVoteData && (
                     <div className="my-4 flex justify-between items-center">
                       <GradientBorderButton
@@ -2051,38 +2037,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </svg>
                           <span className="font-semibold">Follow up</span>
                         </GradientBorderButton>
-                      <div className="flex items-center gap-2">
-                        {false && suggestions.length >= 2 && (
-                        <GradientBorderButton
-                          onClick={handleVoteOnSuggestionsClick}
-                          disabled={loadingSuggestions}
-                          gradient="red-orange"
-                        >
-                          {loadingSuggestions ? (
-                            <>
-                              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              <span className="font-semibold">Loading...</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="font-semibold">Vote on it</span>
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                              </svg>
-                            </>
-                          )}
-                        </GradientBorderButton>
-                        )}
-                        <button
-                        onClick={() => setIsEditingVote(true)}
-                        className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors"
-                      >
-                        Edit
-                      </button>
-                      </div>
                     </div>
                   )}
 
