@@ -245,7 +245,7 @@ function CreatePollContent() {
     if (isPreferencePoll) {
       // Switching to preference/suggestion poll: default to 4 weeks
       if (BASE_DEADLINE_OPTIONS.some(o => o.value === deadlineOption)) {
-        setDeadlineOption('1month');
+        setDeadlineOption('1week');
       }
     } else {
       // Switching away: revert to inline default if it's an expiration modal option

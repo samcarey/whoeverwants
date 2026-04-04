@@ -101,7 +101,7 @@ export default function ExpirationConditionsModal({
                     // Clear deadline - set to a sentinel value
                     setDeadlineOption('none');
                   } else {
-                    setDeadlineOption('1month');
+                    setDeadlineOption('1week');
                   }
                 }}
                 disabled={disabled}
