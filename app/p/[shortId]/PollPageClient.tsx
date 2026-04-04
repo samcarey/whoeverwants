@@ -1993,7 +1993,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         ))}
                         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
                       </div>
-                    ) : pollOptions.length > 2 ? (
+                    ) : pollOptions.length !== 2 ? (
                       /* 2-option choice is shown inline in the header */
                       <div className="space-y-2">
                         {userVoteData?.is_abstain || isAbstaining ? (
