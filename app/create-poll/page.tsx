@@ -1429,10 +1429,10 @@ function CreatePollContent() {
                 type="button"
                 onClick={() => setShowExpirationModal(true)}
                 disabled={isLoading}
-                className="w-full py-2.5 px-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 text-sm text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                className="block text-sm font-medium text-left"
               >
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-medium whitespace-nowrap">Expire after</span>
+                <span className="inline-flex items-center gap-1.5 flex-wrap">
+                  <span className="whitespace-nowrap">Expiration:</span>
                   {(() => {
                     const timeLabel = deadlineOption !== 'none'
                       ? (EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
@@ -1441,7 +1441,7 @@ function CreatePollContent() {
                       : null;
                     const voteLabel = autoCloseAfter ? `${autoCloseAfter} votes` : null;
                     if (!timeLabel && !voteLabel) return (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 font-normal italic">none</span>
+                      <span className="font-normal text-blue-600 dark:text-blue-400">none</span>
                     );
                     return (
                       <>
@@ -1461,7 +1461,7 @@ function CreatePollContent() {
                       </>
                     );
                   })()}
-                </div>
+                </span>
               </button>
             </>
           )}
