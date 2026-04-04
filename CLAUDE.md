@@ -952,36 +952,68 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Auto-grow textareas must reset to a fixed height, not `'auto'`** before reading `scrollHeight`. Resetting to `'auto'` lets the browser expand to its default intrinsic size (often taller than one line), causing the textarea to jump on first keystroke and never shrink back. Reset to the base height (e.g., `el.style.height = '42px'`) so `scrollHeight` only exceeds it when content actually overflows.
 - **`text-sm` on inputs/textareas causes height mismatches** — a `text-sm` input renders ~38px while a default-size input renders ~42px with the same `py-2` padding. When fields appear in a `space-y-*` form, the shorter field makes the gap below it appear larger. Use consistent font sizes across form fields.
 
-### Taking Render Screenshots (Claude Code Cloud)
+### Screenshot Verification Workflow (Mandatory for Visual Changes)
 
-To visually verify UI changes from the Claude Code cloud environment:
+**When adding a feature or fixing a bug with visible UI effects, you MUST take before/after screenshots to verify the change.**
 
-1. **Take screenshot on the droplet** using Playwright (installed in the repo's `node_modules`):
-   ```bash
-   bash scripts/remote.sh "cd /root/whoeverwants && node -e \"
-   const { chromium } = require('playwright');
-   (async () => {
-     const browser = await chromium.launch();
-     const page = await browser.newPage({ viewport: { width: 430, height: 932 } });
-     await page.goto('http://localhost:<dev-port>/path');
-     await page.waitForLoadState('networkidle');
-     await page.waitForTimeout(2000);
-     await page.screenshot({ path: '/tmp/screenshot.png' });
-     await browser.close();
-   })();
-   \"" /root 30
-   ```
-2. **Transfer via base64** and view with the Read tool:
-   ```bash
-   bash scripts/remote.sh "base64 /tmp/screenshot.png" | base64 -d > /tmp/screenshot.png
-   ```
-   Then use the Read tool on `/tmp/screenshot.png` — it renders images natively.
-3. **Share with the user** by copying to a dev server's `public/` directory:
-   ```bash
-   bash scripts/remote.sh "cp /tmp/screenshot.png /root/dev-servers/<slug>/public/image.png"
-   ```
-   The image is then accessible at `https://<slug>.dev.whoeverwants.com/image.png`.
-4. **Measure DOM spacing programmatically** using `page.evaluate()` with `getBoundingClientRect()` — but be aware that `getBoundingClientRect()` may not account for `inline-block` descender gaps. Cross-check by annotating screenshots with Pillow (`python3-pil` on the droplet).
+#### The Workflow
+
+1. **Before starting the change**: Set up the page in the state that demonstrates the problem or current behavior. Take a "before" screenshot. Assess it — confirm it shows the issue you're about to fix (retry with different state/data if it doesn't).
+2. **After completing the change**: Push the code, update the dev server, and take an "after" screenshot of the same page/state. Assess it — confirm the fix/feature is visible and working.
+3. **Visual design lint**: Carefully examine the changed area in the "after" screenshot for UI/design regressions (misaligned text, broken spacing, color issues, overflow, etc.). Fix any issues you introduced. If you spot a pre-existing issue you didn't cause, inform the user but don't fix it without their approval.
+4. **Share with the user**: Serve both screenshots via the dev server and provide the URLs for review.
+
+#### Using `scripts/screenshot.sh`
+
+The `screenshot.sh` script automates the full pipeline: Playwright screenshot on the droplet → base64 transfer to local `/tmp` for Claude assessment → optional serving via a dev server's `public/screenshots/` directory.
+
+```bash
+# Take a screenshot and serve it
+bash scripts/screenshot.sh take <port> <path> <name> [--width W] [--height H] [--wait MS] [--serve-slug SLUG]
+
+# Examples:
+bash scripts/screenshot.sh take 3001 / home-before --serve-slug screenshot-test-at-test-com
+bash scripts/screenshot.sh take 3001 /p/abc123 poll-after --width 430 --height 932 --serve-slug my-slug
+
+# Serve a previously taken screenshot to a dev server
+bash scripts/screenshot.sh serve my-screenshot my-dev-slug
+
+# Print comparison URLs
+bash scripts/screenshot.sh compare before-name after-name my-dev-slug
+```
+
+After taking a screenshot, **always read the local file** to assess it:
+```bash
+# The script saves to /tmp/<name>.png — use the Read tool on this path
+# Read tool renders images natively for visual assessment
+```
+
+#### Setting Up State for Screenshots
+
+Often you need the page in a specific state (e.g., a poll with votes, an empty list, an error condition). Use the API to create the necessary data:
+
+```bash
+# Create a poll via the dev server's API
+bash scripts/remote.sh "curl -s -X POST http://localhost:<api-port>/api/polls -H 'Content-Type: application/json' -d '{...}'"
+
+# Submit votes
+bash scripts/remote.sh "curl -s -X POST http://localhost:<api-port>/api/polls/<id>/votes -H 'Content-Type: application/json' -d '{...}'"
+```
+
+#### Assessment Checklist
+
+When reviewing each screenshot, check:
+- Does the before screenshot clearly show the problem/current state?
+- Does the after screenshot show the fix/feature working correctly?
+- Is text properly aligned, sized, and colored?
+- Are spacing and padding consistent with surrounding elements?
+- Does the change look good on mobile viewport (430x932 default)?
+- No overflow, clipping, or unexpected wrapping?
+- No regressions in adjacent UI elements?
+
+#### Measure DOM Spacing Programmatically
+
+For pixel-precise verification, use `page.evaluate()` with `getBoundingClientRect()` — but be aware it may not account for `inline-block` descender gaps. Cross-check by annotating screenshots with Pillow (`python3-pil` on the droplet).
 
 ### CI/GitHub Actions Pitfalls
 
