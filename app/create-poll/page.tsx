@@ -1454,7 +1454,7 @@ function CreatePollContent() {
                           <span className="text-xs text-gray-400 dark:text-gray-500 font-normal">or</span>
                         )}
                         {voteLabel && (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
                             {voteLabel}
                           </span>
                         )}
