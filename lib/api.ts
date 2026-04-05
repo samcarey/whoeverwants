@@ -103,8 +103,8 @@ function toPoll(data: any): Poll {
     min_participants: data.min_participants ?? undefined,
     max_participants: data.max_participants ?? undefined,
     short_id: data.short_id ?? undefined,
-    auto_create_preferences: data.auto_create_preferences ?? undefined,
-    auto_preferences_deadline_minutes: data.auto_preferences_deadline_minutes ?? undefined,
+    suggestion_deadline: data.suggestion_deadline ?? undefined,
+    allow_pre_ranking: data.allow_pre_ranking ?? true,
     details: data.details ?? undefined,
     location_mode: data.location_mode ?? undefined,
     location_value: data.location_value ?? undefined,
@@ -185,8 +185,8 @@ export async function apiCreatePoll(params: {
   fork_of?: string;
   min_participants?: number;
   max_participants?: number;
-  auto_create_preferences?: boolean;
-  auto_preferences_deadline_minutes?: number;
+  suggestion_deadline?: string;
+  allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;
   location_mode?: string;

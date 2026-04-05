@@ -36,7 +36,7 @@ class TestYesNoValidation:
 
     def test_wrong_vote_type(self):
         with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("yes_no", "suggestion", yes_no_choice="yes")
+            validate_vote("yes_no", "ranked_choice", yes_no_choice="yes")
 
 
 class TestParticipationValidation:
@@ -60,7 +60,7 @@ class TestParticipationValidation:
 
     def test_wrong_vote_type(self):
         with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("participation", "suggestion")
+            validate_vote("participation", "ranked_choice")
 
 
 class TestRankedChoiceValidation:
@@ -71,51 +71,52 @@ class TestRankedChoiceValidation:
         validate_vote("ranked_choice", "ranked_choice", is_abstain=True)
 
     def test_missing_rankings(self):
-        with pytest.raises(VoteValidationError, match="ranked_choices is required"):
+        with pytest.raises(VoteValidationError, match="ranked_choices or suggestions is required"):
             validate_vote("ranked_choice", "ranked_choice")
 
     def test_empty_rankings(self):
-        with pytest.raises(VoteValidationError, match="ranked_choices is required"):
+        with pytest.raises(VoteValidationError, match="ranked_choices or suggestions is required"):
             validate_vote("ranked_choice", "ranked_choice", ranked_choices=[])
 
     def test_yes_no_choice_forbidden(self):
         with pytest.raises(VoteValidationError, match="yes_no_choice not allowed"):
             validate_vote("ranked_choice", "ranked_choice", yes_no_choice="yes", ranked_choices=["a"])
 
-    def test_suggestions_forbidden(self):
+    def test_suggestions_forbidden_without_suggestion_phase(self):
         with pytest.raises(VoteValidationError, match="suggestions not allowed"):
             validate_vote("ranked_choice", "ranked_choice", ranked_choices=["a"], suggestions=["b"])
 
+    def test_suggestions_allowed_with_suggestion_phase(self):
+        """Suggestions are allowed when the poll has a suggestion phase."""
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            suggestions=["a", "b"],
+            has_suggestion_phase=True,
+        )
 
-class TestSuggestionValidation:
-    def test_valid_suggestions(self):
-        validate_vote("suggestion", "suggestion", suggestions=["Alice", "Bob"])
+    def test_suggestions_and_rankings_with_suggestion_phase(self):
+        """Both suggestions and rankings can coexist during suggestion phase."""
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            ranked_choices=["a", "b"],
+            suggestions=["a", "b", "c"],
+            has_suggestion_phase=True,
+        )
 
-    def test_valid_single_suggestion(self):
-        validate_vote("suggestion", "suggestion", suggestions=["Alice"])
+    def test_suggestions_only_is_valid_with_suggestion_phase(self):
+        """Suggestions without rankings is valid during suggestion phase."""
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            suggestions=["x"],
+            has_suggestion_phase=True,
+        )
 
-    def test_valid_abstain(self):
-        validate_vote("suggestion", "suggestion", is_abstain=True)
-
-    def test_missing_suggestions(self):
-        with pytest.raises(VoteValidationError, match="suggestions is required"):
-            validate_vote("suggestion", "suggestion")
-
-    def test_empty_suggestions(self):
-        with pytest.raises(VoteValidationError, match="suggestions is required"):
-            validate_vote("suggestion", "suggestion", suggestions=[])
-
-    def test_yes_no_choice_forbidden(self):
-        with pytest.raises(VoteValidationError, match="yes_no_choice not allowed"):
-            validate_vote("suggestion", "suggestion", yes_no_choice="yes", suggestions=["a"])
-
-    def test_ranked_choices_forbidden(self):
-        with pytest.raises(VoteValidationError, match="ranked_choices not allowed"):
-            validate_vote("suggestion", "suggestion", ranked_choices=["a"], suggestions=["b"])
-
-    def test_wrong_vote_type(self):
-        with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("suggestion", "yes_no", suggestions=["a"])
+    def test_abstain_with_suggestion_phase(self):
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            is_abstain=True,
+            has_suggestion_phase=True,
+        )
 
 
 class TestUnknownPollType:

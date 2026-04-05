@@ -10,7 +10,6 @@ import { getBuiltInType } from "@/components/TypeFieldInput";
 
 const POLL_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '☐',
-  suggestion: '💡',
   ranked_choice: '🗳️',
   participation: '🙋',
 };
@@ -144,13 +143,6 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
         return { text: getOptionDisplayName(results.winner, poll), emoji: '👑', color: 'green' };
       }
       return { text: 'No winner', emoji: '—', color: 'gray' };
-    }
-    case 'suggestion': {
-      if (results.suggestion_counts && results.suggestion_counts.length > 0) {
-        const top = results.suggestion_counts[0];
-        return { text: getOptionDisplayName(top.option, poll), emoji: '👑', color: 'green' };
-      }
-      return { text: 'No suggestions', emoji: '—', color: 'gray' };
     }
     case 'participation': {
       const participatingCount = results.yes_count || 0;

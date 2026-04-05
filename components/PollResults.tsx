@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
-import SuggestionsList from "./SuggestionsList";
+
 
 interface PollResultsProps {
   results: PollResults;
@@ -25,10 +25,6 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
 
   if (results.poll_type === 'ranked_choice') {
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
-  }
-
-  if (results.poll_type === 'suggestion') {
-    return <SuggestionResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
   return null;
@@ -605,40 +601,3 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function SuggestionResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, optionsMetadata?: OptionsMetadata | null }) {
-  // Use server-side suggestion counts from the results endpoint
-  const suggestions = results.suggestion_counts || [];
-
-  const totalVoters = results.total_votes;
-  
-  // Count of unique suggestion items
-  const uniqueSuggestionCount = suggestions.length;
-
-  if (totalVoters === 0) {
-    return (
-      <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        {suggestions.length === 0 ? (
-          <p className="text-gray-600 dark:text-gray-400 text-center py-4">
-            No suggestions available.
-          </p>
-        ) : (
-          <SuggestionsList
-            suggestions={suggestions}
-            userSuggestions={userVoteData?.suggestions || []}
-            showVoteCounts={true}
-            showUserIndicator={true}
-            optionsMetadata={optionsMetadata}
-          />
-        )}
-      </div>
-    </div>
-  );
-}

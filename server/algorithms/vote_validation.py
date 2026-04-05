@@ -2,13 +2,13 @@
 
 Enforces that each vote contains exactly the fields required for its poll type
 and no fields belonging to other poll types. Mirrors the database CHECK constraint
-from migration 053.
+from migration 084.
 
 Rules:
 - yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/suggestions
 - participation: same structure as yes_no (yes_no_choice required)
-- ranked_choice: requires non-empty ranked_choices array, forbids yes_no_choice/suggestions
-- suggestion: requires non-empty suggestions array, forbids yes_no_choice/ranked_choices
+- ranked_choice: requires ranked_choices and/or suggestions (suggestions allowed
+  for polls with a suggestion phase). Forbids yes_no_choice.
 - All types: is_abstain=True relaxes the "required" field constraint
 """
 
@@ -25,8 +25,13 @@ def validate_vote(
     ranked_choices: list[str] | None = None,
     suggestions: list[str] | None = None,
     is_abstain: bool = False,
+    has_suggestion_phase: bool = False,
 ) -> None:
     """Validate vote structure for a given poll type.
+
+    Args:
+        has_suggestion_phase: If True, the ranked_choice poll has a suggestion
+            phase and suggestions are allowed in the vote.
 
     Raises VoteValidationError if the vote is invalid.
     """
@@ -41,9 +46,10 @@ def validate_vote(
     if poll_type == "yes_no" or poll_type == "participation":
         _validate_yes_no_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     elif poll_type == "ranked_choice":
-        _validate_ranked_choice_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
-    elif poll_type == "suggestion":
-        _validate_suggestion_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
+        _validate_ranked_choice_vote(
+            yes_no_choice, ranked_choices, suggestions, is_abstain,
+            has_suggestion_phase,
+        )
     else:
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
 
@@ -76,36 +82,23 @@ def _validate_ranked_choice_vote(
     ranked_choices: list[str] | None,
     suggestions: list[str] | None,
     is_abstain: bool,
+    has_suggestion_phase: bool = False,
 ) -> None:
     if yes_no_choice:
         raise VoteValidationError("yes_no_choice not allowed for ranked choice polls")
-    if suggestions:
-        raise VoteValidationError("suggestions not allowed for ranked choice polls")
+
+    # Suggestions are only allowed on polls with a suggestion phase
+    if suggestions and not has_suggestion_phase:
+        raise VoteValidationError("suggestions not allowed for ranked choice polls without a suggestion phase")
 
     if is_abstain:
         return
 
-    if not ranked_choices or len(ranked_choices) == 0:
+    # Must have at least one of ranked_choices or suggestions
+    has_rankings = ranked_choices and len(ranked_choices) > 0
+    has_suggestions = suggestions and len(suggestions) > 0
+
+    if not has_rankings and not has_suggestions:
         raise VoteValidationError(
-            "ranked_choices is required and must be non-empty for ranked choice polls"
-        )
-
-
-def _validate_suggestion_vote(
-    yes_no_choice: str | None,
-    ranked_choices: list[str] | None,
-    suggestions: list[str] | None,
-    is_abstain: bool,
-) -> None:
-    if yes_no_choice:
-        raise VoteValidationError("yes_no_choice not allowed for suggestion polls")
-    if ranked_choices:
-        raise VoteValidationError("ranked_choices not allowed for suggestion polls")
-
-    if is_abstain:
-        return
-
-    if not suggestions or len(suggestions) == 0:
-        raise VoteValidationError(
-            "suggestions is required and must be non-empty for suggestion polls"
+            "ranked_choices or suggestions is required for ranked choice polls"
         )
