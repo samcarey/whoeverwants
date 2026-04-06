@@ -96,7 +96,7 @@ export default function RankingSection({
 
   if (!canSubmitRankings || pollOptions.length === 0) {
     // Show countdown when ranking isn't available yet, or when there are no options to rank during suggestion phase
-    if (canSubmitSuggestions && !isEditingSuggestions) {
+    if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
           <div className="text-blue-800 dark:text-blue-200 text-sm">
