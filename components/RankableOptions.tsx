@@ -836,75 +836,82 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [disabled, mainList, noPreferenceList, keyboardMode, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Helper function to move items within the same list
+  // Helper function to move items within the same list (with animation)
   const moveItemInList = useCallback((listType: 'main' | 'noPreference', fromIndex: number, toIndex: number) => {
-    if (listType === 'main') {
-      setMainList(prev => {
-        const newList = [...prev];
-        const [item] = newList.splice(fromIndex, 1);
-        newList.splice(toIndex, 0, item);
-        const updatedList = updateItemPositions(newList);
-        
-        // Parent notification will be handled by useEffect
-        
-        return updatedList;
+    const setter = listType === 'main' ? setMainList : setNoPreferenceList;
+
+    // Step 1: Update top positions WITHOUT reordering the array.
+    // This triggers CSS transition on the displaced items.
+    setter(prev => {
+      const updated = prev.map((item, i) => {
+        if (i === fromIndex) return { ...item, top: toIndex * totalItemHeight };
+        // Shift items between fromIndex and toIndex
+        if (fromIndex < toIndex && i > fromIndex && i <= toIndex) {
+          return { ...item, top: (i - 1) * totalItemHeight };
+        }
+        if (fromIndex > toIndex && i >= toIndex && i < fromIndex) {
+          return { ...item, top: (i + 1) * totalItemHeight };
+        }
+        return item;
       });
-    } else {
-      setNoPreferenceList(prev => {
+      return updated;
+    });
+
+    // Step 2: After the transition starts, reorder the array to match.
+    requestAnimationFrame(() => {
+      setter(prev => {
         const newList = [...prev];
         const [item] = newList.splice(fromIndex, 1);
         newList.splice(toIndex, 0, item);
         return updateItemPositions(newList);
       });
-    }
-  }, [updateItemPositions]);
+    });
+  }, [updateItemPositions, totalItemHeight]);
 
-  // Helper function to move items between lists
+  // Helper function to move items between lists (with animation)
   const moveItemBetweenLists = useCallback((
-    itemId: string, 
-    sourceList: 'main' | 'noPreference', 
-    sourceIndex: number, 
-    targetList: 'main' | 'noPreference', 
+    itemId: string,
+    sourceList: 'main' | 'noPreference',
+    sourceIndex: number,
+    targetList: 'main' | 'noPreference',
     targetIndex: number
   ) => {
     const sourceListRef = sourceList === 'main' ? mainList : noPreferenceList;
     const item = sourceListRef[sourceIndex];
-    
+
     if (!item) return;
 
-    // Remove from source list
-    if (sourceList === 'main') {
-      setMainList(prev => {
-        const newList = [...prev];
-        newList.splice(sourceIndex, 1);
-        return updateItemPositions(newList);
-      });
-    } else {
-      setNoPreferenceList(prev => {
-        const newList = [...prev];
-        newList.splice(sourceIndex, 1);
-        return updateItemPositions(newList);
-      });
-    }
+    const sourceSetter = sourceList === 'main' ? setMainList : setNoPreferenceList;
+    const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
 
-    // Add to target list
-    if (targetList === 'main') {
-      setMainList(prev => {
-        const newList = [...prev];
-        newList.splice(targetIndex, 0, item);
-        const updatedList = updateItemPositions(newList);
-        
-        // Parent notification will be handled by useEffect
-        
-        return updatedList;
+    // Step 1: Animate positions — shift items in source list up to close gap,
+    // shift items in target list down to make room, then do the actual splice in rAF.
+    sourceSetter(prev => {
+      return prev.map((it, i) => {
+        if (i > sourceIndex) return { ...it, top: (i - 1) * totalItemHeight };
+        return it;
       });
-    } else {
-      setNoPreferenceList(prev => {
+    });
+    targetSetter(prev => {
+      return prev.map((it, i) => {
+        if (i >= targetIndex) return { ...it, top: (i + 1) * totalItemHeight };
+        return it;
+      });
+    });
+
+    // Step 2: After transitions start, do the actual array reorder
+    requestAnimationFrame(() => {
+      sourceSetter(prev => {
+        const newList = [...prev];
+        newList.splice(sourceIndex, 1);
+        return updateItemPositions(newList);
+      });
+      targetSetter(prev => {
         const newList = [...prev];
         newList.splice(targetIndex, 0, item);
         return updateItemPositions(newList);
       });
-    }
+    });
   }, [mainList, noPreferenceList, updateItemPositions]);
 
   // Render a single list container (main or no preference)
