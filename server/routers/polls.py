@@ -715,7 +715,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             UPDATE votes
             SET yes_no_choice = %(yes_no_choice)s,
                 ranked_choices = %(ranked_choices)s,
-                suggestions = %(suggestions)s,
+                suggestions = COALESCE(%(suggestions)s, suggestions),
                 is_abstain = %(is_abstain)s,
                 voter_name = %(voter_name)s,
                 min_participants = %(min_participants)s,
