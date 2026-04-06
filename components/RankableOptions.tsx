@@ -1016,7 +1016,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     />
 
                     {/* Center content - not grabbable */}
-                    <div className={`flex-1 flex items-center pr-10 min-w-0 ${
+                    <div className={`flex-1 flex items-center pr-12 min-w-0 ${
                       disabled
                         ? 'text-gray-500 dark:text-gray-400'
                         : 'text-gray-900 dark:text-white'
@@ -1024,45 +1024,103 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                     </div>
 
-                    {/* Right side: up/down arrow buttons for tap-based reordering */}
+                    {/* Right side: combined drag handle with tap zones for reordering */}
                     {!disabled && (
-                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-0.5" style={{ zIndex: 2 }}>
-                        <button
-                          type="button"
-                          onClick={(e) => {
+                      <div
+                        className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                        style={{
+                          width: 'calc(20% + 0.75rem)',
+                          touchAction: 'none',
+                          zIndex: 2
+                        }}
+                        onPointerDown={!disabled ? (e) => {
+                          // Determine if the tap is in the top or bottom third
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          const relativeY = e.clientY - rect.top;
+                          const third = rect.height / 3;
+
+                          if (listType === 'noPreference') {
+                            // In exclusion area: any tap moves to bottom of main list
+                            e.preventDefault();
                             e.stopPropagation();
-                            if (index > 0) moveItemInList(listType, index, index - 1);
-                          }}
-                          disabled={index === 0}
-                          className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-                            index === 0
-                              ? 'text-gray-300 dark:text-gray-600'
-                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600'
-                          }`}
-                          aria-label="Move up"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="18 15 12 9 6 15" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
+                            moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
+                            return;
+                          }
+
+                          if (relativeY < third) {
+                            // Top third: move up (or do nothing if already at top)
+                            e.preventDefault();
                             e.stopPropagation();
-                            if (index < listItems.length - 1) moveItemInList(listType, index, index + 1);
-                          }}
-                          disabled={index === listItems.length - 1}
-                          className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
-                            index === listItems.length - 1
-                              ? 'text-gray-300 dark:text-gray-600'
-                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600'
-                          }`}
-                          aria-label="Move down"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </button>
+                            if (index > 0) {
+                              moveItemInList(listType, index, index - 1);
+                            }
+                            return;
+                          } else if (relativeY > third * 2) {
+                            // Bottom third: move down, or to exclusion area if at bottom
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (index < listItems.length - 1) {
+                              moveItemInList(listType, index, index + 1);
+                            } else {
+                              // At bottom of main list: move to exclusion area
+                              moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
+                            }
+                            return;
+                          }
+
+                          // Middle third: start drag
+                          handlePointerStart(e, option.id);
+                        } : undefined}
+                        title=""
+                      >
+                        {/* Visual: arrows + drag handle */}
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0">
+                          {listType === 'main' ? (
+                            <>
+                              {/* Up arrow */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className={index === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}
+                              >
+                                <polyline points="18 15 12 9 6 15" />
+                              </svg>
+                              {/* Drag handle lines */}
+                              <div className="flex flex-col items-center justify-center my-0.5">
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
+                              </div>
+                              {/* Down arrow */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-gray-400 dark:text-gray-500"
+                              >
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </>
+                          ) : (
+                            <>
+                              {/* Plus symbol above */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-green-500 dark:text-green-400"
+                              >
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                              {/* Drag handle lines */}
+                              <div className="flex flex-col items-center justify-center my-0.5">
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
+                              </div>
+                              {/* Plus symbol below */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-green-500 dark:text-green-400"
+                              >
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
