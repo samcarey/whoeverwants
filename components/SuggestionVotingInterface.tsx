@@ -9,7 +9,6 @@ import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
-import GradientBorderButton from "@/components/GradientBorderButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 
@@ -37,7 +36,6 @@ interface SuggestionVotingInterfaceProps {
   pollResults: any;
   loadingResults: boolean;
   loadExistingSuggestions: () => void;
-  onFollowUpClick: () => void;
   suggestionMetadata?: OptionsMetadata;
   onSuggestionMetadataChange?: (metadata: OptionsMetadata) => void;
   optionsMetadata?: OptionsMetadata | null;
@@ -67,7 +65,6 @@ export default function SuggestionVotingInterface({
   pollResults,
   loadingResults,
   loadExistingSuggestions,
-  onFollowUpClick,
   suggestionMetadata,
   onSuggestionMetadataChange,
   optionsMetadata,
@@ -228,30 +225,7 @@ export default function SuggestionVotingInterface({
           )}
         </div>
 
-        {/* Follow Up Button - shown when poll is open and user has voted */}
-        {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4 flex justify-between items-center">
-            <GradientBorderButton
-              onClick={onFollowUpClick}
-              gradient="blue-purple"
-            >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              <span className="font-semibold">Follow up</span>
-            </GradientBorderButton>
-          </div>
-        )}
-
-        {/* Show follow-up/fork header after Follow up button when voted */}
-        {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4">
-            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-          </div>
-        )}
-
-        {/* Voter list for open suggestion polls - shown after Follow-up button when voted */}
+        {/* Voter list for open suggestion polls */}
         {!isPollClosed && !isLoadingVoteData && (
           <div className="mt-8">
             <VoterList pollId={poll.id} refreshTrigger={0} />
