@@ -102,6 +102,10 @@ class ReopenPollRequest(BaseModel):
     creator_secret: str
 
 
+class CutoffSuggestionsRequest(BaseModel):
+    creator_secret: str
+
+
 class AccessiblePollsRequest(BaseModel):
     poll_ids: list[str]
     include_results: bool = False

@@ -309,6 +309,14 @@ export async function apiClosePoll(pollId: string, creatorSecret: string, closeR
   return toPoll(data);
 }
 
+export async function apiCutoffSuggestions(pollId: string, creatorSecret: string): Promise<Poll> {
+  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-suggestions`, {
+    method: 'POST',
+    body: JSON.stringify({ creator_secret: creatorSecret }),
+  });
+  return toPoll(data);
+}
+
 export async function apiReopenPoll(pollId: string, creatorSecret: string): Promise<Poll> {
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/reopen`, {
     method: 'POST',

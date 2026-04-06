@@ -13,6 +13,7 @@ from models import (
     AccessiblePollsRequest,
     ClosePollRequest,
     CreatePollRequest,
+    CutoffSuggestionsRequest,
     EditVoteRequest,
     ParticipantResponse,
     PollResponse,
@@ -1061,6 +1062,36 @@ def reopen_poll(poll_id: str, req: ReopenPollRequest):
         ).fetchone()
     if not row:
         raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+    return _row_to_poll(row)
+
+
+@router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
+def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
+    """End the suggestion phase immediately. Requires creator_secret."""
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            UPDATE polls
+            SET suggestion_deadline = %(now)s,
+                updated_at = %(now)s
+            WHERE id = %(poll_id)s
+              AND creator_secret = %(creator_secret)s
+              AND suggestion_deadline IS NOT NULL
+              AND suggestion_deadline > %(now)s
+            RETURNING *
+            """,
+            {
+                "poll_id": poll_id,
+                "creator_secret": req.creator_secret,
+                "now": now,
+            },
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Invalid creator secret, poll not found, or suggestion phase already ended")
+
+        _finalize_suggestion_options(conn, poll_id, now)
+
     return _row_to_poll(row)
 
 

@@ -23,7 +23,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -72,6 +72,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [loadingResults, setLoadingResults] = useState(false);
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
+  const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
+  const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
+  const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   // Don't automatically assume poll was reopened just because deadline passed
   // Only set manuallyReopened when explicitly reopened by creator action
@@ -92,8 +95,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline
   // has an optional suggestion collection phase before ranking begins
   const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!poll.suggestion_deadline;
+  const effectiveSuggestionDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
   const inSuggestionPhase = hasSuggestionPhase && currentTime
-    ? currentTime < new Date(poll.suggestion_deadline!)
+    ? currentTime < new Date(effectiveSuggestionDeadline!)
     : hasSuggestionPhase; // Before currentTime is set, assume suggestion phase if deadline exists
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
   const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
@@ -830,6 +834,37 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       alert('Failed to close poll. Please try again.');
     } finally {
       setIsClosingPoll(false);
+    }
+  };
+
+  const handleCutoffSuggestionsClick = () => {
+    if (isCuttingOffSuggestions || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) {
+      alert('You do not have permission to cutoff suggestions.');
+      return;
+    }
+    setShowCutoffConfirmModal(true);
+  };
+
+  const handleCutoffSuggestions = async () => {
+    setShowCutoffConfirmModal(false);
+    if (isCuttingOffSuggestions || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) return;
+
+    setIsCuttingOffSuggestions(true);
+    try {
+      const updatedPoll = await apiCutoffSuggestions(poll.id, creatorSecret);
+      if (updatedPoll) {
+        // Update the suggestion deadline so the UI exits suggestion phase
+        setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Error cutting off suggestions:', error);
+      alert('Failed to cutoff suggestions. Please try again.');
+    } finally {
+      setIsCuttingOffSuggestions(false);
     }
   };
 
@@ -1900,17 +1935,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
-          {/* Poll Management Buttons - Close, Reopen, and Forget Poll */}
-          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && (isCreator || process.env.NODE_ENV === 'development'))) && (
+          {/* Poll Management Buttons - Close, Cutoff Suggestions, Reopen, and Forget Poll */}
+          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && isCreator)) && (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
-                showCloseButton={!isPollClosed && (isCreator || process.env.NODE_ENV === 'development')}
+                showCloseButton={!isPollClosed && isCreator}
+                showCutoffSuggestionsButton={!isPollClosed && isCreator && canSubmitSuggestions}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
                 showForgetButton={hasPollDataState}
                 onCloseClick={handleCloseClick}
+                onCutoffSuggestionsClick={handleCutoffSuggestionsClick}
                 onReopenClick={handleReopenClick}
                 onForgetClick={() => setShowForgetConfirmModal(true)}
                 isClosingPoll={isClosingPoll}
+                isCuttingOffSuggestions={isCuttingOffSuggestions}
                 isReopeningPoll={isReopeningPoll}
               />
             </div>
@@ -1945,6 +1983,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
       
+      <ConfirmationModal
+        isOpen={showCutoffConfirmModal}
+        onConfirm={handleCutoffSuggestions}
+        onCancel={() => setShowCutoffConfirmModal(false)}
+        title="Cutoff Suggestions"
+        message="Are you sure you want to end the suggestion phase now? No more suggestions will be accepted and ranking will begin immediately."
+        confirmText="Cutoff Now"
+        cancelText="Cancel"
+        confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
+      />
+
       <ConfirmationModal
         isOpen={showReopenConfirmModal}
         onConfirm={handleReopenPoll}
