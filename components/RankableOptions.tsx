@@ -837,28 +837,45 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [disabled, mainList, noPreferenceList, keyboardMode, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Helper function to move items within the same list (with animation)
+  // FLIP animation helper: records positions, applies state change, then animates
+  const animateWithFLIP = useCallback((callback: () => void) => {
+    // FIRST: Record current DOM positions of all items
+    const oldPositions: Record<string, number> = {};
+    for (const [id, el] of Object.entries(elementRefs.current)) {
+      if (el) {
+        oldPositions[id] = el.getBoundingClientRect().top;
+      }
+    }
+
+    // LAST: Apply the state change synchronously
+    flushSync(callback);
+
+    // INVERT + PLAY: Calculate deltas and animate
+    for (const [id, el] of Object.entries(elementRefs.current)) {
+      if (el && oldPositions[id] !== undefined) {
+        const newPos = el.getBoundingClientRect().top;
+        const delta = oldPositions[id] - newPos;
+        if (Math.abs(delta) > 1) {
+          // INVERT: Snap to old position via transform
+          el.style.transition = 'none';
+          el.style.transform = `translateY(${delta}px)`;
+
+          // Force reflow so the browser registers the old position
+          el.offsetHeight; // eslint-disable-line @typescript-eslint/no-unused-expressions
+
+          // PLAY: Animate to new position
+          el.style.transition = 'transform 0.3s ease';
+          el.style.transform = '';
+        }
+      }
+    }
+  }, []);
+
+  // Helper function to move items within the same list (with FLIP animation)
   const moveItemInList = useCallback((listType: 'main' | 'noPreference', fromIndex: number, toIndex: number) => {
     const setter = listType === 'main' ? setMainList : setNoPreferenceList;
 
-    // Step 1: Update top positions WITHOUT reordering the array.
-    // flushSync forces React to commit to DOM immediately so the browser
-    // can start CSS transitions before we reorder the array.
-    flushSync(() => {
-      setter(prev => prev.map((item, i) => {
-        if (i === fromIndex) return { ...item, top: toIndex * totalItemHeight };
-        if (fromIndex < toIndex && i > fromIndex && i <= toIndex) {
-          return { ...item, top: (i - 1) * totalItemHeight };
-        }
-        if (fromIndex > toIndex && i >= toIndex && i < fromIndex) {
-          return { ...item, top: (i + 1) * totalItemHeight };
-        }
-        return item;
-      }));
-    });
-
-    // Step 2: After the transition starts, reorder the array to match.
-    requestAnimationFrame(() => {
+    animateWithFLIP(() => {
       setter(prev => {
         const newList = [...prev];
         const [item] = newList.splice(fromIndex, 1);
@@ -866,9 +883,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         return updateItemPositions(newList);
       });
     });
-  }, [updateItemPositions, totalItemHeight]);
+  }, [updateItemPositions, animateWithFLIP]);
 
-  // Helper function to move items between lists (with animation)
+  // Helper function to move items between lists (with FLIP animation)
   const moveItemBetweenLists = useCallback((
     itemId: string,
     sourceList: 'main' | 'noPreference',
@@ -884,22 +901,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const sourceSetter = sourceList === 'main' ? setMainList : setNoPreferenceList;
     const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
 
-    // Step 1: Animate positions — shift items in source list up to close gap,
-    // shift items in target list down to make room.
-    // flushSync forces DOM commit so CSS transitions start before array reorder.
-    flushSync(() => {
-      sourceSetter(prev => prev.map((it, i) => {
-        if (i > sourceIndex) return { ...it, top: (i - 1) * totalItemHeight };
-        return it;
-      }));
-      targetSetter(prev => prev.map((it, i) => {
-        if (i >= targetIndex) return { ...it, top: (i + 1) * totalItemHeight };
-        return it;
-      }));
-    });
-
-    // Step 2: After transitions start, do the actual array reorder
-    requestAnimationFrame(() => {
+    animateWithFLIP(() => {
       sourceSetter(prev => {
         const newList = [...prev];
         newList.splice(sourceIndex, 1);
@@ -911,7 +913,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         return updateItemPositions(newList);
       });
     });
-  }, [mainList, noPreferenceList, updateItemPositions]);
+  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP]);
 
   // Render a single list container (main or no preference)
   const renderListContainer = (
@@ -1060,7 +1062,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         onPointerUp={!disabled ? (e) => {
                           // If drag never started (pointer moved <8px), it's a tap
                           const pending = pendingDragRef.current;
-                          console.log('[TAP] pointerUp, pending:', !!pending, 'started:', pending?.started, 'id match:', pending?.id === option.id);
                           if (pending && !pending.started && pending.id === option.id) {
                             pendingDragRef.current = null; // Clear before document handler runs
 
@@ -1068,22 +1069,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             const relativeY = e.clientY - rect.top;
                             const half = rect.height / 2;
 
-                            console.log('[TAP] detected tap on', option.text, 'listType:', listType, 'index:', index, 'relativeY:', relativeY.toFixed(0), 'half:', half.toFixed(0));
-
                             if (listType === 'noPreference') {
-                              console.log('[TAP] moving from noPreference to main');
                               moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
                             } else if (relativeY < half) {
                               if (index > 0) {
-                                console.log('[TAP] moving UP from', index, 'to', index - 1);
                                 moveItemInList(listType, index, index - 1);
                               }
                             } else {
                               if (index < listItems.length - 1) {
-                                console.log('[TAP] moving DOWN from', index, 'to', index + 1);
                                 moveItemInList(listType, index, index + 1);
                               } else {
-                                console.log('[TAP] moving to noPreference (was last in main)');
                                 moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
                               }
                             }
