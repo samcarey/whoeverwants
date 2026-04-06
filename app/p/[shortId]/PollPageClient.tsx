@@ -1814,18 +1814,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     />
                   )}
 
-                  {/* Suggestion phase disclaimer when pre-ranking is allowed and user has voted */}
+                  {/* Early voting section header during suggestion phase */}
                   {canSubmitSuggestions && canSubmitRankings && hasVoted && !isEditingVote && pollOptions.length > 0 && (
                     <>
-                      <div className="mb-2 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
-                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-sm">
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          <span>Options can still be added until suggestions cutoff!</span>
-                        </div>
-                      </div>
+                      <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
                       <Countdown deadline={poll.response_deadline || null} label="Preferences closing" />
+                      <p className="text-center text-xs text-amber-700 dark:text-amber-300 mb-3">
+                        Options may change until suggestions cutoff!
+                      </p>
                     </>
                   )}
 
