@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
 import OptionLabel, { isLocationEntry } from './OptionLabel';
@@ -841,11 +842,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const setter = listType === 'main' ? setMainList : setNoPreferenceList;
 
     // Step 1: Update top positions WITHOUT reordering the array.
-    // This triggers CSS transition on the displaced items.
-    setter(prev => {
-      const updated = prev.map((item, i) => {
+    // flushSync forces React to commit to DOM immediately so the browser
+    // can start CSS transitions before we reorder the array.
+    flushSync(() => {
+      setter(prev => prev.map((item, i) => {
         if (i === fromIndex) return { ...item, top: toIndex * totalItemHeight };
-        // Shift items between fromIndex and toIndex
         if (fromIndex < toIndex && i > fromIndex && i <= toIndex) {
           return { ...item, top: (i - 1) * totalItemHeight };
         }
@@ -853,8 +854,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           return { ...item, top: (i + 1) * totalItemHeight };
         }
         return item;
-      });
-      return updated;
+      }));
     });
 
     // Step 2: After the transition starts, reorder the array to match.
@@ -885,18 +885,17 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
 
     // Step 1: Animate positions — shift items in source list up to close gap,
-    // shift items in target list down to make room, then do the actual splice in rAF.
-    sourceSetter(prev => {
-      return prev.map((it, i) => {
+    // shift items in target list down to make room.
+    // flushSync forces DOM commit so CSS transitions start before array reorder.
+    flushSync(() => {
+      sourceSetter(prev => prev.map((it, i) => {
         if (i > sourceIndex) return { ...it, top: (i - 1) * totalItemHeight };
         return it;
-      });
-    });
-    targetSetter(prev => {
-      return prev.map((it, i) => {
+      }));
+      targetSetter(prev => prev.map((it, i) => {
         if (i >= targetIndex) return { ...it, top: (i + 1) * totalItemHeight };
         return it;
-      });
+      }));
     });
 
     // Step 2: After transitions start, do the actual array reorder
