@@ -37,6 +37,7 @@ interface RankingSectionProps {
   suggestionChoices: string[];
   justCancelledAbstain: boolean;
   twoOptionDisplayOrder: string[];
+  isEditingSuggestions: boolean;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -69,6 +70,7 @@ export default function RankingSection({
   suggestionChoices,
   justCancelledAbstain,
   twoOptionDisplayOrder,
+  isEditingSuggestions,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (userVoteData?.is_abstain || isAbstaining);
@@ -93,7 +95,7 @@ export default function RankingSection({
   ) : null;
 
   if (!canSubmitRankings || pollOptions.length === 0) {
-    if (!canSubmitRankings && canSubmitSuggestions) {
+    if (!canSubmitRankings && canSubmitSuggestions && !isEditingSuggestions) {
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
           <p className="text-blue-800 dark:text-blue-200 text-sm">

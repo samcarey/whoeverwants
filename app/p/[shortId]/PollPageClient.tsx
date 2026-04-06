@@ -1873,6 +1873,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     suggestionChoices={suggestionChoices}
                     justCancelledAbstain={justCancelledAbstain}
                     twoOptionDisplayOrder={twoOptionDisplayOrder}
+                    isEditingSuggestions={isEditingVote}
                   />
 
                   {/* Show follow-up/fork header after submit button */}
