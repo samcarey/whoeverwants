@@ -1886,8 +1886,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     />
                   )}
 
-                  {/* Suggestion phase disclaimer when pre-ranking is allowed */}
-                  {canSubmitSuggestions && canSubmitRankings && pollOptions.length > 0 && (
+                  {/* Suggestion phase disclaimer when pre-ranking is allowed and user has voted */}
+                  {canSubmitSuggestions && canSubmitRankings && hasVoted && !isEditingVote && pollOptions.length > 0 && (
                     <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
                       <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-sm">
                         <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1901,8 +1901,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
-                  {/* Ranking UI - shown when ranking is allowed and there are options */}
-                  {canSubmitRankings && pollOptions.length > 0 && (
+                  {/* Ranking UI - shown when ranking is allowed and there are options
+                       During suggestion phase with pre-ranking, only show after user has submitted suggestions */}
+                  {canSubmitRankings && pollOptions.length > 0 && (!canSubmitSuggestions || (hasVoted && !isEditingVote)) && (
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
                     {pollOptions.length === 2 ? (
                       <>
@@ -1974,8 +1975,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
-                  {/* Name field and submit - shown when not in suggestion-only mode (SuggestionVotingInterface has its own) */}
-                  {(!canSubmitSuggestions || canSubmitRankings) && (
+                  {/* Name field and submit - hidden during suggestion phase until user has submitted suggestions
+                       (SuggestionVotingInterface has its own name/submit for the initial suggestion submission) */}
+                  {(!canSubmitSuggestions || (canSubmitRankings && hasVoted && !isEditingVote)) && (
                   <>
                   <div className="mt-4">
                     <CompactNameField name={voterName} setName={setVoterName} />
