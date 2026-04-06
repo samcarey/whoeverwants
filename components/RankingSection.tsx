@@ -151,7 +151,9 @@ export default function RankingSection({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h4 className="text-base font-medium text-gray-900 dark:text-white">Ranking:</h4>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Not yet ranked</span>
+              <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
+                Abstained
+              </span>
             </div>
             {editButton}
           </div>

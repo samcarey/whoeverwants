@@ -1059,13 +1059,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // During suggestion phase with no rankings and no suggestions: abstain
         const hasRankings = filteredRankedChoices.length > 0;
         const hasSuggestions = filteredSuggestions && filteredSuggestions.length > 0;
-        const finalAbstain = isAbstaining || (!hasRankings && !hasSuggestions);
+        // If user has suggestions (from this or previous submission) but abstains from ranking,
+        // preserve suggestions — only full abstain when neither exists
+        const previousSuggestions = userVoteData?.suggestions;
+        const hasPreviousSuggestions = previousSuggestions && previousSuggestions.length > 0;
+        const finalAbstain = isAbstaining && !hasSuggestions && !hasPreviousSuggestions
+          ? true  // Full abstain: no suggestions at all
+          : !hasRankings && !hasSuggestions && !hasPreviousSuggestions;
 
         voteData = {
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
-          ranked_choices: finalAbstain || !hasRankings ? null : filteredRankedChoices,
-          suggestions: finalAbstain || !hasSuggestions ? null : filteredSuggestions,
+          ranked_choices: isAbstaining || !hasRankings ? null : filteredRankedChoices,
+          suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
           is_abstain: finalAbstain,
           voter_name: voterName.trim() || null,
           options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
