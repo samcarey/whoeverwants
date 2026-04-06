@@ -1773,17 +1773,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     ) : null}
                   </div>
 
-                  {/* Voter lists for open ranked choice polls */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4 space-y-2">
-                      {hasSuggestionPhase ? (
-                        <>
-                          <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Suggested" filter={suggestionsVoterFilter} />
-                          <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
-                        </>
-                      ) : (
-                        <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-                      )}
+                  {/* Voter list for non-suggestion ranked choice polls */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && !hasSuggestionPhase && (
+                    <div className="mt-4">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
                   )}
                 </div>
@@ -1819,6 +1812,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       onSuggestionMetadataChange={setSuggestionMetadata}
                       optionsMetadata={optionsMetadataLocal}
                     />
+                  )}
+
+                  {/* Suggestion respondents */}
+                  {canSubmitSuggestions && hasVoted && !isEditingVote && !isLoadingVoteData && (
+                    <div className="mt-2 mb-3">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Suggested" filter={suggestionsVoterFilter} />
+                    </div>
                   )}
 
                   {/* Suggestion phase disclaimer when pre-ranking is allowed and user has voted */}
@@ -1898,6 +1898,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     )}
                   </div>
+                  )}
+
+                  {/* Ranking respondents - shown under ranking UI during suggestion phase */}
+                  {hasSuggestionPhase && canSubmitRankings && hasVoted && !isEditingVote && !isLoadingVoteData && (
+                    <div className="mt-2 mb-3">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
+                    </div>
                   )}
 
                   {/* Waiting for suggestions message when pre-ranking is disabled */}

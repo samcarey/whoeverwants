@@ -63,7 +63,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   if (initialLoading) {
     return (
       <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-        <span className="text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>✓</span>
+        <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>👥</span>
         {[1, 2, 3].map((i) => (
           <div
             key={i}
@@ -129,8 +129,8 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
 
   return (
     <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
-      <span className="text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
-        ✓ {voters.length}
+      <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
+        👥 {voters.length}
       </span>
 
       {namedVoters.map((voter, index) => {
