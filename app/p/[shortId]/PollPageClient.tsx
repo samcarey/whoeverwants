@@ -6,9 +6,9 @@ import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
 import CompactNameField from "@/components/CompactNameField";
-import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
+import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -83,7 +83,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
-  const [isEditingVote, setIsEditingVote] = useState(false);
+  const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
+  const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
@@ -111,7 +112,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
   // Stable filter callbacks for VoterList
   const suggestionsVoterFilter = useCallback((v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0), []);
-  const rankingsVoterFilter = useCallback((v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0), []);
 
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
@@ -878,16 +878,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       suggestionChoicesData: suggestionChoices
     });
 
+    // Either suggestion editing or ranking editing counts as "editing"
+    const isAnyEditing = isEditingVote || isEditingRanking;
+
     // During suggestion phase with pre-ranking, submitting rankings after the initial
     // suggestion vote is an implicit edit (updating the existing vote with rankings)
-    const isImplicitEdit = hasVoted && !isEditingVote && canSubmitSuggestions && canSubmitRankings;
+    const isImplicitEdit = hasVoted && !isAnyEditing && canSubmitSuggestions && canSubmitRankings;
     if (isImplicitEdit) {
       setIsEditingVote(true);
     }
 
-    if (isSubmitting || (hasVoted && !isEditingVote && !isImplicitEdit) || isPollClosed) {
+    if (isSubmitting || (hasVoted && !isAnyEditing && !isImplicitEdit) || isPollClosed) {
       await logToServer('suggestion-vote', 'warn', 'handleVoteClick early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditing) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
     }
@@ -965,9 +968,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     setShowVoteConfirmModal(false);
 
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+    const isAnyEditingForSubmit = isEditingVote || isEditingRanking;
+    if (isSubmitting || (hasVoted && !isAnyEditingForSubmit) || isPollClosed) {
       await logToServer('suggestion-vote', 'warn', 'submitVote early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditingForSubmit) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
     }
@@ -1072,7 +1076,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       let error: any; // eslint-disable-line
 
 
-      if (isEditingVote && userVoteId) {
+      if ((isEditingVote || isEditingRanking) && userVoteId) {
 
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         // Use the same filtered data that was prepared in voteData to ensure consistency
@@ -1179,9 +1183,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
       
       setIsEditingVote(false);
-      
+      setIsEditingRanking(false);
+
       // Refresh results after editing votes with suggestions
-      if (hasSuggestionPhase && isEditingVote) {
+      if (hasSuggestionPhase && (isEditingVote || isEditingRanking)) {
         await fetchPollResults();
       }
 
@@ -1833,153 +1838,36 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     />
                   )}
 
-                  {/* Early voting section header during suggestion phase */}
-                  {canSubmitSuggestions && canSubmitRankings && hasVoted && !isEditingVote && pollOptions.length > 0 && (
-                    <>
-                      <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
-                      <Countdown deadline={poll.response_deadline || null} label="Preferences closing" />
-                      <p className="text-center text-xs text-amber-700 dark:text-amber-300 mb-3">
-                        Options may change until suggestions cutoff!
-                      </p>
-                    </>
-                  )}
-
-                  {/* Ranking UI - shown when ranking is allowed and there are options
-                       During suggestion phase with pre-ranking, only show after user has submitted suggestions */}
-                  {canSubmitRankings && pollOptions.length > 0 && (!canSubmitSuggestions || (hasVoted && !isEditingVote)) && (
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    {/* Show ranking summary if user already submitted rankings during suggestion phase */}
-                    {canSubmitSuggestions && hasVoted && !isEditingVote && userVoteData?.ranked_choices?.length > 0 ? (
-                      <>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-base font-medium text-gray-900 dark:text-white">Your ranking:</h4>
-                          {editVoteButton}
-                        </div>
-                        <div className="space-y-2">
-                          {userVoteData.ranked_choices.map((choice: string, index: number) => (
-                            <div key={index} className="flex items-center gap-2">
-                              <div className="flex-shrink-0" style={{ width: '32px' }}>
-                                <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                  {index + 1}
-                                </span>
-                              </div>
-                              <div className="flex-1 flex items-center p-2 bg-white dark:bg-gray-900 rounded min-w-0">
-                                <div className="min-w-0 overflow-hidden">
-                                  <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : canSubmitSuggestions && hasVoted && !isEditingVote && (userVoteData?.is_abstain || isAbstaining) && !userVoteData?.ranked_choices?.length ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-base font-medium text-gray-900 dark:text-white">Ranking:</h4>
-                          <span className="text-sm text-gray-500 dark:text-gray-400">Not yet ranked</span>
-                        </div>
-                        {editVoteButton}
-                      </div>
-                    ) : pollOptions.length === 2 ? (
-                      <>
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
-                          Select your preference
-                        </h4>
-                        <div className="flex gap-2">
-                          {twoOptionDisplayOrder.map((option: string) => (
-                            <button
-                              key={option}
-                              onClick={(e) => {
-                                // Don't trigger vote when clicking the restaurant/place name (opens detail modal instead)
-                                if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                                handleRankingChange([option]);
-                                setIsAbstaining(false);
-                              }}
-                              disabled={isSubmitting}
-                              className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                rankedChoices[0] === option
-                                  ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
-                                  : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
-                              }`}
-                            >
-                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} layout="stacked" />
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
-                          Reorder from most to least preferred
-                        </h4>
-
-                        {pollOptions.length > 0 && (
-                          <RankableOptions
-                            key={isEditingVote ? 'editing' : 'new'}
-                            options={pollOptions}
-                            onRankingChange={handleRankingChange}
-                            disabled={isSubmitting || (isAbstaining && !canSubmitSuggestions)}
-                            storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
-                            initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                            optionsMetadata={optionsMetadataLocal}
-                          />
-                        )}
-                      </>
-                    )}
-                    
-                    {/* Hide abstain button and error when showing ranking summary */}
-                    {!(canSubmitSuggestions && hasVoted && !isEditingVote && (userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain)) && (
-                      <>
-                        <AbstainButton
-                          isAbstaining={isAbstaining}
-                          onClick={handleAbstain}
-                        />
-
-                        {voteError && (
-                          <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                            {voteError}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  )}
-
-                  {/* Ranking respondents - shown under ranking UI during suggestion phase */}
-                  {hasSuggestionPhase && canSubmitRankings && hasVoted && !isEditingVote && !isLoadingVoteData && (
-                    <div className="mt-2 mb-3">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
-                    </div>
-                  )}
-
-                  {/* Waiting for suggestions message when pre-ranking is disabled */}
-                  {!canSubmitRankings && canSubmitSuggestions && (
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
-                      <p className="text-blue-800 dark:text-blue-200 text-sm">
-                        Ranking will open after suggestions cutoff in{' '}
-                        <Countdown deadline={poll.suggestion_deadline!} onExpire={() => setCurrentTime(new Date())} />
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Name field and submit - hidden during suggestion phase until user has submitted suggestions
-                       (SuggestionVotingInterface has its own name/submit for the initial suggestion submission)
-                       Also hidden when showing ranking summary (user already submitted rankings) */}
-                  {(!canSubmitSuggestions || (canSubmitRankings && hasVoted && !isEditingVote)) && !(canSubmitSuggestions && hasVoted && !isEditingVote && userVoteData?.ranked_choices?.length > 0) && (
-                  <>
-                  <div className="mt-4">
-                    <CompactNameField name={voterName} setName={setVoterName} />
-                  </div>
-
-                  <button
-                    onClick={handleVoteClick}
-                    disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}
-                    className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-                  >
-                    {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-                  </button>
-                  </>
-                  )}
+                  {/* Ranking section — independent component with its own edit state */}
+                  <RankingSection
+                    poll={poll}
+                    pollId={pollId}
+                    pollOptions={pollOptions}
+                    rankedChoices={rankedChoices}
+                    handleRankingChange={handleRankingChange}
+                    isAbstaining={isAbstaining}
+                    setIsAbstaining={setIsAbstaining}
+                    handleAbstain={handleAbstain}
+                    isSubmitting={isSubmitting}
+                    isPollClosed={!!isPollClosed}
+                    hasVoted={hasVoted}
+                    isEditingRanking={isEditingRanking}
+                    setIsEditingRanking={setIsEditingRanking}
+                    userVoteData={userVoteData}
+                    isLoadingVoteData={isLoadingVoteData}
+                    voterName={voterName}
+                    setVoterName={setVoterName}
+                    handleVoteClick={handleVoteClick}
+                    voteError={voteError}
+                    voterListRefresh={voterListRefresh}
+                    optionsMetadata={optionsMetadataLocal}
+                    canSubmitSuggestions={canSubmitSuggestions}
+                    canSubmitRankings={canSubmitRankings}
+                    hasSuggestionPhase={hasSuggestionPhase}
+                    suggestionChoices={suggestionChoices}
+                    justCancelledAbstain={justCancelledAbstain}
+                    twoOptionDisplayOrder={twoOptionDisplayOrder}
+                  />
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
