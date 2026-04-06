@@ -926,8 +926,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const isAnyEditing = isEditingVote || isEditingRanking;
 
     // During suggestion phase with pre-ranking, submitting rankings after the initial
-    // suggestion vote is an implicit edit (updating the existing vote with rankings)
-    const isImplicitEdit = hasVoted && !isAnyEditing && canSubmitSuggestions && canSubmitRankings;
+    // suggestion vote is an implicit edit (updating the existing vote with rankings).
+    // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
+    const hasOnlySuggestions = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_abstain;
+    const isImplicitEdit = hasVoted && !isAnyEditing && (
+      (canSubmitSuggestions && canSubmitRankings) || hasOnlySuggestions
+    );
     if (isImplicitEdit) {
       setIsEditingVote(true);
     }
