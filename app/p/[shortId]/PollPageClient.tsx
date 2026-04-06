@@ -1848,7 +1848,39 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                        During suggestion phase with pre-ranking, only show after user has submitted suggestions */}
                   {canSubmitRankings && pollOptions.length > 0 && (!canSubmitSuggestions || (hasVoted && !isEditingVote)) && (
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    {pollOptions.length === 2 ? (
+                    {/* Show ranking summary if user already submitted rankings during suggestion phase */}
+                    {canSubmitSuggestions && hasVoted && !isEditingVote && userVoteData?.ranked_choices?.length > 0 ? (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-base font-medium text-gray-900 dark:text-white">Your ranking:</h4>
+                          {editVoteButton}
+                        </div>
+                        <div className="space-y-2">
+                          {userVoteData.ranked_choices.map((choice: string, index: number) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <div className="flex-shrink-0" style={{ width: '32px' }}>
+                                <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                                  {index + 1}
+                                </span>
+                              </div>
+                              <div className="flex-1 flex items-center p-2 bg-white dark:bg-gray-900 rounded min-w-0">
+                                <div className="min-w-0 overflow-hidden">
+                                  <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : canSubmitSuggestions && hasVoted && !isEditingVote && (userVoteData?.is_abstain || isAbstaining) && !userVoteData?.ranked_choices?.length ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-base font-medium text-gray-900 dark:text-white">Ranking:</h4>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">Not yet ranked</span>
+                        </div>
+                        {editVoteButton}
+                      </div>
+                    ) : pollOptions.length === 2 ? (
                       <>
                         <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                           Select your preference
@@ -1895,15 +1927,20 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </>
                     )}
                     
-                    <AbstainButton
-                      isAbstaining={isAbstaining}
-                      onClick={handleAbstain}
-                    />
-                    
-                    {voteError && (
-                      <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                        {voteError}
-                      </div>
+                    {/* Hide abstain button and error when showing ranking summary */}
+                    {!(canSubmitSuggestions && hasVoted && !isEditingVote && (userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain)) && (
+                      <>
+                        <AbstainButton
+                          isAbstaining={isAbstaining}
+                          onClick={handleAbstain}
+                        />
+
+                        {voteError && (
+                          <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                            {voteError}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                   )}
@@ -1926,8 +1963,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   {/* Name field and submit - hidden during suggestion phase until user has submitted suggestions
-                       (SuggestionVotingInterface has its own name/submit for the initial suggestion submission) */}
-                  {(!canSubmitSuggestions || (canSubmitRankings && hasVoted && !isEditingVote)) && (
+                       (SuggestionVotingInterface has its own name/submit for the initial suggestion submission)
+                       Also hidden when showing ranking summary (user already submitted rankings) */}
+                  {(!canSubmitSuggestions || (canSubmitRankings && hasVoted && !isEditingVote)) && !(canSubmitSuggestions && hasVoted && !isEditingVote && userVoteData?.ranked_choices?.length > 0) && (
                   <>
                   <div className="mt-4">
                     <CompactNameField name={voterName} setName={setVoterName} />
