@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { apiGetVotes } from '@/lib/api';
+import { apiGetVotes, ApiVote } from '@/lib/api';
 
 interface Voter {
   id: string;
@@ -11,12 +11,12 @@ interface Voter {
 interface VoterListProps {
   pollId: string;
   className?: string;
-  refreshTrigger?: number; // Optional prop to trigger refresh
+  refreshTrigger?: number;
+  label?: string;
+  filter?: (vote: ApiVote) => boolean;
 }
 
-const CARD_CLASS = "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-sm";
-
-export default function VoterList({ pollId, className = "", refreshTrigger }: VoterListProps) {
+export default function VoterList({ pollId, className = "", refreshTrigger, label, filter }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,10 +25,10 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   const fetchVoters = useCallback(async () => {
     try {
-      const votes = await apiGetVotes(pollId);
+      let votes = await apiGetVotes(pollId);
+      if (filter) votes = votes.filter(filter);
       const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
 
-      // Skip state updates if voter list hasn't changed
       const newKey = voterData.map(v => `${v.id}:${v.voter_name ?? ''}`).join(',');
       if (newKey !== voterIdsRef.current) {
         voterIdsRef.current = newKey;
@@ -44,7 +44,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     } finally {
       setInitialLoading(false);
     }
-  }, [pollId]);
+  }, [pollId, filter]);
 
   useEffect(() => {
     if (pollId) {
@@ -62,37 +62,20 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
 
   if (initialLoading) {
     return (
-      <div className={`${CARD_CLASS} ${className}`}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
-          {/* Shimmer effect for loading voter bubbles */}
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div
-              key={i}
-              className="animate-pulse inline-block px-3 py-1 rounded-full bg-gray-200 dark:bg-gray-700"
-              style={{
-                width: `${60 + (i * 15) % 40}px`,
-                height: '28px'
-              }}
-            />
-          ))}
-        </div>
+      <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+        <span className="text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>✓</span>
+        {[1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
+            style={{ width: `${50 + (i * 12) % 30}px`, height: '24px' }}
+          />
+        ))}
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className={`${CARD_CLASS} ${className}`}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">Respondents</span>
-          <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (voters.length === 0) {
+  if (error || voters.length === 0) {
     return null;
   }
 
@@ -102,48 +85,34 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
     try {
       const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
       return pollVoteIds[pollId] || null;
-    } catch (error) {
-      console.error('Error getting vote ID:', error);
+    } catch {
       return null;
     }
   };
 
   const currentUserVoteId = getUserVoteId();
-
-  // Check if current user is in the voter list (could be named or anonymous)
   const currentUserVote = currentUserVoteId
     ? voters.find(v => v.id === currentUserVoteId)
     : null;
 
-  // Get named voters (excluding anonymous ones and current user if anonymous)
   let allNamedVoters = voters
     .filter(vote => vote.voter_name && vote.voter_name.trim() !== '')
-    .sort((a, b) => {
-      const nameA = (a.voter_name || '').toLowerCase();
-      const nameB = (b.voter_name || '').toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
+    .sort((a, b) => (a.voter_name || '').toLowerCase().localeCompare((b.voter_name || '').toLowerCase()));
 
-  // Separate current user from other named voters
   const currentUserIsNamed = currentUserVote && currentUserVote.voter_name && currentUserVote.voter_name.trim() !== '';
 
   const otherVoters = currentUserIsNamed
     ? allNamedVoters.filter(v => v.id !== currentUserVote.id)
     : allNamedVoters;
 
-  // Combine: current user first (if named or exists), then others
-  const namedVoters = currentUserIsNamed
+  const namedVoters = currentUserVote
     ? [currentUserVote, ...otherVoters]
-    : currentUserVote
-      ? [currentUserVote, ...otherVoters]  // Include anonymous current user
-      : otherVoters;
+    : otherVoters;
 
-  // Adjust anonymous count to exclude current user if they voted anonymously
   const adjustedAnonymousCount = currentUserVote && !currentUserIsNamed
     ? anonymousCount - 1
     : anonymousCount;
 
-  // Generate consistent colors for voter bubbles
   const getVoterColor = (index: number) => {
     const colors = [
       'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -159,38 +128,34 @@ export default function VoterList({ pollId, className = "", refreshTrigger }: Vo
   };
 
   return (
-    <div className={`${CARD_CLASS} ${className}`}>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-lg font-bold text-gray-900 dark:text-white mr-1">
-          Respondents ({voters.length})
-        </span>
+    <div className={`flex flex-wrap items-center gap-1.5 ${className}`}>
+      <span className="text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
+        ✓ {voters.length}
+      </span>
 
-        {/* Named voters - displayed as colored bubbles in a flowing layout */}
-        {namedVoters.map((voter, index) => {
-          const isCurrentUser = currentUserVote && voter.id === currentUserVote.id;
-          const displayName = isCurrentUser
-            ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
-            : voter.voter_name;
+      {namedVoters.map((voter, index) => {
+        const isCurrentUser = currentUserVote && voter.id === currentUserVote.id;
+        const displayName = isCurrentUser
+          ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
+          : voter.voter_name;
 
-          return (
-            <span
-              key={voter.id}
-              className={`inline-block px-3 py-1 rounded-full text-sm ${
-                isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
-              } ${getVoterColor(index)}`}
-            >
-              {displayName}
-            </span>
-          );
-        })}
-
-        {/* Anonymous voters count */}
-        {adjustedAnonymousCount > 0 && (
-          <span className="inline-block px-3 py-1 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 italic">
-            {adjustedAnonymousCount} × Anonymous
+        return (
+          <span
+            key={voter.id}
+            className={`inline-block px-2.5 py-0.5 rounded-full text-xs ${
+              isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+            } ${getVoterColor(index)}`}
+          >
+            {displayName}
           </span>
-        )}
-      </div>
+        );
+      })}
+
+      {adjustedAnonymousCount > 0 && (
+        <span className="inline-block px-2.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic">
+          {adjustedAnonymousCount} × Anon
+        </span>
+      )}
     </div>
   );
 }

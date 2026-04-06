@@ -109,6 +109,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
 
+  // Stable filter callbacks for VoterList
+  const suggestionsVoterFilter = useCallback((v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0), []);
+  const rankingsVoterFilter = useCallback((v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0), []);
 
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
@@ -1770,10 +1773,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     ) : null}
                   </div>
 
-                  {/* Voter list for open ranked choice polls */}
+                  {/* Voter lists for open ranked choice polls */}
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
+                    <div className="mt-4 space-y-2">
+                      {hasSuggestionPhase ? (
+                        <>
+                          <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Suggested" filter={suggestionsVoterFilter} />
+                          <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
+                        </>
+                      ) : (
+                        <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
+                      )}
                     </div>
                   )}
                 </div>

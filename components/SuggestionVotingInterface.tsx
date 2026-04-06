@@ -4,6 +4,10 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
+import type { ApiVote } from "@/lib/api";
+
+const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
+const hasRankings = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
@@ -225,10 +229,11 @@ export default function SuggestionVotingInterface({
           )}
         </div>
 
-        {/* Voter list for open suggestion polls */}
+        {/* Voter lists for suggestion polls */}
         {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-8">
-            <VoterList pollId={poll.id} refreshTrigger={0} />
+          <div className="mt-4 space-y-2">
+            <VoterList pollId={poll.id} refreshTrigger={0} label="Suggested" filter={hasSuggestions} />
+            <VoterList pollId={poll.id} refreshTrigger={0} label="Ranked" filter={hasRankings} />
           </div>
         )}
       </div>
