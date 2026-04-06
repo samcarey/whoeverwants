@@ -110,6 +110,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const noPreferenceContainerRef = useRef<HTMLDivElement>(null);
   const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Synchronous refs for tap/drag disambiguation (React state is async,
+  // so pointerup can fire before re-render and miss the drag state)
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedIdForTapRef = useRef<string | null>(null);
+  const tapHandledRef = useRef(false);
+
   // Update positions of all items based on current order
   const updateItemPositions = useCallback((itemList: RankableOption[]) => {
     return itemList.map((item, index) => ({
@@ -412,9 +418,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     };
 
     const handleEnd = () => {
-      if (dragState.isDragging) {
+      if (dragState.isDragging && !tapHandledRef.current) {
         finishDrag();
       }
+      // Clear refs on any pointer end
+      dragStartPosRef.current = null;
+      draggedIdForTapRef.current = null;
+      tapHandledRef.current = false;
     };
 
     // During active drag, completely freeze the page to prevent
@@ -712,6 +722,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     // here and prevents the hosting view (e.g. SFSafariViewController sheet)
     // from intercepting the touch as a dismiss gesture.
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+    // Set refs synchronously so pointerup can detect taps even before React re-renders
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    draggedIdForTapRef.current = id;
+    tapHandledRef.current = false;
+
     startDrag(e, id);
   }, [disabled, startDrag]);
 
@@ -1024,7 +1040,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                     </div>
 
-                    {/* Right side: combined drag handle with tap zones for reordering */}
+                    {/* Right side: combined drag handle with tap zones for reordering
+                         Drag starts on pointerdown; if released without moving, treated as tap */}
                     {!disabled && (
                       <div
                         className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
@@ -1034,42 +1051,41 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                           zIndex: 2
                         }}
                         onPointerDown={!disabled ? (e) => {
-                          // Determine if the tap is in the top or bottom third
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          const relativeY = e.clientY - rect.top;
-                          const third = rect.height / 3;
-
-                          if (listType === 'noPreference') {
-                            // In exclusion area: any tap moves to bottom of main list
-                            e.preventDefault();
-                            e.stopPropagation();
-                            moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
-                            return;
-                          }
-
-                          if (relativeY < third) {
-                            // Top third: move up (or do nothing if already at top)
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (index > 0) {
-                              moveItemInList(listType, index, index - 1);
-                            }
-                            return;
-                          } else if (relativeY > third * 2) {
-                            // Bottom third: move down, or to exclusion area if at bottom
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (index < listItems.length - 1) {
-                              moveItemInList(listType, index, index + 1);
-                            } else {
-                              // At bottom of main list: move to exclusion area
-                              moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
-                            }
-                            return;
-                          }
-
-                          // Middle third: start drag
+                          // Always start drag — tap detection happens on pointerup
                           handlePointerStart(e, option.id);
+                        } : undefined}
+                        onPointerUp={!disabled ? (e) => {
+                          // Use refs for tap detection (React state may not have updated yet)
+                          const startPos = dragStartPosRef.current;
+                          const draggedId = draggedIdForTapRef.current;
+                          if (startPos && draggedId === option.id) {
+                            const dx = Math.abs(e.clientX - startPos.x);
+                            const dy = Math.abs(e.clientY - startPos.y);
+                            if (dx < 8 && dy < 8) {
+                              // It was a tap, not a drag — mark as handled so document handler skips finishDrag
+                              tapHandledRef.current = true;
+                              // Cancel the drag without applying drag-based repositioning
+                              finishDrag();
+
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              const relativeY = e.clientY - rect.top;
+                              const half = rect.height / 2;
+
+                              if (listType === 'noPreference') {
+                                moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
+                              } else if (relativeY < half) {
+                                if (index > 0) {
+                                  moveItemInList(listType, index, index - 1);
+                                }
+                              } else {
+                                if (index < listItems.length - 1) {
+                                  moveItemInList(listType, index, index + 1);
+                                } else {
+                                  moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
+                                }
+                              }
+                            }
+                          }
                         } : undefined}
                         title=""
                       >
