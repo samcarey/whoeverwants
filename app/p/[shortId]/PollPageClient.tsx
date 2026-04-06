@@ -75,6 +75,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
   const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
+  const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   // Don't automatically assume poll was reopened just because deadline passed
   // Only set manuallyReopened when explicitly reopened by creator action
@@ -730,6 +731,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Memoize parsed options to prevent re-parsing on every render
   // During suggestion phase (poll.options is null), derive options from suggestion_counts
   const pollOptions = useMemo(() => {
+    if (optionsOverride) {
+      return optionsOverride;
+    }
     if (poll.options) {
       return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
     }
@@ -737,7 +741,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       return pollResults.suggestion_counts.map((sc: { option: string }) => sc.option);
     }
     return [];
-  }, [poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
+  }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
 
   // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
@@ -859,6 +863,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (updatedPoll) {
         // Update the suggestion deadline so the UI exits suggestion phase
         setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
+        // Update options from the finalized poll so the ranking ballot can render
+        if (updatedPoll.options) {
+          const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
+          setOptionsOverride(opts);
+        }
       }
     } catch (error) {
       console.error('Error cutting off suggestions:', error);
