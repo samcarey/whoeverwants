@@ -417,17 +417,26 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       }
     };
 
-    // During active drag, suppress native touch gestures globally.
-    // This prevents SFSafariViewController's sheet dismiss gesture
-    // (and similar in-app browser overlays) from intercepting vertical drags.
+    // During active drag, completely freeze the page to prevent
+    // SFSafariViewController's sheet dismiss gesture from firing.
+    // The sheet's dismiss is triggered by overscroll at the top of the page,
+    // so we lock the body in place and block all scroll/overscroll propagation.
     const handleTouchMove = (e: TouchEvent) => {
       if (dragState.isDragging) {
         e.preventDefault();
       }
     };
 
+    let savedScrollY = 0;
     if (dragState.isDragging) {
+      savedScrollY = window.scrollY;
       document.body.style.touchAction = 'none';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${savedScrollY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overscrollBehavior = 'none';
       document.addEventListener('touchmove', handleTouchMove, { passive: false });
     }
 
@@ -443,6 +452,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       document.removeEventListener('touchmove', handleTouchMove);
       if (dragState.isDragging) {
         document.body.style.touchAction = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.overflow = '';
+        document.documentElement.style.overscrollBehavior = '';
+        window.scrollTo(0, savedScrollY);
       }
     };
   }, [dragState.isDragging, handleDragMove, finishDrag]);
