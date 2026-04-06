@@ -565,9 +565,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             if (hasSuggestionPhase && !isPollClosed) {
               fetchPollResults();
             }
-            
+
             // Set UI state based on vote data from database columns
-            setIsAbstaining(voteData.is_abstain || false);
+            // During suggestion phase with pre-ranking, don't restore abstain from server —
+            // the abstain only applied to suggestions, user should still be able to rank
+            const shouldRestoreAbstain = voteData.is_abstain && !(hasSuggestionPhase && canSubmitRankings);
+            setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
             } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
@@ -1876,7 +1879,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             key={isEditingVote ? 'editing' : 'new'}
                             options={pollOptions}
                             onRankingChange={handleRankingChange}
-                            disabled={isSubmitting || isAbstaining}
+                            disabled={isSubmitting || (isAbstaining && !canSubmitSuggestions)}
                             storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                             initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                             optionsMetadata={optionsMetadataLocal}
