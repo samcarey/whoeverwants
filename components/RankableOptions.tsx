@@ -1027,19 +1027,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   aria-describedby={`${option.id}-instructions`}
                 >
                   <div className="flex items-center justify-between h-full relative">
-                    {/* Left drag handle with grabbable region */}
-                    <div
-                      className="absolute -left-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
-                      style={{
-                        width: 'calc(20% + 0.75rem)',
-                        touchAction: 'none',
-                        zIndex: 2
-                      }}
-                      onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
-                      title=""
-                    />
-
-                    {/* Center content - not grabbable */}
+                    {/* Content area - not draggable, allows normal scrolling */}
                     <div className={`flex-1 flex items-center pr-12 min-w-0 ${
                       disabled
                         ? 'text-gray-500 dark:text-gray-400'
@@ -1156,7 +1144,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   };
 
   const renderRankableInterface = () => (
-    <div style={{ touchAction: 'none' }}>
+    <div>
       {/* Main ranking list */}
       {renderListContainer(
         mainList,
