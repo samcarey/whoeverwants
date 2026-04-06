@@ -1299,6 +1299,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
           // Case 4: Poll is still open and not expired - show countdown
           if (!isPollClosed && !isExpired && deadline) {
+            // During suggestion phase, show suggestion deadline instead of response deadline
+            if (inSuggestionPhase && poll.suggestion_deadline) {
+              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions close" />;
+            }
             return <Countdown deadline={poll.response_deadline || null} />;
           }
 
@@ -1311,8 +1315,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return null;
         })()}
         
-        {/* Preliminary results shown ABOVE ballot when user has already voted */}
-        {hasVoted && !isEditingVote && preliminaryResultsBlock("pt-2.5")}
+        {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
