@@ -1814,13 +1814,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     />
                   )}
 
-                  {/* Suggestion respondents */}
-                  {canSubmitSuggestions && hasVoted && !isEditingVote && !isLoadingVoteData && (
-                    <div className="mt-2 mb-3">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Suggested" filter={suggestionsVoterFilter} />
-                    </div>
-                  )}
-
                   {/* Suggestion phase disclaimer when pre-ranking is allowed and user has voted */}
                   {canSubmitSuggestions && canSubmitRankings && hasVoted && !isEditingVote && pollOptions.length > 0 && (
                     <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
