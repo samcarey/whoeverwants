@@ -1052,8 +1052,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         className="absolute -right-3 cursor-grab active:cursor-grabbing"
                         style={{
                           width: 'calc(20% + 0.75rem)',
-                          top: `-${gapSize / 2}px`,
-                          bottom: `-${gapSize / 2}px`,
+                          top: `-${12 + gapSize / 2}px`,
+                          bottom: `-${12 + gapSize / 2}px`,
                           touchAction: 'none',
                           zIndex: 2,
                           border: '2px solid red',
