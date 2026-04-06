@@ -629,10 +629,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
             <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
           </div>
-          <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
-            <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
-            <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
-            <div className="w-4 h-0.5 bg-gray-600"></div>
+          <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </div>
         </div>
       </div>
@@ -1013,7 +1016,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     />
 
                     {/* Center content - not grabbable */}
-                    <div className={`flex-1 flex items-center pr-12 min-w-0 ${
+                    <div className={`flex-1 flex items-center pr-10 min-w-0 ${
                       disabled
                         ? 'text-gray-500 dark:text-gray-400'
                         : 'text-gray-900 dark:text-white'
@@ -1021,24 +1024,45 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                     </div>
 
-                    {/* Right drag handle with grabbable region */}
+                    {/* Right side: up/down arrow buttons for tap-based reordering */}
                     {!disabled && (
-                      <div
-                        className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
-                        style={{
-                          width: 'calc(20% + 0.75rem)',
-                          touchAction: 'none',
-                          zIndex: 2
-                        }}
-                        onPointerDown={(e) => handlePointerStart(e, option.id)}
-                        title=""
-                      >
-                        {/* Visual hamburger menu - positioned within the grabbable area */}
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
-                          <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                          <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                          <div className="w-4 h-0.5 bg-gray-400"></div>
-                        </div>
+                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col gap-0.5" style={{ zIndex: 2 }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (index > 0) moveItemInList(listType, index, index - 1);
+                          }}
+                          disabled={index === 0}
+                          className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                            index === 0
+                              ? 'text-gray-300 dark:text-gray-600'
+                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600'
+                          }`}
+                          aria-label="Move up"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="18 15 12 9 6 15" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (index < listItems.length - 1) moveItemInList(listType, index, index + 1);
+                          }}
+                          disabled={index === listItems.length - 1}
+                          className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${
+                            index === listItems.length - 1
+                              ? 'text-gray-300 dark:text-gray-600'
+                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600'
+                          }`}
+                          aria-label="Move down"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
                       </div>
                     )}
                   </div>
