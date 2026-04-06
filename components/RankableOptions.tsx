@@ -702,9 +702,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
   const handlePointerStart = useCallback((e: React.PointerEvent, id: string) => {
     if (disabled) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
+    // Capture the pointer to this element — routes all subsequent pointer events
+    // here and prevents the hosting view (e.g. SFSafariViewController sheet)
+    // from intercepting the touch as a dismiss gesture.
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     startDrag(e, id);
   }, [disabled, startDrag]);
 
@@ -1054,7 +1058,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   };
 
   const renderRankableInterface = () => (
-    <div>
+    <div style={{ touchAction: 'none' }}>
       {/* Main ranking list */}
       {renderListContainer(
         mainList,
