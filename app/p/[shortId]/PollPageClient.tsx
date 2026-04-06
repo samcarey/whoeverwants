@@ -2009,8 +2009,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
 
-          {/* Preliminary results shown BELOW ballot when user hasn't voted yet */}
-          {(!hasVoted || isEditingVote) && preliminaryResultsBlock("mt-6")}
+          {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
