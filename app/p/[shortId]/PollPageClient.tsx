@@ -1143,6 +1143,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       // Refresh suggestion list for polls with suggestion phase
       if (hasSuggestionPhase) {
+        // Reset abstain so the ranking ballot is usable after suggestion submission
+        // (abstaining from suggestions shouldn't block ranking)
+        if (isAbstaining && canSubmitRankings) {
+          setIsAbstaining(false);
+        }
         setTimeout(async () => {
           await loadExistingSuggestions(false);
           await fetchPollResults();
