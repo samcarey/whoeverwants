@@ -417,6 +417,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       }
     };
 
+    // During active drag, suppress native touch gestures globally.
+    // This prevents SFSafariViewController's sheet dismiss gesture
+    // (and similar in-app browser overlays) from intercepting vertical drags.
+    const handleTouchMove = (e: TouchEvent) => {
+      if (dragState.isDragging) {
+        e.preventDefault();
+      }
+    };
+
+    if (dragState.isDragging) {
+      document.body.style.touchAction = 'none';
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    }
+
     // Add event listeners to document for better capture
     document.addEventListener('pointermove', handleMove);
     document.addEventListener('pointerup', handleEnd);
@@ -426,6 +440,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       document.removeEventListener('pointermove', handleMove);
       document.removeEventListener('pointerup', handleEnd);
       document.removeEventListener('pointercancel', handleEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      if (dragState.isDragging) {
+        document.body.style.touchAction = '';
+      }
     };
   }, [dragState.isDragging, handleDragMove, finishDrag]);
 
