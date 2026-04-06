@@ -1049,9 +1049,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                          Drag starts on pointerdown; if released without moving, treated as tap */}
                     {!disabled && (
                       <div
-                        className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                        className="absolute -right-3 cursor-grab active:cursor-grabbing"
                         style={{
                           width: 'calc(20% + 0.75rem)',
+                          top: `-${gapSize / 2}px`,
+                          bottom: `-${gapSize / 2}px`,
                           touchAction: 'none',
                           zIndex: 2
                         }}
