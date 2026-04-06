@@ -878,7 +878,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       suggestionChoicesData: suggestionChoices
     });
 
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+    // During suggestion phase with pre-ranking, submitting rankings after the initial
+    // suggestion vote is an implicit edit (updating the existing vote with rankings)
+    const isImplicitEdit = hasVoted && !isEditingVote && canSubmitSuggestions && canSubmitRankings;
+    if (isImplicitEdit) {
+      setIsEditingVote(true);
+    }
+
+    if (isSubmitting || (hasVoted && !isEditingVote && !isImplicitEdit) || isPollClosed) {
       await logToServer('suggestion-vote', 'warn', 'handleVoteClick early return', {
         reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
       });
