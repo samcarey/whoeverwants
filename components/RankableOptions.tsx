@@ -1056,8 +1056,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                           bottom: `-${12 + gapSize / 2}px`,
                           touchAction: 'none',
                           zIndex: 2,
-                          border: '2px solid red',
-                          background: 'rgba(255,0,0,0.1)'
                         }}
                         onPointerDown={!disabled ? (e) => {
                           // Always start drag — tap detection happens on pointerup
