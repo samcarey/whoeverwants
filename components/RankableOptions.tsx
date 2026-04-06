@@ -1060,6 +1060,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         onPointerUp={!disabled ? (e) => {
                           // If drag never started (pointer moved <8px), it's a tap
                           const pending = pendingDragRef.current;
+                          console.log('[TAP] pointerUp, pending:', !!pending, 'started:', pending?.started, 'id match:', pending?.id === option.id);
                           if (pending && !pending.started && pending.id === option.id) {
                             pendingDragRef.current = null; // Clear before document handler runs
 
@@ -1067,16 +1068,22 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             const relativeY = e.clientY - rect.top;
                             const half = rect.height / 2;
 
+                            console.log('[TAP] detected tap on', option.text, 'listType:', listType, 'index:', index, 'relativeY:', relativeY.toFixed(0), 'half:', half.toFixed(0));
+
                             if (listType === 'noPreference') {
+                              console.log('[TAP] moving from noPreference to main');
                               moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
                             } else if (relativeY < half) {
                               if (index > 0) {
+                                console.log('[TAP] moving UP from', index, 'to', index - 1);
                                 moveItemInList(listType, index, index - 1);
                               }
                             } else {
                               if (index < listItems.length - 1) {
+                                console.log('[TAP] moving DOWN from', index, 'to', index + 1);
                                 moveItemInList(listType, index, index + 1);
                               } else {
+                                console.log('[TAP] moving to noPreference (was last in main)');
                                 moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
                               }
                             }
