@@ -920,11 +920,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
-        await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, suggestionChoices, isAbstaining, canSubmitSuggestions });
-        setVoteError(canSubmitSuggestions
-          ? "Please add or second at least one suggestion, or select Abstain"
-          : "Please rank at least one option or select Abstain");
-        return;
+        if (canSubmitSuggestions) {
+          // During suggestion phase, submitting with nothing selected is an implicit abstain
+          setIsAbstaining(true);
+        } else {
+          await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, suggestionChoices, isAbstaining, canSubmitSuggestions });
+          setVoteError("Please rank at least one option or select Abstain");
+          return;
+        }
       }
     }
 
@@ -1013,11 +1016,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const filteredSuggestionsForValidation = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
 
         if (filteredRankedChoices.length === 0 && !isAbstaining && (!canSubmitSuggestions || filteredSuggestionsForValidation.length === 0)) {
-          setVoteError(canSubmitSuggestions
-            ? "Please add or second at least one suggestion, or select Abstain"
-            : "Please rank at least one option or select Abstain");
-          setIsSubmitting(false);
-          return;
+          if (!canSubmitSuggestions) {
+            setVoteError("Please rank at least one option or select Abstain");
+            setIsSubmitting(false);
+            return;
+          }
+          // During suggestion phase, empty submission is treated as abstain (handled by finalAbstain below)
         }
         
         // Additional validation: ensure choices are valid poll options
