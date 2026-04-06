@@ -1847,7 +1847,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   {/* Ranking section — independent component with its own edit state */}
                   <RankingSection
                     poll={poll}
-                    pollId={pollId}
+                    pollId={pollId || ''}
                     pollOptions={pollOptions}
                     rankedChoices={rankedChoices}
                     handleRankingChange={handleRankingChange}

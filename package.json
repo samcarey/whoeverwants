@@ -21,7 +21,7 @@
     "test:validate": "node tests/run-specific-tests.js all --coverage",
     "debug:console": "node scripts/debug-console.cjs",
     "debug:react": "node scripts/debug-react-state.cjs",
-"test:e2e": "playwright test --config=tests/e2e/config/playwright.config.ts",
+    "test:e2e": "playwright test --config=tests/e2e/config/playwright.config.ts",
     "test:e2e:verbose": "playwright test --config=tests/e2e/config/playwright.config.ts --reporter=line",
     "test:e2e:report": "playwright show-report",
     "test:e2e:codegen": "playwright codegen http://localhost:3000",
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@ncdai/react-wheel-picker": "^1.0.17",
+    "geist": "^1.7.0",
     "next": "^16.2.0",
     "pushover-notifications": "^1.2.3",
     "react": "^19.2.4",
