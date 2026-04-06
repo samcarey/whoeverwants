@@ -1398,7 +1398,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         })()}
         
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
-        {hasVoted && !isEditingVote && !inSuggestionPhase && preliminaryResultsBlock("pt-2.5")}
+        {/* For suggestion-phase polls, only show after user has submitted rankings, not just suggestions */}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && (!hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain) && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1933,7 +1934,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && preliminaryResultsBlock("mt-6")}
+          {/* For suggestion-phase polls, hide until user has submitted rankings */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
