@@ -98,7 +98,7 @@ export default function RankingSection({
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
           <p className="text-blue-800 dark:text-blue-200 text-sm">
             Ranking will open after suggestions cutoff in{' '}
-            <Countdown deadline={poll.suggestion_deadline!} onExpire={() => {}} />
+            <Countdown deadline={poll.suggestion_deadline!} />
           </p>
         </div>
       );
