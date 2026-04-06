@@ -1767,7 +1767,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted && !isEditingVote ? (
+              ) : hasVoted && !isEditingVote && !canSubmitSuggestions ? (
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
