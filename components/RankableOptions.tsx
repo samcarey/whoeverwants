@@ -110,11 +110,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const noPreferenceContainerRef = useRef<HTMLDivElement>(null);
   const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Synchronous refs for tap/drag disambiguation (React state is async,
-  // so pointerup can fire before re-render and miss the drag state)
-  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
-  const draggedIdForTapRef = useRef<string | null>(null);
-  const tapHandledRef = useRef(false);
+  // Pending drag ref: tracks pointer-down state before drag actually starts.
+  // Drag only starts after the pointer moves >8px — taps never enter drag state.
+  const pendingDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    started: boolean; // true once movement threshold exceeded and startDrag called
+  } | null>(null);
 
   // Update positions of all items based on current order
   const updateItemPositions = useCallback((itemList: RankableOption[]) => {
@@ -176,19 +179,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     return null;
   }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList]);
 
-  // Get coordinates from either mouse or touch event
-  const getEventCoords = useCallback((e: React.PointerEvent | PointerEvent) => {
-    return { x: e.clientX, y: e.clientY };
-  }, []);
-
-  // Start dragging an item
-  const startDrag = useCallback((e: React.PointerEvent, id: string) => {
+  // Start dragging an item (called after pointer has moved beyond threshold)
+  const startDrag = useCallback((clientX: number, clientY: number, id: string) => {
     if (disabled || dragState.isDragging) return;
 
     // Find the item in either list
     let itemIndex = mainList.findIndex(item => item.id === id);
     let sourceList: 'main' | 'noPreference' = 'main';
-    
+
     if (itemIndex === -1) {
       itemIndex = noPreferenceList.findIndex(item => item.id === id);
       sourceList = 'noPreference';
@@ -199,7 +197,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     if (!element) return;
 
     const rect = element.getBoundingClientRect();
-    const coords = getEventCoords(e);
 
     // Store drag state
     setDragState({
@@ -210,19 +207,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       sourceList,
       targetList: sourceList,
       mouseOffset: {
-        x: coords.x - rect.left,
-        y: coords.y - rect.top
+        x: clientX - rect.left,
+        y: clientY - rect.top
       },
-      mousePosition: coords
+      mousePosition: { x: clientX, y: clientY }
     });
-  }, [disabled, dragState.isDragging, mainList, noPreferenceList, getEventCoords]);
+  }, [disabled, dragState.isDragging, mainList, noPreferenceList]);
 
   // Handle drag movement
   const handleDragMove = useCallback((e: PointerEvent) => {
     if (!dragState.isDragging) return;
 
     e.preventDefault();
-    const coords = getEventCoords(e);
+    const coords = { x: e.clientX, y: e.clientY };
     const dropTarget = getDropTarget(coords.x, coords.y);
 
     let newTargetList = dragState.targetList;
@@ -322,7 +319,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         }
       });
     }
-  }, [dragState, getEventCoords, getDropTarget, totalItemHeight]);
+  }, [dragState, getDropTarget, totalItemHeight]);
 
   // Complete the drag operation
   const finishDrag = useCallback(() => {
@@ -412,19 +409,29 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   // Set up event listeners
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
+      // Check for pending drag that hasn't started yet
+      const pending = pendingDragRef.current;
+      if (pending && !pending.started) {
+        const dx = Math.abs(e.clientX - pending.startX);
+        const dy = Math.abs(e.clientY - pending.startY);
+        if (dx > 8 || dy > 8) {
+          // Movement exceeded threshold — start the actual drag
+          pending.started = true;
+          startDrag(pending.startX, pending.startY, pending.id);
+        }
+        return; // Don't process as drag move until next event after startDrag re-renders
+      }
+
       if (dragState.isDragging) {
         handleDragMove(e);
       }
     };
 
     const handleEnd = () => {
-      if (dragState.isDragging && !tapHandledRef.current) {
+      if (dragState.isDragging) {
         finishDrag();
       }
-      // Clear refs on any pointer end
-      dragStartPosRef.current = null;
-      draggedIdForTapRef.current = null;
-      tapHandledRef.current = false;
+      pendingDragRef.current = null;
     };
 
     // During active drag, completely freeze the page to prevent
@@ -471,7 +478,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         window.scrollTo(0, savedScrollY);
       }
     };
-  }, [dragState.isDragging, handleDragMove, finishDrag]);
+  }, [dragState.isDragging, handleDragMove, finishDrag, startDrag]);
 
   // Track if component has mounted
   const hasMountedRef = useRef(false);
@@ -723,13 +730,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     // from intercepting the touch as a dismiss gesture.
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
-    // Set refs synchronously so pointerup can detect taps even before React re-renders
-    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
-    draggedIdForTapRef.current = id;
-    tapHandledRef.current = false;
-
-    startDrag(e, id);
-  }, [disabled, startDrag]);
+    // Only record intent — actual drag starts after pointer moves >8px
+    pendingDragRef.current = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      started: false
+    };
+  }, [disabled]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent, id: string) => {
@@ -1055,34 +1063,26 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                           handlePointerStart(e, option.id);
                         } : undefined}
                         onPointerUp={!disabled ? (e) => {
-                          // Use refs for tap detection (React state may not have updated yet)
-                          const startPos = dragStartPosRef.current;
-                          const draggedId = draggedIdForTapRef.current;
-                          if (startPos && draggedId === option.id) {
-                            const dx = Math.abs(e.clientX - startPos.x);
-                            const dy = Math.abs(e.clientY - startPos.y);
-                            if (dx < 8 && dy < 8) {
-                              // It was a tap, not a drag — mark as handled so document handler skips finishDrag
-                              tapHandledRef.current = true;
-                              // Cancel the drag without applying drag-based repositioning
-                              finishDrag();
+                          // If drag never started (pointer moved <8px), it's a tap
+                          const pending = pendingDragRef.current;
+                          if (pending && !pending.started && pending.id === option.id) {
+                            pendingDragRef.current = null; // Clear before document handler runs
 
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              const relativeY = e.clientY - rect.top;
-                              const half = rect.height / 2;
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const relativeY = e.clientY - rect.top;
+                            const half = rect.height / 2;
 
-                              if (listType === 'noPreference') {
-                                moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
-                              } else if (relativeY < half) {
-                                if (index > 0) {
-                                  moveItemInList(listType, index, index - 1);
-                                }
+                            if (listType === 'noPreference') {
+                              moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
+                            } else if (relativeY < half) {
+                              if (index > 0) {
+                                moveItemInList(listType, index, index - 1);
+                              }
+                            } else {
+                              if (index < listItems.length - 1) {
+                                moveItemInList(listType, index, index + 1);
                               } else {
-                                if (index < listItems.length - 1) {
-                                  moveItemInList(listType, index, index + 1);
-                                } else {
-                                  moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
-                                }
+                                moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
                               }
                             }
                           }
