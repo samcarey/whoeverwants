@@ -80,7 +80,13 @@ export default function RankingSection({
 
   const editButton = !isPollClosed && !isLoadingVoteData ? (
     <button
-      onClick={() => setIsEditingRanking(true)}
+      onClick={() => {
+        // Restore abstain state if user previously abstained from ranking
+        if (abstainedNoRanking && !hasSubmittedRankings) {
+          setIsAbstaining(true);
+        }
+        setIsEditingRanking(true);
+      }}
       className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
     >
       Edit
@@ -166,7 +172,7 @@ export default function RankingSection({
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                   Select your preference
                 </h4>
-                <div className="flex gap-2">
+                <div className={`flex gap-2 transition-opacity ${isAbstaining ? 'opacity-40 pointer-events-none' : ''}`}>
                   {twoOptionDisplayOrder.map((option: string) => (
                     <button
                       key={option}
@@ -175,7 +181,7 @@ export default function RankingSection({
                         handleRankingChange([option]);
                         setIsAbstaining(false);
                       }}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isAbstaining}
                       className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                         rankedChoices[0] === option
                           ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
@@ -197,7 +203,7 @@ export default function RankingSection({
                     key={isEditingRanking ? 'editing' : 'new'}
                     options={pollOptions}
                     onRankingChange={handleRankingChange}
-                    disabled={isSubmitting || (isAbstaining && !canSubmitSuggestions)}
+                    disabled={isSubmitting || isAbstaining}
                     storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                     initialRanking={isEditingRanking && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                     optionsMetadata={optionsMetadata}
