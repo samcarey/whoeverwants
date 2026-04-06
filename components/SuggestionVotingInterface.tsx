@@ -5,14 +5,14 @@ import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import type { ApiVote } from "@/lib/api";
-
-const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
 import FollowUpHeader from "@/components/FollowUpHeader";
+
+const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 import ForkHeader from "@/components/ForkHeader";
 
 interface SuggestionVotingInterfaceProps {
