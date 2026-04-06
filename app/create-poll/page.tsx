@@ -53,13 +53,7 @@ const BASE_DEADLINE_OPTIONS = [
 ];
 
 const SUGGESTION_CUTOFF_OPTIONS = [
-  { value: "5min", label: "5 min", minutes: 5 },
-  { value: "10min", label: "10 min", minutes: 10 },
-  { value: "15min", label: "15 min", minutes: 15 },
-  { value: "30min", label: "30 min", minutes: 30 },
-  { value: "1hr", label: "1 hr", minutes: 60 },
-  { value: "2hr", label: "2 hr", minutes: 120 },
-  { value: "4hr", label: "4 hr", minutes: 240 },
+  ...BASE_DEADLINE_OPTIONS.filter(o => o.value !== 'custom'),
   { value: "8hr", label: "8 hr", minutes: 480 },
   { value: "1day", label: "1 day", minutes: 1440 },
   { value: "3day", label: "3 days", minutes: 4320 },

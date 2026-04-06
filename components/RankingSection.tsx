@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
 import Countdown from "@/components/Countdown";
 import RankableOptions from "@/components/RankableOptions";
 import AbstainButton from "@/components/AbstainButton";
@@ -93,10 +92,6 @@ export default function RankingSection({
     </button>
   ) : null;
 
-  const handleSubmit = useCallback(() => {
-    handleVoteClick();
-  }, [handleVoteClick]);
-
   if (!canSubmitRankings || pollOptions.length === 0) {
     if (!canSubmitRankings && canSubmitSuggestions) {
       return (
@@ -116,7 +111,6 @@ export default function RankingSection({
 
   return (
     <>
-      {/* Early voting header during suggestion phase */}
       {canSubmitSuggestions && !isEditingRanking && (
         <>
           <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
@@ -226,21 +220,19 @@ export default function RankingSection({
         )}
       </div>
 
-      {/* Ranking respondents */}
       {hasSuggestionPhase && hasVoted && !isEditingRanking && !isLoadingVoteData && (
         <div className="mt-2 mb-3">
           <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
         </div>
       )}
 
-      {/* Name field and submit button */}
       {showBallot && (
         <>
           <div className="mt-4">
             <CompactNameField name={voterName} setName={setVoterName} />
           </div>
           <button
-            onClick={handleSubmit}
+            onClick={handleVoteClick}
             disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}
             className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
           >

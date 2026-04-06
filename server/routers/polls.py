@@ -540,7 +540,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
     with get_db() as conn:
         # Verify poll exists and is open
         poll = conn.execute(
-            "SELECT id, is_closed, poll_type, suggestion_deadline FROM polls WHERE id = %(poll_id)s",
+            "SELECT id, is_closed, poll_type, suggestion_deadline, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not poll:
@@ -561,13 +561,8 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
 
             # Reject rankings before cutoff if pre-ranking is disabled
-            # (check allow_pre_ranking only when needed)
             if in_suggestion_phase and req.ranked_choices:
-                allow = conn.execute(
-                    "SELECT allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
-                    {"poll_id": poll_id},
-                ).fetchone()
-                if not allow["allow_pre_ranking"]:
+                if not poll["allow_pre_ranking"]:
                     raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
 
         # Validate vote structure
