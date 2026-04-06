@@ -1016,12 +1016,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     ${disabled ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
                     ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
                     border border-gray-300 dark:border-gray-500 p-3 select-none
-                    transition-colors duration-150
                   `}
                   style={{
                     top: `${option.top}px`,
                     height: `${itemHeight}px`,
-                    transition: dragState.isDragging ? 'top 0.2s ease' : 'top 0.3s ease',
+                    transition: dragState.isDragging
+                      ? 'top 0.2s ease, background-color 0.15s, color 0.15s'
+                      : 'top 0.3s ease, background-color 0.15s, color 0.15s',
                     zIndex: 1
                   }}
                   onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
