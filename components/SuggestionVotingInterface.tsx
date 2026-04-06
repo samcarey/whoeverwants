@@ -4,13 +4,15 @@ import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
+import type { ApiVote } from "@/lib/api";
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
-import GradientBorderButton from "@/components/GradientBorderButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
+
+const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 import ForkHeader from "@/components/ForkHeader";
 
 interface SuggestionVotingInterfaceProps {
@@ -37,11 +39,6 @@ interface SuggestionVotingInterfaceProps {
   pollResults: any;
   loadingResults: boolean;
   loadExistingSuggestions: () => void;
-  onFollowUpClick: () => void;
-  suggestions: string[];
-  loadingSuggestions: boolean;
-  onVoteOnSuggestionsClick: () => void;
-  autoCreatePreferences?: boolean;
   suggestionMetadata?: OptionsMetadata;
   onSuggestionMetadataChange?: (metadata: OptionsMetadata) => void;
   optionsMetadata?: OptionsMetadata | null;
@@ -71,11 +68,6 @@ export default function SuggestionVotingInterface({
   pollResults,
   loadingResults,
   loadExistingSuggestions,
-  onFollowUpClick,
-  suggestions,
-  loadingSuggestions,
-  onVoteOnSuggestionsClick,
-  autoCreatePreferences,
   suggestionMetadata,
   onSuggestionMetadataChange,
   optionsMetadata,
@@ -236,63 +228,10 @@ export default function SuggestionVotingInterface({
           )}
         </div>
 
-        {/* Follow Up Button - shown when poll is open and user has voted */}
+        {/* Suggestion respondents */}
         {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4 flex justify-between items-center">
-            <GradientBorderButton
-              onClick={onFollowUpClick}
-              gradient="blue-purple"
-            >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              <span className="font-semibold">Follow up</span>
-            </GradientBorderButton>
-            {suggestions.length >= 2 && !autoCreatePreferences && (
-              <GradientBorderButton
-                onClick={onVoteOnSuggestionsClick}
-                disabled={loadingSuggestions}
-                gradient="red-orange"
-              >
-                {loadingSuggestions ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 718-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span className="font-semibold">Loading...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold">Vote on it</span>
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                    </svg>
-                  </>
-                )}
-              </GradientBorderButton>
-            )}
-          </div>
-        )}
-
-        {!isPollClosed && !isLoadingVoteData && autoCreatePreferences && (
-          <p className="mt-3 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            A preferences poll will be created automatically when this poll closes.
-          </p>
-        )}
-
-        {/* Show follow-up/fork header after Follow up button when voted */}
-        {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-4">
-            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-          </div>
-        )}
-
-        {/* Voter list for open suggestion polls - shown after Follow-up button when voted */}
-        {!isPollClosed && !isLoadingVoteData && (
-          <div className="mt-8">
-            <VoterList pollId={poll.id} refreshTrigger={0} />
+          <div className="mt-5">
+            <VoterList pollId={poll.id} refreshTrigger={0} label="Suggested" filter={hasSuggestions} />
           </div>
         )}
       </div>
@@ -363,7 +302,6 @@ export default function SuggestionVotingInterface({
             options={newSuggestions}
             setOptions={setNewSuggestions}
             isLoading={isSubmitting}
-            pollType="suggestion"
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
             category={poll.category || 'custom'}
             optionsMetadata={suggestionMetadata}

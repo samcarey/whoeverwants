@@ -4,9 +4,11 @@ import { useState, useEffect } from "react";
 
 interface CountdownProps {
   deadline: string | null;
+  label?: string;
+  onExpire?: () => void;
 }
 
-export default function Countdown({ deadline }: CountdownProps) {
+export default function Countdown({ deadline, label, onExpire }: CountdownProps) {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isExpired, setIsExpired] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -26,6 +28,7 @@ export default function Countdown({ deadline }: CountdownProps) {
       if (difference <= 0) {
         setIsExpired(true);
         setTimeLeft("Completed");
+        onExpire?.();
         return;
       }
 
@@ -89,7 +92,7 @@ export default function Countdown({ deadline }: CountdownProps) {
         ? 'text-red-700 dark:text-red-300' 
         : 'text-blue-700 dark:text-blue-300'
       }`}>
-        {isExpired ? `Poll Ended` : `Closing in ${timeLeft}`}
+        {isExpired ? (label ? `${label} ended` : `Poll Ended`) : `${label || 'Closing'} in ${timeLeft}`}
       </span>
     </div>
   );

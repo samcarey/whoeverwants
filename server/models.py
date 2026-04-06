@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 class PollType(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
-    suggestion = "suggestion"
     participation = "participation"
 
 
@@ -33,8 +32,8 @@ class CreatePollRequest(BaseModel):
     fork_of: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
-    auto_create_preferences: bool = False
-    auto_preferences_deadline_minutes: int | None = None
+    suggestion_deadline: str | None = None
+    allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
     # Location/time fields for participation polls
@@ -138,8 +137,8 @@ class PollResponse(BaseModel):
     min_participants: int | None = None
     max_participants: int | None = None
     short_id: str | None = None
-    auto_create_preferences: bool = False
-    auto_preferences_deadline_minutes: int | None = None
+    suggestion_deadline: str | None = None
+    allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
     # Location/time fields

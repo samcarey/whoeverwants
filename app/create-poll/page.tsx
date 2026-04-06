@@ -52,6 +52,15 @@ const BASE_DEADLINE_OPTIONS = [
   { value: "custom", label: "Custom", minutes: 0 },
 ];
 
+const SUGGESTION_CUTOFF_OPTIONS = [
+  ...BASE_DEADLINE_OPTIONS.filter(o => o.value !== 'custom'),
+  { value: "8hr", label: "8 hr", minutes: 480 },
+  { value: "1day", label: "1 day", minutes: 1440 },
+  { value: "3day", label: "3 days", minutes: 4320 },
+  { value: "1week", label: "1 week", minutes: 10080 },
+  { value: "custom", label: "Custom", minutes: 0 },
+];
+
 const DEV_DEADLINE_OPTIONS = [
   { value: "10sec", label: "10 sec", minutes: 1/6 },
   ...BASE_DEADLINE_OPTIONS,
@@ -102,8 +111,8 @@ function CreatePollContent() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
-  const [autoCreatePreferences, setAutoCreatePreferences] = useState(true);
-  const [autoPreferencesDeadline, setAutoPreferencesDeadline] = useState("10min");
+  const [suggestionCutoff, setSuggestionCutoff] = useState("2hr");
+  const [allowPreRanking, setAllowPreRanking] = useState(true);
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -381,15 +390,14 @@ function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'suggestion' | 'participation' => {
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' => {
     if (pollType === 'participation') {
       return 'participation';
     }
     if (category === 'yes_no') {
       return 'yes_no';
     }
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    return filledOptions.length === 0 ? 'suggestion' : 'ranked_choice';
+    return 'ranked_choice';
   };
 
 
@@ -598,7 +606,8 @@ function CreatePollContent() {
           if (forkData.poll_type === 'ranked_choice' && forkData.options) {
             setPollType('poll');
             setOptions(forkData.options);
-          } else if (forkData.poll_type === 'suggestion') {
+          } else if (forkData.poll_type === 'ranked_choice') {
+            // ranked_choice without options (e.g. suggestion phase poll)
             setPollType('poll');
             setOptions(['']);
           } else if (forkData.poll_type === 'participation') {
@@ -690,9 +699,6 @@ function CreatePollContent() {
           if (duplicateData.poll_type === 'ranked_choice') {
             setPollType('poll');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.poll_type === 'suggestion') {
-            setPollType('poll');
-            setOptions(['']);
           } else if (duplicateData.poll_type === 'participation') {
             setPollType('participation');
             setOptions(['']);
@@ -1084,8 +1090,8 @@ function CreatePollContent() {
         pollData.fork_of = forkOf;
       }
 
-      // Add category for suggestion and ranked_choice polls
-      if ((dbPollType === 'suggestion' || dbPollType === 'ranked_choice') && category !== 'custom') {
+      // Add category for ranked_choice polls
+      if (dbPollType === 'ranked_choice' && category !== 'custom') {
         pollData.category = category;
       }
 
@@ -1101,17 +1107,18 @@ function CreatePollContent() {
         pollData.options_metadata = optionsMetadata;
       }
 
-      // Add options for ranked choice polls only
-      // For suggestion polls, initial options become the creator's vote (not poll content)
-      if (dbPollType === 'ranked_choice') {
+      // Add options for ranked choice polls with pre-defined options
+      // (skip for suggestion mode — options will be populated from suggestions)
+      if (dbPollType === 'ranked_choice' && filledOptions.length > 0) {
         pollData.options = filledOptions;
       }
 
-      // Add auto-create preferences settings for suggestion polls
-      if (dbPollType === 'suggestion' && autoCreatePreferences) {
-        pollData.auto_create_preferences = true;
-        pollData.auto_preferences_deadline_minutes =
-          BASE_DEADLINE_OPTIONS.find(o => o.value === autoPreferencesDeadline)?.minutes || 10;
+      // Add suggestion deadline for polls with no options (suggestion phase)
+      if (isSuggestionMode) {
+        const cutoffMinutes = SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.minutes || 120;
+        const cutoffDate = new Date(new Date().getTime() + cutoffMinutes * 60 * 1000);
+        pollData.suggestion_deadline = cutoffDate.toISOString();
+        pollData.allow_pre_ranking = allowPreRanking;
       }
 
       // Add min/max participants for participation polls
@@ -1174,8 +1181,8 @@ function CreatePollContent() {
         pollData.auto_close_after = autoCloseAfter;
       }
 
-      // Add min_responses and show_preliminary_results for preference/suggestion polls
-      if (dbPollType === 'ranked_choice' || dbPollType === 'suggestion') {
+      // Add min_responses and show_preliminary_results for preference polls
+      if (dbPollType === 'ranked_choice') {
         pollData.min_responses = minResponses;
         pollData.show_preliminary_results = showPreliminaryResults;
       }
@@ -1390,7 +1397,6 @@ function CreatePollContent() {
                 options={options}
                 setOptions={setOptions}
                 isLoading={isLoading}
-                pollType="poll"
                 category={category}
                 optionsMetadata={optionsMetadata}
                 onMetadataChange={setOptionsMetadata}
@@ -1546,43 +1552,39 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Auto-create preferences poll checkbox - shown when no options provided (suggestion mode) */}
+          {/* Suggestions Cutoff - shown when no options provided (suggestion mode) */}
           {isSuggestionMode && (
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoCreatePreferences}
-                  onChange={(e) => setAutoCreatePreferences(e.target.checked)}
-                  disabled={isLoading}
-                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Ask for preferences when closed
-                </span>
-              </label>
-              {autoCreatePreferences && (
-                <div className="ml-6">
-                  <label htmlFor="autoPreferencesDeadline" className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                    Preferences poll deadline
-                  </label>
-                  <select
-                    id="autoPreferencesDeadline"
-                    value={autoPreferencesDeadline}
-                    onChange={(e) => setAutoPreferencesDeadline(e.target.value)}
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium">
+                  <span>Suggestions Cutoff: </span>
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                    {SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowPreRanking}
+                    onChange={(e) => setAllowPreRanking(e.target.checked)}
                     disabled={isLoading}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                  >
-                    <option value="5min">5 minutes</option>
-                    <option value="10min">10 minutes</option>
-                    <option value="15min">15 minutes</option>
-                    <option value="30min">30 minutes</option>
-                    <option value="1hr">1 hour</option>
-                    <option value="2hr">2 hours</option>
-                    <option value="4hr">4 hours</option>
-                  </select>
-                </div>
-              )}
+                    className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    allow pre-ranking
+                  </span>
+                </label>
+              </div>
+              <select
+                value={suggestionCutoff}
+                onChange={(e) => setSuggestionCutoff(e.target.value)}
+                disabled={isLoading}
+                className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           )}
 

@@ -41,7 +41,7 @@ def _check_auto_close(conn, poll_id: str) -> None:
     """Auto-close a poll based on auto_close_after (respondent count) or max_participants."""
     poll = conn.execute(
         """SELECT id, poll_type, is_closed, auto_close_after, max_participants,
-                  auto_create_preferences, auto_preferences_deadline_minutes,
+                  suggestion_deadline, allow_pre_ranking,
                   sub_poll_role, parent_participation_poll_id, options
            FROM polls WHERE id = %(poll_id)s""",
         {"poll_id": poll_id},
@@ -83,31 +83,21 @@ def _check_auto_close(conn, poll_id: str) -> None:
             closed = True
 
     if closed:
-        # If we just closed a suggestion poll, activate the reserved preferences poll
-        if poll.get("auto_create_preferences"):
-            now = datetime.now(timezone.utc)
-            _activate_reserved_preferences_poll(conn, dict(poll), now)
-
         # If we just closed a ranked_choice sub-poll, resolve the winner to parent
         if poll["poll_type"] == "ranked_choice" and poll.get("sub_poll_role"):
             _resolve_sub_poll_winner(conn, dict(poll))
 
 
-def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -> None:
-    """Activate the reserved ranked_choice follow-up when a suggestion poll closes.
+def _finalize_suggestion_options(conn, poll_id: str, now: datetime) -> None:
+    """Finalize options for a ranked_choice poll after its suggestion_deadline passes.
 
-    Collects all suggestions from votes, finds the reserved placeholder poll,
-    and updates it with the suggestions as options, a deadline, and opens it.
+    Collects all unique suggestions from votes and writes them to the poll's options column.
     """
     import json
 
-    parent_id = str(parent_row["id"])
-    deadline_minutes = parent_row.get("auto_preferences_deadline_minutes") or 10
-
-    # Collect unique suggestions from all votes on the parent poll
     votes = conn.execute(
         "SELECT suggestions FROM votes WHERE poll_id = %(poll_id)s AND suggestions IS NOT NULL",
-        {"poll_id": parent_id},
+        {"poll_id": poll_id},
     ).fetchall()
 
     all_suggestions: list[str] = []
@@ -119,93 +109,17 @@ def _activate_reserved_preferences_poll(conn, parent_row: dict, now: datetime) -
                 seen.add(lower)
                 all_suggestions.append(sug.strip())
 
-    if len(all_suggestions) == 0:
-        return
-
-    # Find the reserved placeholder poll
-    reserved = conn.execute(
-        """
-        SELECT id FROM polls
-        WHERE follow_up_to = %(parent_id)s
-          AND poll_type = 'ranked_choice'
-          AND is_closed = true
-          AND options IS NULL
-        ORDER BY created_at ASC
-        LIMIT 1
-        """,
-        {"parent_id": parent_id},
-    ).fetchone()
-
-    if not reserved:
-        return  # No reserved poll found (shouldn't happen)
-
-    # Propagate options_metadata from parent for matching suggestions
-    parent_metadata = parent_row.get("options_metadata") or {}
-    child_metadata = {sug: parent_metadata[sug] for sug in all_suggestions if sug in parent_metadata} or None
-
-    if len(all_suggestions) == 1:
-        # Single suggestion: activate as already closed with uncontested winner
+    if all_suggestions:
         conn.execute(
-            """
-            UPDATE polls
-            SET options = %(options)s::jsonb,
-                is_closed = true,
-                close_reason = 'uncontested',
-                updated_at = %(now)s,
-                options_metadata = %(options_metadata)s::jsonb,
-                is_sub_poll = COALESCE(%(is_sub_poll)s, is_sub_poll),
-                sub_poll_role = COALESCE(%(sub_poll_role)s, sub_poll_role),
-                parent_participation_poll_id = COALESCE(%(parent_id)s, parent_participation_poll_id)
-            WHERE id = %(reserved_id)s
-            """,
+            """UPDATE polls SET options = %(options)s::jsonb, updated_at = %(now)s
+               WHERE id = %(poll_id)s""",
             {
                 "options": json.dumps(all_suggestions),
                 "now": now,
-                "reserved_id": str(reserved["id"]),
-                "options_metadata": json.dumps(child_metadata) if child_metadata else None,
-                "is_sub_poll": parent_row.get("is_sub_poll") or None,
-                "sub_poll_role": None,
-                "parent_id": str(parent_row["parent_participation_poll_id"]) if parent_row.get("parent_participation_poll_id") else None,
+                "poll_id": poll_id,
             },
         )
-        # Resolve winner to parent if this is a sub-poll
-        reserved_poll = conn.execute(
-            "SELECT * FROM polls WHERE id = %(id)s",
-            {"id": str(reserved["id"])},
-        ).fetchone()
-        if reserved_poll and reserved_poll.get("sub_poll_role"):
-            _resolve_sub_poll_winner(conn, dict(reserved_poll))
-        return
 
-    # 2+ suggestions: activate as open ranked choice poll
-    from datetime import timedelta
-    deadline = now + timedelta(minutes=deadline_minutes)
-
-    # Activate the reserved poll (propagate sub-poll metadata if present)
-    conn.execute(
-        """
-        UPDATE polls
-        SET options = %(options)s::jsonb,
-            response_deadline = %(deadline)s,
-            is_closed = false,
-            updated_at = %(now)s,
-            options_metadata = %(options_metadata)s::jsonb,
-            is_sub_poll = COALESCE(%(is_sub_poll)s, is_sub_poll),
-            sub_poll_role = COALESCE(%(sub_poll_role)s, sub_poll_role),
-            parent_participation_poll_id = COALESCE(%(parent_id)s, parent_participation_poll_id)
-        WHERE id = %(reserved_id)s
-        """,
-        {
-            "options": json.dumps(all_suggestions),
-            "deadline": deadline.isoformat(),
-            "now": now,
-            "reserved_id": str(reserved["id"]),
-            "options_metadata": json.dumps(child_metadata) if child_metadata else None,
-            "is_sub_poll": parent_row.get("is_sub_poll") or None,
-            "sub_poll_role": None,  # Already set at creation for sub-polls
-            "parent_id": str(parent_row["parent_participation_poll_id"]) if parent_row.get("parent_participation_poll_id") else None,
-        },
-    )
 
 
 def _row_to_poll(row: dict) -> PollResponse:
@@ -227,8 +141,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         min_participants=row.get("min_participants"),
         max_participants=row.get("max_participants"),
         short_id=row.get("short_id"),
-        auto_create_preferences=row.get("auto_create_preferences", False),
-        auto_preferences_deadline_minutes=row.get("auto_preferences_deadline_minutes"),
+        suggestion_deadline=row["suggestion_deadline"].isoformat() if row.get("suggestion_deadline") else None,
+        allow_pre_ranking=row.get("allow_pre_ranking", True),
         auto_close_after=row.get("auto_close_after"),
         details=row.get("details"),
         location_mode=row.get("location_mode"),
@@ -325,58 +239,33 @@ def _create_sub_polls_for_field(
         )
 
     elif mode == "suggestions":
-        # Create a suggestion sub-poll
+        # Create a ranked_choice sub-poll with a suggestion phase
         sug_deadline_mins = suggestions_deadline_minutes or 10
         sug_deadline = now + timedelta(minutes=sug_deadline_mins)
-        sug_row = conn.execute(
+        pref_deadline_mins = preferences_deadline_minutes or 10
+        pref_deadline = sug_deadline + timedelta(minutes=pref_deadline_mins)
+        conn.execute(
             """
             INSERT INTO polls (title, poll_type, response_deadline,
+                               suggestion_deadline,
                                creator_secret, creator_name,
                                is_sub_poll, sub_poll_role,
                                parent_participation_poll_id,
-                               auto_create_preferences,
-                               auto_preferences_deadline_minutes,
                                is_closed, created_at, updated_at)
-            VALUES (%(title)s, 'suggestion', %(deadline)s,
+            VALUES (%(title)s, 'ranked_choice', %(pref_deadline)s,
+                    %(sug_deadline)s,
                     %(creator_secret)s, %(creator_name)s,
                     true, %(sub_poll_role)s,
                     %(parent_id)s,
-                    true, %(pref_deadline_mins)s,
                     false, %(now)s, %(now)s)
-            RETURNING id
             """,
             {
                 "title": sub_title,
-                "deadline": sug_deadline.isoformat(),
+                "pref_deadline": pref_deadline.isoformat(),
+                "sug_deadline": sug_deadline.isoformat(),
                 "creator_secret": creator_secret,
                 "creator_name": creator_name,
                 "sub_poll_role": f"{field}_suggestions",
-                "parent_id": parent_id,
-                "pref_deadline_mins": preferences_deadline_minutes or 10,
-                "now": now,
-            },
-        ).fetchone()
-
-        # Create a reserved ranked_choice sub-poll (placeholder)
-        conn.execute(
-            """
-            INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
-                               creator_secret, creator_name,
-                               is_sub_poll, sub_poll_role,
-                               parent_participation_poll_id,
-                               created_at, updated_at)
-            VALUES (%(title)s, 'ranked_choice', true, %(sug_id)s,
-                    %(creator_secret)s, %(creator_name)s,
-                    true, %(sub_poll_role)s,
-                    %(parent_id)s,
-                    %(now)s, %(now)s)
-            """,
-            {
-                "title": sub_title,
-                "sug_id": str(sug_row["id"]),
-                "creator_secret": creator_secret,
-                "creator_name": creator_name,
-                "sub_poll_role": f"{field}_preferences",
                 "parent_id": parent_id,
                 "now": now,
             },
@@ -468,7 +357,7 @@ def create_poll(req: CreatePollRequest):
             INSERT INTO polls (title, poll_type, options, response_deadline,
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
-                               auto_create_preferences, auto_preferences_deadline_minutes,
+                               suggestion_deadline, allow_pre_ranking,
                                auto_close_after, details,
                                location_mode, location_value, resolved_location,
                                time_mode, time_value, resolved_time,
@@ -487,7 +376,7 @@ def create_poll(req: CreatePollRequest):
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
-                    %(auto_create_preferences)s, %(auto_preferences_deadline_minutes)s,
+                    %(suggestion_deadline)s, %(allow_pre_ranking)s,
                     %(auto_close_after)s, %(details)s,
                     %(location_mode)s, %(location_value)s, %(resolved_location)s,
                     %(time_mode)s, %(time_value)s, %(resolved_time)s,
@@ -516,8 +405,8 @@ def create_poll(req: CreatePollRequest):
                 "fork_of": req.fork_of,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
-                "auto_create_preferences": req.auto_create_preferences,
-                "auto_preferences_deadline_minutes": req.auto_preferences_deadline_minutes,
+                "suggestion_deadline": req.suggestion_deadline,
+                "allow_pre_ranking": req.allow_pre_ranking,
                 "auto_close_after": req.auto_close_after,
                 "details": req.details,
                 "location_mode": req.location_mode,
@@ -547,31 +436,6 @@ def create_poll(req: CreatePollRequest):
         ).fetchone()
 
         parent_id = str(row["id"])
-
-        # If this is a suggestion poll with auto_create_preferences, reserve a
-        # placeholder ranked_choice follow-up poll so no one else can create a
-        # conflicting follow-up with the same title.
-        if req.poll_type == PollType.suggestion and req.auto_create_preferences:
-            conn.execute(
-                """
-                INSERT INTO polls (title, poll_type, is_closed, follow_up_to,
-                                   creator_secret, creator_name,
-                                   category,
-                                   created_at, updated_at)
-                VALUES (%(title)s, 'ranked_choice', true, %(parent_id)s,
-                        %(creator_secret)s, %(creator_name)s,
-                        %(category)s,
-                        %(now)s, %(now)s)
-                """,
-                {
-                    "title": req.title,
-                    "parent_id": parent_id,
-                    "creator_secret": req.creator_secret,
-                    "creator_name": req.creator_name,
-                    "category": req.category or "custom",
-                    "now": now,
-                },
-            )
 
         # Create sub-polls for location/time fields
         _create_sub_polls_for_field(
@@ -676,13 +540,30 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
     with get_db() as conn:
         # Verify poll exists and is open
         poll = conn.execute(
-            "SELECT id, is_closed, poll_type FROM polls WHERE id = %(poll_id)s",
+            "SELECT id, is_closed, poll_type, suggestion_deadline, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
         if poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
+
+        has_suggestion_phase = poll.get("suggestion_deadline") is not None
+
+        # Enforce suggestion phase timing
+        if has_suggestion_phase:
+            now_check = datetime.now(timezone.utc)
+            cutoff = poll["suggestion_deadline"]
+            in_suggestion_phase = now_check < cutoff
+
+            # Reject new suggestions after cutoff
+            if not in_suggestion_phase and req.suggestions:
+                raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
+
+            # Reject rankings before cutoff if pre-ranking is disabled
+            if in_suggestion_phase and req.ranked_choices:
+                if not poll["allow_pre_ranking"]:
+                    raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
 
         # Validate vote structure
         try:
@@ -693,6 +574,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 ranked_choices=req.ranked_choices,
                 suggestions=req.suggestions,
                 is_abstain=req.is_abstain,
+                has_suggestion_phase=has_suggestion_phase,
             )
         except VoteValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -778,13 +660,53 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
         if not existing:
             raise HTTPException(status_code=404, detail="Vote not found")
 
-        # Check poll is still open
+        # Check poll is still open and get suggestion phase info
         poll = conn.execute(
-            "SELECT is_closed FROM polls WHERE id = %(poll_id)s",
+            "SELECT is_closed, poll_type, suggestion_deadline, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if poll and poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
+
+        has_suggestion_phase = poll.get("suggestion_deadline") is not None
+        if has_suggestion_phase:
+            now_check = datetime.now(timezone.utc)
+            cutoff = poll["suggestion_deadline"]
+            in_suggestion_phase = now_check < cutoff
+
+            # Reject new suggestions after cutoff
+            if not in_suggestion_phase and req.suggestions:
+                raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
+
+            # Reject rankings before cutoff if pre-ranking is disabled
+            if in_suggestion_phase and req.ranked_choices and not poll["allow_pre_ranking"]:
+                raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
+
+            # Prevent unsuggesting options that others have ranked
+            if in_suggestion_phase and req.suggestions is not None:
+                old_vote = conn.execute(
+                    "SELECT suggestions FROM votes WHERE id = %(vote_id)s",
+                    {"vote_id": vote_id},
+                ).fetchone()
+                if old_vote and old_vote["suggestions"]:
+                    removed = set(old_vote["suggestions"]) - set(req.suggestions)
+                    if removed:
+                        # Check if any other voter has ranked any of the removed suggestions
+                        ranked_by_others = conn.execute(
+                            """SELECT DISTINCT unnest(ranked_choices) as opt
+                               FROM votes
+                               WHERE poll_id = %(poll_id)s
+                                 AND id != %(vote_id)s
+                                 AND ranked_choices IS NOT NULL""",
+                            {"poll_id": poll_id, "vote_id": vote_id},
+                        ).fetchall()
+                        ranked_set = {r["opt"] for r in ranked_by_others}
+                        blocked = removed & ranked_set
+                        if blocked:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Cannot remove suggestions that others have ranked: {', '.join(sorted(blocked))}",
+                            )
 
         import json
         row = conn.execute(
@@ -837,23 +759,21 @@ def get_results(poll_id: str):
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
 
-        # Auto-close suggestion polls with auto_create_preferences when deadline
-        # has passed. This activates the reserved preferences poll server-side
-        # regardless of which client fetches results first.
+        # For ranked_choice polls with suggestion phase: finalize options when
+        # suggestion_deadline passes (populate options from collected suggestions)
         if (
-            poll["poll_type"] == "suggestion"
-            and poll.get("auto_create_preferences")
+            poll["poll_type"] == "ranked_choice"
+            and poll.get("suggestion_deadline")
             and not poll["is_closed"]
-            and poll.get("response_deadline")
-            and poll["response_deadline"] <= now
+            and poll["suggestion_deadline"] <= now
+            and not poll.get("options")  # Not yet finalized
         ):
-            result = conn.execute(
-                """UPDATE polls SET is_closed = true, close_reason = 'deadline', updated_at = %(now)s
-                   WHERE id = %(poll_id)s AND is_closed = false""",
-                {"poll_id": poll_id, "now": now},
-            )
-            if result.rowcount == 1:
-                _activate_reserved_preferences_poll(conn, dict(poll), now)
+            _finalize_suggestion_options(conn, poll_id, now)
+            # Re-read poll to get updated options
+            poll = conn.execute(
+                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()
 
         # Auto-close ranked_choice sub-polls when deadline passes, and resolve winner
         if (
@@ -903,37 +823,26 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             max_participants=poll.get("max_participants"),
         )
 
-    if poll_type == "suggestion":
-        import json
-        raw_options = poll.get("options")
-        poll_options = None
-        if raw_options:
-            poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
-
-        result = count_suggestion_votes(votes, poll_options=poll_options)
-        return PollResultsResponse(
-            poll_id=str(poll["id"]),
-            title=poll["title"],
-            poll_type=poll_type,
-            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
-            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
-            options=poll_options,
-            total_votes=result.total_votes,
-            abstain_count=result.abstain_count,
-            min_participants=poll.get("min_participants"),
-            max_participants=poll.get("max_participants"),
-            suggestion_counts=[
-                {"option": sc.option, "count": sc.count}
-                for sc in result.suggestion_counts
-            ],
-        )
-
     if poll_type == "ranked_choice":
         import json
         raw_options = poll.get("options")
         poll_options = None
         if raw_options:
             poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        has_suggestion_phase = poll.get("suggestion_deadline") is not None
+
+        # Compute suggestion counts if this poll has a suggestion phase
+        suggestion_counts_data = None
+        if has_suggestion_phase:
+            sug_result = count_suggestion_votes(votes, poll_options=poll_options)
+            suggestion_counts_data = [
+                {"option": sc.option, "count": sc.count}
+                for sc in sug_result.suggestion_counts
+            ]
+            # During suggestion phase (options not yet finalized), derive options from suggestions
+            if not poll_options and suggestion_counts_data:
+                poll_options = [sc["option"] for sc in suggestion_counts_data]
 
         # Uncontested: single option wins automatically
         if poll.get("close_reason") == "uncontested" and poll_options and len(poll_options) == 1:
@@ -957,22 +866,27 @@ def _compute_results(poll, votes) -> PollResultsResponse:
                     borda_score=0.0,
                     tie_broken_by_borda=False,
                 )],
+                suggestion_counts=suggestion_counts_data,
             )
 
-        result = calculate_ranked_choice_winner(votes, poll_options or [])
-
-        # Build round response objects
+        # Only compute ranked choice results if there are options to rank
         rc_rounds = []
-        for round_idx, round_entries in enumerate(result.rounds):
-            for entry in round_entries:
-                rc_rounds.append(RankedChoiceRoundResponse(
-                    round_number=round_idx + 1,
-                    option_name=entry.option_name,
-                    vote_count=entry.vote_count,
-                    is_eliminated=entry.is_eliminated,
-                    borda_score=entry.borda_score,
-                    tie_broken_by_borda=entry.tie_broken_by_borda,
-                ))
+        rc_winner = None
+        ranking_votes = [v for v in votes if v.get("ranked_choices")]
+        if poll_options and len(poll_options) >= 2 and ranking_votes:
+            result = calculate_ranked_choice_winner(ranking_votes, poll_options)
+            rc_winner = result.winner
+
+            for round_idx, round_entries in enumerate(result.rounds):
+                for entry in round_entries:
+                    rc_rounds.append(RankedChoiceRoundResponse(
+                        round_number=round_idx + 1,
+                        option_name=entry.option_name,
+                        vote_count=entry.vote_count,
+                        is_eliminated=entry.is_eliminated,
+                        borda_score=entry.borda_score,
+                        tie_broken_by_borda=entry.tie_broken_by_borda,
+                    ))
 
         return PollResultsResponse(
             poll_id=str(poll["id"]),
@@ -984,9 +898,10 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             total_votes=len(votes),
             min_participants=poll.get("min_participants"),
             max_participants=poll.get("max_participants"),
-            winner=result.winner,
-            ranked_choice_winner=result.winner,
-            ranked_choice_rounds=rc_rounds,
+            winner=rc_winner,
+            ranked_choice_winner=rc_winner,
+            ranked_choice_rounds=rc_rounds if rc_rounds else None,
+            suggestion_counts=suggestion_counts_data,
         )
 
     if poll_type == "participation":
@@ -1114,10 +1029,9 @@ def close_poll(poll_id: str, req: ClosePollRequest):
         if not row:
             raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
 
-        # If this is a suggestion poll with auto_create_preferences, activate
-        # the reserved ranked_choice follow-up poll.
-        if row["poll_type"] == "suggestion" and row.get("auto_create_preferences"):
-            _activate_reserved_preferences_poll(conn, row, now)
+        # If closing a ranked_choice poll with suggestion phase, finalize options
+        if row["poll_type"] == "ranked_choice" and row.get("suggestion_deadline"):
+            _finalize_suggestion_options(conn, poll_id, now)
 
         # If this is a ranked_choice sub-poll, resolve the winner to parent
         if row["poll_type"] == "ranked_choice" and row.get("sub_poll_role"):
@@ -1164,17 +1078,6 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             """SELECT * FROM polls
                WHERE id = ANY(%(poll_ids)s)
                  AND (is_sub_poll = false OR is_sub_poll IS NULL)
-                 AND NOT (
-                   poll_type = 'suggestion'
-                   AND auto_create_preferences = true
-                   AND is_closed = true
-                   AND EXISTS (
-                     SELECT 1 FROM polls p2
-                     WHERE p2.follow_up_to = polls.id
-                       AND p2.poll_type = 'ranked_choice'
-                       AND p2.options IS NOT NULL
-                   )
-                 )
                ORDER BY created_at DESC""",
             {"poll_ids": req.poll_ids},
         ).fetchall()

@@ -6,25 +6,25 @@ import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import Countdown from "@/components/Countdown";
 import CompactNameField from "@/components/CompactNameField";
-import RankableOptions from "@/components/RankableOptions";
 import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
+import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
-import FollowUpModal from "@/components/FollowUpModal";
+
 import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
-import GradientBorderButton from "@/components/GradientBorderButton";
+
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, apiFindDuplicatePoll, ApiVote } from "@/lib/api";
-import VoteOnItModal from "@/components/VoteOnItModal";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -83,10 +83,22 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
-  const [isEditingVote, setIsEditingVote] = useState(false);
+  const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
+  const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+
+  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline
+  // has an optional suggestion collection phase before ranking begins
+  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!poll.suggestion_deadline;
+  const inSuggestionPhase = hasSuggestionPhase && currentTime
+    ? currentTime < new Date(poll.suggestion_deadline!)
+    : hasSuggestionPhase; // Before currentTime is set, assume suggestion phase if deadline exists
+  const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
+  const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
+    !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
+  );
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -97,10 +109,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
   const [voterListRefresh, setVoterListRefresh] = useState(0);
-  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
-  const [showVoteOnItModal, setShowVoteOnItModal] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  // Stable filter callbacks for VoterList
+  const suggestionsVoterFilter = useCallback((v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0), []);
+
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
   const fetchResultsLastCall = useRef(0);
@@ -314,25 +326,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // ONLY use votes from this browser's localStorage - no cross-browser contamination
       const allVotes = [...userVotes];
 
-      if (poll.poll_type === 'suggestion') {
-        // For suggestions, use only the LATEST vote (not aggregated)
-        // When a user edits their vote, the vote record is updated in place
-        // So we should only use the most recent version, not combine multiple votes
-        const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        const latestVote = sortedVotes[0];
-        
-        const aggregatedVoteData = {
-          ...latestVote,
-          suggestions: latestVote.suggestions || [],
-          aggregatedFrom: 1
-        };
-
-        return aggregatedVoteData;
-      } else {
-        // For non-suggestion polls, just return the most recent vote
-        const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        return sortedVotes[0];
-      }
+      // Return the most recent vote
+      const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return sortedVotes[0];
     } catch (error) {
       console.error('Error fetching aggregated vote data:', error);
       return null;
@@ -389,8 +385,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   useEffect(() => {
     setCurrentTime(new Date());
 
-    // Load existing suggestions for suggestion polls
-    if (poll.poll_type === 'suggestion') {
+    // Load existing suggestions for polls with suggestion phase
+    if (hasSuggestionPhase) {
       loadExistingSuggestions();
       // Also fetch results to show vote counts for suggestion polls
       fetchPollResults();
@@ -524,9 +520,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       const voteId = getStoredVoteId(poll.id);
       setUserVoteId(voteId);
       
-      // Fetch vote data from database if we have a vote ID
-      // OR if this is a suggestion poll (to handle creator votes and aggregation)
-      if (voteId || poll.poll_type === 'suggestion' || poll.poll_type === 'participation') {
+      // Fetch vote data from database if we have a vote ID or for specific poll types
+      if (voteId || hasSuggestionPhase || poll.poll_type === 'participation') {
         setIsLoadingVoteData(true);
 
         // For participation polls without a stored vote ID, find the vote via participant name match
@@ -540,9 +535,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         };
 
         let fetchPromise;
-        if (poll.poll_type === 'suggestion') {
-          fetchPromise = fetchAggregatedVoteData(poll.id);
-        } else if (voteId) {
+        if (voteId) {
           fetchPromise = fetchVoteData(voteId);
         } else if (poll.poll_type === 'participation') {
           fetchPromise = fetchParticipationVoteByName(poll.id);
@@ -568,13 +561,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               } catch (e) { /* ignore */ }
             }
 
-            // For suggestion polls, fetch results to show vote counts even when poll is open
-            if (poll.poll_type === 'suggestion' && !isPollClosed) {
+            // For polls with suggestion phase, fetch results to show vote counts even when poll is open
+            if (hasSuggestionPhase && !isPollClosed) {
               fetchPollResults();
             }
-            
+
             // Set UI state based on vote data from database columns
-            setIsAbstaining(voteData.is_abstain || false);
+            // During suggestion phase with pre-ranking, don't restore abstain from server —
+            // the abstain only applied to suggestions, user should still be able to rank
+            const shouldRestoreAbstain = voteData.is_abstain && !(hasSuggestionPhase && canSubmitRankings);
+            setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
             } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
@@ -602,10 +598,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 if (minEnabled !== undefined) setDurationMinEnabled(minEnabled);
                 if (maxEnabled !== undefined) setDurationMaxEnabled(maxEnabled);
               }
-            } else if (poll.poll_type === 'ranked_choice' && voteData.ranked_choices) {
-              setRankedChoices(voteData.ranked_choices);
-            } else if (poll.poll_type === 'suggestion' && voteData.suggestions) {
-              setSuggestionChoices(voteData.suggestions);
+            } else if (poll.poll_type === 'ranked_choice') {
+              if (voteData.ranked_choices) setRankedChoices(voteData.ranked_choices);
+              if (voteData.suggestions) setSuggestionChoices(voteData.suggestions);
             }
           } else {
           }
@@ -656,45 +651,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     fetchFollowUpPolls();
   }, [poll.id]);
 
-  // Fetch suggestions for suggestion polls to show "Vote on it" button
-  const fetchSuggestions = useCallback(async () => {
-    if (poll.poll_type !== 'suggestion') {
-      setSuggestions([]);
-      return;
-    }
-
-    setLoadingSuggestions(true);
-    try {
-      const allVotes = await apiGetVotes(poll.id);
-      const suggestionVotes = allVotes.filter(v =>
-        v.vote_type === 'suggestion' && !v.is_abstain && v.suggestions && v.suggestions.length > 0
-      );
-
-      // Collect all unique suggestions
-      const suggestionSet = new Set<string>();
-      suggestionVotes.forEach(vote => {
-        if (vote.suggestions && Array.isArray(vote.suggestions)) {
-          vote.suggestions.forEach((sug: any) => {
-            const sugString = typeof sug === 'string' ? sug : sug?.option || sug?.toString() || '';
-            if (sugString) {
-              suggestionSet.add(sugString);
-            }
-          });
-        }
-      });
-
-      setSuggestions(Array.from(suggestionSet));
-    } catch (error) {
-      console.error('Error loading suggestions:', error);
-      setSuggestions([]);
-    } finally {
-      setLoadingSuggestions(false);
-    }
-  }, [poll.poll_type, poll.id]);
-
-  useEffect(() => {
-    fetchSuggestions();
-  }, [fetchSuggestions]);
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -708,27 +664,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       setCurrentTime(now);
 
       // If poll just expired, automatically fetch results.
-      // For suggestion polls with auto_create_preferences, the server-side
-      // get_results endpoint auto-closes and activates the preferences poll.
       if (now >= deadline && !isPollClosed) {
         fetchPollResults();
-
-        if (
-          poll.poll_type === 'suggestion' &&
-          poll.auto_create_preferences &&
-          !autoCloseTriggeredRef.current
-        ) {
-          autoCloseTriggeredRef.current = true;
-          setPollClosed(true);
-          apiFindDuplicatePoll(poll.title, poll.id)
-            .then((followUp) => {
-              if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
-                const shortId = followUp.short_id || followUp.id;
-                router.push(`/p/${shortId}`);
-              }
-            })
-            .catch(() => {});
-        }
       }
     };
 
@@ -739,7 +676,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.auto_create_preferences, poll.id, poll.title, router]);
+  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.id]);
 
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {
@@ -787,10 +724,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   }, [justCancelledAbstain]);
 
   // Memoize parsed options to prevent re-parsing on every render
+  // During suggestion phase (poll.options is null), derive options from suggestion_counts
   const pollOptions = useMemo(() => {
-    if (!poll.options) return [];
-    return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
-  }, [poll.options]);
+    if (poll.options) {
+      return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
+    }
+    if (hasSuggestionPhase && pollResults?.suggestion_counts) {
+      return pollResults.suggestion_counts.map((sc: { option: string }) => sc.option);
+    }
+    return [];
+  }, [poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
 
   // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
@@ -817,10 +760,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Clear previous choices when abstaining
       if (poll.poll_type === 'ranked_choice') {
         setRankedChoices([]);
+        setSuggestionChoices([]);
       } else if (poll.poll_type === 'yes_no') {
         setYesNoChoice(null); // Clear yes/no choice to prevent both appearing selected
-      } else if (poll.poll_type === 'suggestion') {
-        setSuggestionChoices([]);
       }
     } else {
       // Cancelling abstain
@@ -880,21 +822,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
         await fetchPollResults();
-
-        // If this suggestion poll had auto_create_preferences, find and navigate
-        // to the activated preferences poll.
-        if (poll.poll_type === 'suggestion' && poll.auto_create_preferences) {
-          try {
-            const followUp = await apiFindDuplicatePoll(poll.title, poll.id);
-            if (followUp && (!followUp.is_closed || followUp.close_reason === 'uncontested')) {
-              if (creatorSecret) recordPollCreation(followUp.id, creatorSecret);
-              const shortId = followUp.short_id || followUp.id;
-              router.push(`/p/${shortId}`);
-            }
-          } catch {
-            // Non-critical — user can still find it via follow-up links
-          }
-        }
       } else {
         alert('Failed to close poll. Please try again.');
       }
@@ -951,9 +878,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       suggestionChoicesData: suggestionChoices
     });
 
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+    // Either suggestion editing or ranking editing counts as "editing"
+    const isAnyEditing = isEditingVote || isEditingRanking;
+
+    // During suggestion phase with pre-ranking, submitting rankings after the initial
+    // suggestion vote is an implicit edit (updating the existing vote with rankings)
+    const isImplicitEdit = hasVoted && !isAnyEditing && canSubmitSuggestions && canSubmitRankings;
+    if (isImplicitEdit) {
+      setIsEditingVote(true);
+    }
+
+    if (isSubmitting || (hasVoted && !isAnyEditing && !isImplicitEdit) || isPollClosed) {
       await logToServer('suggestion-vote', 'warn', 'handleVoteClick early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditing) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
     }
@@ -994,53 +931,30 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
-      if (filteredRankedChoices.length === 0) {
-        await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, isAbstaining });
-        setVoteError("Please rank at least one option or select Abstain");
-        return;
+      const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+      if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
+        if (canSubmitSuggestions) {
+          // During suggestion phase, submitting with nothing selected is an implicit abstain
+          setIsAbstaining(true);
+        } else {
+          await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, suggestionChoices, isAbstaining, canSubmitSuggestions });
+          setVoteError("Please rank at least one option or select Abstain");
+          return;
+        }
       }
     }
 
-    if (poll.poll_type === 'suggestion') {
-      const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
-      await logToServer('suggestion-vote', 'info', 'Suggestion validation check', {
-        originalSuggestions: suggestionChoices,
-        filteredSuggestions,
-        willAbstain: filteredSuggestions.length === 0
-      });
-      // No validation error - empty suggestions will be treated as abstain
-    }
-
-    await logToServer('suggestion-vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
+    await logToServer('vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
       pollType: poll.poll_type,
       isAbstaining,
-      choicesReady: poll.poll_type === 'suggestion' ? suggestionChoices.filter(choice => choice && choice.trim().length > 0).length : 'n/a'
+      hasSuggestionPhase,
     });
 
     setVoteError(null);
     setShowVoteConfirmModal(true);
   };
 
-  const handleVoteOnSuggestionsClick = async () => {
-    // Check if a follow-up preference poll already exists with the same title
-    setLoadingSuggestions(true);
-    try {
-      const existing = await apiFindDuplicatePoll(poll.title, poll.id);
-      if (existing) {
-        // Navigate directly to the existing poll
-        const shortId = existing.short_id || existing.id;
-        router.push(`/p/${shortId}`);
-        return;
-      }
-    } catch {
-      // If the check fails, fall through to show the modal
-    } finally {
-      setLoadingSuggestions(false);
-    }
 
-    // No duplicate found — show the creation modal
-    setShowVoteOnItModal(true);
-  };
 
   const submitVote = async () => {
     await logToServer('suggestion-vote', 'info', 'submitVote started', {
@@ -1054,9 +968,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     setShowVoteConfirmModal(false);
 
-    if (isSubmitting || (hasVoted && !isEditingVote) || isPollClosed) {
+    const isAnyEditingForSubmit = isEditingVote || isEditingRanking;
+    if (isSubmitting || (hasVoted && !isAnyEditingForSubmit) || isPollClosed) {
       await logToServer('suggestion-vote', 'warn', 'submitVote early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isEditingVote) ? 'hasVoted and not editing' : 'isPollClosed'
+        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditingForSubmit) ? 'hasVoted and not editing' : 'isPollClosed'
       });
       return;
     }
@@ -1112,11 +1027,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
-        
-        if (filteredRankedChoices.length === 0 && !isAbstaining) {
-          setVoteError("Please rank at least one option or select Abstain");
-          setIsSubmitting(false);
-          return;
+        const filteredSuggestionsForValidation = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+
+        if (filteredRankedChoices.length === 0 && !isAbstaining && (!canSubmitSuggestions || filteredSuggestionsForValidation.length === 0)) {
+          if (!canSubmitSuggestions) {
+            setVoteError("Please rank at least one option or select Abstain");
+            setIsSubmitting(false);
+            return;
+          }
+          // During suggestion phase, empty submission is treated as abstain (handled by finalAbstain below)
         }
         
         // Additional validation: ensure choices are valid poll options
@@ -1129,55 +1048,41 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return;
         }
         
+        // Include suggestions if poll has a suggestion phase
+        const filteredSuggestions = hasSuggestionPhase
+          ? suggestionChoices.filter(choice => choice && choice.trim().length > 0)
+          : null;
+        const filteredMetadata = hasSuggestionPhase && filteredSuggestions && filteredSuggestions.length > 0 && Object.keys(suggestionMetadata).length > 0
+          ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
+          : null;
+
+        // During suggestion phase with no rankings and no suggestions: abstain
+        const hasRankings = filteredRankedChoices.length > 0;
+        const hasSuggestions = filteredSuggestions && filteredSuggestions.length > 0;
+        // If user has suggestions (from this or previous submission) but abstains from ranking,
+        // preserve suggestions — only full abstain when neither exists
+        const previousSuggestions = userVoteData?.suggestions;
+        const hasPreviousSuggestions = previousSuggestions && previousSuggestions.length > 0;
+        const finalAbstain = isAbstaining && !hasSuggestions && !hasPreviousSuggestions
+          ? true  // Full abstain: no suggestions at all
+          : !hasRankings && !hasSuggestions && !hasPreviousSuggestions;
+
         voteData = {
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
-          ranked_choices: isAbstaining ? null : filteredRankedChoices,
-          is_abstain: isAbstaining,
-          voter_name: voterName.trim() || null
-        };
-      } else if (poll.poll_type === 'suggestion') {
-        const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
-
-        await logToServer('suggestion-vote', 'info', 'Processing suggestion vote data', {
-          originalSuggestions: suggestionChoices,
-          filteredSuggestions,
-          isAbstaining
-        });
-
-        // Empty suggestions will be treated as abstain
-        const willAbstain = filteredSuggestions.length === 0;
-        await logToServer('suggestion-vote', 'info', 'Suggestion vote processing', {
-          suggestionChoices,
-          filteredSuggestions,
-          willAbstain,
-          isAbstaining
-        });
-
-        // Send null for suggestions when abstaining, array with suggestions when voting
-        // Abstain if explicitly set OR if no suggestions provided
-        const finalAbstain = isAbstaining || willAbstain;
-        // Filter metadata to only include nominated options
-        const filteredMetadata = Object.keys(suggestionMetadata).length > 0
-          ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
-          : null;
-        voteData = {
-          poll_id: poll.id,
-          vote_type: 'suggestion' as const,
-          suggestions: finalAbstain ? null : filteredSuggestions,
+          ranked_choices: isAbstaining || !hasRankings ? null : filteredRankedChoices,
+          suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
           is_abstain: finalAbstain,
           voter_name: voterName.trim() || null,
-          options_metadata: !finalAbstain && filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
+          options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
         };
-
-        await logToServer('suggestion-vote', 'info', 'Suggestion voteData created', voteData);
       }
 
       let voteId: string | undefined;
       let error: any; // eslint-disable-line
 
 
-      if (isEditingVote && userVoteId) {
+      if ((isEditingVote || isEditingRanking) && userVoteId) {
 
         // Create update data with only the vote choice (don't update vote_type or poll_id)
         // Use the same filtered data that was prepared in voteData to ensure consistency
@@ -1185,9 +1090,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
-          : poll.poll_type === 'ranked_choice'
-          ? { ranked_choices: isAbstaining ? null : rankedChoices, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : { suggestions: voteData.suggestions, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
+          : { ranked_choices: voteData.ranked_choices, suggestions: voteData.suggestions, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
         
         
         
@@ -1258,16 +1161,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
 
-      // Refresh suggestion list for suggestion polls with a small delay to ensure DB update is complete
-      if (poll.poll_type === 'suggestion') {
-        // Add a small delay to ensure the database update is fully committed
+      // Refresh suggestion list for polls with suggestion phase
+      if (hasSuggestionPhase) {
+        // Reset abstain so the ranking ballot is usable after suggestion submission
+        // (abstaining from suggestions shouldn't block ranking)
+        if (isAbstaining && canSubmitRankings) {
+          setIsAbstaining(false);
+        }
         setTimeout(async () => {
-          // Refresh suggestions after DB update is complete
           await loadExistingSuggestions(false);
-          // Also fetch poll results to show vote counts
           await fetchPollResults();
-          // Fetch suggestions to update "Vote on it" button visibility
-          await fetchSuggestions();
         }, 500);
       }
       
@@ -1286,19 +1189,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       }
       
       setIsEditingVote(false);
-      
-      // Refetch vote data for suggestion polls to ensure UI shows latest data
-      if (poll.poll_type === 'suggestion' && isEditingVote) {
-        const updatedVoteData = await fetchAggregatedVoteData(poll.id);
-        if (updatedVoteData) {
-          setUserVoteData(updatedVoteData);
-        }
+      setIsEditingRanking(false);
 
-        // CRITICAL FIX: Always refresh results after editing suggestions
-        // This ensures that deleted suggestions (abstained votes) are removed from display
+      // Refresh results after editing votes with suggestions
+      if (hasSuggestionPhase && (isEditingVote || isEditingRanking)) {
         await fetchPollResults();
-        // Fetch suggestions to update "Vote on it" button visibility
-        await fetchSuggestions();
       }
 
       // If the poll is closed or preliminary results threshold met, fetch results
@@ -1442,6 +1337,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
           // Case 4: Poll is still open and not expired - show countdown
           if (!isPollClosed && !isExpired && deadline) {
+            // During suggestion phase, show suggestion deadline instead of response deadline
+            if (inSuggestionPhase && poll.suggestion_deadline) {
+              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
+            }
             return <Countdown deadline={poll.response_deadline || null} />;
           }
 
@@ -1454,8 +1353,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           return null;
         })()}
         
-        {/* Preliminary results shown ABOVE ballot when user has already voted */}
-        {hasVoted && !isEditingVote && preliminaryResultsBlock("pt-2.5")}
+        {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1488,46 +1387,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
         )}
 
-        {/* Follow-up button for closed polls - always shown after results */}
-        {isPollClosed && (
-          <div className="my-4 flex justify-between items-center">
-              <GradientBorderButton
-                onClick={() => setShowFollowUpModal(true)}
-                gradient="blue-purple"
-              >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-                <span className="font-semibold">Follow up</span>
-              </GradientBorderButton>
-            {poll.poll_type === 'suggestion' && suggestions.length >= 2 && (
-              <GradientBorderButton
-                onClick={handleVoteOnSuggestionsClick}
-                disabled={loadingSuggestions}
-                gradient="red-orange"
-              >
-                {loadingSuggestions ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span className="font-semibold">Loading...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="font-semibold">Vote on it</span>
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-                    </svg>
-                  </>
-                )}
-              </GradientBorderButton>
-            )}
-          </div>
-        )}
-
-        {/* Show follow-up/fork header after Follow up button for closed polls */}
+        {/* Show follow-up/fork header for closed polls */}
         {isPollClosed && (
           <div className="mt-4">
             {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
@@ -1621,30 +1481,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {/* Follow Up Button row - shown when poll is open and user has voted */}
-                  {!isPollClosed && !isLoadingVoteData && (
-                    <div className="my-4 flex justify-between items-center">
-                      <GradientBorderButton
-                          onClick={() => setShowFollowUpModal(true)}
-                          gradient="blue-purple"
-                        >
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                          </svg>
-                          <span className="font-semibold">Follow up</span>
-                        </GradientBorderButton>
-                    </div>
-                  )}
-
-                  {/* Show follow-up/fork header after Follow up button when voted */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                    </div>
-                  )}
-
-                  {/* Voter list for open yes/no polls - shown after Follow-up button when voted */}
+                  {/* Voter list for open yes/no polls */}
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
                     <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
@@ -1778,28 +1615,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {!isPollClosed && !isLoadingVoteData && (
-                    <div className="my-4 flex justify-between items-center">
-                      <GradientBorderButton
-                          onClick={() => setShowFollowUpModal(true)}
-                          gradient="blue-purple"
-                        >
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                          </svg>
-                          <span className="font-semibold">Follow up</span>
-                        </GradientBorderButton>
-                    </div>
-                  )}
-
-                  {/* Show follow-up/fork header after Follow up button when voted */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                    </div>
-                  )}
-
                   {!isPollClosed && hasVoted && !isLoadingVoteData && (
                     <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
@@ -1893,40 +1708,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </>
               )}
             </div>
-          ) : poll.poll_type === 'suggestion' ? (
-            <SuggestionVotingInterface
-              poll={poll}
-              existingSuggestions={existingSuggestions}
-              suggestionChoices={suggestionChoices}
-              setSuggestionChoices={setSuggestionChoices}
-              isAbstaining={isAbstaining}
-              handleAbstain={handleAbstain}
-              voteError={voteError}
-              voterName={voterName}
-              setVoterName={setVoterName}
-              handleVoteClick={handleVoteClick}
-              isSubmitting={isSubmitting}
-              isPollClosed={!!isPollClosed}
-              isCreator={isCreator}
-              handleCloseClick={handleCloseClick}
-              isClosingPoll={isClosingPoll}
-              hasVoted={hasVoted}
-              isEditingVote={isEditingVote}
-              setIsEditingVote={setIsEditingVote}
-              userVoteData={userVoteData}
-              isLoadingVoteData={isLoadingVoteData}
-              pollResults={pollResults}
-              loadingResults={loadingResults}
-              loadExistingSuggestions={loadExistingSuggestions}
-              onFollowUpClick={() => setShowFollowUpModal(true)}
-              suggestions={suggestions}
-              loadingSuggestions={loadingSuggestions}
-              onVoteOnSuggestionsClick={handleVoteOnSuggestionsClick}
-              autoCreatePreferences={poll.auto_create_preferences}
-              suggestionMetadata={suggestionMetadata}
-              onSuggestionMetadataChange={setSuggestionMetadata}
-              optionsMetadata={optionsMetadataLocal}
-            />
           ) : (
             <div>
               {isPollClosed ? (
@@ -1958,7 +1739,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted && !isEditingVote ? (
+              ) : hasVoted && !isEditingVote && !canSubmitSuggestions ? (
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
@@ -2022,31 +1803,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     ) : null}
                   </div>
 
-                  {/* Follow Up Button row - shown when poll is open and user has voted */}
-                  {!isPollClosed && !isLoadingVoteData && (
-                    <div className="my-4 flex justify-between items-center">
-                      <GradientBorderButton
-                          onClick={() => setShowFollowUpModal(true)}
-                          gradient="blue-purple"
-                        >
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={4}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                          </svg>
-                          <span className="font-semibold">Follow up</span>
-                        </GradientBorderButton>
-                    </div>
-                  )}
-
-                  {/* Show follow-up/fork header after Follow up button when voted */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                      {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                    </div>
-                  )}
-
-                  {/* Voter list for open ranked choice polls - shown after Follow-up button when voted */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                  {/* Voter list for non-suggestion ranked choice polls */}
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && !hasSuggestionPhase && (
                     <div className="mt-4">
                       <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
                     </div>
@@ -2054,77 +1812,68 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </div>
               ) : (
                 <>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-                    {pollOptions.length === 2 ? (
-                      <>
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
-                          Select your preference
-                        </h4>
-                        <div className="flex gap-2">
-                          {twoOptionDisplayOrder.map((option: string) => (
-                            <button
-                              key={option}
-                              onClick={(e) => {
-                                // Don't trigger vote when clicking the restaurant/place name (opens detail modal instead)
-                                if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                                handleRankingChange([option]);
-                                setIsAbstaining(false);
-                              }}
-                              disabled={isSubmitting}
-                              className={`flex-1 min-w-0 py-3 px-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                rankedChoices[0] === option
-                                  ? 'bg-blue-200 dark:bg-blue-800 text-blue-900 dark:text-blue-100 border-2 border-blue-400 dark:border-blue-600 active:bg-blue-300 dark:active:bg-blue-700'
-                                  : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 border-2 border-transparent active:bg-blue-300 dark:active:bg-blue-700'
-                              }`}
-                            >
-                              <OptionLabel text={option} metadata={optionsMetadataLocal?.[option]} layout="stacked" />
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
-                          Reorder from most to least preferred
-                        </h4>
-
-                        {pollOptions.length > 0 && (
-                          <RankableOptions
-                            key={isEditingVote ? 'editing' : 'new'}
-                            options={pollOptions}
-                            onRankingChange={handleRankingChange}
-                            disabled={isSubmitting || isAbstaining}
-                            storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
-                            initialRanking={isEditingVote && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
-                            optionsMetadata={optionsMetadataLocal}
-                          />
-                        )}
-                      </>
-                    )}
-                    
-                    <AbstainButton
+                  {/* Suggestion phase UI for polls with suggestion deadline */}
+                  {canSubmitSuggestions && (
+                    <SuggestionVotingInterface
+                      poll={poll}
+                      existingSuggestions={existingSuggestions}
+                      suggestionChoices={suggestionChoices}
+                      setSuggestionChoices={setSuggestionChoices}
                       isAbstaining={isAbstaining}
-                      onClick={handleAbstain}
+                      handleAbstain={handleAbstain}
+                      voteError={voteError}
+                      voterName={voterName}
+                      setVoterName={setVoterName}
+                      handleVoteClick={handleVoteClick}
+                      isSubmitting={isSubmitting}
+                      isPollClosed={!!isPollClosed}
+                      isCreator={isCreator}
+                      handleCloseClick={handleCloseClick}
+                      isClosingPoll={isClosingPoll}
+                      hasVoted={hasVoted}
+                      isEditingVote={isEditingVote}
+                      setIsEditingVote={setIsEditingVote}
+                      userVoteData={userVoteData}
+                      isLoadingVoteData={isLoadingVoteData}
+                      pollResults={pollResults}
+                      loadingResults={loadingResults}
+                      loadExistingSuggestions={loadExistingSuggestions}
+                      suggestionMetadata={suggestionMetadata}
+                      onSuggestionMetadataChange={setSuggestionMetadata}
+                      optionsMetadata={optionsMetadataLocal}
                     />
-                    
-                    {voteError && (
-                      <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                        {voteError}
-                      </div>
-                    )}
-                  </div>
+                  )}
 
-                  <div className="mt-4">
-                    <CompactNameField name={voterName} setName={setVoterName} />
-                  </div>
-                  
-                  <button
-                    onClick={handleVoteClick}
-                    disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0)}
-                    className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-                  >
-                    {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-                  </button>
+                  {/* Ranking section — independent component with its own edit state */}
+                  <RankingSection
+                    poll={poll}
+                    pollId={pollId || ''}
+                    pollOptions={pollOptions}
+                    rankedChoices={rankedChoices}
+                    handleRankingChange={handleRankingChange}
+                    isAbstaining={isAbstaining}
+                    setIsAbstaining={setIsAbstaining}
+                    handleAbstain={handleAbstain}
+                    isSubmitting={isSubmitting}
+                    isPollClosed={!!isPollClosed}
+                    hasVoted={hasVoted}
+                    isEditingRanking={isEditingRanking}
+                    setIsEditingRanking={setIsEditingRanking}
+                    userVoteData={userVoteData}
+                    isLoadingVoteData={isLoadingVoteData}
+                    voterName={voterName}
+                    setVoterName={setVoterName}
+                    handleVoteClick={handleVoteClick}
+                    voteError={voteError}
+                    voterListRefresh={voterListRefresh}
+                    optionsMetadata={optionsMetadataLocal}
+                    canSubmitSuggestions={canSubmitSuggestions}
+                    canSubmitRankings={canSubmitRankings}
+                    hasSuggestionPhase={hasSuggestionPhase}
+                    suggestionChoices={suggestionChoices}
+                    justCancelledAbstain={justCancelledAbstain}
+                    twoOptionDisplayOrder={twoOptionDisplayOrder}
+                  />
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
@@ -2138,8 +1887,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
 
-          {/* Preliminary results shown BELOW ballot when user hasn't voted yet */}
-          {(!hasVoted || isEditingVote) && preliminaryResultsBlock("mt-6")}
+          {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
@@ -2176,12 +1925,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? (isAbstaining 
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?`)
-          : poll.poll_type === 'suggestion'
-          ? (isAbstaining
-              ? `Are you sure you want to abstain from this vote?`
-              : isEditingVote
-                ? `Are you sure you want to update your suggestions?`
-                : `Are you sure you want to submit your suggestions?`)
           : (isAbstaining
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to submit your ranking?`)}
@@ -2227,22 +1970,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
 
-      {/* Follow-up Modal */}
-      <FollowUpModal
-        isOpen={showFollowUpModal}
-        poll={poll}
-        onClose={() => setShowFollowUpModal(false)}
-        totalVotes={pollResults?.total_votes}
-      />
 
-      {/* Vote on It Modal */}
-      <VoteOnItModal
-        isOpen={showVoteOnItModal}
-        pollId={poll.id}
-        pollTitle={poll.title}
-        suggestions={suggestions}
-        onClose={() => setShowVoteOnItModal(false)}
-      />
+
 
     </>
   );

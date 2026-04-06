@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
 import OptionLabel, { isLocationEntry } from './OptionLabel';
@@ -110,6 +111,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const noPreferenceContainerRef = useRef<HTMLDivElement>(null);
   const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  // Pending drag ref: tracks pointer-down state before drag actually starts.
+  // Drag only starts after the pointer moves >8px — taps never enter drag state.
+  const pendingDragRef = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    started: boolean; // true once movement threshold exceeded and startDrag called
+  } | null>(null);
+
   // Update positions of all items based on current order
   const updateItemPositions = useCallback((itemList: RankableOption[]) => {
     return itemList.map((item, index) => ({
@@ -170,19 +180,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     return null;
   }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList]);
 
-  // Get coordinates from either mouse or touch event
-  const getEventCoords = useCallback((e: React.PointerEvent | PointerEvent) => {
-    return { x: e.clientX, y: e.clientY };
-  }, []);
-
-  // Start dragging an item
-  const startDrag = useCallback((e: React.PointerEvent, id: string) => {
+  // Start dragging an item (called after pointer has moved beyond threshold)
+  const startDrag = useCallback((clientX: number, clientY: number, id: string) => {
     if (disabled || dragState.isDragging) return;
 
     // Find the item in either list
     let itemIndex = mainList.findIndex(item => item.id === id);
     let sourceList: 'main' | 'noPreference' = 'main';
-    
+
     if (itemIndex === -1) {
       itemIndex = noPreferenceList.findIndex(item => item.id === id);
       sourceList = 'noPreference';
@@ -193,7 +198,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     if (!element) return;
 
     const rect = element.getBoundingClientRect();
-    const coords = getEventCoords(e);
 
     // Store drag state
     setDragState({
@@ -204,19 +208,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       sourceList,
       targetList: sourceList,
       mouseOffset: {
-        x: coords.x - rect.left,
-        y: coords.y - rect.top
+        x: clientX - rect.left,
+        y: clientY - rect.top
       },
-      mousePosition: coords
+      mousePosition: { x: clientX, y: clientY }
     });
-  }, [disabled, dragState.isDragging, mainList, noPreferenceList, getEventCoords]);
+  }, [disabled, dragState.isDragging, mainList, noPreferenceList]);
 
   // Handle drag movement
   const handleDragMove = useCallback((e: PointerEvent) => {
     if (!dragState.isDragging) return;
 
     e.preventDefault();
-    const coords = getEventCoords(e);
+    const coords = { x: e.clientX, y: e.clientY };
     const dropTarget = getDropTarget(coords.x, coords.y);
 
     let newTargetList = dragState.targetList;
@@ -316,7 +320,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         }
       });
     }
-  }, [dragState, getEventCoords, getDropTarget, totalItemHeight]);
+  }, [dragState, getDropTarget, totalItemHeight]);
 
   // Complete the drag operation
   const finishDrag = useCallback(() => {
@@ -406,6 +410,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   // Set up event listeners
   useEffect(() => {
     const handleMove = (e: PointerEvent) => {
+      // Check for pending drag that hasn't started yet
+      const pending = pendingDragRef.current;
+      if (pending && !pending.started) {
+        const dx = Math.abs(e.clientX - pending.startX);
+        const dy = Math.abs(e.clientY - pending.startY);
+        if (dx > 8 || dy > 8) {
+          // Movement exceeded threshold — start the actual drag
+          pending.started = true;
+          startDrag(pending.startX, pending.startY, pending.id);
+        }
+        return; // Don't process as drag move until next event after startDrag re-renders
+      }
+
       if (dragState.isDragging) {
         handleDragMove(e);
       }
@@ -415,7 +432,31 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       if (dragState.isDragging) {
         finishDrag();
       }
+      pendingDragRef.current = null;
     };
+
+    // During active drag, completely freeze the page to prevent
+    // SFSafariViewController's sheet dismiss gesture from firing.
+    // The sheet's dismiss is triggered by overscroll at the top of the page,
+    // so we lock the body in place and block all scroll/overscroll propagation.
+    const handleTouchMove = (e: TouchEvent) => {
+      if (dragState.isDragging) {
+        e.preventDefault();
+      }
+    };
+
+    let savedScrollY = 0;
+    if (dragState.isDragging) {
+      savedScrollY = window.scrollY;
+      document.body.style.touchAction = 'none';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${savedScrollY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overscrollBehavior = 'none';
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    }
 
     // Add event listeners to document for better capture
     document.addEventListener('pointermove', handleMove);
@@ -426,8 +467,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       document.removeEventListener('pointermove', handleMove);
       document.removeEventListener('pointerup', handleEnd);
       document.removeEventListener('pointercancel', handleEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      if (dragState.isDragging) {
+        document.body.style.touchAction = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.overflow = '';
+        document.documentElement.style.overscrollBehavior = '';
+        window.scrollTo(0, savedScrollY);
+      }
     };
-  }, [dragState.isDragging, handleDragMove, finishDrag]);
+  }, [dragState.isDragging, handleDragMove, finishDrag, startDrag]);
 
   // Track if component has mounted
   const hasMountedRef = useRef(false);
@@ -595,10 +647,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
             <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
           </div>
-          <div className="w-6 h-6 flex flex-col items-center justify-center ml-2">
-            <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
-            <div className="w-4 h-0.5 bg-gray-600 mb-1"></div>
-            <div className="w-4 h-0.5 bg-gray-600"></div>
+          <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </div>
         </div>
       </div>
@@ -668,11 +723,22 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
   const handlePointerStart = useCallback((e: React.PointerEvent, id: string) => {
     if (disabled) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    startDrag(e, id);
-  }, [disabled, startDrag]);
+    // Capture the pointer to this element — routes all subsequent pointer events
+    // here and prevents the hosting view (e.g. SFSafariViewController sheet)
+    // from intercepting the touch as a dismiss gesture.
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+    // Only record intent — actual drag starts after pointer moves >8px
+    pendingDragRef.current = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      started: false
+    };
+  }, [disabled]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent, id: string) => {
@@ -771,76 +837,83 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [disabled, mainList, noPreferenceList, keyboardMode, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Helper function to move items within the same list
+  // FLIP animation helper: records positions, applies state change, then animates
+  const animateWithFLIP = useCallback((callback: () => void) => {
+    // FIRST: Record current DOM positions of all items
+    const oldPositions: Record<string, number> = {};
+    for (const [id, el] of Object.entries(elementRefs.current)) {
+      if (el) {
+        oldPositions[id] = el.getBoundingClientRect().top;
+      }
+    }
+
+    // LAST: Apply the state change synchronously
+    flushSync(callback);
+
+    // INVERT + PLAY: Calculate deltas and animate
+    for (const [id, el] of Object.entries(elementRefs.current)) {
+      if (el && oldPositions[id] !== undefined) {
+        const newPos = el.getBoundingClientRect().top;
+        const delta = oldPositions[id] - newPos;
+        if (Math.abs(delta) > 1) {
+          // INVERT: Snap to old position via transform
+          el.style.transition = 'none';
+          el.style.transform = `translateY(${delta}px)`;
+
+          // Force reflow so the browser registers the old position
+          el.offsetHeight; // eslint-disable-line @typescript-eslint/no-unused-expressions
+
+          // PLAY: Animate to new position
+          el.style.transition = 'transform 0.3s ease';
+          el.style.transform = '';
+        }
+      }
+    }
+  }, []);
+
+  // Helper function to move items within the same list (with FLIP animation)
   const moveItemInList = useCallback((listType: 'main' | 'noPreference', fromIndex: number, toIndex: number) => {
-    if (listType === 'main') {
-      setMainList(prev => {
-        const newList = [...prev];
-        const [item] = newList.splice(fromIndex, 1);
-        newList.splice(toIndex, 0, item);
-        const updatedList = updateItemPositions(newList);
-        
-        // Parent notification will be handled by useEffect
-        
-        return updatedList;
-      });
-    } else {
-      setNoPreferenceList(prev => {
+    const setter = listType === 'main' ? setMainList : setNoPreferenceList;
+
+    animateWithFLIP(() => {
+      setter(prev => {
         const newList = [...prev];
         const [item] = newList.splice(fromIndex, 1);
         newList.splice(toIndex, 0, item);
         return updateItemPositions(newList);
       });
-    }
-  }, [updateItemPositions]);
+    });
+  }, [updateItemPositions, animateWithFLIP]);
 
-  // Helper function to move items between lists
+  // Helper function to move items between lists (with FLIP animation)
   const moveItemBetweenLists = useCallback((
-    itemId: string, 
-    sourceList: 'main' | 'noPreference', 
-    sourceIndex: number, 
-    targetList: 'main' | 'noPreference', 
+    itemId: string,
+    sourceList: 'main' | 'noPreference',
+    sourceIndex: number,
+    targetList: 'main' | 'noPreference',
     targetIndex: number
   ) => {
     const sourceListRef = sourceList === 'main' ? mainList : noPreferenceList;
     const item = sourceListRef[sourceIndex];
-    
+
     if (!item) return;
 
-    // Remove from source list
-    if (sourceList === 'main') {
-      setMainList(prev => {
-        const newList = [...prev];
-        newList.splice(sourceIndex, 1);
-        return updateItemPositions(newList);
-      });
-    } else {
-      setNoPreferenceList(prev => {
-        const newList = [...prev];
-        newList.splice(sourceIndex, 1);
-        return updateItemPositions(newList);
-      });
-    }
+    const sourceSetter = sourceList === 'main' ? setMainList : setNoPreferenceList;
+    const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
 
-    // Add to target list
-    if (targetList === 'main') {
-      setMainList(prev => {
+    animateWithFLIP(() => {
+      sourceSetter(prev => {
         const newList = [...prev];
-        newList.splice(targetIndex, 0, item);
-        const updatedList = updateItemPositions(newList);
-        
-        // Parent notification will be handled by useEffect
-        
-        return updatedList;
+        newList.splice(sourceIndex, 1);
+        return updateItemPositions(newList);
       });
-    } else {
-      setNoPreferenceList(prev => {
+      targetSetter(prev => {
         const newList = [...prev];
         newList.splice(targetIndex, 0, item);
         return updateItemPositions(newList);
       });
-    }
-  }, [mainList, noPreferenceList, updateItemPositions]);
+    });
+  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP]);
 
   // Render a single list container (main or no preference)
   const renderListContainer = (
@@ -945,12 +1018,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                     ${disabled ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
                     ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
                     border border-gray-300 dark:border-gray-500 p-3 select-none
-                    transition-colors duration-150
                   `}
                   style={{
                     top: `${option.top}px`,
                     height: `${itemHeight}px`,
-                    transition: dragState.isDragging ? 'top 0.2s ease' : 'top 0.3s ease',
+                    transition: dragState.isDragging
+                      ? 'top 0.2s ease, background-color 0.15s, color 0.15s'
+                      : 'top 0.3s ease, background-color 0.15s, color 0.15s',
                     zIndex: 1
                   }}
                   onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
@@ -962,19 +1036,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   aria-describedby={`${option.id}-instructions`}
                 >
                   <div className="flex items-center justify-between h-full relative">
-                    {/* Left drag handle with grabbable region */}
-                    <div
-                      className="absolute -left-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
-                      style={{
-                        width: 'calc(20% + 0.75rem)',
-                        touchAction: 'none',
-                        zIndex: 2
-                      }}
-                      onPointerDown={!disabled ? (e) => handlePointerStart(e, option.id) : undefined}
-                      title=""
-                    />
-
-                    {/* Center content - not grabbable */}
+                    {/* Content area - not draggable, allows normal scrolling */}
                     <div className={`flex-1 flex items-center pr-12 min-w-0 ${
                       disabled
                         ? 'text-gray-500 dark:text-gray-400'
@@ -983,23 +1045,96 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
                     </div>
 
-                    {/* Right drag handle with grabbable region */}
+                    {/* Right side: combined drag handle with tap zones for reordering
+                         Drag starts on pointerdown; if released without moving, treated as tap */}
                     {!disabled && (
                       <div
-                        className="absolute -right-3 top-0 bottom-0 cursor-grab active:cursor-grabbing"
+                        className="absolute -right-3 cursor-grab active:cursor-grabbing"
                         style={{
                           width: 'calc(20% + 0.75rem)',
+                          top: `-${12 + gapSize / 2}px`,
+                          bottom: `-${12 + gapSize / 2}px`,
                           touchAction: 'none',
-                          zIndex: 2
+                          zIndex: 2,
                         }}
-                        onPointerDown={(e) => handlePointerStart(e, option.id)}
+                        onPointerDown={!disabled ? (e) => {
+                          // Always start drag — tap detection happens on pointerup
+                          handlePointerStart(e, option.id);
+                        } : undefined}
+                        onPointerUp={!disabled ? (e) => {
+                          // If drag never started (pointer moved <8px), it's a tap
+                          const pending = pendingDragRef.current;
+                          if (pending && !pending.started && pending.id === option.id) {
+                            pendingDragRef.current = null; // Clear before document handler runs
+
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const relativeY = e.clientY - rect.top;
+                            const half = rect.height / 2;
+
+                            if (listType === 'noPreference') {
+                              moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
+                            } else if (relativeY < half) {
+                              if (index > 0) {
+                                moveItemInList(listType, index, index - 1);
+                              }
+                            } else {
+                              if (index < listItems.length - 1) {
+                                moveItemInList(listType, index, index + 1);
+                              } else {
+                                moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
+                              }
+                            }
+                          }
+                        } : undefined}
                         title=""
                       >
-                        {/* Visual hamburger menu - positioned within the grabbable area */}
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 flex flex-col items-center justify-center">
-                          <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                          <div className="w-4 h-0.5 bg-gray-400 mb-1"></div>
-                          <div className="w-4 h-0.5 bg-gray-400"></div>
+                        {/* Visual: arrows + drag handle */}
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0">
+                          {listType === 'main' ? (
+                            <>
+                              {/* Up arrow */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className={index === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}
+                              >
+                                <polyline points="18 15 12 9 6 15" />
+                              </svg>
+                              {/* Drag handle lines */}
+                              <div className="flex flex-col items-center justify-center my-0.5">
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
+                              </div>
+                              {/* Down arrow */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-gray-400 dark:text-gray-500"
+                              >
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </>
+                          ) : (
+                            <>
+                              {/* Plus symbol above */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-green-500 dark:text-green-400"
+                              >
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                              {/* Drag handle lines */}
+                              <div className="flex flex-col items-center justify-center my-0.5">
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
+                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
+                              </div>
+                              {/* Plus symbol below */}
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                className="text-green-500 dark:text-green-400"
+                              >
+                                <line x1="12" y1="5" x2="12" y2="19" />
+                                <line x1="5" y1="12" x2="19" y2="12" />
+                              </svg>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}

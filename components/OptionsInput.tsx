@@ -12,7 +12,6 @@ interface OptionsInputProps {
   options: string[];
   setOptions: (options: string[]) => void;
   isLoading?: boolean;
-  pollType?: 'poll' | 'suggestion';
   label?: React.ReactNode;
   placeholder?: string;
   category?: PollCategory;
@@ -27,7 +26,6 @@ export default function OptionsInput({
   options,
   setOptions,
   isLoading = false,
-  pollType = 'poll',
   label,
   placeholder,
   category = 'custom',
@@ -141,11 +139,6 @@ export default function OptionsInput({
         return filledOptions.length === 0 ? "Search for a restaurant..." : "Add another restaurant...";
       }
       return `Restaurant ${index + 1}`;
-    } else if (pollType === 'suggestion') {
-      if (isLastField) {
-        return filledOptions.length === 0 ? "Add a suggestion" : "Add another suggestion...";
-      }
-      return `Suggestion ${index + 1}`;
     } else {
       if (isLastField) {
         return filledOptions.length === 0 ? "Add an option" : "Add another option...";
