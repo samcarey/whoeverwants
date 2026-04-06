@@ -916,9 +916,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
-      if (filteredRankedChoices.length === 0) {
-        await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, isAbstaining });
-        setVoteError("Please rank at least one option or select Abstain");
+      const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+      if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
+        await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, suggestionChoices, isAbstaining, canSubmitSuggestions });
+        setVoteError(canSubmitSuggestions
+          ? "Please add or second at least one suggestion, or select Abstain"
+          : "Please rank at least one option or select Abstain");
         return;
       }
     }
@@ -1005,9 +1008,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
-        
-        if (filteredRankedChoices.length === 0 && !isAbstaining) {
-          setVoteError("Please rank at least one option or select Abstain");
+        const filteredSuggestionsForValidation = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+
+        if (filteredRankedChoices.length === 0 && !isAbstaining && (!canSubmitSuggestions || filteredSuggestionsForValidation.length === 0)) {
+          setVoteError(canSubmitSuggestions
+            ? "Please add or second at least one suggestion, or select Abstain"
+            : "Please rank at least one option or select Abstain");
           setIsSubmitting(false);
           return;
         }
