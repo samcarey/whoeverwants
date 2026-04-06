@@ -1309,7 +1309,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           if (!isPollClosed && !isExpired && deadline) {
             // During suggestion phase, show suggestion deadline instead of response deadline
             if (inSuggestionPhase && poll.suggestion_deadline) {
-              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions close" />;
+              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
             }
             return <Countdown deadline={poll.response_deadline || null} />;
           }
@@ -1816,17 +1816,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Suggestion phase disclaimer when pre-ranking is allowed and user has voted */}
                   {canSubmitSuggestions && canSubmitRankings && hasVoted && !isEditingVote && pollOptions.length > 0 && (
-                    <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
-                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-sm">
-                        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        <span>
-                          Options can still be added! Suggestions close in{' '}
-                          <Countdown deadline={poll.suggestion_deadline!} onExpire={() => setCurrentTime(new Date())} />
-                        </span>
+                    <>
+                      <div className="mb-2 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg">
+                        <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-sm">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                          </svg>
+                          <span>Options can still be added until suggestions cutoff!</span>
+                        </div>
                       </div>
-                    </div>
+                      <Countdown deadline={poll.response_deadline || null} label="Preferences closing" />
+                    </>
                   )}
 
                   {/* Ranking UI - shown when ranking is allowed and there are options
@@ -1904,7 +1904,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   {!canSubmitRankings && canSubmitSuggestions && (
                     <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
                       <p className="text-blue-800 dark:text-blue-200 text-sm">
-                        Ranking will open when suggestions close in{' '}
+                        Ranking will open after suggestions cutoff in{' '}
                         <Countdown deadline={poll.suggestion_deadline!} onExpire={() => setCurrentTime(new Date())} />
                       </p>
                     </div>
