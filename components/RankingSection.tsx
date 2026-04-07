@@ -106,6 +106,16 @@ export default function RankingSection({
         </div>
       );
     }
+    // Suggestion phase ended but no suggestions were submitted
+    if (hasSuggestionPhase && !canSubmitSuggestions && pollOptions.length === 0) {
+      return (
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
+            No suggestions were submitted. There are no options to rank.
+          </p>
+        </div>
+      );
+    }
     return null;
   }
 
