@@ -348,6 +348,26 @@ def create_poll(req: CreatePollRequest):
     if req.time_mode == "preferences" and (not req.time_options or len(req.time_options) < 2):
         raise HTTPException(status_code=400, detail="At least 2 time options are required for 'preferences' mode")
 
+    # Validate deadlines are in the future and suggestion cutoff < voting cutoff
+    response_dt = (
+        datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
+        if req.response_deadline else None
+    )
+    if response_dt and response_dt <= now:
+        raise HTTPException(status_code=400, detail="Voting deadline must be in the future")
+
+    if req.suggestion_deadline:
+        suggestion_dt = datetime.fromisoformat(req.suggestion_deadline.replace("Z", "+00:00"))
+        if suggestion_dt <= now:
+            raise HTTPException(status_code=400, detail="Suggestion deadline must be in the future")
+        if response_dt and suggestion_dt >= response_dt:
+            raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
+
+    if req.suggestion_deadline_minutes and response_dt:
+        max_suggestion_dt = now + timedelta(minutes=req.suggestion_deadline_minutes)
+        if max_suggestion_dt >= response_dt:
+            raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
+
     with get_db() as conn:
         # Determine resolved values for 'set' mode
         resolved_location = req.location_value if req.location_mode == "set" else None
@@ -560,7 +580,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
     with get_db() as conn:
         # Verify poll exists and is open
         poll = conn.execute(
-            "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
+            "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking, response_deadline FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not poll:
@@ -576,6 +596,13 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         )
         if has_deferred_deadline:
             new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
+            # Cap at response_deadline to ensure suggestions close before voting
+            if poll.get("response_deadline"):
+                response_dt = poll["response_deadline"]
+                if not response_dt.tzinfo:
+                    response_dt = response_dt.replace(tzinfo=timezone.utc)
+                if new_deadline >= response_dt:
+                    new_deadline = response_dt - timedelta(minutes=1)
             conn.execute(
                 "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
                 {"deadline": new_deadline, "now": now, "poll_id": poll_id},
