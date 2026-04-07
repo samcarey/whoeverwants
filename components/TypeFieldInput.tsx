@@ -16,6 +16,14 @@ const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "video_game", label: "Video Game", icon: "🎮" },
 ];
 
+/** Placeholder examples for the "For" field, keyed by category value. */
+export const FOR_FIELD_PLACEHOLDERS: Record<string, string> = {
+  restaurant: "Dinner, Lunch, etc.",
+  location: "Vacation, Day trip, etc.",
+  movie: "Movie night, Date night, etc.",
+  video_game: "Game night, Tournament, etc.",
+};
+
 export function getBuiltInType(value: string): BuiltInType | undefined {
   return BUILT_IN_TYPES.find((t) => t.value === value);
 }

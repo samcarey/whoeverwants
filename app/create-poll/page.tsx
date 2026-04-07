@@ -6,7 +6,7 @@ import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
-import TypeFieldInput, { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import TypeFieldInput, { getBuiltInType, isLocationLikeCategory, FOR_FIELD_PLACEHOLDERS } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -120,6 +120,7 @@ function CreatePollContent() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
   const [category, setCategory] = useState<string>('custom');
+  const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
   const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
@@ -150,6 +151,7 @@ function CreatePollContent() {
     const builtIn = getBuiltInType(category);
     const limit = 40;
     const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
+    const forSuffix = forField.trim() ? ` for ${forField.trim()}` : '';
 
     const joinWithOr = (items: string[]) => {
       if (items.length === 2) return `${items[0]} or ${items[1]}?`;
@@ -181,6 +183,13 @@ function CreatePollContent() {
       return `Which ${catLabel}?`;
     };
 
+    const appendFor = (base: string) => {
+      if (!forSuffix || !base) return base;
+      // Insert " for X" before trailing "?" if present
+      if (base.endsWith('?')) return base.slice(0, -1) + forSuffix + '?';
+      return base + forSuffix;
+    };
+
     if (pollType === 'poll') {
       if (category === 'yes_no') {
         return '';
@@ -191,10 +200,10 @@ function CreatePollContent() {
         // Suggestion mode (no options) — use category name as title
         const prefix = category === 'location' ? 'Place'
           : builtIn?.label || (category !== 'custom' ? category : '');
-        if (prefix) return prefix + '?';
+        if (prefix) return appendFor(prefix + '?');
         return '';
       }
-      return buildFromOptions(filled, 'Quick Vote');
+      return appendFor(buildFromOptions(filled, 'Quick Vote'));
     }
 
     // participation
@@ -206,7 +215,7 @@ function CreatePollContent() {
       if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
     }
     return "Who's in?";
-  }, [pollType, category, options, locationMode, locationValue, locationOptions]);
+  }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
 
   // Focus details textarea when opening
   useEffect(() => {
@@ -286,6 +295,7 @@ function CreatePollContent() {
         creatorName,
         isAutoTitle,
         category,
+        forField,
         minParticipants,
         maxParticipants,
         maxEnabled,
@@ -350,6 +360,7 @@ function CreatePollContent() {
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
           if (formState.category) setCategory(formState.category);
+          if (formState.forField) setForField(formState.forField);
 
           // Restore participation poll conditions
           if (formState.minParticipants !== undefined) setMinParticipants(formState.minParticipants);
@@ -1326,23 +1337,39 @@ function CreatePollContent() {
             </div>
           </div>
 
-          {/* Category selector for suggestion and poll types */}
+          {/* Category and For fields for suggestion and poll types */}
           {pollType !== 'participation' && (
-            <div>
-              <label htmlFor="category" className="block text-sm font-medium mb-1">
-                Category <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <TypeFieldInput
-                value={category}
-                onChange={(val) => {
-                  setCategory(val);
-                  if (val === 'yes_no') {
-                    setIsAutoTitle(false);
-                    setTitle('');
-                  }
-                }}
-                disabled={isLoading}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="category" className="block text-sm font-medium mb-1">
+                  Category <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <TypeFieldInput
+                  value={category}
+                  onChange={(val) => {
+                    setCategory(val);
+                    if (val === 'yes_no') {
+                      setIsAutoTitle(false);
+                      setTitle('');
+                    }
+                  }}
+                  disabled={isLoading}
+                />
+              </div>
+              <div>
+                <label htmlFor="forField" className="block text-sm font-medium mb-1">
+                  For <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="forField"
+                  type="text"
+                  value={forField}
+                  onChange={(e) => setForField(e.target.value)}
+                  disabled={isLoading}
+                  placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Birthday, Team outing, etc."}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
             </div>
           )}
 
