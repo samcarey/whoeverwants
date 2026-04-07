@@ -349,24 +349,21 @@ def create_poll(req: CreatePollRequest):
         raise HTTPException(status_code=400, detail="At least 2 time options are required for 'preferences' mode")
 
     # Validate deadlines are in the future and suggestion cutoff < voting cutoff
-    if req.response_deadline:
-        response_dt = datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
-        if response_dt <= now:
-            raise HTTPException(status_code=400, detail="Voting deadline must be in the future")
+    response_dt = (
+        datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
+        if req.response_deadline else None
+    )
+    if response_dt and response_dt <= now:
+        raise HTTPException(status_code=400, detail="Voting deadline must be in the future")
 
     if req.suggestion_deadline:
         suggestion_dt = datetime.fromisoformat(req.suggestion_deadline.replace("Z", "+00:00"))
         if suggestion_dt <= now:
             raise HTTPException(status_code=400, detail="Suggestion deadline must be in the future")
-        if req.response_deadline:
-            response_dt = datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
-            if suggestion_dt >= response_dt:
-                raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
+        if response_dt and suggestion_dt >= response_dt:
+            raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
 
-    if req.suggestion_deadline_minutes and req.response_deadline:
-        # For deferred deadlines, the max possible suggestion deadline is now + minutes.
-        # Validate that this doesn't exceed the voting deadline.
-        response_dt = datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
+    if req.suggestion_deadline_minutes and response_dt:
         max_suggestion_dt = now + timedelta(minutes=req.suggestion_deadline_minutes)
         if max_suggestion_dt >= response_dt:
             raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")

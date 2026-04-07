@@ -59,15 +59,9 @@ const FRACTIONAL_CUTOFF_OPTIONS = [
   { value: "0.75x", fraction: 0.75 },
 ];
 
-// Absolute duration options for suggestion cutoff (used as fallback or alongside fractional)
+// Absolute duration options for suggestion cutoff (base options + longer durations)
 const ABSOLUTE_CUTOFF_OPTIONS = [
-  { value: "5min", label: "5 min", minutes: 5 },
-  { value: "10min", label: "10 min", minutes: 10 },
-  { value: "15min", label: "15 min", minutes: 15 },
-  { value: "30min", label: "30 min", minutes: 30 },
-  { value: "1hr", label: "1 hr", minutes: 60 },
-  { value: "2hr", label: "2 hr", minutes: 120 },
-  { value: "4hr", label: "4 hr", minutes: 240 },
+  ...BASE_DEADLINE_OPTIONS.filter(o => o.value !== 'custom'),
   { value: "8hr", label: "8 hr", minutes: 480 },
   { value: "1day", label: "1 day", minutes: 1440 },
   { value: "3day", label: "3 days", minutes: 4320 },
@@ -150,10 +144,8 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
-  // Minimum responses / preliminary results / voting cutoff modal
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
-
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -319,20 +311,20 @@ function CreatePollContent() {
     return null;
   }, [suggestionCutoff, getVotingDeadlineMinutes]);
 
-  // Format minutes as a human-readable label
-  // Format minutes as a single-unit label. Uses the largest unit where the value is >= 2,
+  // Single-unit label using truncation: uses the largest unit where the value is >= 2,
   // except minutes which is always used below 2 hours.
   const formatMinutesLabel = (minutes: number): string => {
-    if (minutes < 1) return `${Math.round(minutes * 60)} sec`;
+    if (minutes < 1) return `${Math.floor(minutes * 60)} sec`;
     const hours = minutes / 60;
-    if (hours < 2) return `${Math.round(minutes)} min`;
+    if (hours < 2) return `${Math.floor(minutes)} min`;
     const days = hours / 24;
-    if (days < 2) return `${Math.round(hours)} hr`;
+    if (days < 2) return `${Math.floor(hours)} hr`;
     const weeks = days / 7;
-    if (weeks < 2) return `${Math.round(days)} day${Math.round(days) !== 1 ? 's' : ''}`;
+    if (weeks < 2) { const d = Math.floor(days); return `${d} day${d !== 1 ? 's' : ''}`; }
     const months = days / 30;
-    if (months < 2) return `${Math.round(weeks)} week${Math.round(weeks) !== 1 ? 's' : ''}`;
-    return `${Math.round(months)} month${Math.round(months) !== 1 ? 's' : ''}`;
+    if (months < 2) { const w = Math.floor(weeks); return `${w} week${w !== 1 ? 's' : ''}`; }
+    const m = Math.floor(months);
+    return `${m} month${m !== 1 ? 's' : ''}`;
   };
 
   // Save poll type preference separately (persists across submissions)
@@ -1964,8 +1956,6 @@ function CreatePollContent() {
         confirmText="Create"
         cancelText="Cancel"
       />
-
-
     </div>
   );
 }
