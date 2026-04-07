@@ -17,7 +17,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } 
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
-import ExpirationConditionsModal, { EXPIRATION_DEADLINE_OPTIONS } from "@/components/ExpirationConditionsModal";
+import VotingCutoffConditionsModal, { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
@@ -137,10 +137,10 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
-  // Minimum responses / preliminary results / expiration modal
+  // Minimum responses / preliminary results / voting cutoff modal
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
-  const [showExpirationModal, setShowExpirationModal] = useState(false);
+  const [showVotingCutoffModal, setShowVotingCutoffModal] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -259,8 +259,8 @@ function CreatePollContent() {
         setDeadlineOption('1week');
       }
     } else {
-      // Switching away: revert to inline default if it's an expiration modal option
-      if (EXPIRATION_DEADLINE_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
+      // Switching away: revert to inline default if it's a voting cutoff modal option
+      if (VOTING_CUTOFF_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
         setDeadlineOption('10min');
       }
     }
@@ -908,7 +908,7 @@ function CreatePollContent() {
   const calculateDeadline = () => {
     const now = new Date();
 
-    // No deadline if disabled via expiration modal
+    // No deadline if disabled via voting cutoff modal
     if (deadlineOption === "none") return null;
 
     if (deadlineOption === "custom") {
@@ -924,9 +924,9 @@ function CreatePollContent() {
       return customDateTime.toISOString();
     }
 
-    // Check both inline deadline options and expiration modal options
+    // Check both inline deadline options and voting cutoff modal options
     const option = deadlineOptions.find(opt => opt.value === deadlineOption)
-      || EXPIRATION_DEADLINE_OPTIONS.find(opt => opt.value === deadlineOption);
+      || VOTING_CUTOFF_OPTIONS.find(opt => opt.value === deadlineOption);
     if (!option) return null;
 
     const deadline = new Date(now.getTime() + option.minutes * 60 * 1000);
@@ -1423,10 +1423,87 @@ function CreatePollContent() {
                 searchRadius={searchRadius}
                 label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
               />
+
+              {/* Suggestions Cutoff - shown when no options provided (suggestion mode) */}
+              {isSuggestionMode && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium cursor-pointer">
+                      <span>Suggestions Cutoff: </span>
+                      <span className="relative inline-flex">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                          {suggestionCutoff === 'custom'
+                            ? 'Custom'
+                            : SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
+                        </span>
+                        <select
+                          value={suggestionCutoff}
+                          onChange={(e) => setSuggestionCutoff(e.target.value)}
+                          disabled={isLoading}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          aria-label="Suggestions cutoff duration"
+                        >
+                          {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowPreRanking}
+                        onChange={(e) => setAllowPreRanking(e.target.checked)}
+                        disabled={isLoading}
+                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        allow pre-ranking
+                      </span>
+                    </label>
+                  </div>
+                  {/* Custom date/time fields */}
+                  {suggestionCutoff === 'custom' && (
+                    <div className="mt-2 flex justify-between gap-2">
+                      <div className="w-auto">
+                        <label htmlFor="customSuggestionDate" className="block text-xs text-gray-500 mb-1">
+                          Date
+                        </label>
+                        <input
+                          type="date"
+                          id="customSuggestionDate"
+                          value={customSuggestionDate}
+                          onChange={(e) => setCustomSuggestionDate(e.target.value)}
+                          disabled={isLoading}
+                          min={isClient ? getTodayDate() : ''}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                          style={{ fontSize: '14px' }}
+                          required
+                        />
+                      </div>
+                      <div className="w-auto">
+                        <label htmlFor="customSuggestionTime" className="block text-xs text-gray-500 mb-1 text-right">
+                          Time
+                        </label>
+                        <input
+                          type="time"
+                          id="customSuggestionTime"
+                          value={customSuggestionTime}
+                          onChange={(e) => setCustomSuggestionTime(e.target.value)}
+                          disabled={isLoading}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                          style={{ fontSize: '14px' }}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 
-          {/* Preference/suggestion polls: min responses, preliminary results, expiration modal */}
+          {/* Preference/suggestion polls: min responses, preliminary results, voting cutoff modal */}
           {isPreferencePoll && (
             <>
               <CompactMinResponsesField
@@ -1441,12 +1518,12 @@ function CreatePollContent() {
               />
               <button
                 type="button"
-                onClick={() => setShowExpirationModal(true)}
+                onClick={() => setShowVotingCutoffModal(true)}
                 disabled={isLoading}
                 className="block text-sm font-medium text-left"
               >
                 <span className="inline-flex items-center gap-1.5 flex-wrap">
-                  <span className="whitespace-nowrap">Expiration:</span>
+                  <span className="whitespace-nowrap">Voting Cutoff:</span>
                   {(() => {
                     let timeLabel: string | null = null;
                     if (deadlineOption !== 'none') {
@@ -1454,7 +1531,7 @@ function CreatePollContent() {
                         const dt = new Date(`${customDate}T${customTime}`);
                         timeLabel = dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
                       } else {
-                        timeLabel = EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                        timeLabel = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label ||
                           deadlineOptions.find(o => o.value === deadlineOption)?.label ||
                           deadlineOption;
                       }
@@ -1576,83 +1653,6 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Suggestions Cutoff - shown when no options provided (suggestion mode) */}
-          {isSuggestionMode && (
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-medium cursor-pointer">
-                  <span>Suggestions Cutoff: </span>
-                  <span className="relative inline-flex">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                      {suggestionCutoff === 'custom'
-                        ? 'Custom'
-                        : SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
-                    </span>
-                    <select
-                      value={suggestionCutoff}
-                      onChange={(e) => setSuggestionCutoff(e.target.value)}
-                      disabled={isLoading}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="Suggestions cutoff duration"
-                    >
-                      {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={allowPreRanking}
-                    onChange={(e) => setAllowPreRanking(e.target.checked)}
-                    disabled={isLoading}
-                    className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    allow pre-ranking
-                  </span>
-                </label>
-              </div>
-              {/* Custom date/time fields */}
-              {suggestionCutoff === 'custom' && (
-                <div className="mt-2 flex justify-between gap-2">
-                  <div className="w-auto">
-                    <label htmlFor="customSuggestionDate" className="block text-xs text-gray-500 mb-1">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      id="customSuggestionDate"
-                      value={customSuggestionDate}
-                      onChange={(e) => setCustomSuggestionDate(e.target.value)}
-                      disabled={isLoading}
-                      min={isClient ? getTodayDate() : ''}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                      style={{ fontSize: '14px' }}
-                      required
-                    />
-                  </div>
-                  <div className="w-auto">
-                    <label htmlFor="customSuggestionTime" className="block text-xs text-gray-500 mb-1 text-right">
-                      Time
-                    </label>
-                    <input
-                      type="time"
-                      id="customSuggestionTime"
-                      value={customSuggestionTime}
-                      onChange={(e) => setCustomSuggestionTime(e.target.value)}
-                      disabled={isLoading}
-                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                      style={{ fontSize: '14px' }}
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           <div>
             {isAutoTitle ? (
               <button
@@ -1706,7 +1706,7 @@ function CreatePollContent() {
             {detailsOpen ? (
               <>
                 <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Details{!details.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
+                  Notes
                 </label>
                 <textarea
                   ref={detailsRef}
@@ -1734,7 +1734,7 @@ function CreatePollContent() {
               </>
             ) : (
               <div className="text-sm font-medium">
-                Details <span className="font-normal">(optional)</span>:{' '}
+                Notes:{' '}
                 <button
                   type="button"
                   onClick={() => setDetailsOpen(true)}
@@ -1820,9 +1820,9 @@ function CreatePollContent() {
         cancelText="Cancel"
       />
 
-      <ExpirationConditionsModal
-        isOpen={showExpirationModal}
-        onClose={() => setShowExpirationModal(false)}
+      <VotingCutoffConditionsModal
+        isOpen={showVotingCutoffModal}
+        onClose={() => setShowVotingCutoffModal(false)}
         deadlineOption={deadlineOption}
         setDeadlineOption={setDeadlineOption}
         customDate={customDate}
