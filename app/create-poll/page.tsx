@@ -151,7 +151,8 @@ function CreatePollContent() {
     const builtIn = getBuiltInType(category);
     const limit = 40;
     const catLabel = builtIn?.label || (category !== 'custom' ? category : 'one');
-    const forSuffix = forField.trim() ? ` for ${forField.trim()}` : '';
+    const trimmedFor = forField.trim();
+    const forSuffix = trimmedFor ? ` for ${trimmedFor}` : '';
 
     const joinWithOr = (items: string[]) => {
       if (items.length === 2) return `${items[0]} or ${items[1]}?`;
@@ -312,7 +313,7 @@ function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
