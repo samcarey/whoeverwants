@@ -1706,7 +1706,7 @@ function CreatePollContent() {
             {detailsOpen ? (
               <>
                 <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Details{!details.trim() && <>{' '}<span className="font-normal">(optional)</span></>}
+                  Notes
                 </label>
                 <textarea
                   ref={detailsRef}
@@ -1734,7 +1734,7 @@ function CreatePollContent() {
               </>
             ) : (
               <div className="text-sm font-medium">
-                Details <span className="font-normal">(optional)</span>:{' '}
+                Notes:{' '}
                 <button
                   type="button"
                   onClick={() => setDetailsOpen(true)}
