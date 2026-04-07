@@ -52,13 +52,26 @@ const BASE_DEADLINE_OPTIONS = [
   { value: "custom", label: "Custom", minutes: 0 },
 ];
 
-const SUGGESTION_CUTOFF_OPTIONS = [
-  ...BASE_DEADLINE_OPTIONS.filter(o => o.value !== 'custom'),
+// Fractional suggestion cutoff options (relative to voting deadline)
+const FRACTIONAL_CUTOFF_OPTIONS = [
+  { value: "0.25x", fraction: 0.25 },
+  { value: "0.5x", fraction: 0.5 },
+  { value: "0.75x", fraction: 0.75 },
+];
+
+// Absolute duration options for suggestion cutoff (used as fallback or alongside fractional)
+const ABSOLUTE_CUTOFF_OPTIONS = [
+  { value: "5min", label: "5 min", minutes: 5 },
+  { value: "10min", label: "10 min", minutes: 10 },
+  { value: "15min", label: "15 min", minutes: 15 },
+  { value: "30min", label: "30 min", minutes: 30 },
+  { value: "1hr", label: "1 hr", minutes: 60 },
+  { value: "2hr", label: "2 hr", minutes: 120 },
+  { value: "4hr", label: "4 hr", minutes: 240 },
   { value: "8hr", label: "8 hr", minutes: 480 },
   { value: "1day", label: "1 day", minutes: 1440 },
   { value: "3day", label: "3 days", minutes: 4320 },
   { value: "1week", label: "1 week", minutes: 10080 },
-  { value: "custom", label: "Custom", minutes: 0 },
 ];
 
 const DEV_DEADLINE_OPTIONS = [
@@ -111,7 +124,7 @@ function CreatePollContent() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
-  const [suggestionCutoff, setSuggestionCutoff] = useState("2hr");
+  const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
   const [allowPreRanking, setAllowPreRanking] = useState(true);
@@ -278,6 +291,55 @@ function CreatePollContent() {
       }
     }
   }, [isPreferencePoll, deadlineOption]);
+
+  // Resolve voting deadline to minutes (null if no deadline or custom date/time)
+  const getVotingDeadlineMinutes = useCallback((): number | null => {
+    if (deadlineOption === 'none') return null;
+    if (deadlineOption === 'custom') {
+      if (!customDate || !customTime) return null;
+      const dt = new Date(`${customDate}T${customTime}`);
+      const diffMs = dt.getTime() - Date.now();
+      return diffMs > 0 ? diffMs / 60000 : null;
+    }
+    const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)
+      || BASE_DEADLINE_OPTIONS.find(o => o.value === deadlineOption);
+    return opt?.minutes ?? null;
+  }, [deadlineOption, customDate, customTime]);
+
+  // Resolve suggestion cutoff to minutes based on current selection
+  const getSuggestionCutoffMinutes = useCallback((): number | null => {
+    const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+    if (frac) {
+      const votingMin = getVotingDeadlineMinutes();
+      if (votingMin == null) return null;
+      return votingMin * frac.fraction;
+    }
+    const abs = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+    if (abs) return abs.minutes;
+    // 'custom' — computed from customSuggestionDate/Time at submit time
+    return null;
+  }, [suggestionCutoff, getVotingDeadlineMinutes]);
+
+  // Format minutes as a human-readable label
+  const formatMinutesLabel = (minutes: number): string => {
+    if (minutes < 1) return `${Math.round(minutes * 60)} sec`;
+    if (minutes < 60) return `${Math.round(minutes)} min`;
+    const hours = minutes / 60;
+    if (hours < 24) {
+      const h = Math.floor(hours);
+      const m = Math.round((hours - h) * 60);
+      return m > 0 ? `${h} hr ${m} min` : `${h} hr`;
+    }
+    const days = hours / 24;
+    if (days < 7) {
+      const d = Math.floor(days);
+      const h = Math.round((days - d) * 24);
+      return h > 0 ? `${d} day${d !== 1 ? 's' : ''} ${h} hr` : `${d} day${d !== 1 ? 's' : ''}`;
+    }
+    const weeks = Math.floor(days / 7);
+    const rd = Math.round(days - weeks * 7);
+    return rd > 0 ? `${weeks} week${weeks !== 1 ? 's' : ''} ${rd} day${rd !== 1 ? 's' : ''}` : `${weeks} week${weeks !== 1 ? 's' : ''}`;
+  };
 
   // Save poll type preference separately (persists across submissions)
   const savePollTypePreference = useCallback((type: 'poll' | 'participation') => {
@@ -506,6 +568,34 @@ function CreatePollContent() {
           if (tooShort) {
             return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
           }
+        }
+      }
+    }
+
+    // Suggestion cutoff validation
+    if (isSuggestionMode) {
+      if (suggestionCutoff === 'custom') {
+        if (!customSuggestionDate || !customSuggestionTime) {
+          return "Please select both a suggestion cutoff date and time.";
+        }
+        const sugDt = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
+        if (sugDt <= new Date()) {
+          return "Suggestion cutoff must be in the future.";
+        }
+        // Check suggestion cutoff is before voting cutoff
+        const votingDeadline = calculateDeadline();
+        if (votingDeadline) {
+          const votingDt = new Date(votingDeadline);
+          if (sugDt >= votingDt) {
+            return "Suggestion cutoff must be before the voting cutoff.";
+          }
+        }
+      } else {
+        // For fractional/absolute: check computed minutes vs voting deadline
+        const cutoffMin = getSuggestionCutoffMinutes();
+        const votingMin = getVotingDeadlineMinutes();
+        if (cutoffMin != null && votingMin != null && cutoffMin >= votingMin) {
+          return "Suggestion cutoff must be before the voting cutoff.";
         }
       }
     }
@@ -1147,9 +1237,9 @@ function CreatePollContent() {
           const cutoffDate = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
           pollData.suggestion_deadline = cutoffDate.toISOString();
         } else {
-          // Preset: deferred until first suggestion
-          const cutoffMinutes = SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.minutes || 120;
-          pollData.suggestion_deadline_minutes = cutoffMinutes;
+          // Fractional or absolute: compute minutes and defer until first suggestion
+          const cutoffMinutes = getSuggestionCutoffMinutes();
+          pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
         }
         pollData.allow_pre_ranking = allowPreRanking;
       }
@@ -1463,9 +1553,16 @@ function CreatePollContent() {
                       <span>Suggestions Cutoff: </span>
                       <span className="relative inline-flex">
                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                          {suggestionCutoff === 'custom'
-                            ? 'Custom'
-                            : SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
+                          {(() => {
+                            if (suggestionCutoff === 'custom') return 'Custom';
+                            const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                            if (frac) {
+                              const votingMin = getVotingDeadlineMinutes();
+                              if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
+                              return `${frac.fraction}x`;
+                            }
+                            return ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff;
+                          })()}
                         </span>
                         <select
                           value={suggestionCutoff}
@@ -1474,9 +1571,26 @@ function CreatePollContent() {
                           className="absolute inset-0 opacity-0 cursor-pointer"
                           aria-label="Suggestions cutoff duration"
                         >
-                          {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
+                          {/* Fractional options (only when voting deadline is set) */}
+                          {getVotingDeadlineMinutes() != null && (
+                            <optgroup label="Relative to Voting Cutoff">
+                              {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
+                                const votingMin = getVotingDeadlineMinutes()!;
+                                const mins = votingMin * opt.fraction;
+                                return (
+                                  <option key={opt.value} value={opt.value}>
+                                    {formatMinutesLabel(mins)} ({opt.fraction}x Voting Cutoff)
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          )}
+                          <optgroup label="Fixed Duration">
+                            {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </optgroup>
+                          <option value="custom">Custom</option>
                         </select>
                       </span>
                     </label>
@@ -1493,6 +1607,26 @@ function CreatePollContent() {
                       </span>
                     </label>
                   </div>
+                  {/* Suggestion cutoff warnings */}
+                  {isClient && (() => {
+                    const warnings: string[] = [];
+                    const cutoffMin = getSuggestionCutoffMinutes();
+                    if (cutoffMin != null && cutoffMin < 5) {
+                      warnings.push("Suggestions cutoff is less than 5 minutes from now.");
+                    }
+                    const votingMin = getVotingDeadlineMinutes();
+                    if (cutoffMin != null && votingMin != null && (votingMin - cutoffMin) < 5) {
+                      warnings.push("Suggestions cutoff is less than 5 minutes before voting cutoff.");
+                    }
+                    if (warnings.length === 0) return null;
+                    return (
+                      <div className="mt-1.5">
+                        {warnings.map((w, i) => (
+                          <p key={i} className="text-xs text-amber-600 dark:text-amber-400">{w}</p>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   {/* Custom date/time fields */}
                   {suggestionCutoff === 'custom' && (
                     <div className="mt-2 flex justify-between gap-2">
