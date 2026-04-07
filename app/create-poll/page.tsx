@@ -263,10 +263,11 @@ function CreatePollContent() {
     if (isPreferencePoll === prevIsPreferencePollRef.current) return;
     prevIsPreferencePollRef.current = isPreferencePoll;
     if (isPreferencePoll) {
-      // Switching to preference/suggestion poll: default to 4 weeks
+      // Switching to preference/suggestion poll: default to 4 weeks, force auto-title
       if (BASE_DEADLINE_OPTIONS.some(o => o.value === deadlineOption)) {
         setDeadlineOption('1week');
       }
+      setIsAutoTitle(true);
     } else {
       // Switching away: revert to inline default if it's a voting cutoff modal option
       if (VOTING_CUTOFF_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
@@ -1680,6 +1681,8 @@ function CreatePollContent() {
             </>
           )}
 
+          {/* Title field - hidden for preference polls (always auto-generated) */}
+          {!isPreferencePoll && (
           <div>
             {isAutoTitle ? (
               <button
@@ -1727,6 +1730,7 @@ function CreatePollContent() {
               </>
             )}
           </div>
+          )}
 
           {/* Optional details field */}
           <div>
@@ -1804,7 +1808,12 @@ function CreatePollContent() {
                 Creating Poll...
               </>
             ) : (
-              "Submit"
+              <span className="flex flex-col items-center">
+                <span>Submit</span>
+                {isPreferencePoll && title && (
+                  <span className="text-xs font-normal opacity-70">&ldquo;{title}&rdquo;</span>
+                )}
+              </span>
             )}
           </button>
         </form>
