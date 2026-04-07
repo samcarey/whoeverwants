@@ -1409,7 +1409,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 return (
                   <div className="mb-3 text-center">
                     <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                      {durationLabel} cutoff starts after first suggestion
+                      Suggestions cutoff {durationLabel} after first suggestion
                     </span>
                   </div>
                 );
