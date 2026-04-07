@@ -1339,7 +1339,7 @@ function CreatePollContent() {
 
           {/* Category and For fields for suggestion and poll types */}
           {pollType !== 'participation' && (
-            <div className="grid grid-cols-2 gap-3">
+            <>
               <div>
                 <label htmlFor="category" className="block text-sm font-medium mb-1">
                   Category <span className="text-gray-400 font-normal">(optional)</span>
@@ -1370,7 +1370,7 @@ function CreatePollContent() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
-            </div>
+            </>
           )}
 
           {/* Reference location for location polls */}
