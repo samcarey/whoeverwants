@@ -320,24 +320,19 @@ function CreatePollContent() {
   }, [suggestionCutoff, getVotingDeadlineMinutes]);
 
   // Format minutes as a human-readable label
+  // Format minutes as a single-unit label. Uses the largest unit where the value is >= 2,
+  // except minutes which is always used below 2 hours.
   const formatMinutesLabel = (minutes: number): string => {
     if (minutes < 1) return `${Math.round(minutes * 60)} sec`;
-    if (minutes < 60) return `${Math.round(minutes)} min`;
     const hours = minutes / 60;
-    if (hours < 24) {
-      const h = Math.floor(hours);
-      const m = Math.round((hours - h) * 60);
-      return m > 0 ? `${h} hr ${m} min` : `${h} hr`;
-    }
+    if (hours < 2) return `${Math.round(minutes)} min`;
     const days = hours / 24;
-    if (days < 7) {
-      const d = Math.floor(days);
-      const h = Math.round((days - d) * 24);
-      return h > 0 ? `${d} day${d !== 1 ? 's' : ''} ${h} hr` : `${d} day${d !== 1 ? 's' : ''}`;
-    }
-    const weeks = Math.floor(days / 7);
-    const rd = Math.round(days - weeks * 7);
-    return rd > 0 ? `${weeks} week${weeks !== 1 ? 's' : ''} ${rd} day${rd !== 1 ? 's' : ''}` : `${weeks} week${weeks !== 1 ? 's' : ''}`;
+    if (days < 2) return `${Math.round(hours)} hr`;
+    const weeks = days / 7;
+    if (weeks < 2) return `${Math.round(days)} day${Math.round(days) !== 1 ? 's' : ''}`;
+    const months = days / 30;
+    if (months < 2) return `${Math.round(weeks)} week${Math.round(weeks) !== 1 ? 's' : ''}`;
+    return `${Math.round(months)} month${Math.round(months) !== 1 ? 's' : ''}`;
   };
 
   // Save poll type preference separately (persists across submissions)
@@ -1653,24 +1648,14 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Preference/suggestion polls: min responses, preliminary results, voting cutoff */}
+          {/* Preference/suggestion polls: voting cutoff, min responses */}
           {isPreferencePoll && (
             <>
-              <CompactMinResponsesField
-                value={minResponses}
-                setValue={(val) => {
-                  setMinResponses(val);
-                  saveUserMinResponses(val);
-                }}
-                showPreliminary={showPreliminaryResults}
-                setShowPreliminary={setShowPreliminaryResults}
-                disabled={isLoading}
-              />
               <div>
                 <label className="block text-sm font-medium cursor-pointer">
                   <span>Voting Cutoff: </span>
                   <span className="relative inline-flex">
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                    <span className="font-normal text-blue-600 dark:text-blue-400">
                       {(() => {
                         if (deadlineOption === 'none') return 'None';
                         if (deadlineOption === 'custom') {
@@ -1729,6 +1714,16 @@ function CreatePollContent() {
                   </div>
                 )}
               </div>
+              <CompactMinResponsesField
+                value={minResponses}
+                setValue={(val) => {
+                  setMinResponses(val);
+                  saveUserMinResponses(val);
+                }}
+                showPreliminary={showPreliminaryResults}
+                setShowPreliminary={setShowPreliminaryResults}
+                disabled={isLoading}
+              />
             </>
           )}
 
