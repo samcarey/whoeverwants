@@ -19,7 +19,7 @@ export default function PollManagementButtons({
   onReopenClick,
   onForgetClick,
   isClosingPoll,
-  isReopeningPoll = false
+  isReopeningPoll = false,
 }: PollManagementButtonsProps) {
   // Don't render anything if no buttons should be shown
   if (!showCloseButton && !showReopenButton && !showForgetButton) {

@@ -37,6 +37,7 @@ interface RankingSectionProps {
   suggestionChoices: string[];
   justCancelledAbstain: boolean;
   twoOptionDisplayOrder: string[];
+  isEditingSuggestions: boolean;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -69,6 +70,7 @@ export default function RankingSection({
   suggestionChoices,
   justCancelledAbstain,
   twoOptionDisplayOrder,
+  isEditingSuggestions,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (userVoteData?.is_abstain || isAbstaining);
@@ -93,12 +95,24 @@ export default function RankingSection({
   ) : null;
 
   if (!canSubmitRankings || pollOptions.length === 0) {
-    if (!canSubmitRankings && canSubmitSuggestions) {
+    if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
-          <p className="text-blue-800 dark:text-blue-200 text-sm">
-            Ranking will open after suggestions cutoff in{' '}
-            <Countdown deadline={poll.suggestion_deadline!} />
+          <div className="text-blue-800 dark:text-blue-200 text-sm">
+            {poll.suggestion_deadline ? (
+              <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={poll.suggestion_deadline} /></>
+            ) : (
+              <>Ranking will open after suggestions cutoff</>
+            )}
+          </div>
+        </div>
+      );
+    }
+    if (hasSuggestionPhase && !canSubmitSuggestions && pollOptions.length === 0) {
+      return (
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
+            No suggestions were submitted. There are no options to rank.
           </p>
         </div>
       );

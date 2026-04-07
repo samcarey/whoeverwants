@@ -23,7 +23,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -72,6 +72,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [loadingResults, setLoadingResults] = useState(false);
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
+  const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
+  const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
+  const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
+  const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
   // Don't automatically assume poll was reopened just because deadline passed
   // Only set manuallyReopened when explicitly reopened by creator action
@@ -89,16 +93,24 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline
-  // has an optional suggestion collection phase before ranking begins
-  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!poll.suggestion_deadline;
-  const inSuggestionPhase = hasSuggestionPhase && currentTime
-    ? currentTime < new Date(poll.suggestion_deadline!)
-    : hasSuggestionPhase; // Before currentTime is set, assume suggestion phase if deadline exists
+  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline or suggestion_deadline_minutes
+  // has an optional suggestion collection phase before ranking begins.
+  // When suggestion_deadline_minutes is set but suggestion_deadline is null, the timer hasn't started yet
+  // (waiting for first suggestion). This is still considered "in suggestion phase".
+  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!(poll.suggestion_deadline || poll.suggestion_deadline_minutes);
+  const effectiveSuggestionDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
+  const suggestionTimerStarted = !!effectiveSuggestionDeadline;
+  const inSuggestionPhase = hasSuggestionPhase && (
+    !suggestionTimerStarted // Timer hasn't started yet (waiting for first suggestion)
+    || (currentTime ? currentTime < new Date(effectiveSuggestionDeadline!) : true)
+  );
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
   const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
     !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
   );
+  // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
+  // this distinguishes "voted with suggestions only" from "voted with rankings"
+  const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain;
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -726,6 +738,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Memoize parsed options to prevent re-parsing on every render
   // During suggestion phase (poll.options is null), derive options from suggestion_counts
   const pollOptions = useMemo(() => {
+    if (optionsOverride) {
+      return optionsOverride;
+    }
     if (poll.options) {
       return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
     }
@@ -733,7 +748,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       return pollResults.suggestion_counts.map((sc: { option: string }) => sc.option);
     }
     return [];
-  }, [poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
+  }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
 
   // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
@@ -833,6 +848,43 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   };
 
+  const handleCutoffSuggestionsClick = () => {
+    if (isCuttingOffSuggestions || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) {
+      alert('You do not have permission to cutoff suggestions.');
+      return;
+    }
+    setShowCutoffConfirmModal(true);
+  };
+
+  const handleCutoffSuggestions = async () => {
+    setShowCutoffConfirmModal(false);
+    if (isCuttingOffSuggestions || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) return;
+
+    setIsCuttingOffSuggestions(true);
+    try {
+      const updatedPoll = await apiCutoffSuggestions(poll.id, creatorSecret);
+      if (updatedPoll) {
+        // Update the suggestion deadline so the UI exits suggestion phase
+        setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
+        // Update options from the finalized poll so the ranking ballot can render
+        if (updatedPoll.options) {
+          const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
+          setOptionsOverride(opts);
+        }
+        await fetchPollResults();
+      }
+    } catch (error) {
+      console.error('Error cutting off suggestions:', error);
+      alert('Failed to cutoff suggestions. Please try again.');
+    } finally {
+      setIsCuttingOffSuggestions(false);
+    }
+  };
+
   const handleReopenPoll = async () => {
     setShowReopenConfirmModal(false);
     
@@ -882,8 +934,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     const isAnyEditing = isEditingVote || isEditingRanking;
 
     // During suggestion phase with pre-ranking, submitting rankings after the initial
-    // suggestion vote is an implicit edit (updating the existing vote with rankings)
-    const isImplicitEdit = hasVoted && !isAnyEditing && canSubmitSuggestions && canSubmitRankings;
+    // suggestion vote is an implicit edit (updating the existing vote with rankings).
+    // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
+    const hasOnlySuggestions = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_abstain;
+    const isImplicitEdit = hasVoted && !isAnyEditing && (
+      (canSubmitSuggestions && canSubmitRankings) || hasOnlySuggestions
+    );
     if (isImplicitEdit) {
       setIsEditingVote(true);
     }
@@ -1090,7 +1146,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
-          : { ranked_choices: voteData.ranked_choices, suggestions: voteData.suggestions, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
+          : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
         
         
         
@@ -1163,6 +1219,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       // Refresh suggestion list for polls with suggestion phase
       if (hasSuggestionPhase) {
+        // If this is the first suggestion on a deferred-deadline poll, start the timer
+        if (!suggestionTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
+          const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+          setSuggestionDeadlineOverride(newDeadline.toISOString());
+        }
         // Reset abstain so the ranking ballot is usable after suggestion submission
         // (abstaining from suggestions shouldn't block ranking)
         if (isAbstaining && canSubmitRankings) {
@@ -1338,8 +1399,21 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           // Case 4: Poll is still open and not expired - show countdown
           if (!isPollClosed && !isExpired && deadline) {
             // During suggestion phase, show suggestion deadline instead of response deadline
-            if (inSuggestionPhase && poll.suggestion_deadline) {
-              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
+            if (inSuggestionPhase) {
+              if (poll.suggestion_deadline) {
+                return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
+              }
+              // Deferred deadline: timer starts when first suggestion is submitted
+              if (poll.suggestion_deadline_minutes) {
+                const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
+                return (
+                  <div className="mb-3 text-center">
+                    <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                      Suggestions cutoff {durationLabel} after first suggestion
+                    </span>
+                  </div>
+                );
+              }
             }
             return <Countdown deadline={poll.response_deadline || null} />;
           }
@@ -1354,7 +1428,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         })()}
         
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
-        {hasVoted && !isEditingVote && !inSuggestionPhase && preliminaryResultsBlock("pt-2.5")}
+        {/* For suggestion-phase polls, only show after user has submitted rankings, not just suggestions */}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1739,7 +1814,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted && !isEditingVote && !canSubmitSuggestions ? (
+              ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">
@@ -1841,6 +1916,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       suggestionMetadata={suggestionMetadata}
                       onSuggestionMetadataChange={setSuggestionMetadata}
                       optionsMetadata={optionsMetadataLocal}
+                      showCutoffButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
+                      onCutoffClick={handleCutoffSuggestionsClick}
+                      isCuttingOff={isCuttingOffSuggestions}
                     />
                   )}
 
@@ -1873,6 +1951,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     suggestionChoices={suggestionChoices}
                     justCancelledAbstain={justCancelledAbstain}
                     twoOptionDisplayOrder={twoOptionDisplayOrder}
+                    isEditingSuggestions={isEditingVote}
                   />
 
                   {/* Show follow-up/fork header after submit button */}
@@ -1888,7 +1967,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && preliminaryResultsBlock("mt-6")}
+          {/* For suggestion-phase polls, hide until user has submitted rankings */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
@@ -1899,11 +1979,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
-          {/* Poll Management Buttons - Close, Reopen, and Forget Poll */}
-          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && (isCreator || process.env.NODE_ENV === 'development'))) && (
+          {/* Poll Management Buttons - Close, Cutoff Suggestions, Reopen, and Forget Poll */}
+          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && isCreator)) && (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
-                showCloseButton={!isPollClosed && (isCreator || process.env.NODE_ENV === 'development')}
+                showCloseButton={!isPollClosed && isCreator}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
                 showForgetButton={hasPollDataState}
                 onCloseClick={handleCloseClick}
@@ -1944,6 +2024,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
       
+      <ConfirmationModal
+        isOpen={showCutoffConfirmModal}
+        onConfirm={handleCutoffSuggestions}
+        onCancel={() => setShowCutoffConfirmModal(false)}
+        title="Cutoff Suggestions"
+        message="Are you sure you want to end the suggestion phase now? No more suggestions will be accepted and ranking will begin immediately."
+        confirmText="Cutoff Now"
+        cancelText="Cancel"
+        confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
+      />
+
       <ConfirmationModal
         isOpen={showReopenConfirmModal}
         onConfirm={handleReopenPoll}

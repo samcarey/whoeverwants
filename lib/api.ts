@@ -104,6 +104,7 @@ function toPoll(data: any): Poll {
     max_participants: data.max_participants ?? undefined,
     short_id: data.short_id ?? undefined,
     suggestion_deadline: data.suggestion_deadline ?? undefined,
+    suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
     allow_pre_ranking: data.allow_pre_ranking ?? true,
     details: data.details ?? undefined,
     location_mode: data.location_mode ?? undefined,
@@ -305,6 +306,14 @@ export async function apiClosePoll(pollId: string, creatorSecret: string, closeR
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/close`, {
     method: 'POST',
     body: JSON.stringify({ creator_secret: creatorSecret, close_reason: closeReason }),
+  });
+  return toPoll(data);
+}
+
+export async function apiCutoffSuggestions(pollId: string, creatorSecret: string): Promise<Poll> {
+  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-suggestions`, {
+    method: 'POST',
+    body: JSON.stringify({ creator_secret: creatorSecret }),
   });
   return toPoll(data);
 }

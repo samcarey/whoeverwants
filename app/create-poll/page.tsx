@@ -112,6 +112,8 @@ function CreatePollContent() {
   const loadedTitleRef = useRef<string | null>(null);
   const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
   const [suggestionCutoff, setSuggestionCutoff] = useState("2hr");
+  const [customSuggestionDate, setCustomSuggestionDate] = useState('');
+  const [customSuggestionTime, setCustomSuggestionTime] = useState('');
   const [allowPreRanking, setAllowPreRanking] = useState(true);
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
@@ -511,6 +513,16 @@ function CreatePollContent() {
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  // Set default custom suggestion date/time when switching to custom
+  useEffect(() => {
+    if (suggestionCutoff === 'custom' && !customSuggestionDate && isClient) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setCustomSuggestionDate(`${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`);
+      setCustomSuggestionTime('12:00');
+    }
+  }, [suggestionCutoff, customSuggestionDate, isClient]);
 
   // Initialize state from URL params
   useEffect(() => {
@@ -1115,9 +1127,15 @@ function CreatePollContent() {
 
       // Add suggestion deadline for polls with no options (suggestion phase)
       if (isSuggestionMode) {
-        const cutoffMinutes = SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.minutes || 120;
-        const cutoffDate = new Date(new Date().getTime() + cutoffMinutes * 60 * 1000);
-        pollData.suggestion_deadline = cutoffDate.toISOString();
+        if (suggestionCutoff === 'custom' && customSuggestionDate && customSuggestionTime) {
+          // Custom: send absolute deadline (not deferred)
+          const cutoffDate = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
+          pollData.suggestion_deadline = cutoffDate.toISOString();
+        } else {
+          // Preset: deferred until first suggestion
+          const cutoffMinutes = SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.minutes || 120;
+          pollData.suggestion_deadline_minutes = cutoffMinutes;
+        }
         pollData.allow_pre_ranking = allowPreRanking;
       }
 
@@ -1430,11 +1448,17 @@ function CreatePollContent() {
                 <span className="inline-flex items-center gap-1.5 flex-wrap">
                   <span className="whitespace-nowrap">Expiration:</span>
                   {(() => {
-                    const timeLabel = deadlineOption !== 'none'
-                      ? (EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
-                         deadlineOptions.find(o => o.value === deadlineOption)?.label ||
-                         deadlineOption)
-                      : null;
+                    let timeLabel: string | null = null;
+                    if (deadlineOption !== 'none') {
+                      if (deadlineOption === 'custom' && customDate && customTime) {
+                        const dt = new Date(`${customDate}T${customTime}`);
+                        timeLabel = dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                      } else {
+                        timeLabel = EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                          deadlineOptions.find(o => o.value === deadlineOption)?.label ||
+                          deadlineOption;
+                      }
+                    }
                     const voteLabel = autoCloseAfter ? `${autoCloseAfter} votes` : null;
                     if (!timeLabel && !voteLabel) return (
                       <span className="font-normal text-blue-600 dark:text-blue-400">none</span>
@@ -1556,10 +1580,25 @@ function CreatePollContent() {
           {isSuggestionMode && (
             <div>
               <div className="flex items-center justify-between">
-                <label className="block text-sm font-medium">
+                <label className="block text-sm font-medium cursor-pointer">
                   <span>Suggestions Cutoff: </span>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                    {SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
+                  <span className="relative inline-flex">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                      {suggestionCutoff === 'custom'
+                        ? 'Custom'
+                        : SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
+                    </span>
+                    <select
+                      value={suggestionCutoff}
+                      onChange={(e) => setSuggestionCutoff(e.target.value)}
+                      disabled={isLoading}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      aria-label="Suggestions cutoff duration"
+                    >
+                      {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </span>
                 </label>
                 <label className="flex items-center gap-1.5 cursor-pointer">
@@ -1575,16 +1614,42 @@ function CreatePollContent() {
                   </span>
                 </label>
               </div>
-              <select
-                value={suggestionCutoff}
-                onChange={(e) => setSuggestionCutoff(e.target.value)}
-                disabled={isLoading}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-              >
-                {SUGGESTION_CUTOFF_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              {/* Custom date/time fields */}
+              {suggestionCutoff === 'custom' && (
+                <div className="mt-2 flex justify-between gap-2">
+                  <div className="w-auto">
+                    <label htmlFor="customSuggestionDate" className="block text-xs text-gray-500 mb-1">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      id="customSuggestionDate"
+                      value={customSuggestionDate}
+                      onChange={(e) => setCustomSuggestionDate(e.target.value)}
+                      disabled={isLoading}
+                      min={isClient ? getTodayDate() : ''}
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                      style={{ fontSize: '14px' }}
+                      required
+                    />
+                  </div>
+                  <div className="w-auto">
+                    <label htmlFor="customSuggestionTime" className="block text-xs text-gray-500 mb-1 text-right">
+                      Time
+                    </label>
+                    <input
+                      type="time"
+                      id="customSuggestionTime"
+                      value={customSuggestionTime}
+                      onChange={(e) => setCustomSuggestionTime(e.target.value)}
+                      disabled={isLoading}
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                      style={{ fontSize: '14px' }}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

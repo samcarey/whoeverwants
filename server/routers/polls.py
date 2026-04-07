@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,7 @@ from models import (
     AccessiblePollsRequest,
     ClosePollRequest,
     CreatePollRequest,
+    CutoffSuggestionsRequest,
     EditVoteRequest,
     ParticipantResponse,
     PollResponse,
@@ -142,6 +143,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         max_participants=row.get("max_participants"),
         short_id=row.get("short_id"),
         suggestion_deadline=row["suggestion_deadline"].isoformat() if row.get("suggestion_deadline") else None,
+        suggestion_deadline_minutes=row.get("suggestion_deadline_minutes"),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
         auto_close_after=row.get("auto_close_after"),
         details=row.get("details"),
@@ -201,7 +203,6 @@ def _create_sub_polls_for_field(
 ) -> None:
     """Create sub-polls for a location or time field on a participation poll."""
     import json
-    from datetime import timedelta
 
     if not mode or mode == "set":
         return
@@ -357,7 +358,8 @@ def create_poll(req: CreatePollRequest):
             INSERT INTO polls (title, poll_type, options, response_deadline,
                                creator_secret, creator_name, follow_up_to,
                                fork_of, min_participants, max_participants,
-                               suggestion_deadline, allow_pre_ranking,
+                               suggestion_deadline, suggestion_deadline_minutes,
+                               allow_pre_ranking,
                                auto_close_after, details,
                                location_mode, location_value, resolved_location,
                                time_mode, time_value, resolved_time,
@@ -376,7 +378,8 @@ def create_poll(req: CreatePollRequest):
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
                     %(fork_of)s, %(min_participants)s, %(max_participants)s,
-                    %(suggestion_deadline)s, %(allow_pre_ranking)s,
+                    %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
+                    %(allow_pre_ranking)s,
                     %(auto_close_after)s, %(details)s,
                     %(location_mode)s, %(location_value)s, %(resolved_location)s,
                     %(time_mode)s, %(time_value)s, %(resolved_time)s,
@@ -405,7 +408,9 @@ def create_poll(req: CreatePollRequest):
                 "fork_of": req.fork_of,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
-                "suggestion_deadline": req.suggestion_deadline,
+                # If suggestion_deadline_minutes is set, defer the deadline until first suggestion
+                "suggestion_deadline": None if req.suggestion_deadline_minutes else req.suggestion_deadline,
+                "suggestion_deadline_minutes": req.suggestion_deadline_minutes,
                 "allow_pre_ranking": req.allow_pre_ranking,
                 "auto_close_after": req.auto_close_after,
                 "details": req.details,
@@ -519,6 +524,21 @@ def get_poll(poll_id: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
+
+        # Auto-finalize options when suggestion deadline has passed but options not yet set
+        if (
+            row.get("suggestion_deadline")
+            and not row.get("options")
+            and not row.get("is_closed")
+            and datetime.now(timezone.utc) >= row["suggestion_deadline"]
+        ):
+            _finalize_suggestion_options(conn, poll_id, datetime.now(timezone.utc))
+            # Re-fetch to get updated options
+            row = conn.execute(
+                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()
+
         poll_resp = _row_to_poll(row)
         # Include response count for open polls (used for min_responses threshold)
         if not row.get("is_closed", False):
@@ -540,7 +560,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
     with get_db() as conn:
         # Verify poll exists and is open
         poll = conn.execute(
-            "SELECT id, is_closed, poll_type, suggestion_deadline, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
+            "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not poll:
@@ -548,10 +568,26 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         if poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
 
-        has_suggestion_phase = poll.get("suggestion_deadline") is not None
+        # Deferred suggestion deadline: start timer on first suggestion
+        has_deferred_deadline = (
+            poll.get("suggestion_deadline_minutes")
+            and not poll.get("suggestion_deadline")
+            and req.suggestions
+        )
+        if has_deferred_deadline:
+            new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
+            conn.execute(
+                "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
+                {"deadline": new_deadline, "now": now, "poll_id": poll_id},
+            )
+            # Update local poll dict so downstream checks use the new deadline
+            poll = dict(poll)
+            poll["suggestion_deadline"] = new_deadline
+
+        has_suggestion_phase = poll.get("suggestion_deadline") is not None or poll.get("suggestion_deadline_minutes") is not None
 
         # Enforce suggestion phase timing
-        if has_suggestion_phase:
+        if has_suggestion_phase and poll.get("suggestion_deadline"):
             now_check = datetime.now(timezone.utc)
             cutoff = poll["suggestion_deadline"]
             in_suggestion_phase = now_check < cutoff
@@ -662,14 +698,14 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
 
         # Check poll is still open and get suggestion phase info
         poll = conn.execute(
-            "SELECT is_closed, poll_type, suggestion_deadline, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
+            "SELECT is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if poll and poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
 
-        has_suggestion_phase = poll.get("suggestion_deadline") is not None
-        if has_suggestion_phase:
+        has_suggestion_phase = poll.get("suggestion_deadline") is not None or poll.get("suggestion_deadline_minutes") is not None
+        if has_suggestion_phase and poll.get("suggestion_deadline"):
             now_check = datetime.now(timezone.utc)
             cutoff = poll["suggestion_deadline"]
             in_suggestion_phase = now_check < cutoff
@@ -714,7 +750,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             UPDATE votes
             SET yes_no_choice = %(yes_no_choice)s,
                 ranked_choices = %(ranked_choices)s,
-                suggestions = %(suggestions)s,
+                suggestions = COALESCE(%(suggestions)s, suggestions),
                 is_abstain = %(is_abstain)s,
                 voter_name = %(voter_name)s,
                 min_participants = %(min_participants)s,
@@ -1061,6 +1097,45 @@ def reopen_poll(poll_id: str, req: ReopenPollRequest):
         ).fetchone()
     if not row:
         raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+    return _row_to_poll(row)
+
+
+@router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
+def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
+    """End the suggestion phase immediately. Requires creator_secret."""
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        # Single query: update only if suggestions exist and deadline hasn't passed
+        row = conn.execute(
+            """
+            UPDATE polls
+            SET suggestion_deadline = %(now)s,
+                updated_at = %(now)s
+            WHERE id = %(poll_id)s
+              AND creator_secret = %(creator_secret)s
+              AND (
+                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
+                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
+              )
+              AND EXISTS (
+                SELECT 1 FROM votes
+                WHERE poll_id = %(poll_id)s
+                  AND suggestions IS NOT NULL
+                  AND array_length(suggestions, 1) > 0
+              )
+            RETURNING *
+            """,
+            {
+                "poll_id": poll_id,
+                "creator_secret": req.creator_secret,
+                "now": now,
+            },
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="No suggestions to cutoff, invalid creator secret, or suggestion phase already ended")
+
+        _finalize_suggestion_options(conn, poll_id, now)
+
     return _row_to_poll(row)
 
 
