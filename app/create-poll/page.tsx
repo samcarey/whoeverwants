@@ -1808,10 +1808,10 @@ function CreatePollContent() {
                 Creating Poll...
               </>
             ) : (
-              <span className="flex flex-col items-center">
-                <span className="text-lg font-bold text-green-400 dark:text-green-700">Submit</span>
+              <span className="flex flex-col items-center py-0.5">
+                <span className="text-lg font-bold text-green-400 dark:text-green-700 leading-tight">Submit</span>
                 {isPreferencePoll && title && (
-                  <span className="text-sm text-gray-200 dark:text-gray-600">&ldquo;{title}&rdquo;</span>
+                  <span className="text-sm text-gray-200 dark:text-gray-600 leading-tight">&ldquo;{title}&rdquo;</span>
                 )}
               </span>
             )}
