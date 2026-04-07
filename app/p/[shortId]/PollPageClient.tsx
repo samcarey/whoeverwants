@@ -1916,6 +1916,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       suggestionMetadata={suggestionMetadata}
                       onSuggestionMetadataChange={setSuggestionMetadata}
                       optionsMetadata={optionsMetadataLocal}
+                      showCutoffButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
+                      onCutoffClick={handleCutoffSuggestionsClick}
+                      isCuttingOff={isCuttingOffSuggestions}
                     />
                   )}
 
@@ -1981,15 +1984,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
                 showCloseButton={!isPollClosed && isCreator}
-                showCutoffSuggestionsButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
                 showForgetButton={hasPollDataState}
                 onCloseClick={handleCloseClick}
-                onCutoffSuggestionsClick={handleCutoffSuggestionsClick}
                 onReopenClick={handleReopenClick}
                 onForgetClick={() => setShowForgetConfirmModal(true)}
                 isClosingPoll={isClosingPoll}
-                isCuttingOffSuggestions={isCuttingOffSuggestions}
                 isReopeningPoll={isReopeningPoll}
               />
             </div>
