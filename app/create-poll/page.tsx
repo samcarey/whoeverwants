@@ -1449,11 +1449,17 @@ function CreatePollContent() {
                 <span className="inline-flex items-center gap-1.5 flex-wrap">
                   <span className="whitespace-nowrap">Expiration:</span>
                   {(() => {
-                    const timeLabel = deadlineOption !== 'none'
-                      ? (EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
-                         deadlineOptions.find(o => o.value === deadlineOption)?.label ||
-                         deadlineOption)
-                      : null;
+                    let timeLabel: string | null = null;
+                    if (deadlineOption !== 'none') {
+                      if (deadlineOption === 'custom' && customDate && customTime) {
+                        const dt = new Date(`${customDate}T${customTime}`);
+                        timeLabel = dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                      } else {
+                        timeLabel = EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                          deadlineOptions.find(o => o.value === deadlineOption)?.label ||
+                          deadlineOption;
+                      }
+                    }
                     const voteLabel = autoCloseAfter ? `${autoCloseAfter} votes` : null;
                     if (!timeLabel && !voteLabel) return (
                       <span className="font-normal text-blue-600 dark:text-blue-400">none</span>
