@@ -848,6 +848,16 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Creator secret propagation**: Sub-polls share the parent's `creator_secret`. The browser propagates it via `SubPollField` on page load since localStorage only stores secrets for directly-created polls.
 - **Column whitelist**: `_resolve_sub_poll_winner` uses an f-string for the column name — the field value MUST be validated against `("location", "time")` before interpolation.
 
+### Deferred Suggestion Deadline
+
+- **Suggestion deadlines are deferred until the first suggestion is submitted.** Poll creation stores `suggestion_deadline_minutes` (the duration) and sets `suggestion_deadline` to NULL. When the first vote with suggestions arrives, the backend sets `suggestion_deadline = now + minutes`. This prevents empty cutoffs where the deadline expires before anyone suggests anything.
+- **Custom deadlines bypass deferral.** When the creator picks "Custom" and sets an absolute date/time, `suggestion_deadline` is sent directly (not deferred). Only preset durations use `suggestion_deadline_minutes`.
+- **`hasSuggestionPhase` checks both fields**: `!!(poll.suggestion_deadline || poll.suggestion_deadline_minutes)`. A poll is "in suggestion phase" when the timer hasn't started yet OR when the deadline hasn't passed.
+- **Frontend starts the timer optimistically** after the first suggestion vote succeeds: `setSuggestionDeadlineOverride(new Date(Date.now() + minutes * 60000).toISOString())`. This avoids waiting for a page refresh to show the countdown.
+- **`hasCompletedRanking`** (computed in PollPageClient) distinguishes "voted with suggestions only" from "voted with rankings". Used to gate preliminary results display and the ranking summary view — prevents showing results before the user has ranked.
+- **Auto-finalization in `get_poll`**: When `suggestion_deadline` has passed but `options` is still NULL, the endpoint auto-calls `_finalize_suggestion_options()`. This handles the case where the deadline expires naturally without a manual cutoff.
+- **Manual cutoff requires suggestions**: The `cutoff-suggestions` endpoint rejects requests (400) when no suggestions have been submitted, enforced via an EXISTS subquery in the UPDATE.
+
 ### PWA / Pull-to-Refresh
 
 - **Native pull-to-refresh works everywhere except iOS PWA standalone mode.** Apple explicitly disables it. Don't use `overscroll-behavior: contain` globally — that blocks the native gesture on all platforms. Only use a custom touch-based pull-to-refresh for iOS PWA (detect with `navigator.standalone === true` — do NOT use UA sniffing).
