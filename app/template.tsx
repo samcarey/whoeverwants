@@ -135,7 +135,10 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Handle scroll direction detection for bottom bar
+  // Handle scroll direction detection for bottom bar.
+  // Listens on both the inner scroll container AND the window, because on iOS Safari
+  // the body can be scrollable (html safe-area padding + body overflow:auto) and
+  // scroll events may fire on the window instead of the inner container.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -151,12 +154,27 @@ export default function Template({ children }: AppTemplateProps) {
       }
     };
 
+    // Which scroll source is active — avoid mixing them
+    let activeSource: 'container' | 'window' | null = null;
+
+    const getScrollY = (source: 'container' | 'window'): { scrollY: number; maxScrollY: number } => {
+      if (source === 'container' && scrollContainer) {
+        return {
+          scrollY: scrollContainer.scrollTop,
+          maxScrollY: scrollContainer.scrollHeight - scrollContainer.clientHeight,
+        };
+      }
+      return {
+        scrollY: window.scrollY,
+        maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
+      };
+    };
+
     const processScroll = () => {
       rAFId = null;
-      if (!scrollContainer) return;
+      if (!activeSource) return;
 
-      const currentScrollY = scrollContainer.scrollTop;
-      const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      const { scrollY: currentScrollY, maxScrollY } = getScrollY(activeSource);
 
       if (currentScrollY <= 0) {
         setVisible(true);
@@ -201,27 +219,56 @@ export default function Template({ children }: AppTemplateProps) {
       lastScrollY.current = currentScrollY;
     };
 
-    const handleScroll = () => {
+    const scheduleProcess = () => {
       if (rAFId === null) {
         rAFId = requestAnimationFrame(processScroll);
       }
     };
 
-    const timeoutId = setTimeout(() => {
+    const handleContainerScroll = () => {
+      activeSource = 'container';
+      scheduleProcess();
+    };
+
+    const handleWindowScroll = () => {
+      // Only use window scroll if the container isn't the one scrolling
+      if (!scrollContainer || scrollContainer.scrollTop === 0) {
+        activeSource = 'window';
+        scheduleProcess();
+      }
+    };
+
+    // Attach container listener — retry briefly if ref not ready
+    const attachContainer = () => {
       scrollContainer = scrollContainerRef.current;
       if (scrollContainer) {
-        scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+        scrollContainer.addEventListener('scroll', handleContainerScroll, { passive: true });
+        return true;
       }
-    }, 100);
+      return false;
+    };
+
+    // Always listen on window as fallback for iOS body-scroll
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    // Try immediately, then retry after a short delay
+    if (!attachContainer()) {
+      const retryId = setTimeout(attachContainer, 150);
+      // Store for cleanup
+      var retryTimeout: ReturnType<typeof setTimeout> | null = retryId;
+    }
 
     return () => {
-      clearTimeout(timeoutId);
+      if (typeof retryTimeout !== 'undefined' && retryTimeout !== null) {
+        clearTimeout(retryTimeout);
+      }
       if (rAFId !== null) {
         cancelAnimationFrame(rAFId);
       }
       if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
+        scrollContainer.removeEventListener('scroll', handleContainerScroll);
       }
+      window.removeEventListener('scroll', handleWindowScroll);
       if (bounceTimeoutRef.current) {
         clearTimeout(bounceTimeoutRef.current);
       }
@@ -474,7 +521,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          paddingBottom: '1rem',
+          paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
         }}>
         <div>
           {/* Spacer div for header elements that are now rendered in portal */}
