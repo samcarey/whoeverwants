@@ -201,6 +201,8 @@ function CreatePollContent() {
         const prefix = category === 'location' ? 'Place'
           : builtIn?.label || (category !== 'custom' ? category : '');
         if (prefix) return appendFor(prefix + '?');
+        // No category but has "for" field → "Options for X?"
+        if (forSuffix) return `Options${forSuffix}?`;
         return '';
       }
       return appendFor(buildFromOptions(filled, 'Quick Vote'));
