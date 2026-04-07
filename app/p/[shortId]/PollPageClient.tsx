@@ -108,6 +108,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
     !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
   );
+  // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
+  // this distinguishes "voted with suggestions only" from "voted with rankings"
+  const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain;
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -872,6 +875,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
           setOptionsOverride(opts);
         }
+        await fetchPollResults();
       }
     } catch (error) {
       console.error('Error cutting off suggestions:', error);
@@ -1401,11 +1405,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               }
               // Deferred deadline: timer starts when first suggestion is submitted
               if (poll.suggestion_deadline_minutes) {
-                const durationLabel = poll.suggestion_deadline_minutes >= 1440
-                  ? `${Math.round(poll.suggestion_deadline_minutes / 1440)}d`
-                  : poll.suggestion_deadline_minutes >= 60
-                    ? `${Math.round(poll.suggestion_deadline_minutes / 60)}h`
-                    : `${poll.suggestion_deadline_minutes}m`;
+                const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
                 return (
                   <div className="mb-3 text-center">
                     <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
@@ -1429,7 +1429,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
         {/* For suggestion-phase polls, only show after user has submitted rankings, not just suggestions */}
-        {hasVoted && !isEditingVote && !inSuggestionPhase && (!hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain) && preliminaryResultsBlock("pt-2.5")}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("pt-2.5")}
 
         {/* For closed polls, show results first */}
         {isPollClosed && (
@@ -1814,7 +1814,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
                 </div>
-              ) : hasVoted && !isEditingVote && !canSubmitSuggestions && (!hasSuggestionPhase || (userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain)) ? (
+              ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
                 <div className="text-center py-3">
                   <div className="text-left">
                     <div className="flex items-center justify-between mb-2">

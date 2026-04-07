@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,6 @@ def _create_sub_polls_for_field(
 ) -> None:
     """Create sub-polls for a location or time field on a participation poll."""
     import json
-    from datetime import timedelta
 
     if not mode or mode == "set":
         return
@@ -576,7 +575,6 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
             and req.suggestions
         )
         if has_deferred_deadline:
-            from datetime import timedelta
             new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
             conn.execute(
                 "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
@@ -1107,15 +1105,7 @@ def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
     """End the suggestion phase immediately. Requires creator_secret."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        # Check if any suggestions exist before allowing cutoff
-        suggestion_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s AND suggestions IS NOT NULL AND array_length(suggestions, 1) > 0",
-            {"poll_id": poll_id},
-        ).fetchone()["cnt"]
-        if suggestion_count == 0:
-            raise HTTPException(status_code=400, detail="Cannot cutoff suggestions before any have been submitted")
-
-        # Handle both active deadline and deferred deadline (suggestion_deadline_minutes without suggestion_deadline)
+        # Single query: update only if suggestions exist and deadline hasn't passed
         row = conn.execute(
             """
             UPDATE polls
@@ -1127,6 +1117,12 @@ def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
                 (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
                 OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
               )
+              AND EXISTS (
+                SELECT 1 FROM votes
+                WHERE poll_id = %(poll_id)s
+                  AND suggestions IS NOT NULL
+                  AND array_length(suggestions, 1) > 0
+              )
             RETURNING *
             """,
             {
@@ -1136,7 +1132,7 @@ def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
             },
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=403, detail="Invalid creator secret, poll not found, or suggestion phase already ended")
+            raise HTTPException(status_code=400, detail="No suggestions to cutoff, invalid creator secret, or suggestion phase already ended")
 
         _finalize_suggestion_options(conn, poll_id, now)
 

@@ -16,8 +16,11 @@ export function windowDurationMinutes(w: { min: string; max: string }): number {
 
 /** Format a duration in minutes as a compact label (e.g. "2h 30m", "45m", "1h") */
 export function formatDurationLabel(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
   const mins = minutes % 60;
+  if (days > 0 && hours > 0) return `${days}d ${hours}h`;
+  if (days > 0) return `${days}d`;
   if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
   if (hours > 0) return `${hours}h`;
   return `${mins}m`;

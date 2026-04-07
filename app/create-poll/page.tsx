@@ -114,7 +114,6 @@ function CreatePollContent() {
   const [suggestionCutoff, setSuggestionCutoff] = useState("2hr");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
-  const suggestionCutoffSelectRef = useRef<HTMLSelectElement>(null);
   const [allowPreRanking, setAllowPreRanking] = useState(true);
   const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
@@ -1590,7 +1589,6 @@ function CreatePollContent() {
                         : SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff}
                     </span>
                     <select
-                      ref={suggestionCutoffSelectRef}
                       value={suggestionCutoff}
                       onChange={(e) => setSuggestionCutoff(e.target.value)}
                       disabled={isLoading}

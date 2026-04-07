@@ -95,7 +95,6 @@ export default function RankingSection({
   ) : null;
 
   if (!canSubmitRankings || pollOptions.length === 0) {
-    // Show countdown when ranking isn't available yet, or when there are no options to rank during suggestion phase
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
@@ -109,7 +108,6 @@ export default function RankingSection({
         </div>
       );
     }
-    // Suggestion phase ended but no suggestions were submitted
     if (hasSuggestionPhase && !canSubmitSuggestions && pollOptions.length === 0) {
       return (
         <div className="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
