@@ -520,6 +520,21 @@ def get_poll(poll_id: str):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
+
+        # Auto-finalize options when suggestion deadline has passed but options not yet set
+        if (
+            row.get("suggestion_deadline")
+            and not row.get("options")
+            and not row.get("is_closed")
+            and datetime.now(timezone.utc) >= row["suggestion_deadline"]
+        ):
+            _finalize_suggestion_options(conn, poll_id, datetime.now(timezone.utc))
+            # Re-fetch to get updated options
+            row = conn.execute(
+                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()
+
         poll_resp = _row_to_poll(row)
         # Include response count for open polls (used for min_responses threshold)
         if not row.get("is_closed", False):
