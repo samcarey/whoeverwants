@@ -17,7 +17,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } 
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
-import VotingCutoffConditionsModal, { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
+import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
@@ -128,7 +128,6 @@ function CreatePollContent() {
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
   const [allowPreRanking, setAllowPreRanking] = useState(true);
-  const [autoCloseAfter, setAutoCloseAfter] = useState<number | null>(null);
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
@@ -154,7 +153,7 @@ function CreatePollContent() {
   // Minimum responses / preliminary results / voting cutoff modal
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
-  const [showVotingCutoffModal, setShowVotingCutoffModal] = useState(false);
+
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -765,11 +764,6 @@ function CreatePollContent() {
           if (forkData.creator_name) {
             setCreatorName(forkData.creator_name);
           }
-          if (forkData.auto_close_after != null) {
-            setAutoCloseAfter(forkData.auto_close_after);
-          } else if (forkData.total_votes) {
-            setAutoCloseAfter(forkData.total_votes);
-          }
           if (forkData.category) {
             setCategory(forkData.category);
           }
@@ -853,11 +847,6 @@ function CreatePollContent() {
           }
           if (duplicateData.creator_name) {
             setCreatorName(duplicateData.creator_name);
-          }
-          if (duplicateData.auto_close_after != null) {
-            setAutoCloseAfter(duplicateData.auto_close_after);
-          } else if (duplicateData.total_votes) {
-            setAutoCloseAfter(duplicateData.total_votes);
           }
           if (duplicateData.category) {
             setCategory(duplicateData.category);
@@ -1299,10 +1288,6 @@ function CreatePollContent() {
         addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
       }
 
-      // Add auto-close after N respondents
-      if (autoCloseAfter !== null && autoCloseAfter > 0) {
-        pollData.auto_close_after = autoCloseAfter;
-      }
 
       // Add min_responses and show_preliminary_results for preference polls
       if (dbPollType === 'ranked_choice') {
@@ -1668,7 +1653,7 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Preference/suggestion polls: min responses, preliminary results, voting cutoff modal */}
+          {/* Preference/suggestion polls: min responses, preliminary results, voting cutoff */}
           {isPreferencePoll && (
             <>
               <CompactMinResponsesField
@@ -1681,98 +1666,90 @@ function CreatePollContent() {
                 setShowPreliminary={setShowPreliminaryResults}
                 disabled={isLoading}
               />
-              <button
-                type="button"
-                onClick={() => setShowVotingCutoffModal(true)}
-                disabled={isLoading}
-                className="block text-sm font-medium text-left"
-              >
-                <span className="inline-flex items-center gap-1.5 flex-wrap">
-                  <span className="whitespace-nowrap">Voting Cutoff:</span>
-                  {(() => {
-                    let timeLabel: string | null = null;
-                    if (deadlineOption !== 'none') {
-                      if (deadlineOption === 'custom' && customDate && customTime) {
-                        const dt = new Date(`${customDate}T${customTime}`);
-                        timeLabel = dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                      } else {
-                        timeLabel = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label ||
-                          deadlineOptions.find(o => o.value === deadlineOption)?.label ||
-                          deadlineOption;
-                      }
-                    }
-                    const voteLabel = autoCloseAfter ? `${autoCloseAfter} votes` : null;
-                    if (!timeLabel && !voteLabel) return (
-                      <span className="font-normal text-blue-600 dark:text-blue-400">none</span>
-                    );
-                    return (
-                      <>
-                        {timeLabel && (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                            {timeLabel}
-                          </span>
-                        )}
-                        {timeLabel && voteLabel && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500 font-normal">or</span>
-                        )}
-                        {voteLabel && (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
-                            {voteLabel}
-                          </span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </span>
-              </button>
+              <div>
+                <label className="block text-sm font-medium cursor-pointer">
+                  <span>Voting Cutoff: </span>
+                  <span className="relative inline-flex">
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                      {(() => {
+                        if (deadlineOption === 'none') return 'None';
+                        if (deadlineOption === 'custom') {
+                          if (customDate && customTime) {
+                            const dt = new Date(`${customDate}T${customTime}`);
+                            return dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                          }
+                          return 'Custom';
+                        }
+                        return VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label || deadlineOption;
+                      })()}
+                    </span>
+                    <select
+                      value={deadlineOption}
+                      onChange={(e) => setDeadlineOption(e.target.value)}
+                      disabled={isLoading}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      aria-label="Voting cutoff duration"
+                    >
+                      <option value="none">None</option>
+                      {VOTING_CUTOFF_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+                {deadlineOption === 'custom' && (
+                  <div className="mt-2 flex justify-between gap-2">
+                    <div className="w-auto">
+                      <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">Date</label>
+                      <input
+                        type="date"
+                        id="customDate"
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        disabled={isLoading}
+                        min={isClient ? getTodayDate() : ''}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                        required
+                      />
+                    </div>
+                    <div className="w-auto">
+                      <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
+                      <input
+                        type="time"
+                        id="customTime"
+                        value={customTime}
+                        onChange={(e) => setCustomTime(e.target.value)}
+                        disabled={isLoading}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
-          {/* Auto-close + Response Deadline (for yes_no and participation polls) */}
+          {/* Response Deadline (for yes_no and participation polls) */}
           {!isPreferencePoll && (
             <>
               <div>
                 <label className="block text-sm font-medium mb-1">Close After</label>
-                <div className="flex items-center gap-2 min-w-0">
-                  <input
-                    type="number"
-                    min="1"
-                    value={autoCloseAfter ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setAutoCloseAfter(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
-                    }}
-                    disabled={isLoading}
-                    placeholder="—"
-                    className="w-16 shrink-0 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm text-center"
-                  />
-                  <span className="text-sm text-gray-600 dark:text-gray-400 shrink-0">votes or</span>
-                  <select
-                    id="deadline"
-                    value={deadlineOption}
-                    onChange={(e) => setDeadlineOption(e.target.value)}
-                    disabled={isLoading}
-                    className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm truncate"
-                  >
-                    {deadlineOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {isClient ? getTimeLabel(option.value) : option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {autoCloseAfter !== null && (
-                    <button
-                      type="button"
-                      onClick={() => setAutoCloseAfter(null)}
-                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 shrink-0"
-                      title="Disable auto-close"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
+                <select
+                  id="deadline"
+                  value={deadlineOption}
+                  onChange={(e) => setDeadlineOption(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {deadlineOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {isClient ? getTimeLabel(option.value) : option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {deadlineOption === "custom" && (
@@ -1993,20 +1970,6 @@ function CreatePollContent() {
         cancelText="Cancel"
       />
 
-      <VotingCutoffConditionsModal
-        isOpen={showVotingCutoffModal}
-        onClose={() => setShowVotingCutoffModal(false)}
-        deadlineOption={deadlineOption}
-        setDeadlineOption={setDeadlineOption}
-        customDate={customDate}
-        setCustomDate={setCustomDate}
-        customTime={customTime}
-        setCustomTime={setCustomTime}
-        autoCloseAfter={autoCloseAfter}
-        setAutoCloseAfter={setAutoCloseAfter}
-        isClient={isClient}
-        disabled={isLoading}
-      />
 
     </div>
   );
