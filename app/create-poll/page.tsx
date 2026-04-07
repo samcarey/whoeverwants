@@ -1809,9 +1809,9 @@ function CreatePollContent() {
               </>
             ) : (
               <span className="flex flex-col items-center">
-                <span className="bg-gradient-to-r from-red-500 via-yellow-400 via-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">Submit</span>
+                <span className="bg-gradient-to-r from-rose-400 via-emerald-400 to-violet-400 dark:from-rose-600 dark:via-teal-600 dark:to-indigo-600 bg-clip-text text-transparent">Submit</span>
                 {isPreferencePoll && title && (
-                  <span className="text-sm text-foreground">&ldquo;{title}&rdquo;</span>
+                  <span className="text-sm text-gray-200 dark:text-gray-600">&ldquo;{title}&rdquo;</span>
                 )}
               </span>
             )}
