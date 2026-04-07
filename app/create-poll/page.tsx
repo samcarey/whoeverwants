@@ -1537,7 +1537,7 @@ function CreatePollContent() {
                     <label className="block text-sm font-medium cursor-pointer">
                       <span>Suggestions Cutoff: </span>
                       <span className="relative inline-flex">
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                        <span className="font-normal text-blue-600 dark:text-blue-400">
                           {(() => {
                             if (suggestionCutoff === 'custom') return 'Custom';
                             const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
