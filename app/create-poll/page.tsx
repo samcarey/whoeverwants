@@ -17,7 +17,7 @@ import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } 
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
-import ExpirationConditionsModal, { EXPIRATION_DEADLINE_OPTIONS } from "@/components/ExpirationConditionsModal";
+import VotingCutoffConditionsModal, { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
@@ -137,10 +137,10 @@ function CreatePollContent() {
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
   const [refLocationLabel, setRefLocationLabel] = useState("");
   const [searchRadius, setSearchRadius] = useState(25);
-  // Minimum responses / preliminary results / expiration modal
+  // Minimum responses / preliminary results / voting cutoff modal
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
-  const [showExpirationModal, setShowExpirationModal] = useState(false);
+  const [showVotingCutoffModal, setShowVotingCutoffModal] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
@@ -259,8 +259,8 @@ function CreatePollContent() {
         setDeadlineOption('1week');
       }
     } else {
-      // Switching away: revert to inline default if it's an expiration modal option
-      if (EXPIRATION_DEADLINE_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
+      // Switching away: revert to inline default if it's an voting cutoff modal option
+      if (VOTING_CUTOFF_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
         setDeadlineOption('10min');
       }
     }
@@ -908,7 +908,7 @@ function CreatePollContent() {
   const calculateDeadline = () => {
     const now = new Date();
 
-    // No deadline if disabled via expiration modal
+    // No deadline if disabled via voting cutoff modal
     if (deadlineOption === "none") return null;
 
     if (deadlineOption === "custom") {
@@ -924,9 +924,9 @@ function CreatePollContent() {
       return customDateTime.toISOString();
     }
 
-    // Check both inline deadline options and expiration modal options
+    // Check both inline deadline options and voting cutoff modal options
     const option = deadlineOptions.find(opt => opt.value === deadlineOption)
-      || EXPIRATION_DEADLINE_OPTIONS.find(opt => opt.value === deadlineOption);
+      || VOTING_CUTOFF_OPTIONS.find(opt => opt.value === deadlineOption);
     if (!option) return null;
 
     const deadline = new Date(now.getTime() + option.minutes * 60 * 1000);
@@ -1503,7 +1503,7 @@ function CreatePollContent() {
             </>
           )}
 
-          {/* Preference/suggestion polls: min responses, preliminary results, expiration modal */}
+          {/* Preference/suggestion polls: min responses, preliminary results, voting cutoff modal */}
           {isPreferencePoll && (
             <>
               <CompactMinResponsesField
@@ -1518,12 +1518,12 @@ function CreatePollContent() {
               />
               <button
                 type="button"
-                onClick={() => setShowExpirationModal(true)}
+                onClick={() => setShowVotingCutoffModal(true)}
                 disabled={isLoading}
                 className="block text-sm font-medium text-left"
               >
                 <span className="inline-flex items-center gap-1.5 flex-wrap">
-                  <span className="whitespace-nowrap">Expiration:</span>
+                  <span className="whitespace-nowrap">Voting Cutoff:</span>
                   {(() => {
                     let timeLabel: string | null = null;
                     if (deadlineOption !== 'none') {
@@ -1531,7 +1531,7 @@ function CreatePollContent() {
                         const dt = new Date(`${customDate}T${customTime}`);
                         timeLabel = dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
                       } else {
-                        timeLabel = EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === deadlineOption)?.label ||
+                        timeLabel = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label ||
                           deadlineOptions.find(o => o.value === deadlineOption)?.label ||
                           deadlineOption;
                       }
@@ -1820,9 +1820,9 @@ function CreatePollContent() {
         cancelText="Cancel"
       />
 
-      <ExpirationConditionsModal
-        isOpen={showExpirationModal}
-        onClose={() => setShowExpirationModal(false)}
+      <VotingCutoffConditionsModal
+        isOpen={showVotingCutoffModal}
+        onClose={() => setShowVotingCutoffModal(false)}
         deadlineOption={deadlineOption}
         setDeadlineOption={setDeadlineOption}
         customDate={customDate}

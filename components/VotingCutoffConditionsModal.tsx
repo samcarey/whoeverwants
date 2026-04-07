@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ModalPortal from '@/components/ModalPortal';
 
 // Deadline options starting small and scaling up to 1 month
-const EXPIRATION_DEADLINE_OPTIONS = [
+const VOTING_CUTOFF_OPTIONS = [
   { value: "5min", label: "5 min", minutes: 5 },
   { value: "10min", label: "10 min", minutes: 10 },
   { value: "15min", label: "15 min", minutes: 15 },
@@ -20,9 +20,9 @@ const EXPIRATION_DEADLINE_OPTIONS = [
   { value: "custom", label: "Custom", minutes: 0 },
 ];
 
-export { EXPIRATION_DEADLINE_OPTIONS };
+export { VOTING_CUTOFF_OPTIONS };
 
-interface ExpirationConditionsModalProps {
+interface VotingCutoffConditionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   deadlineOption: string;
@@ -43,7 +43,7 @@ function getTodayDate(): string {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 }
 
-export default function ExpirationConditionsModal({
+export default function VotingCutoffConditionsModal({
   isOpen,
   onClose,
   deadlineOption,
@@ -56,7 +56,7 @@ export default function ExpirationConditionsModal({
   setAutoCloseAfter,
   isClient,
   disabled = false,
-}: ExpirationConditionsModalProps) {
+}: VotingCutoffConditionsModalProps) {
   const [deadlineEnabled, setDeadlineEnabled] = useState(true);
   const [voteCountEnabled, setVoteCountEnabled] = useState(autoCloseAfter !== null);
 
@@ -67,7 +67,7 @@ export default function ExpirationConditionsModal({
 
   const getDeadlineLabel = useCallback((optionValue: string): string => {
     if (optionValue === 'custom') return 'Custom';
-    const opt = EXPIRATION_DEADLINE_OPTIONS.find(o => o.value === optionValue);
+    const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === optionValue);
     if (!opt) return optionValue;
     if (!isClient) return opt.label;
     const now = new Date();
@@ -84,7 +84,7 @@ export default function ExpirationConditionsModal({
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         <div className="bg-white dark:bg-gray-900 rounded-xl p-6 mx-4 max-w-sm w-full shadow-xl">
-          <h3 className="text-lg font-semibold mb-4">Expiration Conditions</h3>
+          <h3 className="text-lg font-semibold mb-4">Voting Cutoff Conditions</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
             The poll will close when any of these conditions are met.
           </p>
@@ -117,7 +117,7 @@ export default function ExpirationConditionsModal({
                   disabled={disabled}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 text-sm"
                 >
-                  {EXPIRATION_DEADLINE_OPTIONS.map((option) => (
+                  {VOTING_CUTOFF_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {getDeadlineLabel(option.value)}
                     </option>
