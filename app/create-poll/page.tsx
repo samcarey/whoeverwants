@@ -259,7 +259,7 @@ function CreatePollContent() {
         setDeadlineOption('1week');
       }
     } else {
-      // Switching away: revert to inline default if it's an voting cutoff modal option
+      // Switching away: revert to inline default if it's a voting cutoff modal option
       if (VOTING_CUTOFF_OPTIONS.some(o => o.value === deadlineOption) && deadlineOption !== 'custom') {
         setDeadlineOption('10min');
       }
