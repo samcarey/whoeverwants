@@ -37,6 +37,7 @@ export interface Poll {
   max_participants?: number;
   short_id?: string;
   suggestion_deadline?: string | null;
+  suggestion_deadline_minutes?: number | null;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;

@@ -1113,11 +1113,11 @@ function CreatePollContent() {
         pollData.options = filledOptions;
       }
 
-      // Add suggestion deadline for polls with no options (suggestion phase)
+      // Add suggestion deadline duration for polls with no options (suggestion phase)
+      // The actual deadline is deferred until the first suggestion is submitted
       if (isSuggestionMode) {
         const cutoffMinutes = SUGGESTION_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.minutes || 120;
-        const cutoffDate = new Date(new Date().getTime() + cutoffMinutes * 60 * 1000);
-        pollData.suggestion_deadline = cutoffDate.toISOString();
+        pollData.suggestion_deadline_minutes = cutoffMinutes;
         pollData.allow_pre_ranking = allowPreRanking;
       }
 

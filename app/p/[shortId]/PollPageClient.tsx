@@ -93,13 +93,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline
-  // has an optional suggestion collection phase before ranking begins
-  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!poll.suggestion_deadline;
+  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline or suggestion_deadline_minutes
+  // has an optional suggestion collection phase before ranking begins.
+  // When suggestion_deadline_minutes is set but suggestion_deadline is null, the timer hasn't started yet
+  // (waiting for first suggestion). This is still considered "in suggestion phase".
+  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!(poll.suggestion_deadline || poll.suggestion_deadline_minutes);
   const effectiveSuggestionDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
-  const inSuggestionPhase = hasSuggestionPhase && currentTime
-    ? currentTime < new Date(effectiveSuggestionDeadline!)
-    : hasSuggestionPhase; // Before currentTime is set, assume suggestion phase if deadline exists
+  const suggestionTimerStarted = !!effectiveSuggestionDeadline;
+  const inSuggestionPhase = hasSuggestionPhase && (
+    !suggestionTimerStarted // Timer hasn't started yet (waiting for first suggestion)
+    || (currentTime ? currentTime < new Date(effectiveSuggestionDeadline!) : true)
+  );
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
   const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
     !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
@@ -1211,6 +1215,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       // Refresh suggestion list for polls with suggestion phase
       if (hasSuggestionPhase) {
+        // If this is the first suggestion on a deferred-deadline poll, start the timer
+        if (!suggestionTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
+          const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+          setSuggestionDeadlineOverride(newDeadline.toISOString());
+        }
         // Reset abstain so the ranking ballot is usable after suggestion submission
         // (abstaining from suggestions shouldn't block ranking)
         if (isAbstaining && canSubmitRankings) {
@@ -1386,8 +1395,25 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           // Case 4: Poll is still open and not expired - show countdown
           if (!isPollClosed && !isExpired && deadline) {
             // During suggestion phase, show suggestion deadline instead of response deadline
-            if (inSuggestionPhase && poll.suggestion_deadline) {
-              return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
+            if (inSuggestionPhase) {
+              if (poll.suggestion_deadline) {
+                return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
+              }
+              // Deferred deadline: timer starts when first suggestion is submitted
+              if (poll.suggestion_deadline_minutes) {
+                const durationLabel = poll.suggestion_deadline_minutes >= 1440
+                  ? `${Math.round(poll.suggestion_deadline_minutes / 1440)}d`
+                  : poll.suggestion_deadline_minutes >= 60
+                    ? `${Math.round(poll.suggestion_deadline_minutes / 60)}h`
+                    : `${poll.suggestion_deadline_minutes}m`;
+                return (
+                  <div className="mb-3 text-center">
+                    <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                      {durationLabel} cutoff starts after first suggestion
+                    </span>
+                  </div>
+                );
+              }
             }
             return <Countdown deadline={poll.response_deadline || null} />;
           }
@@ -1955,7 +1981,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
                 showCloseButton={!isPollClosed && isCreator}
-                showCutoffSuggestionsButton={!isPollClosed && isCreator && canSubmitSuggestions}
+                showCutoffSuggestionsButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
                 showForgetButton={hasPollDataState}
                 onCloseClick={handleCloseClick}

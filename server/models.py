@@ -33,6 +33,7 @@ class CreatePollRequest(BaseModel):
     min_participants: int | None = None
     max_participants: int | None = None
     suggestion_deadline: str | None = None
+    suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
@@ -142,6 +143,7 @@ class PollResponse(BaseModel):
     max_participants: int | None = None
     short_id: str | None = None
     suggestion_deadline: str | None = None
+    suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
