@@ -1579,7 +1579,7 @@ function CreatePollContent() {
                                 const mins = votingMin * opt.fraction;
                                 return (
                                   <option key={opt.value} value={opt.value}>
-                                    {formatMinutesLabel(mins)} ({opt.fraction}x Voting Cutoff)
+                                    {opt.fraction}x ({formatMinutesLabel(mins)})
                                   </option>
                                 );
                               })}
