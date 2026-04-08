@@ -183,7 +183,11 @@ body {
   html {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
-    min-height: 100% !important;
+    /* Extend html background into the home indicator zone. The original
+       padding-bottom filled this area, but we removed padding to avoid
+       pushing body up. min-height extends the element (and its background)
+       past the viewport bottom into the safe area. */
+    min-height: calc(100% + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   body {
