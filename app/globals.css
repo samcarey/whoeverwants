@@ -192,12 +192,12 @@ body {
     overflow-x: hidden !important;
   }
 
-  /* Force viewport to use full screen */
+  /* Use full physical screen height, not -webkit-fill-available which excludes
+     the home indicator area. With viewport-fit:cover, 100vh includes the area
+     behind the notch and home indicator — exactly what we want for edge-to-edge. */
   .h-screen-safe {
     height: 100vh !important;
-    height: -webkit-fill-available !important;
     min-height: 100vh !important;
-    min-height: -webkit-fill-available !important;
   }
 
   /* Ensure content area doesn't interfere */
