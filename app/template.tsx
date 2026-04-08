@@ -241,11 +241,11 @@ export default function Template({ children }: AppTemplateProps) {
   // Pull-to-refresh for iOS PWA standalone mode only.
   // Uses direct DOM manipulation during touchmove for 60fps updates.
   //
-  // IMPORTANT: The non-passive touchmove listener (needed for e.preventDefault()
-  // to suppress iOS bounce) is only registered when the scroll is near the top.
-  // Having a non-passive touchmove listener permanently on the scroll container
-  // forces iOS to block scroll processing on every frame, disabling momentum/
-  // inertial scrolling and making the page feel "stuck."
+  // All listeners are PASSIVE — no e.preventDefault(). Calling preventDefault
+  // on even a 1px downward touchmove causes iOS to classify the entire gesture
+  // as non-scrollable, permanently blocking scroll for that touch. Instead,
+  // overscroll-behavior-y: none on the scroll container suppresses native
+  // bounce, and we track pull distance purely from touch position deltas.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -260,13 +260,10 @@ export default function Template({ children }: AppTemplateProps) {
       console.warn('[PTR] scrollContainerRef.current is null — cannot attach');
       return;
     }
-    console.log('[PTR] attaching touch handlers, scrollContainer.scrollTop=' + scrollContainer.scrollTop + ', overflow=' + getComputedStyle(scrollContainer).overflow);
 
-    // Prevent native overscroll bounce on body/html only.
-    // Do NOT set overscrollBehaviorY on the scroll container itself — on iOS
-    // WebKit, this can interfere with normal scrolling (stuck scroll).
-    // The e.preventDefault() in the PTR touchmove handler handles bounce
-    // suppression at the top of the scroll.
+    // Suppress native overscroll bounce via CSS. In PWA standalone mode,
+    // body is overflow:hidden so only the scroll container can bounce.
+    scrollContainer.style.overscrollBehaviorY = 'none';
     document.body.style.overscrollBehavior = 'none';
     document.documentElement.style.overscrollBehavior = 'none';
 
@@ -277,22 +274,6 @@ export default function Template({ children }: AppTemplateProps) {
     let refreshTriggered = false;
     let rAFPending = false;
     let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
-    let touchMoveCount = 0;
-    let ptrMoveListenerActive = false;
-
-    const addPTRMoveListener = () => {
-      if (!ptrMoveListenerActive) {
-        scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
-        ptrMoveListenerActive = true;
-      }
-    };
-
-    const removePTRMoveListener = () => {
-      if (ptrMoveListenerActive) {
-        scrollContainer.removeEventListener('touchmove', handleTouchMove);
-        ptrMoveListenerActive = false;
-      }
-    };
 
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
@@ -322,38 +303,16 @@ export default function Template({ children }: AppTemplateProps) {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
-      touchMoveCount = 0;
-
-      // Only register the non-passive touchmove listener when at the top.
-      // This lets iOS use fast-path scrolling when scrolled away from top.
-      if (isAtTop) {
-        addPTRMoveListener();
-      } else {
-        removePTRMoveListener();
-      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      touchMoveCount++;
-      if (refreshTriggered || !isAtTop) {
-        return;
-      }
+      if (refreshTriggered || !isAtTop) return;
 
-      // Skip pull-to-refresh when a modal is open (e.g. time picker)
+      // Skip when a modal is open
       const target = e.target as HTMLElement;
-      if (target.closest('[data-modal]')) {
-        return;
-      }
+      if (target.closest('[data-modal]')) return;
 
       const rawDelta = e.touches[0].clientY - startY;
-
-      // Prevent default IMMEDIATELY for any downward movement at the top.
-      // iOS's gesture recognizer claims the touch within the first few touchmove
-      // events. If we wait (e.g. 10px) before calling preventDefault, iOS starts
-      // native overscroll bounce and ignores our later preventDefault calls.
-      if (rawDelta > 0) {
-        e.preventDefault();
-      }
 
       if (rawDelta > 10) {
         if (!isDragging) {
@@ -371,8 +330,6 @@ export default function Template({ children }: AppTemplateProps) {
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
         currentPullDistance = 0;
-        // Clear styles completely — updateDOM(0) would leave translateY(0px)
-        // which is a real transform that breaks iOS scroll momentum.
         scrollContainer.style.transform = '';
         scrollContainer.style.transition = '';
         setPullActive(false);
@@ -401,10 +358,7 @@ export default function Template({ children }: AppTemplateProps) {
           snapBackTimeout = null;
         }, 300);
       } else {
-        // Gesture ended without an active drag (e.g., drag was canceled in
-        // touchmove when rawDelta dropped below threshold). Ensure no stale
-        // transform lingers — translateY(0px) is a real CSS transform that
-        // creates a containing block and breaks iOS scroll momentum.
+        // Clear any stale transform
         scrollContainer.style.transform = '';
         scrollContainer.style.transition = '';
       }
@@ -413,28 +367,15 @@ export default function Template({ children }: AppTemplateProps) {
       currentPullDistance = 0;
     };
 
-    // Also remove the non-passive listener when scroll moves away from top.
-    // This handles the case where a gesture starts at the top and scrolls down.
-    const handlePTRScroll = () => {
-      if (ptrMoveListenerActive && scrollContainer.scrollTop > 20) {
-        removePTRMoveListener();
-      }
-    };
-
     scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: true });
     scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
-    scrollContainer.addEventListener('scroll', handlePTRScroll, { passive: true });
-
-    // Register PTR move listener initially if already at top
-    if (scrollContainer.scrollTop <= 5) {
-      addPTRMoveListener();
-    }
 
     return () => {
       scrollContainer.removeEventListener('touchstart', handleTouchStart);
-      removePTRMoveListener();
+      scrollContainer.removeEventListener('touchmove', handleTouchMove);
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
-      scrollContainer.removeEventListener('scroll', handlePTRScroll);
+      scrollContainer.style.overscrollBehaviorY = '';
       document.body.style.overscrollBehavior = '';
       document.documentElement.style.overscrollBehavior = '';
       scrollContainer.style.transform = '';
