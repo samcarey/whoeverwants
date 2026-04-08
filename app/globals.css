@@ -182,12 +182,9 @@ body {
      non-interactable) behind the notch/status bar as they scroll past. */
   html {
     padding-top: 0 !important;
-    padding-bottom: 0 !important;
-    /* Extend html background into the home indicator zone. The original
-       padding-bottom filled this area, but we removed padding to avoid
-       pushing body up. min-height extends the element (and its background)
-       past the viewport bottom into the safe area. */
-    min-height: calc(100% + env(safe-area-inset-bottom, 0px)) !important;
+    /* Keep padding-bottom from iOS CSS — it fills the home indicator zone
+       with the background color. Only top padding is removed so content
+       can scroll behind the notch. */
   }
 
   body {
