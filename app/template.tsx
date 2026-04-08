@@ -240,26 +240,20 @@ export default function Template({ children }: AppTemplateProps) {
 
   // Pull-to-refresh for iOS PWA standalone mode only.
   // Uses direct DOM manipulation during touchmove for 60fps updates.
+  //
+  // All listeners are PASSIVE — no e.preventDefault(). Calling preventDefault
+  // on even a 1px downward touchmove causes iOS to classify the entire gesture
+  // as non-scrollable, permanently blocking scroll for that touch. Instead,
+  // overscroll-behavior-y: none on the scroll container suppresses native
+  // bounce, and we track pull distance purely from touch position deltas.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    // Log detection details regardless of result
-    console.log('[PTR] detection: navigator.standalone=' + isIOSSPWAStandalone() + ', isIOSPWA=' + isIOSPWA);
-
-    if (!isIOSPWA) {
-      return;
-    }
+    if (typeof window === 'undefined' || !isIOSPWA) return;
 
     const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) {
-      console.warn('[PTR] scrollContainerRef.current is null — cannot attach');
-      return;
-    }
-    console.log('[PTR] attaching touch handlers, scrollContainer.scrollTop=' + scrollContainer.scrollTop + ', overflow=' + getComputedStyle(scrollContainer).overflow);
+    if (!scrollContainer) return;
 
-    // Prevent native overscroll bounce on both the scroll container AND body/html.
-    // iOS PWA standalone mode has body { overflow: auto } from globals.css which
-    // creates a competing scrollable layer whose bounce steals the pull gesture.
+    // Suppress native overscroll bounce via CSS. In PWA standalone mode,
+    // body is overflow:hidden so only the scroll container can bounce.
     scrollContainer.style.overscrollBehaviorY = 'none';
     document.body.style.overscrollBehavior = 'none';
     document.documentElement.style.overscrollBehavior = 'none';
@@ -269,9 +263,8 @@ export default function Template({ children }: AppTemplateProps) {
     let isDragging = false;
     let currentPullDistance = 0;
     let refreshTriggered = false;
-    let rAFPending = false;
+    let rAFId: number | null = null;
     let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
-    let touchMoveCount = 0;
 
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
@@ -290,8 +283,6 @@ export default function Template({ children }: AppTemplateProps) {
       if (arc) {
         const pastThreshold = distance >= PTR_THRESHOLD;
         arc.style.strokeDasharray = `${Math.min(distance / PTR_THRESHOLD, 1) * PTR_CIRCUMFERENCE} ${PTR_CIRCUMFERENCE}`;
-        // Tailwind classes toggled imperatively — these classes also exist in the
-        // JSX below (spinner SVG) so they won't be purged from the CSS bundle.
         arc.classList.toggle('text-blue-600', pastThreshold);
         arc.classList.toggle('dark:text-blue-400', pastThreshold);
         arc.classList.toggle('text-gray-400', !pastThreshold);
@@ -303,64 +294,41 @@ export default function Template({ children }: AppTemplateProps) {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
-      touchMoveCount = 0;
-      console.log('[PTR] touchstart: startY=' + startY + ', scrollTop=' + scrollContainer.scrollTop + ', isAtTop=' + isAtTop);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      touchMoveCount++;
-      if (refreshTriggered || !isAtTop) {
-        if (touchMoveCount <= 3) {
-          console.log('[PTR] touchmove #' + touchMoveCount + ' SKIPPED: refreshTriggered=' + refreshTriggered + ', isAtTop=' + isAtTop);
-        }
-        return;
-      }
+      if (refreshTriggered || !isAtTop) return;
 
-      // Skip pull-to-refresh when a modal is open (e.g. time picker)
+      // Skip when a modal is open
       const target = e.target as HTMLElement;
-      if (target.closest('[data-modal]')) {
-        return;
-      }
+      if (target.closest('[data-modal]')) return;
 
       const rawDelta = e.touches[0].clientY - startY;
-
-      // Log first few touchmove events to diagnose gesture capture
-      if (touchMoveCount <= 5) {
-        console.log('[PTR] touchmove #' + touchMoveCount + ': rawDelta=' + rawDelta.toFixed(1) + ', isDragging=' + isDragging + ', cancelable=' + e.cancelable);
-      }
-
-      // Prevent default IMMEDIATELY for any downward movement at the top.
-      // iOS's gesture recognizer claims the touch within the first few touchmove
-      // events. If we wait (e.g. 10px) before calling preventDefault, iOS starts
-      // native overscroll bounce and ignores our later preventDefault calls.
-      if (rawDelta > 0) {
-        e.preventDefault();
-      }
 
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
-          console.log('[PTR] drag started at rawDelta=' + rawDelta.toFixed(1));
+          // Cancel any pending snap-back from a previous gesture
+          if (snapBackTimeout) { clearTimeout(snapBackTimeout); snapBackTimeout = null; }
           setPullActive(true);
         }
         currentPullDistance = rawDelta;
-        if (!rAFPending) {
-          rAFPending = true;
-          requestAnimationFrame(() => {
-            rAFPending = false;
+        if (rAFId === null) {
+          rAFId = requestAnimationFrame(() => {
+            rAFId = null;
             updateDOM(currentPullDistance);
           });
         }
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
         currentPullDistance = 0;
-        updateDOM(0);
+        scrollContainer.style.transform = '';
+        scrollContainer.style.transition = '';
         setPullActive(false);
       }
     };
 
     const handleTouchEnd = () => {
-      console.log('[PTR] touchend: isDragging=' + isDragging + ', distance=' + currentPullDistance + ', threshold=' + PTR_THRESHOLD + ', totalMoves=' + touchMoveCount);
       if (refreshTriggered) return;
 
       if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
@@ -381,6 +349,10 @@ export default function Template({ children }: AppTemplateProps) {
           setPullActive(false);
           snapBackTimeout = null;
         }, 300);
+      } else {
+        // Clear any stale transform
+        scrollContainer.style.transform = '';
+        scrollContainer.style.transition = '';
       }
 
       isDragging = false;
@@ -388,7 +360,7 @@ export default function Template({ children }: AppTemplateProps) {
     };
 
     scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: true });
     scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
@@ -400,6 +372,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.documentElement.style.overscrollBehavior = '';
       scrollContainer.style.transform = '';
       scrollContainer.style.transition = '';
+      if (rAFId !== null) cancelAnimationFrame(rAFId);
       if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
   }, [isIOSPWA]);

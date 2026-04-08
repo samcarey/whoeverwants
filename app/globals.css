@@ -133,9 +133,10 @@ body {
  */
 .responsive-scaling-container {
   transform-origin: top left;
-  /* Default mobile/tablet scale - prevents layout flicker */
-  transform: scale(1);
   width: 100%;
+  /* No transform on mobile — scale(1) is a visual no-op but creates a
+     containing block that breaks iOS momentum scrolling in child
+     overflow:auto elements. Desktop media queries apply transforms. */
 }
 
 /* Desktop scaling (1024px-1279px) - 1.5x scale */
