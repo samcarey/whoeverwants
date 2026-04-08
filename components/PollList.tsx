@@ -443,13 +443,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                             {(() => {
                               const inSuggestions = isInSuggestionPhase(poll);
                               if (inSuggestions && poll.suggestion_deadline) {
-                                return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions Cutoff in" />;
+                                return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
                               }
                               if (inSuggestions && poll.suggestion_deadline_minutes) {
                                 return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                               }
                               if (poll.response_deadline) {
-                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting Cutoff in" />;
+                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" />;
                               }
                               return null;
                             })()}
