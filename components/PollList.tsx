@@ -51,7 +51,7 @@ function relativeTime(dateStr: string): string {
 }
 
 // Simple countdown component
-const SimpleCountdown = ({ deadline }: { deadline: string }) => {
+const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isClient, setIsClient] = useState(false);
 
@@ -61,7 +61,7 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
   useEffect(() => {
     if (!isClient) return;
-    
+
     const updateCountdown = () => {
       const now = new Date().getTime();
       const deadlineTime = new Date(deadline).getTime();
@@ -98,11 +98,26 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
   return (
     <>
-      <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span>
-      {timeLeft !== "Expired" && " left"}
+      {label}{label && " "}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
     </>
   );
 };
+
+function formatDurationShort(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function isInSuggestionPhase(poll: Poll): boolean {
+  if (poll.poll_type !== 'ranked_choice') return false;
+  // Timer started and deadline in the future
+  if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
+  // Timer not started yet (waiting for first suggestion)
+  if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
+  return false;
+}
 
 function getOptionDisplayName(optionKey: string, poll: Poll): string {
   const meta = poll.options_metadata?.[optionKey];
@@ -430,13 +445,23 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
-                        {poll.response_deadline && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            <ClientOnly fallback={<>Loading...</>}>
-                              <SimpleCountdown deadline={poll.response_deadline} />
-                            </ClientOnly>
-                          </span>
-                        )}
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          <ClientOnly fallback={<>Loading...</>}>
+                            {(() => {
+                              const inSuggestions = isInSuggestionPhase(poll);
+                              if (inSuggestions && poll.suggestion_deadline) {
+                                return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions Cutoff in" />;
+                              }
+                              if (inSuggestions && poll.suggestion_deadline_minutes) {
+                                return <>Suggestions Cutoff in <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatDurationShort(poll.suggestion_deadline_minutes)}</span></>;
+                              }
+                              if (poll.response_deadline) {
+                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting Cutoff in" />;
+                              }
+                              return null;
+                            })()}
+                          </ClientOnly>
+                        </span>
                       </div>
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
