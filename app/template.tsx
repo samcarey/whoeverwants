@@ -135,12 +135,16 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Handle scroll direction detection for bottom bar
+  // Handle scroll direction detection for bottom bar.
+  // Uses touch events as primary mechanism (reliable on iOS PWA + browser),
+  // with scroll event listener as fallback for desktop/mouse-wheel.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
     let rAFId: number | null = null;
-    let scrollContainer: HTMLElement | null = null;
 
     // Track current visibility to avoid no-op setState calls during scroll
     let isVisible = true;
@@ -151,33 +155,49 @@ export default function Template({ children }: AppTemplateProps) {
       }
     };
 
+    // Prefer container scrollTop; fall back to window only if container isn't scrollable
+    const getScrollTop = () =>
+      scrollContainer.scrollHeight > scrollContainer.clientHeight
+        ? scrollContainer.scrollTop
+        : window.scrollY;
+
+    const isNearTop = (pos: number) => pos < SCROLL_TOP_SAFE_ZONE;
+
+    // --- Touch-based direction detection (primary, works in iOS PWA) ---
+    let touchStartScrollTop = 0;
+
+    const handleTouchStart = () => {
+      touchStartScrollTop = getScrollTop();
+    };
+
+    const handleTouchEnd = () => {
+      const pos = getScrollTop();
+      if (isNearTop(pos)) { setVisible(true); return; }
+      const delta = pos - touchStartScrollTop;
+      if (Math.abs(delta) >= scrollThreshold.current) {
+        setVisible(delta < 0); // scrolled up → show, scrolled down → hide
+      }
+    };
+
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    // --- Scroll event fallback (desktop mouse wheel, and browser scroll) ---
     const processScroll = () => {
       rAFId = null;
-      if (!scrollContainer) return;
-
-      const currentScrollY = scrollContainer.scrollTop;
+      const currentScrollY = getScrollTop();
       const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
-      if (currentScrollY <= 0) {
+      if (isNearTop(currentScrollY)) {
         setVisible(true);
         lastScrollY.current = currentScrollY;
         return;
       }
 
-      // Keep bottom bar visible near the top so a tiny scroll can't hide it
-      // on pages with little content where the user can't scroll up to recover.
-      if (currentScrollY < SCROLL_TOP_SAFE_ZONE) {
-        setVisible(true);
-        lastScrollY.current = currentScrollY;
-        return;
-      }
-
-      // iOS rubber band past the bottom — ignore and clamp lastScrollY
+      // iOS rubber band past the bottom — ignore
       if (currentScrollY > maxScrollY) {
         isInBounceRef.current = true;
-        if (bounceTimeoutRef.current) {
-          clearTimeout(bounceTimeoutRef.current);
-        }
+        if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
         bounceTimeoutRef.current = setTimeout(() => {
           isInBounceRef.current = false;
           bounceTimeoutRef.current = null;
@@ -186,14 +206,12 @@ export default function Template({ children }: AppTemplateProps) {
         return;
       }
 
-      // Scroll position is unreliable during bounce cooldown
       if (isInBounceRef.current) {
         lastScrollY.current = currentScrollY;
         return;
       }
 
       const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-
       if (scrollDifference >= scrollThreshold.current) {
         setVisible(currentScrollY < lastScrollY.current);
       }
@@ -207,24 +225,16 @@ export default function Template({ children }: AppTemplateProps) {
       }
     };
 
-    const timeoutId = setTimeout(() => {
-      scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
-      }
-    }, 100);
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
-      clearTimeout(timeoutId);
-      if (rAFId !== null) {
-        cancelAnimationFrame(rAFId);
-      }
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      }
-      if (bounceTimeoutRef.current) {
-        clearTimeout(bounceTimeoutRef.current);
-      }
+      scrollContainer.removeEventListener('touchstart', handleTouchStart);
+      scrollContainer.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
+      if (rAFId !== null) cancelAnimationFrame(rAFId);
+      if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
     };
   }, []);
 
@@ -474,9 +484,9 @@ export default function Template({ children }: AppTemplateProps) {
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          paddingBottom: '1rem',
+          paddingBottom: '4rem',
         }}>
-        <div>
+        <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
@@ -553,7 +563,12 @@ export default function Template({ children }: AppTemplateProps) {
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            // In standalone PWA, fixed bottom:0 stops at the viewport edge, not the
+            // physical screen bottom. Push the bar down into the home indicator zone
+            // with a negative bottom offset, and double the padding to keep buttons
+            // above the unsafe area.
+            bottom: isStandalone ? 'calc(-1 * env(safe-area-inset-bottom, 0px))' : '0',
+            paddingBottom: isStandalone ? 'calc(2 * env(safe-area-inset-bottom, 0px))' : 'env(safe-area-inset-bottom, 0px)',
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
             transition: 'transform 200ms ease-out',
             willChange: 'transform',

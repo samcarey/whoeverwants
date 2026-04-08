@@ -176,34 +176,32 @@ body {
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
-  /* Only apply non-conflicting PWA styles */
+  /* Remove html safe-area top/bottom padding so content extends edge-to-edge.
+     The scroll container adds safe-area-inset-top as internal content padding
+     instead, so it scrolls with the content — items become visible (but
+     non-interactable) behind the notch/status bar as they scroll past. */
+  html {
+    padding-top: 0 !important;
+    /* Keep padding-bottom from iOS CSS — it fills the home indicator zone
+       with the background color. Only top padding is removed so content
+       can scroll behind the notch. */
+  }
+
   body {
     margin: 0 !important;
-    overflow-x: hidden !important;
+    overflow: hidden !important;
   }
-  
-  /* Force viewport to use full screen */
+
+  /* Extend content container into the home indicator zone so content is
+     visible when the bottom bar hides. 100vh stops at the safe-area boundary,
+     so add safe-area-inset-bottom to reach the physical screen bottom. */
   .h-screen-safe {
-    height: 100vh !important;
-    height: -webkit-fill-available !important;
-    min-height: 100vh !important;
-    min-height: -webkit-fill-available !important;
+    height: calc(100vh + env(safe-area-inset-bottom, 0px)) !important;
+    min-height: calc(100vh + env(safe-area-inset-bottom, 0px)) !important;
   }
-  
-  /* Bottom bar positioning without overriding safe area padding */
-  .fixed.bottom-0 {
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    margin: 0 !important;
-    transform: none !important;
-    position: fixed !important;
-  }
-  
+
   /* Ensure content area doesn't interfere */
   .safari-scroll-container {
-    padding-bottom: 1rem !important;
     margin-bottom: 0 !important;
   }
-  
 }
