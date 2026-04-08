@@ -487,6 +487,8 @@ export default function Template({ children }: AppTemplateProps) {
           paddingBottom: '4rem',
         }}>
         <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
+          {/* Portal target for commit age badge (rendered by CommitInfo component) */}
+          <div id="commit-badge-portal"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">

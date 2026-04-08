@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 interface CommitData {
   sha: string;
@@ -97,6 +98,20 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const vercelHash = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '';
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
   const [commitHash, setCommitHash] = useState(vercelHash);
+  const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
+
+  // Find the portal target for the time badge (rendered inside scroll container by template.tsx)
+  useEffect(() => {
+    if (!showTimeBadge) return;
+    const findTarget = () => {
+      const el = document.getElementById('commit-badge-portal');
+      if (el) setBadgeTarget(el);
+    };
+    findTarget();
+    // Template may not be mounted yet on first layout render
+    const timer = setTimeout(findTarget, 100);
+    return () => clearTimeout(timer);
+  }, [showTimeBadge]);
 
   // In dev mode, fetch the current git SHA from the server on mount and on visibility change
   useEffect(() => {
@@ -200,17 +215,17 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
   return (
     <>
-      {/* Time badge - only shown in dev mode, positioned top center with no top margin */}
-      {showTimeBadge && (
+      {/* Time badge - only shown in dev mode, portaled into scroll container so it scrolls with content */}
+      {showTimeBadge && badgeTarget && createPortal(
         <div
-          className="fixed left-1/2 -translate-x-1/2 z-[9999] cursor-pointer select-none"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 2px)' }}
+          className="flex justify-center cursor-pointer select-none pt-1"
           onClick={() => setShowModal(true)}
         >
           <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
             {relativeTime || error || '...'}
           </span>
-        </div>
+        </div>,
+        badgeTarget
       )}
 
       {/* Modal */}
