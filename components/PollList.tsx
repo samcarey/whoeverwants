@@ -591,10 +591,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                                     hour12: true
                                   });
                                 } else {
-                                  const mm = String(deadline.getMonth() + 1).padStart(2, '0');
-                                  const dd = String(deadline.getDate()).padStart(2, '0');
-                                  const yy = String(deadline.getFullYear()).slice(-2);
-                                  return `${mm}/${dd}/${yy}`;
+                                  return deadline.toLocaleDateString("en-US", {
+                                    month: "numeric",
+                                    day: "numeric",
+                                    year: "2-digit"
+                                  });
                                 }
                               })()}</>
                             </ClientOnly>
