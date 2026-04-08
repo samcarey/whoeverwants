@@ -98,16 +98,14 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 
   return (
     <>
-      {label}{label && " "}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
+      {label && `${label} `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
     </>
   );
 };
 
 function isInSuggestionPhase(poll: Poll): boolean {
   if (poll.poll_type !== 'ranked_choice') return false;
-  // Timer started and deadline in the future
   if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
-  // Timer not started yet (waiting for first suggestion)
   if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
   return false;
 }
@@ -266,8 +264,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return new Date(poll.response_deadline) <= now || poll.is_closed;
     });
     
-    // Get the effective cutoff for an open poll: suggestion deadline if in
-    // suggestion phase, otherwise the voting deadline.
     const getEffectiveCutoff = (poll: Poll): number => {
       if (isInSuggestionPhase(poll)) {
         if (poll.suggestion_deadline) return new Date(poll.suggestion_deadline).getTime();
@@ -277,8 +273,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return new Date(poll.response_deadline || poll.created_at).getTime();
     };
 
-    // Sort open polls by voted status (unvoted first, then voted/abstained)
-    // Within each group, sort by soonest cutoff first
     const sortByVoted = (pollList: Poll[]) => {
       const unvoted = pollList.filter(p => !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id));
       const voted = pollList.filter(p => votedPollIds.has(p.id) || abstainedPollIds.has(p.id));
@@ -290,7 +284,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return [...sortByCutoff(unvoted), ...sortByCutoff(voted)];
     };
 
-    // Sort closed polls by most recently closed first
     const sortClosedByTime = (pollList: Poll[]) => {
       return pollList.sort((a, b) => {
         const getClosingTime = (poll: Poll) => {
