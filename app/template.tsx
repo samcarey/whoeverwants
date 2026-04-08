@@ -487,13 +487,15 @@ export default function Template({ children }: AppTemplateProps) {
           paddingBottom: '4rem',
         }}>
         <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
+          {/* Portal target for commit age badge (rendered by CommitInfo component) */}
+          <div id="commit-badge-portal"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
               
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -505,7 +507,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Create poll page title */}
               {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
                   <h1
                     className="text-2xl font-bold text-center whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -523,7 +525,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Profile page title */}
               {isProfilePage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -535,7 +537,17 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Home page title */}
               {pathname === '/' && (
-                <div className="max-w-4xl mx-auto px-2 pt-4 pb-1">
+                <div className="relative max-w-4xl mx-auto px-2 pt-1 pb-1">
+                  {/* Create poll button - top right, scrolls with content */}
+                  <Link
+                    href="/create-poll"
+                    className="absolute right-2 top-1 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                    aria-label="Create new poll"
+                  >
+                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </Link>
                   <div className="text-center">
                     <h1
                       className="text-2xl font-bold mb-1 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
@@ -659,20 +671,6 @@ export default function Template({ children }: AppTemplateProps) {
           </div>
         )}
         
-        {/* New poll button in upper right for home page */}
-        {pathname === '/' && (
-          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
-            <Link
-              href="/create-poll"
-              className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-              aria-label="Create new poll"
-            >
-              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-            </Link>
-          </div>
-        )}
       </HeaderPortal>
     </>
   );
