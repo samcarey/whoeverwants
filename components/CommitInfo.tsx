@@ -218,7 +218,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
       {/* Time badge - only shown in dev mode, portaled into scroll container so it scrolls with content */}
       {showTimeBadge && badgeTarget && createPortal(
         <div
-          className="flex justify-center cursor-pointer select-none pt-1"
+          className="flex justify-center cursor-pointer select-none"
           onClick={() => setShowModal(true)}
         >
           <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">

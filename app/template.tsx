@@ -495,7 +495,7 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-2 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -507,7 +507,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Create poll page title */}
               {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-2 pb-1">
                   <h1
                     className="text-2xl font-bold text-center whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -525,7 +525,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Profile page title */}
               {isProfilePage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-2 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -537,11 +537,11 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Home page title */}
               {pathname === '/' && (
-                <div className="relative max-w-4xl mx-auto px-2 pt-4 pb-1">
+                <div className="relative max-w-4xl mx-auto px-2 pt-2 pb-1">
                   {/* Create poll button - top right, scrolls with content */}
                   <Link
                     href="/create-poll"
-                    className="absolute right-2 top-4 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                    className="absolute right-2 top-2 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                     aria-label="Create new poll"
                   >
                     <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
