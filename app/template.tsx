@@ -262,10 +262,11 @@ export default function Template({ children }: AppTemplateProps) {
     }
     console.log('[PTR] attaching touch handlers, scrollContainer.scrollTop=' + scrollContainer.scrollTop + ', overflow=' + getComputedStyle(scrollContainer).overflow);
 
-    // Prevent native overscroll bounce on both the scroll container AND body/html.
-    // iOS PWA standalone mode has body { overflow: auto } from globals.css which
-    // creates a competing scrollable layer whose bounce steals the pull gesture.
-    scrollContainer.style.overscrollBehaviorY = 'none';
+    // Prevent native overscroll bounce on body/html only.
+    // Do NOT set overscrollBehaviorY on the scroll container itself — on iOS
+    // WebKit, this can interfere with normal scrolling (stuck scroll).
+    // The e.preventDefault() in the PTR touchmove handler handles bounce
+    // suppression at the top of the scroll.
     document.body.style.overscrollBehavior = 'none';
     document.documentElement.style.overscrollBehavior = 'none';
 
@@ -424,7 +425,6 @@ export default function Template({ children }: AppTemplateProps) {
       removePTRMoveListener();
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
       scrollContainer.removeEventListener('scroll', handlePTRScroll);
-      scrollContainer.style.overscrollBehaviorY = '';
       document.body.style.overscrollBehavior = '';
       document.documentElement.style.overscrollBehavior = '';
       scrollContainer.style.transform = '';
