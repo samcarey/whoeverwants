@@ -99,6 +99,25 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
   const [commitHash, setCommitHash] = useState(vercelHash);
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+  const badgeLongPressProps = {
+    onPointerDown: () => {
+      longPressTimerRef.current = setTimeout(() => {
+        setShowModal(true);
+        longPressTimerRef.current = null;
+      }, 500);
+    },
+    onPointerUp: cancelLongPress,
+    onPointerLeave: cancelLongPress,
+    onPointerCancel: cancelLongPress,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  };
 
   // Find the portal target for the time badge (inside scroll container so it scrolls with content)
   useEffect(() => {
@@ -218,8 +237,8 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
       {/* Time badge - only shown in dev mode, portaled into scroll container so it scrolls with content */}
       {showTimeBadge && badgeTarget && createPortal(
         <div
-          className="flex justify-center cursor-pointer select-none"
-          onClick={() => setShowModal(true)}
+          className="flex justify-center select-none"
+          {...badgeLongPressProps}
         >
           <span className="text-[10px] font-mono text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
             {relativeTime || error || '...'}
