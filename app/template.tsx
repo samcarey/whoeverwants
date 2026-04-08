@@ -484,7 +484,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
+          paddingBottom: '4rem',
         }}>
         <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
           {/* Spacer div for header elements that are now rendered in portal */}
