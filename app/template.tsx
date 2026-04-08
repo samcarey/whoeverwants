@@ -240,10 +240,15 @@ export default function Template({ children }: AppTemplateProps) {
 
   // Pull-to-refresh for iOS PWA standalone mode only.
   // Uses direct DOM manipulation during touchmove for 60fps updates.
+  //
+  // IMPORTANT: The non-passive touchmove listener (needed for e.preventDefault()
+  // to suppress iOS bounce) is only registered when the scroll is near the top.
+  // Having a non-passive touchmove listener permanently on the scroll container
+  // forces iOS to block scroll processing on every frame, disabling momentum/
+  // inertial scrolling and making the page feel "stuck."
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // Log detection details regardless of result
     console.log('[PTR] detection: navigator.standalone=' + isIOSSPWAStandalone() + ', isIOSPWA=' + isIOSPWA);
 
     if (!isIOSPWA) {
@@ -272,6 +277,21 @@ export default function Template({ children }: AppTemplateProps) {
     let rAFPending = false;
     let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
     let touchMoveCount = 0;
+    let ptrMoveListenerActive = false;
+
+    const addPTRMoveListener = () => {
+      if (!ptrMoveListenerActive) {
+        scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+        ptrMoveListenerActive = true;
+      }
+    };
+
+    const removePTRMoveListener = () => {
+      if (ptrMoveListenerActive) {
+        scrollContainer.removeEventListener('touchmove', handleTouchMove);
+        ptrMoveListenerActive = false;
+      }
+    };
 
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
@@ -290,8 +310,6 @@ export default function Template({ children }: AppTemplateProps) {
       if (arc) {
         const pastThreshold = distance >= PTR_THRESHOLD;
         arc.style.strokeDasharray = `${Math.min(distance / PTR_THRESHOLD, 1) * PTR_CIRCUMFERENCE} ${PTR_CIRCUMFERENCE}`;
-        // Tailwind classes toggled imperatively — these classes also exist in the
-        // JSX below (spinner SVG) so they won't be purged from the CSS bundle.
         arc.classList.toggle('text-blue-600', pastThreshold);
         arc.classList.toggle('dark:text-blue-400', pastThreshold);
         arc.classList.toggle('text-gray-400', !pastThreshold);
@@ -304,15 +322,19 @@ export default function Template({ children }: AppTemplateProps) {
       startY = e.touches[0].clientY;
       isAtTop = scrollContainer.scrollTop <= 5;
       touchMoveCount = 0;
-      console.log('[PTR] touchstart: startY=' + startY + ', scrollTop=' + scrollContainer.scrollTop + ', isAtTop=' + isAtTop);
+
+      // Only register the non-passive touchmove listener when at the top.
+      // This lets iOS use fast-path scrolling when scrolled away from top.
+      if (isAtTop) {
+        addPTRMoveListener();
+      } else {
+        removePTRMoveListener();
+      }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       touchMoveCount++;
       if (refreshTriggered || !isAtTop) {
-        if (touchMoveCount <= 3) {
-          console.log('[PTR] touchmove #' + touchMoveCount + ' SKIPPED: refreshTriggered=' + refreshTriggered + ', isAtTop=' + isAtTop);
-        }
         return;
       }
 
@@ -323,11 +345,6 @@ export default function Template({ children }: AppTemplateProps) {
       }
 
       const rawDelta = e.touches[0].clientY - startY;
-
-      // Log first few touchmove events to diagnose gesture capture
-      if (touchMoveCount <= 5) {
-        console.log('[PTR] touchmove #' + touchMoveCount + ': rawDelta=' + rawDelta.toFixed(1) + ', isDragging=' + isDragging + ', cancelable=' + e.cancelable);
-      }
 
       // Prevent default IMMEDIATELY for any downward movement at the top.
       // iOS's gesture recognizer claims the touch within the first few touchmove
@@ -340,7 +357,6 @@ export default function Template({ children }: AppTemplateProps) {
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
-          console.log('[PTR] drag started at rawDelta=' + rawDelta.toFixed(1));
           setPullActive(true);
         }
         currentPullDistance = rawDelta;
@@ -360,7 +376,6 @@ export default function Template({ children }: AppTemplateProps) {
     };
 
     const handleTouchEnd = () => {
-      console.log('[PTR] touchend: isDragging=' + isDragging + ', distance=' + currentPullDistance + ', threshold=' + PTR_THRESHOLD + ', totalMoves=' + touchMoveCount);
       if (refreshTriggered) return;
 
       if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
@@ -387,14 +402,28 @@ export default function Template({ children }: AppTemplateProps) {
       currentPullDistance = 0;
     };
 
+    // Also remove the non-passive listener when scroll moves away from top.
+    // This handles the case where a gesture starts at the top and scrolls down.
+    const handlePTRScroll = () => {
+      if (ptrMoveListenerActive && scrollContainer.scrollTop > 20) {
+        removePTRMoveListener();
+      }
+    };
+
     scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
     scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+    scrollContainer.addEventListener('scroll', handlePTRScroll, { passive: true });
+
+    // Register PTR move listener initially if already at top
+    if (scrollContainer.scrollTop <= 5) {
+      addPTRMoveListener();
+    }
 
     return () => {
       scrollContainer.removeEventListener('touchstart', handleTouchStart);
-      scrollContainer.removeEventListener('touchmove', handleTouchMove);
+      removePTRMoveListener();
       scrollContainer.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.removeEventListener('scroll', handlePTRScroll);
       scrollContainer.style.overscrollBehaviorY = '';
       document.body.style.overscrollBehavior = '';
       document.documentElement.style.overscrollBehavior = '';
