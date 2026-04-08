@@ -79,9 +79,9 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 
       let timeString = "";
       if (days > 0) {
-        timeString = `${days}d ${hours}h`;
+        timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
       } else if (hours > 0) {
-        timeString = `${hours}h ${minutes}m`;
+        timeString = `${hours}h ${minutes}m ${seconds}s`;
       } else if (minutes > 0) {
         timeString = `${minutes}m ${seconds}s`;
       } else {
