@@ -183,27 +183,24 @@ body {
   html {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
-    height: 100% !important;
     min-height: 100% !important;
   }
 
   body {
     margin: 0 !important;
     overflow-x: hidden !important;
-    height: 100% !important;
   }
 
-  /* Cascade height:100% through the parent chain so .h-screen-safe fills the
-     full screen. Can't use position:fixed because .responsive-scaling-container
-     has transform:scale(1) which creates a containing block, trapping fixed
-     children inside a 0-height collapsed parent. */
-  .responsive-scaling-container {
-    height: 100% !important;
-  }
-
+  /* Keep original viewport height — don't change this. height:100% breaks
+     because the parent chain collapses, and position:fixed breaks because
+     .responsive-scaling-container has transform:scale(1) which traps fixed
+     children. The bottom gap below the home indicator is an iOS safe area
+     that can't be filled with viewport units. */
   .h-screen-safe {
-    height: 100% !important;
-    min-height: 0 !important;
+    height: 100vh !important;
+    height: -webkit-fill-available !important;
+    min-height: 100vh !important;
+    min-height: -webkit-fill-available !important;
   }
 
   /* Ensure content area doesn't interfere */

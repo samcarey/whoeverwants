@@ -898,7 +898,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### iOS PWA Full-Screen Layout
 
-- **Viewport height units (`100vh`, `100dvh`, `-webkit-fill-available`) all stop at the safe-area boundary** on iOS PWA even with `viewport-fit: cover`. They exclude the home indicator area (~34px). Use `position: fixed; inset: 0` on `.h-screen-safe` in standalone mode to reliably span the full physical screen.
+- **Viewport height units (`100vh`, `100dvh`, `-webkit-fill-available`) all stop at the safe-area boundary** on iOS PWA even with `viewport-fit: cover`. They exclude the home indicator area (~34px). `position: fixed; inset: 0` can't be used because `.responsive-scaling-container` has `transform: scale(1)` on mobile which creates a containing block, trapping fixed children. `height: 100%` chain also fails because the parent collapses. Accept the ~34px bottom gap — it's the iOS home indicator safe area.
 - **Don't use `scrollContainer.scrollTop || window.scrollY`** to get scroll position — when `scrollTop` is 0 (at the very top), the `||` falls through to `window.scrollY` which may be nonzero. Use a deterministic source: check `scrollHeight > clientHeight` to decide whether the container or window is scrollable, then read from that source.
 - **Bottom bar scroll-to-hide needs touch events on iOS PWA**, not just scroll event listeners. In PWA standalone mode, the scroll container's `scroll` events may not fire reliably (pull-to-refresh sets `overscrollBehavior: none`, `passive: false` touchmove). Use `touchstart`/`touchend` to record and compare `scrollTop`, with scroll events as a desktop fallback.
 
