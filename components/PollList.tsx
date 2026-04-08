@@ -266,44 +266,40 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return new Date(poll.response_deadline) <= now || poll.is_closed;
     });
     
+    // Get the effective cutoff for an open poll: suggestion deadline if in
+    // suggestion phase, otherwise the voting deadline.
+    const getEffectiveCutoff = (poll: Poll): number => {
+      if (isInSuggestionPhase(poll)) {
+        if (poll.suggestion_deadline) return new Date(poll.suggestion_deadline).getTime();
+        // Timer not started — sort after polls with active countdowns
+        return Infinity;
+      }
+      return new Date(poll.response_deadline || poll.created_at).getTime();
+    };
+
     // Sort open polls by voted status (unvoted first, then voted/abstained)
-    // Within each group, sort by expiring soonest first
+    // Within each group, sort by soonest cutoff first
     const sortByVoted = (pollList: Poll[]) => {
       const unvoted = pollList.filter(p => !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id));
       const voted = pollList.filter(p => votedPollIds.has(p.id) || abstainedPollIds.has(p.id));
-      
-      // Sort each group by expiring soonest (ascending deadline)
-      const sortByDeadline = (polls: Poll[]) => {
-        return polls.sort((a, b) => {
-          const deadlineA = new Date(a.response_deadline || a.created_at).getTime();
-          const deadlineB = new Date(b.response_deadline || b.created_at).getTime();
-          return deadlineA - deadlineB; // Ascending order - soonest first
-        });
+
+      const sortByCutoff = (polls: Poll[]) => {
+        return polls.sort((a, b) => getEffectiveCutoff(a) - getEffectiveCutoff(b));
       };
-      
-      return [...sortByDeadline(unvoted), ...sortByDeadline(voted)];
+
+      return [...sortByCutoff(unvoted), ...sortByCutoff(voted)];
     };
-    
-    // Sort closed polls by most recently closed (newest closed first)
+
+    // Sort closed polls by most recently closed first
     const sortClosedByTime = (pollList: Poll[]) => {
       return pollList.sort((a, b) => {
-        // First determine when each poll was closed
         const getClosingTime = (poll: Poll) => {
-          if (poll.is_closed) {
-            // If manually closed, we'll use response_deadline as proxy for closing time
-            // In the future, we could add a closed_at timestamp field
-            return new Date(poll.response_deadline || poll.created_at).getTime();
-          } else {
-            // If closed by deadline expiry, use response_deadline
-            return new Date(poll.response_deadline || poll.created_at).getTime();
+          if (poll.close_reason === 'manual') {
+            return new Date(poll.updated_at).getTime();
           }
+          return new Date(poll.response_deadline || poll.created_at).getTime();
         };
-        
-        const timeA = getClosingTime(a);
-        const timeB = getClosingTime(b);
-        
-        // Sort by most recently closed first (descending order)
-        return timeB - timeA;
+        return getClosingTime(b) - getClosingTime(a);
       });
     };
     
