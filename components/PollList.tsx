@@ -21,13 +21,14 @@ function getPollSymbol(pollType: string, isClosed: boolean): string {
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
 }
 
-function getCategoryDisplay(poll: Poll): { label: string; icon: string } | null {
+function getCategoryIcon(poll: Poll): string {
   const category = poll.category;
-  if (!category || category === 'custom') return null;
-  const builtIn = getBuiltInType(category);
-  if (builtIn) return { label: builtIn.label, icon: builtIn.icon };
-  // Custom category string — capitalize first letter
-  return { label: category.charAt(0).toUpperCase() + category.slice(1), icon: '' };
+  if (category && category !== 'custom') {
+    const builtIn = getBuiltInType(category);
+    if (builtIn?.icon) return builtIn.icon;
+  }
+  // Custom or no category — use poll type symbol
+  return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
 }
 
 function relativeTime(dateStr: string): string {
@@ -335,8 +336,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               const prevPoll = index > 0 ? openPolls[index - 1] : null;
               const isPrevVoted = prevPoll ? (votedPollIds.has(prevPoll.id) || abstainedPollIds.has(prevPoll.id)) : false;
               const isFirstVoted = hasVotedOrAbstained && !isPrevVoted;
-              const categoryDisplay = getCategoryDisplay(poll);
-
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
                 isScrolling.current = false;
@@ -430,19 +429,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
-                          {poll.response_deadline && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              <ClientOnly fallback={<>Loading...</>}>
-                                <SimpleCountdown deadline={poll.response_deadline} />
-                              </ClientOnly>
-                            </span>
-                          )}
-                        </div>
-                        {categoryDisplay && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {categoryDisplay.label} {categoryDisplay.icon}
+                        <span className="text-sm">{getCategoryIcon(poll)}</span>
+                        {poll.response_deadline && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <ClientOnly fallback={<>Loading...</>}>
+                              <SimpleCountdown deadline={poll.response_deadline} />
+                            </ClientOnly>
                           </span>
                         )}
                       </div>
@@ -478,7 +470,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
           </div>
           <div>
               {closedPolls.map((poll, index) => {
-                const categoryDisplay = getCategoryDisplay(poll);
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
@@ -566,37 +557,30 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                          {poll.response_deadline && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              <ClientOnly fallback={<>Closed</>}>
-                                <>Closed {(() => {
-                                  const deadline = new Date(poll.response_deadline);
-                                  const now = new Date();
-                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                        <span className="text-sm">{getCategoryIcon(poll)}</span>
+                        {poll.response_deadline && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <ClientOnly fallback={<>Closed</>}>
+                              <>Closed {(() => {
+                                const deadline = new Date(poll.response_deadline);
+                                const now = new Date();
+                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
 
-                                  if (hoursAgo <= 24) {
-                                    return deadline.toLocaleTimeString("en-US", {
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                      hour12: true
-                                    });
-                                  } else {
-                                    return deadline.toLocaleDateString("en-US", {
-                                      month: "numeric",
-                                      day: "numeric",
-                                      year: "2-digit"
-                                    });
-                                  }
-                                })()}</>
-                              </ClientOnly>
-                            </span>
-                          )}
-                        </div>
-                        {categoryDisplay && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {categoryDisplay.label} {categoryDisplay.icon}
+                                if (hoursAgo <= 24) {
+                                  return deadline.toLocaleTimeString("en-US", {
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true
+                                  });
+                                } else {
+                                  return deadline.toLocaleDateString("en-US", {
+                                    month: "numeric",
+                                    day: "numeric",
+                                    year: "2-digit"
+                                  });
+                                }
+                              })()}</>
+                            </ClientOnly>
                           </span>
                         )}
                       </div>
