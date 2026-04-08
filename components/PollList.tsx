@@ -343,7 +343,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {/* Open Polls Section */}
       {openPolls.length > 0 && (
         <div>
-          <div>
+          <div className="border-t border-gray-200 dark:border-gray-700 mx-1.5">
             {openPolls.map((poll, index) => {
               const isVoted = votedPollIds.has(poll.id);
               const isAbstained = abstainedPollIds.has(poll.id);
