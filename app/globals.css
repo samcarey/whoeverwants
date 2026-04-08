@@ -192,12 +192,18 @@ body {
     overflow-x: hidden !important;
   }
 
-  /* Use full physical screen height, not -webkit-fill-available which excludes
-     the home indicator area. With viewport-fit:cover, 100vh includes the area
-     behind the notch and home indicator — exactly what we want for edge-to-edge. */
+  /* Pin to physical screen edges. Viewport height units (100vh, 100dvh,
+     -webkit-fill-available) all stop at the safe-area boundary on iOS even
+     with viewport-fit:cover. position:fixed + inset:0 reliably spans the
+     full physical screen including behind the notch and home indicator. */
   .h-screen-safe {
-    height: 100vh !important;
-    min-height: 100vh !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
   }
 
   /* Ensure content area doesn't interfere */
