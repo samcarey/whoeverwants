@@ -124,7 +124,7 @@ const BADGE_COLORS = {
 
 function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean, userName?: string | null): ResultBadge {
   if (!results) {
-    return { text: 'No results', emoji: '—', color: 'gray' };
+    return { text: 'No results', emoji: '🔇', color: 'gray' };
   }
 
   if (results.total_votes === 0) {
@@ -136,13 +136,13 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
       if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };
       if (results.winner === 'tie') return { text: 'Tie', emoji: '🤝', color: 'yellow' };
-      return { text: 'No winner', emoji: '—', color: 'gray' };
+      return { text: 'No winner', emoji: '🤷', color: 'gray' };
     }
     case 'ranked_choice': {
       if (results.winner) {
         return { text: getOptionDisplayName(results.winner, poll), emoji: '👑', color: 'green' };
       }
-      return { text: 'No winner', emoji: '—', color: 'gray' };
+      return { text: 'No winner', emoji: '🤷', color: 'gray' };
     }
     case 'participation': {
       const participatingCount = results.yes_count || 0;
@@ -167,7 +167,7 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
-      return { text: 'Closed', emoji: '—', color: 'gray' };
+      return { text: 'Closed', emoji: '🔒', color: 'gray' };
   }
 }
 
