@@ -183,26 +183,26 @@ body {
   html {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
+    height: 100% !important;
     min-height: 100% !important;
   }
 
-  /* Only apply non-conflicting PWA styles */
   body {
     margin: 0 !important;
     overflow-x: hidden !important;
+    height: 100% !important;
   }
 
-  /* Pin to physical screen edges. Viewport height units (100vh, 100dvh,
-     -webkit-fill-available) all stop at the safe-area boundary on iOS even
-     with viewport-fit:cover. position:fixed + inset:0 reliably spans the
-     full physical screen including behind the notch and home indicator. */
+  /* Cascade height:100% through the parent chain so .h-screen-safe fills the
+     full screen. Can't use position:fixed because .responsive-scaling-container
+     has transform:scale(1) which creates a containing block, trapping fixed
+     children inside a 0-height collapsed parent. */
+  .responsive-scaling-container {
+    height: 100% !important;
+  }
+
   .h-screen-safe {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    height: auto !important;
+    height: 100% !important;
     min-height: 0 !important;
   }
 
