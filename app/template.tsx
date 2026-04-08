@@ -459,7 +459,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
           paddingBottom: '4rem',
         }}>
-        <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
+        <div className="pwa-safe-top">
           {/* Portal target for commit age badge (rendered by CommitInfo component) */}
           <div id="commit-badge-portal"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
@@ -544,16 +544,13 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm ${
+          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm pwa-bottom-bar ${
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            // In standalone PWA, fixed bottom:0 stops at the viewport edge, not the
-            // physical screen bottom. Push the bar down into the home indicator zone
-            // with a negative bottom offset, and double the padding to keep buttons
-            // above the unsafe area.
-            bottom: isStandalone ? 'calc(-1 * env(safe-area-inset-bottom, 0px))' : '0',
-            paddingBottom: isStandalone ? 'calc(2 * env(safe-area-inset-bottom, 0px))' : 'env(safe-area-inset-bottom, 0px)',
+            // Non-standalone: bottom padding for safe area.
+            // Standalone overrides via .pwa-bottom-bar in globals.css (instant, no JS delay).
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
             transition: 'transform 200ms ease-out',
             willChange: 'transform',

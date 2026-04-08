@@ -205,4 +205,18 @@ body {
   .safari-scroll-container {
     margin-bottom: 0 !important;
   }
+
+  /* Apply safe-area top padding immediately via CSS to prevent content
+     from rendering behind the notch before JS hydrates. Replaces the
+     JS-driven isStandalone check that caused a visible jump. */
+  .pwa-safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Bottom bar: extend into home indicator zone so background fills
+     the gap, with doubled bottom padding to keep buttons above it. */
+  .pwa-bottom-bar {
+    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(2 * env(safe-area-inset-bottom, 0px));
+  }
 }
