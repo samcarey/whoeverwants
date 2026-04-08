@@ -21,13 +21,14 @@ function getPollSymbol(pollType: string, isClosed: boolean): string {
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
 }
 
-function getCategoryDisplay(poll: Poll): { label: string; icon: string } | null {
+function getCategoryIcon(poll: Poll): string {
   const category = poll.category;
-  if (!category || category === 'custom') return null;
-  const builtIn = getBuiltInType(category);
-  if (builtIn) return { label: builtIn.label, icon: builtIn.icon };
-  // Custom category string — capitalize first letter
-  return { label: category.charAt(0).toUpperCase() + category.slice(1), icon: '' };
+  if (category && category !== 'custom') {
+    const builtIn = getBuiltInType(category);
+    if (builtIn?.icon) return builtIn.icon;
+  }
+  // Custom or no category — use poll type symbol
+  return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
 }
 
 function relativeTime(dateStr: string): string {
@@ -50,7 +51,7 @@ function relativeTime(dateStr: string): string {
 }
 
 // Simple countdown component
-const SimpleCountdown = ({ deadline }: { deadline: string }) => {
+const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isClient, setIsClient] = useState(false);
 
@@ -60,7 +61,7 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
   useEffect(() => {
     if (!isClient) return;
-    
+
     const updateCountdown = () => {
       const now = new Date().getTime();
       const deadlineTime = new Date(deadline).getTime();
@@ -78,9 +79,9 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
       let timeString = "";
       if (days > 0) {
-        timeString = `${days}d ${hours}h`;
+        timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
       } else if (hours > 0) {
-        timeString = `${hours}h ${minutes}m`;
+        timeString = `${hours}h ${minutes}m ${seconds}s`;
       } else if (minutes > 0) {
         timeString = `${minutes}m ${seconds}s`;
       } else {
@@ -97,11 +98,17 @@ const SimpleCountdown = ({ deadline }: { deadline: string }) => {
 
   return (
     <>
-      <span className="font-mono font-semibold text-green-600 dark:text-green-400">{timeLeft}</span>
-      {timeLeft !== "Expired" && " left"}
+      {label && `${label} `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
     </>
   );
 };
+
+function isInSuggestionPhase(poll: Poll): boolean {
+  if (poll.poll_type !== 'ranked_choice') return false;
+  if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
+  if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
+  return false;
+}
 
 function getOptionDisplayName(optionKey: string, poll: Poll): string {
   const meta = poll.options_metadata?.[optionKey];
@@ -124,7 +131,7 @@ const BADGE_COLORS = {
 
 function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean, userName?: string | null): ResultBadge {
   if (!results) {
-    return { text: 'No results', emoji: '—', color: 'gray' };
+    return { text: 'No results', emoji: '🔇', color: 'gray' };
   }
 
   if (results.total_votes === 0) {
@@ -136,13 +143,13 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
       if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };
       if (results.winner === 'tie') return { text: 'Tie', emoji: '🤝', color: 'yellow' };
-      return { text: 'No winner', emoji: '—', color: 'gray' };
+      return { text: 'No winner', emoji: '🤷', color: 'gray' };
     }
     case 'ranked_choice': {
       if (results.winner) {
         return { text: getOptionDisplayName(results.winner, poll), emoji: '👑', color: 'green' };
       }
-      return { text: 'No winner', emoji: '—', color: 'gray' };
+      return { text: 'No winner', emoji: '🤷', color: 'gray' };
     }
     case 'participation': {
       const participatingCount = results.yes_count || 0;
@@ -167,7 +174,7 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
-      return { text: 'Closed', emoji: '—', color: 'gray' };
+      return { text: 'Closed', emoji: '🔒', color: 'gray' };
   }
 }
 
@@ -257,44 +264,35 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return new Date(poll.response_deadline) <= now || poll.is_closed;
     });
     
-    // Sort open polls by voted status (unvoted first, then voted/abstained)
-    // Within each group, sort by expiring soonest first
+    const getEffectiveCutoff = (poll: Poll): number => {
+      if (isInSuggestionPhase(poll)) {
+        if (poll.suggestion_deadline) return new Date(poll.suggestion_deadline).getTime();
+        // Timer not started — sort after polls with active countdowns
+        return Infinity;
+      }
+      return new Date(poll.response_deadline || poll.created_at).getTime();
+    };
+
     const sortByVoted = (pollList: Poll[]) => {
       const unvoted = pollList.filter(p => !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id));
       const voted = pollList.filter(p => votedPollIds.has(p.id) || abstainedPollIds.has(p.id));
-      
-      // Sort each group by expiring soonest (ascending deadline)
-      const sortByDeadline = (polls: Poll[]) => {
-        return polls.sort((a, b) => {
-          const deadlineA = new Date(a.response_deadline || a.created_at).getTime();
-          const deadlineB = new Date(b.response_deadline || b.created_at).getTime();
-          return deadlineA - deadlineB; // Ascending order - soonest first
-        });
+
+      const sortByCutoff = (polls: Poll[]) => {
+        return polls.sort((a, b) => getEffectiveCutoff(a) - getEffectiveCutoff(b));
       };
-      
-      return [...sortByDeadline(unvoted), ...sortByDeadline(voted)];
+
+      return [...sortByCutoff(unvoted), ...sortByCutoff(voted)];
     };
-    
-    // Sort closed polls by most recently closed (newest closed first)
+
     const sortClosedByTime = (pollList: Poll[]) => {
       return pollList.sort((a, b) => {
-        // First determine when each poll was closed
         const getClosingTime = (poll: Poll) => {
-          if (poll.is_closed) {
-            // If manually closed, we'll use response_deadline as proxy for closing time
-            // In the future, we could add a closed_at timestamp field
-            return new Date(poll.response_deadline || poll.created_at).getTime();
-          } else {
-            // If closed by deadline expiry, use response_deadline
-            return new Date(poll.response_deadline || poll.created_at).getTime();
+          if (poll.close_reason === 'manual') {
+            return new Date(poll.updated_at).getTime();
           }
+          return new Date(poll.response_deadline || poll.created_at).getTime();
         };
-        
-        const timeA = getClosingTime(a);
-        const timeB = getClosingTime(b);
-        
-        // Sort by most recently closed first (descending order)
-        return timeB - timeA;
+        return getClosingTime(b) - getClosingTime(a);
       });
     };
     
@@ -335,8 +333,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               const prevPoll = index > 0 ? openPolls[index - 1] : null;
               const isPrevVoted = prevPoll ? (votedPollIds.has(prevPoll.id) || abstainedPollIds.has(prevPoll.id)) : false;
               const isFirstVoted = hasVotedOrAbstained && !isPrevVoted;
-              const categoryDisplay = getCategoryDisplay(poll);
-
               const handleTouchStart = (e: React.TouchEvent) => {
                 isLongPress.current = false;
                 isScrolling.current = false;
@@ -406,11 +402,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-y border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
                       Already Voted
                     </div>
                   )}
-                  <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
+                  <div key={poll.id} className={`border-b ${index === 0 && !isFirstVoted ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}>
                     <div
                       onClick={() => {
                         setNavigatingPollId(poll.id);
@@ -430,21 +426,24 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{getPollSymbol(poll.poll_type, false)}</span>
-                          {poll.response_deadline && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              <ClientOnly fallback={<>Loading...</>}>
-                                <SimpleCountdown deadline={poll.response_deadline} />
-                              </ClientOnly>
-                            </span>
-                          )}
-                        </div>
-                        {categoryDisplay && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {categoryDisplay.label} {categoryDisplay.icon}
-                          </span>
-                        )}
+                        <span className="text-sm">{getCategoryIcon(poll)}</span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          <ClientOnly fallback={<>Loading...</>}>
+                            {(() => {
+                              const inSuggestions = isInSuggestionPhase(poll);
+                              if (inSuggestions && poll.suggestion_deadline) {
+                                return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                              }
+                              if (inSuggestions && poll.suggestion_deadline_minutes) {
+                                return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                              }
+                              if (poll.response_deadline) {
+                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" />;
+                              }
+                              return null;
+                            })()}
+                          </ClientOnly>
+                        </span>
                       </div>
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
@@ -473,12 +472,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
+          <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-y border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
             Closed
           </div>
           <div>
               {closedPolls.map((poll, index) => {
-                const categoryDisplay = getCategoryDisplay(poll);
                 const handleTouchStart = (e: React.TouchEvent) => {
                   isLongPress.current = false;
                   isScrolling.current = false;
@@ -566,37 +564,32 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">{getPollSymbol(poll.poll_type, true)}</span>
-                          {poll.response_deadline && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              <ClientOnly fallback={<>Closed</>}>
-                                <>Closed {(() => {
-                                  const deadline = new Date(poll.response_deadline);
-                                  const now = new Date();
-                                  const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                        <span className="text-sm">{getCategoryIcon(poll)}</span>
+                        {(poll.response_deadline || poll.updated_at) && (
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <ClientOnly fallback={<>Closed</>}>
+                              <>Closed {(() => {
+                                const closedAt = poll.close_reason === 'manual'
+                                  ? new Date(poll.updated_at)
+                                  : new Date(poll.response_deadline || poll.updated_at);
+                                const now = new Date();
+                                const hoursAgo = (now.getTime() - closedAt.getTime()) / (1000 * 60 * 60);
 
-                                  if (hoursAgo <= 24) {
-                                    return deadline.toLocaleTimeString("en-US", {
-                                      hour: "numeric",
-                                      minute: "2-digit",
-                                      hour12: true
-                                    });
-                                  } else {
-                                    return deadline.toLocaleDateString("en-US", {
-                                      month: "numeric",
-                                      day: "numeric",
-                                      year: "2-digit"
-                                    });
-                                  }
-                                })()}</>
-                              </ClientOnly>
-                            </span>
-                          )}
-                        </div>
-                        {categoryDisplay && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">
-                            {categoryDisplay.label} {categoryDisplay.icon}
+                                if (hoursAgo <= 24) {
+                                  return closedAt.toLocaleTimeString("en-US", {
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                    hour12: true
+                                  });
+                                } else {
+                                  return closedAt.toLocaleDateString("en-US", {
+                                    month: "numeric",
+                                    day: "numeric",
+                                    year: "2-digit"
+                                  });
+                                }
+                              })()}</>
+                            </ClientOnly>
                           </span>
                         )}
                       </div>
