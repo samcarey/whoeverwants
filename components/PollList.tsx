@@ -104,10 +104,10 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 };
 
 function formatDurationShort(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}m 0s`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return m > 0 ? `${h}h ${m}m 0s` : `${h}h 0m 0s`;
 }
 
 function isInSuggestionPhase(poll: Poll): boolean {
