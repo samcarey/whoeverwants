@@ -247,19 +247,10 @@ export default function Template({ children }: AppTemplateProps) {
   // overscroll-behavior-y: none on the scroll container suppresses native
   // bounce, and we track pull distance purely from touch position deltas.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    console.log('[PTR] detection: navigator.standalone=' + isIOSSPWAStandalone() + ', isIOSPWA=' + isIOSPWA);
-
-    if (!isIOSPWA) {
-      return;
-    }
+    if (typeof window === 'undefined' || !isIOSPWA) return;
 
     const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) {
-      console.warn('[PTR] scrollContainerRef.current is null — cannot attach');
-      return;
-    }
+    if (!scrollContainer) return;
 
     // Suppress native overscroll bounce via CSS. In PWA standalone mode,
     // body is overflow:hidden so only the scroll container can bounce.
@@ -272,7 +263,7 @@ export default function Template({ children }: AppTemplateProps) {
     let isDragging = false;
     let currentPullDistance = 0;
     let refreshTriggered = false;
-    let rAFPending = false;
+    let rAFId: number | null = null;
     let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const updateDOM = (distance: number) => {
@@ -317,13 +308,14 @@ export default function Template({ children }: AppTemplateProps) {
       if (rawDelta > 10) {
         if (!isDragging) {
           isDragging = true;
+          // Cancel any pending snap-back from a previous gesture
+          if (snapBackTimeout) { clearTimeout(snapBackTimeout); snapBackTimeout = null; }
           setPullActive(true);
         }
         currentPullDistance = rawDelta;
-        if (!rAFPending) {
-          rAFPending = true;
-          requestAnimationFrame(() => {
-            rAFPending = false;
+        if (rAFId === null) {
+          rAFId = requestAnimationFrame(() => {
+            rAFId = null;
             updateDOM(currentPullDistance);
           });
         }
@@ -380,6 +372,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.documentElement.style.overscrollBehavior = '';
       scrollContainer.style.transform = '';
       scrollContainer.style.transition = '';
+      if (rAFId !== null) cancelAnimationFrame(rAFId);
       if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
   }, [isIOSPWA]);
