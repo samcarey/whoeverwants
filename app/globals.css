@@ -137,6 +137,11 @@ body {
   top: 0;
 }
 
+/* Default bottom bar padding — overridden in standalone mode */
+.pwa-bottom-bar {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 .responsive-scaling-container {
   transform-origin: top left;
   width: 100%;

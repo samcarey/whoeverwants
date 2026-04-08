@@ -549,9 +549,7 @@ export default function Template({ children }: AppTemplateProps) {
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            // Non-standalone: bottom padding for safe area.
-            // Standalone overrides via .pwa-bottom-bar in globals.css (instant, no JS delay).
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            // Bottom padding handled by .pwa-bottom-bar CSS class (1x default, 2x in standalone).
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
             transition: 'transform 200ms ease-out',
             willChange: 'transform',
