@@ -371,7 +371,10 @@ export default function Template({ children }: AppTemplateProps) {
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
         currentPullDistance = 0;
-        updateDOM(0);
+        // Clear styles completely — updateDOM(0) would leave translateY(0px)
+        // which is a real transform that breaks iOS scroll momentum.
+        scrollContainer.style.transform = '';
+        scrollContainer.style.transition = '';
         setPullActive(false);
       }
     };
@@ -397,6 +400,13 @@ export default function Template({ children }: AppTemplateProps) {
           setPullActive(false);
           snapBackTimeout = null;
         }, 300);
+      } else {
+        // Gesture ended without an active drag (e.g., drag was canceled in
+        // touchmove when rawDelta dropped below threshold). Ensure no stale
+        // transform lingers — translateY(0px) is a real CSS transform that
+        // creates a containing block and breaks iOS scroll momentum.
+        scrollContainer.style.transform = '';
+        scrollContainer.style.transition = '';
       }
 
       isDragging = false;
