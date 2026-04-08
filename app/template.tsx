@@ -155,24 +155,25 @@ export default function Template({ children }: AppTemplateProps) {
       }
     };
 
+    // Prefer container scrollTop; fall back to window only if container isn't scrollable
+    const getScrollTop = () =>
+      scrollContainer.scrollHeight > scrollContainer.clientHeight
+        ? scrollContainer.scrollTop
+        : window.scrollY;
+
+    const isNearTop = (pos: number) => pos < SCROLL_TOP_SAFE_ZONE;
+
     // --- Touch-based direction detection (primary, works in iOS PWA) ---
     let touchStartScrollTop = 0;
 
     const handleTouchStart = () => {
-      touchStartScrollTop = scrollContainer.scrollTop || window.scrollY;
+      touchStartScrollTop = getScrollTop();
     };
 
     const handleTouchEnd = () => {
-      const currentScrollTop = scrollContainer.scrollTop || window.scrollY;
-      const delta = currentScrollTop - touchStartScrollTop;
-
-      // Near the top — always show
-      if (currentScrollTop < SCROLL_TOP_SAFE_ZONE) {
-        setVisible(true);
-        return;
-      }
-
-      // Need a meaningful scroll to trigger (avoids taps)
+      const pos = getScrollTop();
+      if (isNearTop(pos)) { setVisible(true); return; }
+      const delta = pos - touchStartScrollTop;
       if (Math.abs(delta) >= scrollThreshold.current) {
         setVisible(delta < 0); // scrolled up → show, scrolled down → hide
       }
@@ -184,16 +185,10 @@ export default function Template({ children }: AppTemplateProps) {
     // --- Scroll event fallback (desktop mouse wheel, and browser scroll) ---
     const processScroll = () => {
       rAFId = null;
-      const currentScrollY = scrollContainer.scrollTop || window.scrollY;
+      const currentScrollY = getScrollTop();
       const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
-      if (currentScrollY <= 0) {
-        setVisible(true);
-        lastScrollY.current = currentScrollY;
-        return;
-      }
-
-      if (currentScrollY < SCROLL_TOP_SAFE_ZONE) {
+      if (isNearTop(currentScrollY)) {
         setVisible(true);
         lastScrollY.current = currentScrollY;
         return;

@@ -893,8 +893,14 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 ### iOS PWA Safe Area Positioning
 
 - **`position: fixed; top: 0` goes behind the notch** in iOS PWA with `viewport-fit: cover` and `black-translucent` status bar. All fixed header elements must use `calc(env(safe-area-inset-top, 0px) + offset)`.
-- **The `<html>` element has `padding: env(safe-area-inset-top) ...`** in globals.css, which pushes `<body>` content below the safe area. Elements inside the `ResponsiveScaling` container have their `position: fixed` coordinates relative to the container (because `transform` creates a new containing block), so `top: 0` inside the scaling container is *not* the screen top — it's already below the safe area.
+- **In PWA standalone mode, `html` padding-top/bottom is zeroed out** (globals.css `@media (display-mode: standalone)`). Safe-area-inset-top is applied as scrollable content padding instead (template.tsx inner wrapper div), so content starts below the notch at rest but scrolls behind it. Fixed elements (back button, copy link, time badge) use `calc(env(safe-area-inset-top) + offset)` and are unaffected.
 - **To position at the true screen edge**, render via a portal to `document.body` (outside the scaling container). From there, `fixed top: 0` = the safe area boundary (notch bottom), not the physical screen top.
+
+### iOS PWA Full-Screen Layout
+
+- **Viewport height units (`100vh`, `100dvh`, `-webkit-fill-available`) all stop at the safe-area boundary** on iOS PWA even with `viewport-fit: cover`. They exclude the home indicator area (~34px). Use `position: fixed; inset: 0` on `.h-screen-safe` in standalone mode to reliably span the full physical screen.
+- **Don't use `scrollContainer.scrollTop || window.scrollY`** to get scroll position — when `scrollTop` is 0 (at the very top), the `||` falls through to `window.scrollY` which may be nonzero. Use a deterministic source: check `scrollHeight > clientHeight` to decide whether the container or window is scrollable, then read from that source.
+- **Bottom bar scroll-to-hide needs touch events on iOS PWA**, not just scroll event listeners. In PWA standalone mode, the scroll container's `scroll` events may not fire reliably (pull-to-refresh sets `overscrollBehavior: none`, `passive: false` touchmove). Use `touchstart`/`touchend` to record and compare `scrollTop`, with scroll events as a desktop fallback.
 
 ### Back Button Navigation Strategy
 
