@@ -103,13 +103,6 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
   );
 };
 
-function formatDurationShort(minutes: number): string {
-  if (minutes < 60) return `${minutes}m 0s`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}h ${m}m 0s` : `${h}h 0m 0s`;
-}
-
 function isInSuggestionPhase(poll: Poll): boolean {
   if (poll.poll_type !== 'ranked_choice') return false;
   // Timer started and deadline in the future
@@ -445,7 +438,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
                           <ClientOnly fallback={<>Loading...</>}>
                             {(() => {
                               const inSuggestions = isInSuggestionPhase(poll);
@@ -453,7 +446,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                                 return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions Cutoff in" />;
                               }
                               if (inSuggestions && poll.suggestion_deadline_minutes) {
-                                return <>Suggestions Cutoff in <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatDurationShort(poll.suggestion_deadline_minutes)}</span></>;
+                                return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                               }
                               if (poll.response_deadline) {
                                 return <SimpleCountdown deadline={poll.response_deadline} label="Voting Cutoff in" />;
