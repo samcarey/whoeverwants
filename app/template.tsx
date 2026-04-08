@@ -136,14 +136,15 @@ export default function Template({ children }: AppTemplateProps) {
   }, []);
 
   // Handle scroll direction detection for bottom bar.
-  // Listens on both the inner scroll container AND the window, because on iOS Safari
-  // the body can be scrollable (html safe-area padding + body overflow:auto) and
-  // scroll events may fire on the window instead of the inner container.
+  // Uses touch events as primary mechanism (reliable on iOS PWA + browser),
+  // with scroll event listener as fallback for desktop/mouse-wheel.
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
     let rAFId: number | null = null;
-    let scrollContainer: HTMLElement | null = null;
 
     // Track current visibility to avoid no-op setState calls during scroll
     let isVisible = true;
@@ -154,27 +155,37 @@ export default function Template({ children }: AppTemplateProps) {
       }
     };
 
-    // Which scroll source is active — avoid mixing them
-    let activeSource: 'container' | 'window' | null = null;
+    // --- Touch-based direction detection (primary, works in iOS PWA) ---
+    let touchStartScrollTop = 0;
 
-    const getScrollY = (source: 'container' | 'window'): { scrollY: number; maxScrollY: number } => {
-      if (source === 'container' && scrollContainer) {
-        return {
-          scrollY: scrollContainer.scrollTop,
-          maxScrollY: scrollContainer.scrollHeight - scrollContainer.clientHeight,
-        };
-      }
-      return {
-        scrollY: window.scrollY,
-        maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
-      };
+    const handleTouchStart = () => {
+      touchStartScrollTop = scrollContainer.scrollTop || window.scrollY;
     };
 
+    const handleTouchEnd = () => {
+      const currentScrollTop = scrollContainer.scrollTop || window.scrollY;
+      const delta = currentScrollTop - touchStartScrollTop;
+
+      // Near the top — always show
+      if (currentScrollTop < SCROLL_TOP_SAFE_ZONE) {
+        setVisible(true);
+        return;
+      }
+
+      // Need a meaningful scroll to trigger (avoids taps)
+      if (Math.abs(delta) >= scrollThreshold.current) {
+        setVisible(delta < 0); // scrolled up → show, scrolled down → hide
+      }
+    };
+
+    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
+    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    // --- Scroll event fallback (desktop mouse wheel, and browser scroll) ---
     const processScroll = () => {
       rAFId = null;
-      if (!activeSource) return;
-
-      const { scrollY: currentScrollY, maxScrollY } = getScrollY(activeSource);
+      const currentScrollY = scrollContainer.scrollTop || window.scrollY;
+      const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
 
       if (currentScrollY <= 0) {
         setVisible(true);
@@ -182,20 +193,16 @@ export default function Template({ children }: AppTemplateProps) {
         return;
       }
 
-      // Keep bottom bar visible near the top so a tiny scroll can't hide it
-      // on pages with little content where the user can't scroll up to recover.
       if (currentScrollY < SCROLL_TOP_SAFE_ZONE) {
         setVisible(true);
         lastScrollY.current = currentScrollY;
         return;
       }
 
-      // iOS rubber band past the bottom — ignore and clamp lastScrollY
+      // iOS rubber band past the bottom — ignore
       if (currentScrollY > maxScrollY) {
         isInBounceRef.current = true;
-        if (bounceTimeoutRef.current) {
-          clearTimeout(bounceTimeoutRef.current);
-        }
+        if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
         bounceTimeoutRef.current = setTimeout(() => {
           isInBounceRef.current = false;
           bounceTimeoutRef.current = null;
@@ -204,14 +211,12 @@ export default function Template({ children }: AppTemplateProps) {
         return;
       }
 
-      // Scroll position is unreliable during bounce cooldown
       if (isInBounceRef.current) {
         lastScrollY.current = currentScrollY;
         return;
       }
 
       const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-
       if (scrollDifference >= scrollThreshold.current) {
         setVisible(currentScrollY < lastScrollY.current);
       }
@@ -219,59 +224,22 @@ export default function Template({ children }: AppTemplateProps) {
       lastScrollY.current = currentScrollY;
     };
 
-    const scheduleProcess = () => {
+    const handleScroll = () => {
       if (rAFId === null) {
         rAFId = requestAnimationFrame(processScroll);
       }
     };
 
-    const handleContainerScroll = () => {
-      activeSource = 'container';
-      scheduleProcess();
-    };
-
-    const handleWindowScroll = () => {
-      // Only use window scroll if the container isn't the one scrolling
-      if (!scrollContainer || scrollContainer.scrollTop === 0) {
-        activeSource = 'window';
-        scheduleProcess();
-      }
-    };
-
-    // Attach container listener — retry briefly if ref not ready
-    const attachContainer = () => {
-      scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        scrollContainer.addEventListener('scroll', handleContainerScroll, { passive: true });
-        return true;
-      }
-      return false;
-    };
-
-    // Always listen on window as fallback for iOS body-scroll
-    window.addEventListener('scroll', handleWindowScroll, { passive: true });
-
-    // Try immediately, then retry after a short delay
-    if (!attachContainer()) {
-      const retryId = setTimeout(attachContainer, 150);
-      // Store for cleanup
-      var retryTimeout: ReturnType<typeof setTimeout> | null = retryId;
-    }
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
-      if (typeof retryTimeout !== 'undefined' && retryTimeout !== null) {
-        clearTimeout(retryTimeout);
-      }
-      if (rAFId !== null) {
-        cancelAnimationFrame(rAFId);
-      }
-      if (scrollContainer) {
-        scrollContainer.removeEventListener('scroll', handleContainerScroll);
-      }
-      window.removeEventListener('scroll', handleWindowScroll);
-      if (bounceTimeoutRef.current) {
-        clearTimeout(bounceTimeoutRef.current);
-      }
+      scrollContainer.removeEventListener('touchstart', handleTouchStart);
+      scrollContainer.removeEventListener('touchend', handleTouchEnd);
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
+      if (rAFId !== null) cancelAnimationFrame(rAFId);
+      if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
     };
   }, []);
 
