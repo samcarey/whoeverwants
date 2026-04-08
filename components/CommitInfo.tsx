@@ -100,16 +100,16 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitHash, setCommitHash] = useState(vercelHash);
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
 
-  // Find the portal target for the time badge (rendered inside scroll container by template.tsx)
+  // Find the portal target for the time badge (inside scroll container so it scrolls with content)
   useEffect(() => {
     if (!showTimeBadge) return;
-    const findTarget = () => {
+    const el = document.getElementById('commit-badge-portal');
+    if (el) { setBadgeTarget(el); return; }
+    // Fallback: template may not be mounted yet on first layout render
+    const timer = setTimeout(() => {
       const el = document.getElementById('commit-badge-portal');
       if (el) setBadgeTarget(el);
-    };
-    findTarget();
-    // Template may not be mounted yet on first layout render
-    const timer = setTimeout(findTarget, 100);
+    }, 100);
     return () => clearTimeout(timer);
   }, [showTimeBadge]);
 
