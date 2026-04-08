@@ -576,22 +576,24 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
-                        {poll.response_deadline && (
+                        {(poll.response_deadline || poll.updated_at) && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             <ClientOnly fallback={<>Closed</>}>
                               <>Closed {(() => {
-                                const deadline = new Date(poll.response_deadline);
+                                const closedAt = poll.close_reason === 'manual'
+                                  ? new Date(poll.updated_at)
+                                  : new Date(poll.response_deadline || poll.updated_at);
                                 const now = new Date();
-                                const hoursAgo = (now.getTime() - deadline.getTime()) / (1000 * 60 * 60);
+                                const hoursAgo = (now.getTime() - closedAt.getTime()) / (1000 * 60 * 60);
 
                                 if (hoursAgo <= 24) {
-                                  return deadline.toLocaleTimeString("en-US", {
+                                  return closedAt.toLocaleTimeString("en-US", {
                                     hour: "numeric",
                                     minute: "2-digit",
                                     hour12: true
                                   });
                                 } else {
-                                  return deadline.toLocaleDateString("en-US", {
+                                  return closedAt.toLocaleDateString("en-US", {
                                     month: "numeric",
                                     day: "numeric",
                                     year: "2-digit"
