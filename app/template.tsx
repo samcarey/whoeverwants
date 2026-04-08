@@ -563,7 +563,12 @@ export default function Template({ children }: AppTemplateProps) {
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            // In standalone PWA, fixed bottom:0 stops at the viewport edge, not the
+            // physical screen bottom. Push the bar down into the home indicator zone
+            // with a negative bottom offset, and double the padding to keep buttons
+            // above the unsafe area.
+            bottom: isStandalone ? 'calc(-1 * env(safe-area-inset-bottom, 0px))' : '0',
+            paddingBottom: isStandalone ? 'calc(2 * env(safe-area-inset-bottom, 0px))' : 'env(safe-area-inset-bottom, 0px)',
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
             transition: 'transform 200ms ease-out',
             willChange: 'transform',
