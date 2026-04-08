@@ -181,7 +181,7 @@ body {
     margin: 0 !important;
     overflow-x: hidden !important;
   }
-  
+
   /* Force viewport to use full screen */
   .h-screen-safe {
     height: 100vh !important;
@@ -189,10 +189,23 @@ body {
     min-height: 100vh !important;
     min-height: -webkit-fill-available !important;
   }
-  
+
   /* Ensure content area doesn't interfere */
   .safari-scroll-container {
     margin-bottom: 0 !important;
   }
-  
+}
+
+/* In PWA standalone mode on iOS, remove html safe-area padding so content
+   extends edge-to-edge. The scroll container adds the safe area as internal
+   content padding instead, so it scrolls with the content — items become
+   visible (but non-interactable) behind the notch/status bar as they scroll past. */
+@media (display-mode: standalone) {
+  @supports (-webkit-touch-callout: none) and (not (hover: hover)) {
+    html {
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      min-height: 100% !important;
+    }
+  }
 }

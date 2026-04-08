@@ -491,7 +491,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
           paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))',
         }}>
-        <div>
+        <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
