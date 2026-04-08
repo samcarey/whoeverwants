@@ -189,19 +189,15 @@ body {
 
   body {
     margin: 0 !important;
-    overflow-x: hidden !important;
+    overflow: hidden !important;
   }
 
-  /* Keep original viewport height — don't change this. height:100% breaks
-     because the parent chain collapses, and position:fixed breaks because
-     .responsive-scaling-container has transform:scale(1) which traps fixed
-     children. The bottom gap below the home indicator is an iOS safe area
-     that can't be filled with viewport units. */
+  /* Extend content container into the home indicator zone so content is
+     visible when the bottom bar hides. 100vh stops at the safe-area boundary,
+     so add safe-area-inset-bottom to reach the physical screen bottom. */
   .h-screen-safe {
-    height: 100vh !important;
-    height: -webkit-fill-available !important;
-    min-height: 100vh !important;
-    min-height: -webkit-fill-available !important;
+    height: calc(100vh + env(safe-area-inset-bottom, 0px)) !important;
+    min-height: calc(100vh + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   /* Ensure content area doesn't interfere */
