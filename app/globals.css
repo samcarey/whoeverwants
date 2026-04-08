@@ -176,6 +176,16 @@ body {
 
 /* PWA-specific fixes for iOS */
 @media (display-mode: standalone) {
+  /* Remove html safe-area top/bottom padding so content extends edge-to-edge.
+     The scroll container adds safe-area-inset-top as internal content padding
+     instead, so it scrolls with the content — items become visible (but
+     non-interactable) behind the notch/status bar as they scroll past. */
+  html {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    min-height: 100% !important;
+  }
+
   /* Only apply non-conflicting PWA styles */
   body {
     margin: 0 !important;
@@ -193,19 +203,5 @@ body {
   /* Ensure content area doesn't interfere */
   .safari-scroll-container {
     margin-bottom: 0 !important;
-  }
-}
-
-/* In PWA standalone mode on iOS, remove html safe-area padding so content
-   extends edge-to-edge. The scroll container adds the safe area as internal
-   content padding instead, so it scrolls with the content — items become
-   visible (but non-interactable) behind the notch/status bar as they scroll past. */
-@media (display-mode: standalone) {
-  @supports (-webkit-touch-callout: none) and (not (hover: hover)) {
-    html {
-      padding-top: 0 !important;
-      padding-bottom: 0 !important;
-      min-height: 100% !important;
-    }
   }
 }
