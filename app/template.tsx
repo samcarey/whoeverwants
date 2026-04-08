@@ -459,16 +459,17 @@ export default function Template({ children }: AppTemplateProps) {
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
           paddingBottom: '4rem',
         }}>
-        <div style={isStandalone ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
-          {/* Portal target for commit age badge (rendered by CommitInfo component) */}
-          <div id="commit-badge-portal"></div>
+        <div className="pwa-safe-top relative">
+          {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
+               Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
+          <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
               
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
-                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -480,7 +481,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Create poll page title */}
               {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
                     className="text-2xl font-bold text-center whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -498,7 +499,7 @@ export default function Template({ children }: AppTemplateProps) {
 
               {/* Profile page title */}
               {isProfilePage && (
-                <div className="max-w-4xl mx-auto px-16 pt-1 pb-1">
+                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
@@ -510,11 +511,11 @@ export default function Template({ children }: AppTemplateProps) {
               
               {/* Home page title */}
               {pathname === '/' && (
-                <div className="relative max-w-4xl mx-auto px-2 pt-1 pb-1">
+                <div className="relative max-w-4xl mx-auto px-2 pt-4 pb-1">
                   {/* Create poll button - top right, scrolls with content */}
                   <Link
                     href="/create-poll"
-                    className="absolute right-2 top-1 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                    className="absolute right-2 top-4 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
                     aria-label="Create new poll"
                   >
                     <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -544,16 +545,11 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
-          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm ${
+          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm pwa-bottom-bar ${
             showBottomBar ? '' : 'pointer-events-none'
           }`}
           style={{
-            // In standalone PWA, fixed bottom:0 stops at the viewport edge, not the
-            // physical screen bottom. Push the bar down into the home indicator zone
-            // with a negative bottom offset, and double the padding to keep buttons
-            // above the unsafe area.
-            bottom: isStandalone ? 'calc(-1 * env(safe-area-inset-bottom, 0px))' : '0',
-            paddingBottom: isStandalone ? 'calc(2 * env(safe-area-inset-bottom, 0px))' : 'env(safe-area-inset-bottom, 0px)',
+            // Bottom padding handled by .pwa-bottom-bar CSS class (1x default, 2x in standalone).
             transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
             transition: 'transform 200ms ease-out',
             willChange: 'transform',
