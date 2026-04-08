@@ -128,9 +128,15 @@ body {
  * 
  * Scaling levels:
  * - Mobile/Tablet (<1024px): 1x (default)
- * - Desktop (1024px-1279px): 1.5x 
+ * - Desktop (1024px-1279px): 1.5x
  * - Large Desktop (1280px+): 2x
  */
+
+/* Default top for commit badge — overridden in standalone mode to account for safe area */
+.pwa-badge-top {
+  top: 0;
+}
+
 .responsive-scaling-container {
   transform-origin: top left;
   width: 100%;
@@ -211,6 +217,13 @@ body {
      JS-driven isStandalone check that caused a visible jump. */
   .pwa-safe-top {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* Commit badge: position below the safe area inset in standalone mode.
+     The badge is absolutely positioned inside .pwa-safe-top, so top:0
+     would sit behind the notch. This pushes it down to match. */
+  .pwa-badge-top {
+    top: env(safe-area-inset-top, 0px);
   }
 
   /* Bottom bar: extend into home indicator zone so background fills
