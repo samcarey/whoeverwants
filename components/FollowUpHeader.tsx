@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiGetPollById } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import { useLongPress } from "@/lib/useLongPress";
 
 interface FollowUpHeaderProps {
   followUpToPollId: string;
@@ -17,8 +18,9 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
-  const [isPressed, setIsPressed] = useState(false);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const { props: longPressProps, isPressed } = useLongPress(
+    onRemove ? () => setShowRemoveModal(true) : null
+  );
 
   useEffect(() => {
     async function fetchOriginalPoll() {
@@ -41,24 +43,6 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
 
     fetchOriginalPoll();
   }, [followUpToPollId]);
-
-  const handleLongPressStart = () => {
-    setIsPressed(true);
-    if (onRemove) {
-      longPressTimer.current = setTimeout(() => {
-        setShowRemoveModal(true);
-        setIsPressed(false);
-      }, 500); // 500ms long press
-    }
-  };
-
-  const handleLongPressEnd = () => {
-    setIsPressed(false);
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
 
   const handleRemoveConfirm = () => {
     setShowRemoveModal(false);
@@ -110,11 +94,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
     <>
       <div
         className={`my-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-center select-none transition-all ${isPressed ? 'scale-95 !bg-blue-100 dark:!bg-blue-900/40 !border-blue-400 dark:!border-blue-600 shadow-md' : ''}`}
-        onMouseDown={handleLongPressStart}
-        onMouseUp={handleLongPressEnd}
-        onMouseLeave={handleLongPressEnd}
-        onTouchStart={handleLongPressStart}
-        onTouchEnd={handleLongPressEnd}
+        {...longPressProps}
       >
         <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Follow up to</span>

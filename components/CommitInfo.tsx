@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLongPress } from '@/lib/useLongPress';
 import { createPortal } from 'react-dom';
 
 interface CommitData {
@@ -99,25 +100,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const branchName = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF || '';
   const [commitHash, setCommitHash] = useState(vercelHash);
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelLongPress = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-  const badgeLongPressProps = {
-    onPointerDown: () => {
-      longPressTimerRef.current = setTimeout(() => {
-        setShowModal(true);
-        longPressTimerRef.current = null;
-      }, 500);
-    },
-    onPointerUp: cancelLongPress,
-    onPointerLeave: cancelLongPress,
-    onPointerCancel: cancelLongPress,
-    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-  };
+  const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
   // Find the portal target for the time badge (inside scroll container so it scrolls with content)
   useEffect(() => {

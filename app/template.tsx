@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
+import { useLongPress } from '@/lib/useLongPress';
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -88,25 +89,9 @@ export default function Template({ children }: AppTemplateProps) {
   const [createPollType, setCreatePollType] = useState<'poll' | 'participation'>('poll');
 
   // Long-press detection for opening the debug modal (replaces simple tap)
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelLongPress = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-  const longPressProps = {
-    onPointerDown: () => {
-      longPressTimerRef.current = setTimeout(() => {
-        window.dispatchEvent(new Event('openCommitInfo'));
-        longPressTimerRef.current = null;
-      }, 500);
-    },
-    onPointerUp: cancelLongPress,
-    onPointerLeave: cancelLongPress,
-    onPointerCancel: cancelLongPress,
-    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-  };
+  const { props: longPressProps } = useLongPress(() =>
+    window.dispatchEvent(new Event('openCommitInfo'))
+  );
 
   // Determine page-specific header content based on pathname
   useEffect(() => {
