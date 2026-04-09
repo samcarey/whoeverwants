@@ -1381,7 +1381,7 @@ export function CreatePollContent() {
 
       {/* Portal: Animated title below header */}
       {titlePortal && createPortal(
-        <AnimatedTitle title={title} />,
+        <AnimatedTitle title={title} initialDelay={300} />,
         titlePortal
       )}
 

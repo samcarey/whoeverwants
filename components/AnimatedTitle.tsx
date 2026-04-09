@@ -68,11 +68,14 @@ function isScaffoldChar(
 
 interface AnimatedTitleProps {
   title: string;
+  /** Delay in ms before the first animation starts (e.g. wait for modal slide-up) */
+  initialDelay?: number;
 }
 
-export default function AnimatedTitle({ title }: AnimatedTitleProps) {
+export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitleProps) {
   const [displayedText, setDisplayedText] = useState("");
   const prevTitleRef = useRef("");
+  const initialDelayDone = useRef(initialDelay === 0);
   const cancelRef = useRef<() => void>(() => {});
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -136,6 +139,10 @@ export default function AnimatedTitle({ title }: AnimatedTitleProps) {
       setDisplayedText(title);
       return;
     }
+
+    // On first animation, wait for modal to finish sliding up
+    const delay = initialDelayDone.current ? 0 : initialDelay;
+    initialDelayDone.current = true;
 
     const { prefix, oldMiddle, newMiddle, suffix } = diffStrings(oldTitle, title);
     const deleteCount = oldMiddle.length;
@@ -206,12 +213,14 @@ export default function AnimatedTitle({ title }: AnimatedTitleProps) {
       }
     };
 
-    tick();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [title]);
+    if (delay > 0) {
+      const delayTimer = setTimeout(tick, delay);
+      return () => { cancelled = true; clearTimeout(delayTimer); };
+    } else {
+      tick();
+      return () => { cancelled = true; };
+    }
+  }, [title, initialDelay]);
 
   return (
     <div
