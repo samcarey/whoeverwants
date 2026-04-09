@@ -71,8 +71,8 @@ interface AnimatedTitleProps {
 }
 
 export default function AnimatedTitle({ title }: AnimatedTitleProps) {
-  const [displayedText, setDisplayedText] = useState(title);
-  const prevTitleRef = useRef(title);
+  const [displayedText, setDisplayedText] = useState("");
+  const prevTitleRef = useRef("");
   const cancelRef = useRef<() => void>(() => {});
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
