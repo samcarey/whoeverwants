@@ -131,8 +131,8 @@ export default function AnimatedTitle({ title }: AnimatedTitleProps) {
     // Cancel any in-progress animation
     cancelRef.current();
 
-    // If transitioning to/from empty, just set immediately
-    if (!oldTitle || !title) {
+    // If transitioning to empty, just clear immediately
+    if (!title) {
       setDisplayedText(title);
       return;
     }
