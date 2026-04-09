@@ -73,13 +73,21 @@ interface AnimatedTitleProps {
 }
 
 export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitleProps) {
-  const [displayedText, setDisplayedText] = useState("");
-  const prevTitleRef = useRef("");
+  const [displayedText, _setDisplayedText] = useState("");
+  const displayedRef = useRef("");
+  const setDisplayedText = useCallback((text: string) => {
+    displayedRef.current = text;
+    _setDisplayedText(text);
+  }, []);
+  const targetRef = useRef(title);
   const initialDelayDone = useRef(initialDelay === 0);
   const cancelRef = useRef<() => void>(() => {});
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const [fontSizePx, setFontSizePx] = useState(MAX_FONT_PX);
+
+  // Always keep targetRef in sync
+  targetRef.current = title;
 
   // Auto-shrink font to fit container width
   const fitFont = useCallback(() => {
@@ -124,33 +132,20 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
     return () => observer.disconnect();
   }, [fitFont]);
 
-  // Animate when title changes
-  useEffect(() => {
-    const oldTitle = prevTitleRef.current;
-    prevTitleRef.current = title;
-
-    if (oldTitle === title) return;
-
-    // Cancel any in-progress animation
+  // Core animation runner — extracted so it can be called from the effect
+  // and from the safety-net check.
+  const runAnimation = useCallback((from: string, to: string, delay: number) => {
     cancelRef.current();
 
-    // If transitioning to empty, just clear immediately
-    if (!title) {
-      setDisplayedText(title);
+    if (!to) {
+      setDisplayedText("");
       return;
     }
 
-    // On first animation, wait for modal to finish sliding up
-    const delay = initialDelayDone.current ? 0 : initialDelay;
-    initialDelayDone.current = true;
-
-    const { prefix, oldMiddle, newMiddle, suffix } = diffStrings(oldTitle, title);
+    const { prefix, oldMiddle, newMiddle, suffix } = diffStrings(from, to);
     const deleteCount = oldMiddle.length;
     const typeCount = newMiddle.length;
 
-    // Build step list. Scaffold chars (spaces, " for ") are always instant.
-    // The first non-scaffold char is also instant (no delay before the first
-    // visible change). Only the 2nd+ visible chars get animation delays.
     const steps: { phase: "delete" | "type"; index: number; instant: boolean }[] = [];
     let firstVisibleSeen = false;
     for (let i = 0; i < deleteCount; i++) {
@@ -170,7 +165,7 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
 
     const animatedSteps = steps.filter((s) => !s.instant).length;
     if (animatedSteps === 0) {
-      setDisplayedText(title);
+      setDisplayedText(to);
       return;
     }
 
@@ -178,9 +173,7 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
     let stepIdx = 0;
     let cancelled = false;
 
-    cancelRef.current = () => {
-      cancelled = true;
-    };
+    cancelRef.current = () => { cancelled = true; };
 
     const applyStep = (s: (typeof steps)[number]) => {
       if (s.phase === "delete") {
@@ -194,15 +187,14 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
 
     const tick = () => {
       if (cancelled) {
-        setDisplayedText(title);
+        // Jump to whatever the *current* target is (not stale closure)
+        setDisplayedText(targetRef.current);
         return;
       }
 
-      // Apply current step and all consecutive instant steps
       applyStep(steps[stepIdx]);
       stepIdx++;
 
-      // Fast-forward through any instant steps
       while (stepIdx < steps.length && steps[stepIdx].instant) {
         applyStep(steps[stepIdx]);
         stepIdx++;
@@ -214,13 +206,38 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
     };
 
     if (delay > 0) {
-      const delayTimer = setTimeout(tick, delay);
-      return () => { cancelled = true; clearTimeout(delayTimer); };
+      const timer = setTimeout(tick, delay);
+      const prevCancel = cancelRef.current;
+      cancelRef.current = () => { cancelled = true; clearTimeout(timer); };
     } else {
       tick();
-      return () => { cancelled = true; };
     }
-  }, [title, initialDelay]);
+  }, [setDisplayedText]);
+
+  // Trigger animation when title changes
+  useEffect(() => {
+    if (displayedRef.current === title) return;
+
+    const delay = initialDelayDone.current ? 0 : initialDelay;
+    initialDelayDone.current = true;
+
+    runAnimation(displayedRef.current, title, delay);
+
+    return () => { cancelRef.current(); };
+  }, [title, initialDelay, runAnimation]);
+
+  // Safety net: if after initialDelay + buffer, displayed doesn't match title
+  // (e.g. React strict mode cancelled the first run), retry.
+  useEffect(() => {
+    if (!initialDelay) return;
+    const timer = setTimeout(() => {
+      if (displayedRef.current !== targetRef.current && targetRef.current) {
+        initialDelayDone.current = true;
+        runAnimation(displayedRef.current, targetRef.current, 0);
+      }
+    }, initialDelay + 50);
+    return () => clearTimeout(timer);
+  }, [initialDelay, runAnimation]);
 
   return (
     <div
