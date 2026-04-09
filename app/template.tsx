@@ -668,7 +668,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         <div className="pwa-safe-top relative">
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
-          <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
+          <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top" suppressHydrationWarning></div>
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
