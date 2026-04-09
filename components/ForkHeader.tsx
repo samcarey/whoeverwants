@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiGetPollById } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
+import { useLongPress } from "@/lib/useLongPress";
 
 interface ForkHeaderProps {
   forkOfPollId: string;
@@ -17,8 +18,9 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
-  const [isPressed, setIsPressed] = useState(false);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const { props: longPressProps, isPressed } = useLongPress(
+    onRemove ? () => setShowRemoveModal(true) : null
+  );
 
   useEffect(() => {
     async function fetchOriginalPoll() {
@@ -41,24 +43,6 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
 
     fetchOriginalPoll();
   }, [forkOfPollId]);
-
-  const handleLongPressStart = () => {
-    setIsPressed(true);
-    if (onRemove) {
-      longPressTimer.current = setTimeout(() => {
-        setShowRemoveModal(true);
-        setIsPressed(false);
-      }, 500); // 500ms long press
-    }
-  };
-
-  const handleLongPressEnd = () => {
-    setIsPressed(false);
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
 
   const handleRemoveConfirm = () => {
     setShowRemoveModal(false);
@@ -110,11 +94,7 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
     <>
       <div
         className={`my-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-center select-none transition-all ${isPressed ? 'scale-95 !bg-green-100 dark:!bg-green-900/40 !border-green-400 dark:!border-green-600 shadow-md' : ''}`}
-        onMouseDown={handleLongPressStart}
-        onMouseUp={handleLongPressEnd}
-        onMouseLeave={handleLongPressEnd}
-        onTouchStart={handleLongPressStart}
-        onTouchEnd={handleLongPressEnd}
+        {...longPressProps}
       >
         <div className="text-sm text-green-900 dark:text-green-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Fork of</span>

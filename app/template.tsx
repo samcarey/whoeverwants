@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
+import { useLongPress } from '@/lib/useLongPress';
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -86,6 +87,11 @@ export default function Template({ children }: AppTemplateProps) {
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   const [pollPageTitle, setPollPageTitle] = useState('');
   const [createPollType, setCreatePollType] = useState<'poll' | 'participation'>('poll');
+
+  // Long-press detection for opening the debug modal (replaces simple tap)
+  const { props: longPressProps } = useLongPress(() =>
+    window.dispatchEvent(new Event('openCommitInfo'))
+  );
 
   // Determine page-specific header content based on pathname
   useEffect(() => {
@@ -432,8 +438,8 @@ export default function Template({ children }: AppTemplateProps) {
             {pageTitle && (
               <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
                 <h1
-                  className="text-xl font-bold text-center break-words select-none whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                  className="text-xl font-bold text-center break-words select-none whitespace-nowrap"
+                  {...longPressProps}
                 >
                   {pageTitle}
                 </h1>
@@ -471,8 +477,8 @@ export default function Template({ children }: AppTemplateProps) {
               {isPollPage && pollPageTitle && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
-                    className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                    className="text-2xl font-bold text-center break-words select-none"
+                    {...longPressProps}
                   >
                     {pollPageTitle}
                   </h1>
@@ -483,8 +489,8 @@ export default function Template({ children }: AppTemplateProps) {
               {isCreatePollPage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
-                    className="text-2xl font-bold text-center whitespace-nowrap cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                    className="text-2xl font-bold text-center whitespace-nowrap select-none"
+                    {...longPressProps}
                   >
                     Ask for{' '}
                     <span
@@ -501,8 +507,8 @@ export default function Template({ children }: AppTemplateProps) {
               {isProfilePage && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
-                    className="text-2xl font-bold text-center break-words cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                    onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                    className="text-2xl font-bold text-center break-words select-none"
+                    {...longPressProps}
                   >
                     Profile
                   </h1>
@@ -524,8 +530,8 @@ export default function Template({ children }: AppTemplateProps) {
                   </Link>
                   <div className="text-center">
                     <h1
-                      className="text-2xl font-bold mb-1 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                      onClick={() => window.dispatchEvent(new Event('openCommitInfo'))}
+                      className="text-2xl font-bold mb-1 select-none"
+                      {...longPressProps}
                     >Whoever Wants</h1>
                     <div className="h-7 flex items-center justify-center mb-1" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
