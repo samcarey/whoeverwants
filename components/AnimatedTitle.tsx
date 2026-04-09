@@ -38,31 +38,26 @@ function diffStrings(oldStr: string, newStr: string) {
 }
 
 /**
- * Check if a character at a given step should be animated instantly (0 delay).
- * Spaces are instant. When typing " for X", the " for " prefix is instant
- * so the first visible character appears right away.
+ * Check if a character should skip its animation delay.
+ * Spaces and " for " scaffolding are always instant.
  */
-function shouldSkipDelay(
+function isScaffoldChar(
   char: string,
   phase: "delete" | "type",
   middle: string,
   charIndex: number,
 ): boolean {
-  // Spaces are always instant
   if (char === " ") return true;
 
-  // When typing, if the new middle starts with " for ", skip those chars
-  // so the user-typed character (after " for ") appears instantly
+  // When typing, " for " prefix is scaffold
   if (phase === "type" && middle.startsWith(" for ")) {
     if (charIndex < " for ".length) return true;
   }
 
-  // When deleting, if the old middle ends with " for " + content,
-  // skip the " for " portion
+  // When deleting, " for " within the old middle is scaffold
   if (phase === "delete") {
     const forIdx = middle.indexOf(" for ");
     if (forIdx >= 0) {
-      // charIndex counts from the right during deletion
       const posFromLeft = middle.length - 1 - charIndex;
       if (posFromLeft >= forIdx && posFromLeft < forIdx + " for ".length) return true;
     }
@@ -146,25 +141,24 @@ export default function AnimatedTitle({ title }: AnimatedTitleProps) {
     const deleteCount = oldMiddle.length;
     const typeCount = newMiddle.length;
 
-    // Build step list with delay info. Each step is { frame, instant }.
-    // Instant steps (spaces, " for " prefix) get 0 delay.
+    // Build step list. Scaffold chars (spaces, " for ") are always instant.
+    // The first non-scaffold char is also instant (no delay before the first
+    // visible change). Only the 2nd+ visible chars get animation delays.
     const steps: { phase: "delete" | "type"; index: number; instant: boolean }[] = [];
+    let firstVisibleSeen = false;
     for (let i = 0; i < deleteCount; i++) {
-      const charIndex = i; // counts from right during deletion
-      const char = oldMiddle[oldMiddle.length - 1 - charIndex];
-      steps.push({
-        phase: "delete",
-        index: i,
-        instant: shouldSkipDelay(char, "delete", oldMiddle, charIndex),
-      });
+      const char = oldMiddle[oldMiddle.length - 1 - i];
+      const scaffold = isScaffoldChar(char, "delete", oldMiddle, i);
+      const instant = scaffold || !firstVisibleSeen;
+      if (!scaffold) firstVisibleSeen = true;
+      steps.push({ phase: "delete", index: i, instant });
     }
     for (let i = 0; i < typeCount; i++) {
       const char = newMiddle[i];
-      steps.push({
-        phase: "type",
-        index: i,
-        instant: shouldSkipDelay(char, "type", newMiddle, i),
-      });
+      const scaffold = isScaffoldChar(char, "type", newMiddle, i);
+      const instant = scaffold || !firstVisibleSeen;
+      if (!scaffold) firstVisibleSeen = true;
+      steps.push({ phase: "type", index: i, instant });
     }
 
     const animatedSteps = steps.filter((s) => !s.instant).length;
