@@ -30,13 +30,6 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-// Acronymize multi-word options: "Call of Duty" → "CoD", "Halo" stays "Halo"
-function acronymize(text: string) {
-  const words = text.split(/\s+/);
-  if (words.length <= 1) return text;
-  return words.map(w => w[0].toUpperCase()).join('');
-}
-
 // Strip parenthesized suffixes and colon suffixes from option text for titles
 function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
 // For locations, take just the name (first comma segment) then apply shortenOption
@@ -193,8 +186,6 @@ export function CreatePollContent() {
       if (filled.length === 1) return filled[0];
       const full = buildTitle(filled);
       if (full.allFit) return full.text;
-      const abbrev = buildTitle(filled.map(acronymize));
-      if (abbrev.allFit) return abbrev.text;
       return `Which ${catLabel}?`;
     };
 

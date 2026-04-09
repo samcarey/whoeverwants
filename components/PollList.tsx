@@ -31,6 +31,39 @@ function getCategoryIcon(poll: Poll): string {
   return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
 }
 
+/** Extract image URLs from poll options metadata (skip entries without images). */
+function getOptionIconUrls(poll: Poll): string[] {
+  const meta = poll.options_metadata;
+  if (!meta) return [];
+  // Use poll.options order if available, otherwise metadata key order
+  const keys = poll.options?.filter(o => meta[o]?.imageUrl) ??
+    Object.keys(meta).filter(k => meta[k]?.imageUrl);
+  return keys.map(k => meta[k].imageUrl!);
+}
+
+/** Inline option icons rendered after the poll title text.
+ *  Shows icons from options_metadata that have an imageUrl (skips placeholders).
+ *  Parent's line-clamp clips overflow naturally. */
+function OptionIcons({ poll }: { poll: Poll }) {
+  const icons = getOptionIconUrls(poll);
+  if (icons.length === 0) return null;
+  return (
+    <>
+      {' '}
+      {icons.map((url, i) => (
+        <img
+          key={i}
+          src={url}
+          alt=""
+          className="inline-block h-[1em] w-[1em] object-cover rounded-sm align-middle ml-0.5"
+          loading="lazy"
+        />
+      ))}
+      <span className="text-gray-400 dark:text-gray-500 align-middle text-[0.65em] ml-px select-none">…</span>
+    </>
+  );
+}
+
 function relativeTime(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
@@ -447,6 +480,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       </div>
                       <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                         {poll.title}
+                        <OptionIcons poll={poll} />
                       </h3>
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
@@ -595,6 +629,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       </div>
                       <h3 className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1">
                         {poll.title}
+                        <OptionIcons poll={poll} />
                       </h3>
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
