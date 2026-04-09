@@ -756,8 +756,8 @@ function TemplateInner({ children }: AppTemplateProps) {
                   <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
-              <h2 className="text-[17px] font-semibold">Create Poll</h2>
-              <div className="w-[43px]" />
+              <div id="create-poll-title-portal" className="flex-1 mx-3 min-w-0" />
+              <div id="create-poll-submit-portal" className="flex-shrink-0" />
             </div>
             {/* Scrollable content */}
             <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">

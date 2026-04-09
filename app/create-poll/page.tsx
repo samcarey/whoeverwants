@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
@@ -581,6 +582,23 @@ export function CreatePollContent() {
   const isFormValid = (): boolean => {
     return getValidationError() === null;
   };
+
+  // Compute the header center text: title in quotes if valid, else validation error
+  const validationError = getValidationError();
+  const headerText = validationError
+    ? validationError
+    : (title ? `\u201C${title}\u201D` : 'Create Poll');
+  const headerIsError = !!validationError;
+
+  // Portal targets in the modal header (rendered by template.tsx)
+  const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
+  const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const submitEl = document.getElementById('create-poll-submit-portal');
+    const titleEl = document.getElementById('create-poll-title-portal');
+    if (submitEl) setSubmitPortal(submitEl);
+    if (titleEl) setTitlePortal(titleEl);
+  }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -1357,8 +1375,38 @@ export function CreatePollContent() {
     </div>
   );
 
+  const submitDisabled = isLoading || isSubmitted || !isFormValid() || (!!forkOf && !hasFormChanged);
+
   return (
     <div className="poll-content">
+      {/* Portal: Submit button in modal header (upper right) */}
+      {submitPortal && createPortal(
+        <button
+          type="button"
+          onClick={handleSubmitClick}
+          disabled={submitDisabled}
+          className="h-[43px] px-4 flex items-center justify-center rounded-full bg-blue-500 text-white font-semibold text-[15px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {isSubmitted || isLoading ? (
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : 'Done'}
+        </button>,
+        submitPortal
+      )}
+
+      {/* Portal: Title/validation in modal header (center) */}
+      {titlePortal && createPortal(
+        <p className={`text-[15px] font-semibold text-center truncate ${
+          headerIsError ? 'text-red-500 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
+        }`}>
+          {headerText}
+        </p>,
+        titlePortal
+      )}
+
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
@@ -1825,44 +1873,6 @@ export function CreatePollContent() {
           </div>
 
           <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
-          
-          {!isFormValid() && !isLoading && (
-            <div className="text-center text-red-600 dark:text-red-400 text-sm mb-3">
-              {getValidationError()}
-            </div>
-          )}
-          
-          <button
-            type="button"
-            onClick={handleSubmitClick}
-            disabled={isLoading || isSubmitted || !isFormValid() || (!!forkOf && !hasFormChanged)}
-            className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] active:scale-95 font-medium text-base transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-          >
-            {isSubmitted ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Redirecting...
-              </>
-            ) : isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Creating Poll...
-              </>
-            ) : (
-              <span className="flex flex-col items-center pt-px pb-0.5">
-                <span className="text-lg font-bold text-green-400 dark:text-green-700 leading-tight">Submit</span>
-                {isPreferencePoll && title && (
-                  <span className="text-sm text-gray-200 dark:text-gray-600 leading-tight">&ldquo;{title}&rdquo;</span>
-                )}
-              </span>
-            )}
-          </button>
         </form>
 
         {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
