@@ -499,16 +499,6 @@ export default function Template({ children }: AppTemplateProps) {
               {/* Home page title */}
               {pathname === '/' && (
                 <div className="relative max-w-4xl mx-auto px-2 pt-4 pb-1">
-                  {/* Create poll button - top right, scrolls with content */}
-                  <Link
-                    href="/create-poll"
-                    className="absolute right-2 top-4 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                    aria-label="Create new poll"
-                  >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </Link>
                   <div className="text-center">
                     <h1
                       className="text-2xl font-bold mb-1 select-none"
@@ -563,6 +553,23 @@ export default function Template({ children }: AppTemplateProps) {
                 : 'text-gray-500 dark:text-gray-400'
             }`}>Home</span>
           </button>
+
+          {/* Create poll button */}
+          <Link
+            href="/create-poll"
+            className="flex flex-col items-center gap-0.5 min-w-[64px]"
+            aria-label="Create new poll"
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              isCreatePollPage
+                ? 'bg-blue-600 dark:bg-blue-500'
+                : 'bg-blue-500 dark:bg-blue-600'
+            } shadow-md`}>
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+          </Link>
 
           {/* Profile button */}
           <button
