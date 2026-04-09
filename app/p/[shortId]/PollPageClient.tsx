@@ -111,6 +111,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
+  const userAbstainedFromRanking = !!(userVoteData?.is_abstain || userVoteData?.is_ranking_abstain);
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -1119,12 +1120,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         const hasSuggestions = filteredSuggestions && filteredSuggestions.length > 0;
         const previousSuggestions = userVoteData?.suggestions;
         const hasPreviousSuggestions = previousSuggestions && previousSuggestions.length > 0;
-        // Full abstain: no suggestions and no rankings at all
-        const finalAbstain = isAbstaining && !hasSuggestions && !hasPreviousSuggestions
-          ? true  // Full abstain: no suggestions at all
-          : !hasRankings && !hasSuggestions && !hasPreviousSuggestions;
+        const hasAnyContent = hasRankings || hasSuggestions || hasPreviousSuggestions;
+        const finalAbstain = !hasAnyContent;
         // Ranking-specific abstain: user explicitly abstained from ranking but has suggestions
-        const rankingAbstain = isAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions) && !finalAbstain;
+        const rankingAbstain = isAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions);
 
         voteData = {
           poll_id: poll.id,
@@ -1801,7 +1800,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   ) : pollResults ? (
                     <>
                       {/* Results are now shown at the top, only show abstained bubble and button here */}
-                      {(userVoteData?.is_abstain || userVoteData?.is_ranking_abstain) && (
+                      {userAbstainedFromRanking && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
                             <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
@@ -1825,7 +1824,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="flex items-center gap-2 min-w-0">
                         <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
                         {pollOptions.length === 2 && !isLoadingVoteData && (
-                          (userVoteData?.is_abstain || userVoteData?.is_ranking_abstain || isAbstaining) ? (
+                          (userAbstainedFromRanking || isAbstaining) ? (
                             <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
                               Abstained
                             </span>
@@ -1856,7 +1855,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     ) : pollOptions.length !== 2 ? (
                       /* 2-option choice is shown inline in the header */
                       <div className="space-y-2">
-                        {userVoteData?.is_abstain || userVoteData?.is_ranking_abstain || isAbstaining ? (
+                        {userAbstainedFromRanking || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                             <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
