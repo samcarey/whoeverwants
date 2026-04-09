@@ -590,14 +590,11 @@ export function CreatePollContent() {
     : (title ? `\u201C${title}\u201D` : 'Create Poll');
   const headerIsError = !!validationError;
 
-  // Portal targets in the modal header (rendered by template.tsx)
+  // Portal target in the modal header (rendered by template.tsx)
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
-  const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     const submitEl = document.getElementById('create-poll-submit-portal');
-    const titleEl = document.getElementById('create-poll-title-portal');
     if (submitEl) setSubmitPortal(submitEl);
-    if (titleEl) setTitlePortal(titleEl);
   }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
@@ -1397,16 +1394,6 @@ export function CreatePollContent() {
         submitPortal
       )}
 
-      {/* Portal: Generated title or validation message below header */}
-      {titlePortal && createPortal(
-        <p className={`text-sm text-center truncate ${
-          headerIsError ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
-        }`}>
-          {headerText}
-        </p>,
-        titlePortal
-      )}
-
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
@@ -1897,8 +1884,17 @@ export function CreatePollContent() {
           </div>
         ) : null}
 
+        {/* Generated title or validation message */}
+        <p className={`text-center mt-3 ${
+          headerIsError
+            ? 'text-sm text-red-500 dark:text-red-400'
+            : 'text-lg text-gray-500 dark:text-gray-400'
+        }`}>
+          {headerText}
+        </p>
+
         {!followUpTo && !forkOf && !duplicateOf && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-1">
             Private until you share the link
           </p>
         )}

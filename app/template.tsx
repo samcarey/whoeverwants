@@ -759,8 +759,6 @@ function TemplateInner({ children }: AppTemplateProps) {
               <h2 className="text-[17px] font-semibold">New Poll</h2>
               <div id="create-poll-submit-portal" className="flex-shrink-0" />
             </div>
-            {/* Generated title / validation line */}
-            <div id="create-poll-title-portal" className="flex-shrink-0 px-4 pb-2" />
             {/* Scrollable content */}
             <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
