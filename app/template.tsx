@@ -547,15 +547,16 @@ export default function Template({ children }: AppTemplateProps) {
             <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
               <button
                 onClick={handleCloseCreateModal}
-                className="text-blue-500 text-[17px] w-[60px] text-left cursor-pointer"
+                className="w-[30px] h-[30px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
+                aria-label="Close"
               >
-                Cancel
+                <svg className="w-[15px] h-[15px] text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={3} d="M6 6l12 12M18 6L6 18" />
+                </svg>
               </button>
               <h2 className="text-[17px] font-semibold">Create Poll</h2>
-              <div className="w-[60px]" />
+              <div className="w-[30px]" />
             </div>
-            {/* Separator */}
-            <div className="border-b border-gray-200 dark:border-gray-700" />
             {/* Scrollable content */}
             <div className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
