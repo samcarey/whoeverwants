@@ -11,7 +11,7 @@ export interface BuiltInType {
 const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "yes_no", label: "Yes / No", icon: "👍" },
   { value: "restaurant", label: "Restaurant", icon: "🍽️" },
-  { value: "location", label: "Location", icon: "📍" },
+  { value: "location", label: "Place", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
   { value: "video_game", label: "Video Game", icon: "🎮" },
 ];
