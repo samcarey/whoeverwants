@@ -1397,10 +1397,10 @@ export function CreatePollContent() {
         submitPortal
       )}
 
-      {/* Portal: Title/validation in modal header (center) */}
+      {/* Portal: Generated title or validation message below header */}
       {titlePortal && createPortal(
-        <p className={`text-[15px] font-semibold text-center truncate ${
-          headerIsError ? 'text-red-500 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'
+        <p className={`text-sm text-center truncate ${
+          headerIsError ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
         }`}>
           {headerText}
         </p>,
