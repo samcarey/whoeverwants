@@ -581,18 +581,12 @@ export function CreatePollContent() {
     return getValidationError() === null;
   };
 
-  // Compute the header center text: title in quotes if valid, else validation error
-  const validationError = getValidationError();
-  const headerText = validationError
-    ? validationError
-    : (title ? `\u201C${title}\u201D` : 'Create Poll');
-  const headerIsError = !!validationError;
-
-  // Portal target in the modal header (rendered by template.tsx)
+  // Portal targets in the modal header (rendered by template.tsx)
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
+  const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    const submitEl = document.getElementById('create-poll-submit-portal');
-    if (submitEl) setSubmitPortal(submitEl);
+    setSubmitPortal(document.getElementById('create-poll-submit-portal'));
+    setTitlePortal(document.getElementById('create-poll-title-portal'));
   }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
@@ -1384,6 +1378,14 @@ export function CreatePollContent() {
         submitPortal
       )}
 
+      {/* Portal: Generated title below header */}
+      {titlePortal && title && createPortal(
+        <p className="text-blue-600 dark:text-blue-400 font-bold text-center text-lg truncate pb-1">
+          {title}
+        </p>,
+        titlePortal
+      )}
+
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
@@ -1874,14 +1876,11 @@ export function CreatePollContent() {
           </div>
         ) : null}
 
-        {/* Generated title or validation message */}
-        <p className={`text-center mt-3 ${
-          headerIsError
-            ? 'text-sm text-red-500 dark:text-red-400'
-            : 'text-lg text-gray-500 dark:text-gray-400'
-        }`}>
-          {headerText}
-        </p>
+        {getValidationError() && (
+          <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
+            {getValidationError()}
+          </p>
+        )}
 
         {!followUpTo && !forkOf && !duplicateOf && (
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-1">
