@@ -376,18 +376,153 @@ export default function Template({ children }: AppTemplateProps) {
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
 
+  // Refs for modal drag-to-dismiss — uses direct DOM manipulation for 60fps.
+  const modalSheetRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const modalScrollRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({
+    startY: 0,
+    currentTranslate: 0,
+    isDragging: false,
+    startedInHeader: false,
+    isClosing: false,
+    rAFPending: false,
+  });
+
+  const navigateCloseModal = useCallback(() => {
+    const navCount = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10);
+    if (navCount > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  }, [router]);
+
   const handleCloseCreateModal = useCallback(() => {
+    if (dragState.current.isClosing) return;
     setModalClosing(true);
     setTimeout(() => {
       setModalClosing(false);
-      const navCount = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10);
-      if (navCount > 1) {
-        router.back();
-      } else {
-        router.push('/');
-      }
+      navigateCloseModal();
     }, 300);
-  }, [router]);
+  }, [navigateCloseModal]);
+
+  // Drag-to-dismiss touch handling for the create poll modal sheet.
+  useEffect(() => {
+    if (!isCreatePollPage || !isMounted) return;
+    const sheet = modalSheetRef.current;
+    if (!sheet) return;
+
+    const state = dragState.current;
+
+    const updateDOM = () => {
+      state.rAFPending = false;
+      const t = state.currentTranslate;
+      if (modalSheetRef.current) {
+        modalSheetRef.current.style.transform = `translateY(${t}px)`;
+      }
+      if (backdropRef.current) {
+        const h = modalSheetRef.current?.offsetHeight || window.innerHeight;
+        const progress = Math.min(t / (h * 0.5), 1);
+        backdropRef.current.style.opacity = String(1 - progress * 0.7);
+      }
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (state.isClosing) return;
+      state.startY = e.touches[0].clientY;
+      state.isDragging = false;
+      state.currentTranslate = 0;
+      const scrollEl = modalScrollRef.current;
+      if (scrollEl) {
+        const rect = scrollEl.getBoundingClientRect();
+        state.startedInHeader = e.touches[0].clientY < rect.top;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (state.isClosing) return;
+      const touchY = e.touches[0].clientY;
+      const deltaY = touchY - state.startY;
+
+      if (!state.isDragging) {
+        const scrollEl = modalScrollRef.current;
+        const scrollAtTop = !scrollEl || scrollEl.scrollTop <= 0;
+        if (!(state.startedInHeader || (scrollAtTop && deltaY > 5))) return;
+        state.isDragging = true;
+        if (scrollEl) scrollEl.style.overflowY = 'hidden';
+        if (modalSheetRef.current) modalSheetRef.current.style.transition = 'none';
+        if (backdropRef.current) backdropRef.current.style.transition = 'none';
+      }
+
+      state.currentTranslate = Math.max(0, deltaY);
+      if (!state.rAFPending) {
+        state.rAFPending = true;
+        requestAnimationFrame(updateDOM);
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (!state.isDragging || state.isClosing) return;
+      state.isDragging = false;
+
+      const scrollEl = modalScrollRef.current;
+      if (scrollEl) scrollEl.style.overflowY = '';
+
+      const modalHeight = modalSheetRef.current?.offsetHeight || window.innerHeight;
+      const threshold = modalHeight * 0.5;
+
+      if (state.currentTranslate > threshold) {
+        // Past halfway — close
+        state.isClosing = true;
+        if (modalSheetRef.current) {
+          modalSheetRef.current.style.transition = 'transform 0.3s ease-in';
+          modalSheetRef.current.style.transform = 'translateY(100%)';
+        }
+        if (backdropRef.current) {
+          backdropRef.current.style.transition = 'opacity 0.3s ease-in';
+          backdropRef.current.style.opacity = '0';
+        }
+        setTimeout(() => {
+          state.isClosing = false;
+          if (modalSheetRef.current) {
+            modalSheetRef.current.style.transform = '';
+            modalSheetRef.current.style.transition = '';
+          }
+          if (backdropRef.current) {
+            backdropRef.current.style.opacity = '';
+            backdropRef.current.style.transition = '';
+          }
+          navigateCloseModal();
+        }, 300);
+      } else {
+        // Under halfway — spring back
+        if (modalSheetRef.current) {
+          modalSheetRef.current.style.transition = 'transform 0.3s ease-out';
+          modalSheetRef.current.style.transform = '';
+        }
+        if (backdropRef.current) {
+          backdropRef.current.style.transition = 'opacity 0.3s ease-out';
+          backdropRef.current.style.opacity = '';
+        }
+        setTimeout(() => {
+          if (modalSheetRef.current) modalSheetRef.current.style.transition = '';
+          if (backdropRef.current) backdropRef.current.style.transition = '';
+        }, 300);
+      }
+      state.currentTranslate = 0;
+    };
+
+    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', onTouchMove, { passive: true });
+    sheet.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      sheet.removeEventListener('touchstart', onTouchStart);
+      sheet.removeEventListener('touchmove', onTouchMove);
+      sheet.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [isCreatePollPage, isMounted, navigateCloseModal]);
 
   return (
     <>
@@ -528,11 +663,13 @@ export default function Template({ children }: AppTemplateProps) {
         <div className="fixed inset-0 z-[60]">
           {/* Backdrop */}
           <div
+            ref={backdropRef}
             className={`absolute inset-0 bg-black/40 ${modalClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
             onClick={handleCloseCreateModal}
           />
           {/* Modal sheet */}
           <div
+            ref={modalSheetRef}
             className={`absolute bottom-0 left-0 right-0 rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
               modalClosing ? 'animate-slide-down' : 'animate-slide-up'
             }`}
@@ -547,18 +684,18 @@ export default function Template({ children }: AppTemplateProps) {
             <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
               <button
                 onClick={handleCloseCreateModal}
-                className="w-[30px] h-[30px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
+                className="w-[48px] h-[48px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
                 aria-label="Close"
               >
-                <svg className="w-[15px] h-[15px] text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+                <svg className="w-[27px] h-[27px] text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
                   <path stroke="currentColor" strokeLinecap="round" strokeWidth={3} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
               <h2 className="text-[17px] font-semibold">Create Poll</h2>
-              <div className="w-[30px]" />
+              <div className="w-[48px]" />
             </div>
             {/* Scrollable content */}
-            <div className="flex-1 overflow-auto overscroll-contain">
+            <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
                 {children}
               </div>
