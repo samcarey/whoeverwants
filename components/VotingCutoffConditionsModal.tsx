@@ -72,7 +72,8 @@ export default function VotingCutoffConditionsModal({
     if (!isClient) return opt.label;
     const now = new Date();
     const deadline = new Date(now.getTime() + opt.minutes * 60 * 1000);
-    return `${opt.label} (${deadline.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})`;
+    const timeStr = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${opt.label} (${timeStr})`;
   }, [isClient]);
 
   if (!isOpen) return null;

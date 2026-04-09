@@ -1003,6 +1003,14 @@ function CreatePollContent() {
     return `${selected.label} (${timeString})`;
   };
 
+  // Format a duration in minutes as "label (HH:MM)" showing the absolute clock time
+  const formatTimeAt = (minutes: number, label: string): string => {
+    if (typeof window === 'undefined') return label;
+    const deadline = new Date(Date.now() + minutes * 60 * 1000);
+    const timeString = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${label} (${timeString})`;
+  };
+
   // Calculate and format time until custom deadline
   const getCustomDeadlineDisplay = () => {
     if (!customDate || !customTime) return "";
@@ -1474,7 +1482,9 @@ function CreatePollContent() {
                           }
                           return 'Custom';
                         }
-                        return VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label || deadlineOption;
+                        const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption);
+                        if (!opt) return deadlineOption;
+                        return isClient && opt.minutes > 0 ? formatTimeAt(opt.minutes, opt.label) : opt.label;
                       })()}
                     </span>
                     <select
@@ -1486,7 +1496,9 @@ function CreatePollContent() {
                     >
                       <option value="none">None</option>
                       {VOTING_CUTOFF_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        <option key={opt.value} value={opt.value}>
+                          {isClient && opt.minutes > 0 ? formatTimeAt(opt.minutes, opt.label) : opt.label}
+                        </option>
                       ))}
                     </select>
                   </span>
@@ -1549,7 +1561,9 @@ function CreatePollContent() {
                               if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
                               return `${frac.fraction}x`;
                             }
-                            return ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff;
+                            const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                            if (!absOpt) return suggestionCutoff;
+                            return isClient ? formatTimeAt(absOpt.minutes, absOpt.label) : absOpt.label;
                           })()}
                         </span>
                         <select
@@ -1575,7 +1589,9 @@ function CreatePollContent() {
                           )}
                           <optgroup label="Fixed Duration">
                             {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              <option key={opt.value} value={opt.value}>
+                                {isClient ? formatTimeAt(opt.minutes, opt.label) : opt.label}
+                              </option>
                             ))}
                           </optgroup>
                           <option value="custom">Custom</option>
