@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
@@ -374,6 +374,20 @@ export default function Template({ children }: AppTemplateProps) {
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
+  const [modalClosing, setModalClosing] = useState(false);
+
+  const handleCloseCreateModal = useCallback(() => {
+    setModalClosing(true);
+    setTimeout(() => {
+      setModalClosing(false);
+      const navCount = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10);
+      if (navCount > 1) {
+        router.back();
+      } else {
+        router.push('/');
+      }
+    }, 300);
+  }, [router]);
 
   return (
     <>
@@ -457,9 +471,9 @@ export default function Template({ children }: AppTemplateProps) {
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
           <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
-          {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
+          {(isPollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
-              
+
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
@@ -468,18 +482,6 @@ export default function Template({ children }: AppTemplateProps) {
                     {...longPressProps}
                   >
                     {pollPageTitle}
-                  </h1>
-                </div>
-              )}
-
-              {/* Create poll page title */}
-              {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1
-                    className="text-2xl font-bold text-center whitespace-nowrap select-none"
-                    {...longPressProps}
-                  >
-                    Create Poll
                   </h1>
                 </div>
               )}
@@ -513,11 +515,57 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
-            {children}
-          </div>
+          {!isCreatePollPage && (
+            <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+              {children}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Create poll modal - iOS-style sheet rendered via portal */}
+      {isCreatePollPage && isMounted && createPortal(
+        <div className="fixed inset-0 z-[60]">
+          {/* Backdrop */}
+          <div
+            className={`absolute inset-0 bg-black/40 ${modalClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
+            onClick={handleCloseCreateModal}
+          />
+          {/* Modal sheet */}
+          <div
+            className={`absolute bottom-0 left-0 right-0 rounded-t-[20px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
+              modalClosing ? 'animate-slide-down' : 'animate-slide-up'
+            }`}
+            style={{ top: '4%' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex-shrink-0 flex justify-center pt-2.5 pb-1">
+              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+            </div>
+            {/* Header */}
+            <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
+              <button
+                onClick={handleCloseCreateModal}
+                className="text-blue-500 text-[17px] w-[60px] text-left cursor-pointer"
+              >
+                Cancel
+              </button>
+              <h2 className="text-[17px] font-semibold">Create Poll</h2>
+              <div className="w-[60px]" />
+            </div>
+            {/* Separator */}
+            <div className="border-b border-gray-200 dark:border-gray-700" />
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-auto overscroll-contain">
+              <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
+                {children}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
@@ -601,7 +649,7 @@ export default function Template({ children }: AppTemplateProps) {
         {/* Back/home button in upper left — PWA standalone mode only.
              In regular browser tabs, the browser's own back button handles navigation.
              Shows back arrow if user has navigated within the app, home icon otherwise. */}
-        {isStandalone && (isPollPage || isCreatePollPage || isProfilePage) && (
+        {isStandalone && (isPollPage || isProfilePage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {hasAppHistory ? (
               <button

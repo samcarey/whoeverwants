@@ -114,6 +114,32 @@ body {
   animation: fade-in 0.2s ease-out;
 }
 
+@keyframes slide-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-in forwards;
+}
+
+.animate-fade-out {
+  animation: fade-out 0.3s ease-in forwards;
+}
+
 /* Poll content specific styling for narrow content */
 .poll-content {
   max-width: 28rem; /* 448px - narrower for poll pages */
