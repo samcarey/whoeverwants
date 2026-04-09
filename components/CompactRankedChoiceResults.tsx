@@ -67,7 +67,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
           try {
             const allVotes = await apiGetVotes(results.poll_id);
             const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
-            const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain);
+            const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain && !vote.is_ranking_abstain);
 
             if (!hasNonAbstainVotes && rankedVotes.length > 0) {
               setRoundVisualizations([]);

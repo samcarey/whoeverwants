@@ -45,7 +45,7 @@ def calculate_ranked_choice_winner(
     # Filter to valid, non-abstain ballots
     ballots: list[list[str]] = []
     for vote in votes:
-        if vote.get("is_abstain", False):
+        if vote.get("is_abstain", False) or vote.get("is_ranking_abstain", False):
             continue
         choices = vote.get("ranked_choices")
         if not choices or not isinstance(choices, list):

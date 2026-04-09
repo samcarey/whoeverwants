@@ -185,6 +185,7 @@ def _row_to_vote(row: dict) -> VoteResponse:
         ranked_choices=row.get("ranked_choices"),
         suggestions=row.get("suggestions"),
         is_abstain=row.get("is_abstain", False),
+        is_ranking_abstain=row.get("is_ranking_abstain", False),
         voter_name=row.get("voter_name"),
         min_participants=row.get("min_participants"),
         max_participants=row.get("max_participants"),
@@ -637,6 +638,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 ranked_choices=req.ranked_choices,
                 suggestions=req.suggestions,
                 is_abstain=req.is_abstain,
+                is_ranking_abstain=req.is_ranking_abstain,
                 has_suggestion_phase=has_suggestion_phase,
             )
         except VoteValidationError as e:
@@ -646,12 +648,12 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         row = conn.execute(
             """
             INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
-                               suggestions, is_abstain, voter_name,
+                               suggestions, is_abstain, is_ranking_abstain, voter_name,
                                min_participants, max_participants,
                                voter_day_time_windows, voter_duration,
                                created_at, updated_at)
             VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
-                    %(suggestions)s, %(is_abstain)s, %(voter_name)s,
+                    %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
                     %(min_participants)s, %(max_participants)s,
                     %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
                     %(now)s, %(now)s)
@@ -664,6 +666,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "ranked_choices": req.ranked_choices,
                 "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
+                "is_ranking_abstain": req.is_ranking_abstain,
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,
@@ -779,6 +782,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 ranked_choices = %(ranked_choices)s,
                 suggestions = COALESCE(%(suggestions)s, suggestions),
                 is_abstain = %(is_abstain)s,
+                is_ranking_abstain = %(is_ranking_abstain)s,
                 voter_name = %(voter_name)s,
                 min_participants = %(min_participants)s,
                 max_participants = %(max_participants)s,
@@ -793,6 +797,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 "ranked_choices": req.ranked_choices,
                 "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
+                "is_ranking_abstain": req.is_ranking_abstain,
                 "voter_name": req.voter_name,
                 "min_participants": req.min_participants,
                 "max_participants": req.max_participants,

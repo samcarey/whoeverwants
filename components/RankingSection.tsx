@@ -73,7 +73,12 @@ export default function RankingSection({
   isEditingSuggestions,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
-  const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (userVoteData?.is_abstain || isAbstaining);
+  // For suggestion polls, is_abstain means "abstained from suggestions" not "abstained from ranking".
+  // Only is_ranking_abstain explicitly means ranking abstain.
+  // For non-suggestion polls, is_abstain means full abstain (including ranking).
+  const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (
+    userVoteData?.is_ranking_abstain || (userVoteData?.is_abstain && !hasSuggestionPhase) || isAbstaining
+  );
 
   // During suggestion phase: show summary when user has voted and isn't editing rankings
   const showSummary = canSubmitSuggestions && hasVoted && !isEditingRanking && (hasSubmittedRankings || abstainedNoRanking);
@@ -175,7 +180,7 @@ export default function RankingSection({
 
         {showBallot && (
           <>
-            {pollOptions.length === 2 ? (
+            {pollOptions.length === 2 && !canSubmitSuggestions ? (
               <>
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                   Select your preference
