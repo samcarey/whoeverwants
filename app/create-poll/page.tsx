@@ -10,7 +10,6 @@ import CompactNameField from "@/components/CompactNameField";
 import TypeFieldInput, { getBuiltInType, isLocationLikeCategory, FOR_FIELD_PLACEHOLDERS } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
-import ConfirmationModal from "@/components/ConfirmationModal";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
@@ -121,7 +120,6 @@ export function CreatePollContent() {
   const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [creatorName, setCreatorName] = useState<string>("");
   const [originalPollData, setOriginalPollData] = useState<any>(null);
   const [hasFormChanged, setHasFormChanged] = useState(false);
@@ -1046,25 +1044,17 @@ export function CreatePollContent() {
     return ` (${displayParts.join(', ')})`;
   };
 
-  const handleSubmitClick = (e: React.FormEvent | React.MouseEvent) => {
+  const handleSubmitClick = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Check for validation errors before showing modal
+
+    // Check for validation errors
     const validationError = getValidationError();
     if (validationError) {
       setError(validationError);
       return;
     }
-    
-    // Show confirmation modal
-    setShowConfirmModal(true);
-  };
 
-  const handleConfirmSubmit = async () => {
-    // Hide modal
-    setShowConfirmModal(false);
-    
     // Prevent duplicate submissions - check ref first for immediate blocking
     if (isSubmittingRef.current) {
       return;
@@ -1389,7 +1379,7 @@ export function CreatePollContent() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-          ) : 'Done'}
+          ) : 'Submit'}
         </button>,
         submitPortal
       )}
@@ -1899,15 +1889,6 @@ export function CreatePollContent() {
           </p>
         )}
       
-      <ConfirmationModal
-        isOpen={showConfirmModal}
-        onConfirm={handleConfirmSubmit}
-        onCancel={() => setShowConfirmModal(false)}
-        title="Create Poll"
-        message={`Are you sure you want to create "${title}"?`}
-        confirmText="Create"
-        cancelText="Cancel"
-      />
     </div>
   );
 }
