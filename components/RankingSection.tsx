@@ -175,7 +175,7 @@ export default function RankingSection({
 
         {showBallot && (
           <>
-            {pollOptions.length === 2 ? (
+            {pollOptions.length === 2 && !canSubmitSuggestions ? (
               <>
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                   Select your preference
