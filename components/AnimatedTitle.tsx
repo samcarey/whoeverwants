@@ -226,8 +226,8 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
     return () => { cancelRef.current(); };
   }, [title, initialDelay, runAnimation]);
 
-  // Safety net: if after initialDelay + buffer, displayed doesn't match title
-  // (e.g. React strict mode cancelled the first run), retry.
+  // Safety net: if after the initial animation should have completed but
+  // displayed doesn't match title (e.g. React strict mode cancelled the run), retry.
   useEffect(() => {
     if (!initialDelay) return;
     const timer = setTimeout(() => {
@@ -235,7 +235,7 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
         initialDelayDone.current = true;
         runAnimation(displayedRef.current, targetRef.current, 0);
       }
-    }, initialDelay + 50);
+    }, initialDelay + TOTAL_ANIMATION_MS + 100);
     return () => clearTimeout(timer);
   }, [initialDelay, runAnimation]);
 
