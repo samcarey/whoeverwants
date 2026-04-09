@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import ModalPortal from '@/components/ModalPortal';
+import { formatDeadlineLabel } from '@/lib/timeUtils';
 
 // Deadline options starting small and scaling up to 1 month
 const VOTING_CUTOFF_OPTIONS = [
@@ -69,12 +70,8 @@ export default function VotingCutoffConditionsModal({
     if (optionValue === 'custom') return 'Custom';
     const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === optionValue);
     if (!opt) return optionValue;
-    if (!isClient) return opt.label;
-    const now = new Date();
-    const deadline = new Date(now.getTime() + opt.minutes * 60 * 1000);
-    const timeStr = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    return `${opt.label} (${timeStr})`;
-  }, [isClient]);
+    return formatDeadlineLabel(opt.minutes, opt.label);
+  }, []);
 
   if (!isOpen) return null;
 

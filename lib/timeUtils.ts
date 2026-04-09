@@ -25,3 +25,12 @@ export function formatDurationLabel(minutes: number): string {
   if (hours > 0) return `${hours}h`;
   return `${mins}m`;
 }
+
+/** Format "label (clock time)" showing the absolute time `minutes` from now.
+ *  Returns just the label on the server or when minutes <= 0. */
+export function formatDeadlineLabel(minutes: number, label: string): string {
+  if (typeof window === 'undefined' || minutes <= 0) return label;
+  const deadline = new Date(Date.now() + minutes * 60 * 1000);
+  const timeString = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${label} (${timeString})`;
+}
