@@ -603,7 +603,7 @@ export default function Template({ children }: AppTemplateProps) {
               isProfilePage
                 ? 'text-blue-600 dark:text-blue-400'
                 : 'text-gray-500 dark:text-gray-400'
-            }`}>Account</span>
+            }`}>Profile</span>
           </button>
         </div>
         </div>,
