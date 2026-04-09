@@ -98,7 +98,7 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 
   return (
     <>
-      {label && `${label} `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
+      {label && `${label}: `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
     </>
   );
 };
