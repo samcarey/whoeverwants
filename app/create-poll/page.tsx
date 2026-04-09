@@ -997,8 +997,8 @@ function CreatePollContent() {
     
     // For 10-second option, show seconds
     const timeString = option === "10sec" 
-      ? deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      : deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      ? deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+      : deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     
     return `${selected.label} (${timeString})`;
   };
@@ -1007,7 +1007,7 @@ function CreatePollContent() {
   const formatTimeAt = (minutes: number, label: string): string => {
     if (typeof window === 'undefined') return label;
     const deadline = new Date(Date.now() + minutes * 60 * 1000);
-    const timeString = deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeString = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     return `${label} (${timeString})`;
   };
 
