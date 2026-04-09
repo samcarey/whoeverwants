@@ -1307,6 +1307,56 @@ export function CreatePollContent() {
     }
   };
 
+  const titleField = (
+    <div>
+      {isAutoTitle ? (
+        <button
+          type="button"
+          onClick={() => {
+            setIsAutoTitle(false);
+            setTitle('');
+            setTimeout(() => titleInputRef.current?.focus(), 0);
+          }}
+          className="block text-sm font-medium text-left"
+        >
+          Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
+        </button>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="title" className="text-sm font-medium">
+              Title
+            </label>
+            {category !== 'yes_no' && (
+              <button
+                type="button"
+                onClick={() => setIsAutoTitle(true)}
+                className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Generate
+              </button>
+            )}
+          </div>
+          <input
+            type="text"
+            id="title"
+            ref={titleInputRef}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setIsAutoTitle(false);
+            }}
+            disabled={isLoading}
+            maxLength={100}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Enter your title..."
+            required
+          />
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="poll-content">
       {error && (
@@ -1451,29 +1501,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title field for yes/no polls - shown above voting cutoff */}
-          {category === 'yes_no' && (
-          <div>
-            <label htmlFor="title" className="text-sm font-medium">
-              Title
-            </label>
-            <input
-              type="text"
-              id="title"
-              ref={titleInputRef}
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setIsAutoTitle(false);
-              }}
-              disabled={isLoading}
-              maxLength={100}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              placeholder="Enter your title..."
-              required
-            />
-          </div>
-          )}
+          {/* Title for yes/no polls - rendered above voting cutoff */}
+          {category === 'yes_no' && titleField}
 
           {/* Voting cutoff (yes/no and preference polls), min responses, suggestion cutoff */}
           {pollType === 'poll' && (
@@ -1747,56 +1776,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title field - hidden for preference polls (auto-generated) and yes/no (rendered above) */}
-          {!isPreferencePoll && category !== 'yes_no' && (
-          <div>
-            {isAutoTitle ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAutoTitle(false);
-                  setTitle('');
-                  setTimeout(() => titleInputRef.current?.focus(), 0);
-                }}
-                className="block text-sm font-medium text-left"
-              >
-                Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
-              </button>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="title" className="text-sm font-medium">
-                    Title
-                  </label>
-                  {category !== 'yes_no' && (
-                    <button
-                      type="button"
-                      onClick={() => setIsAutoTitle(true)}
-                      className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      Generate
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  id="title"
-                  ref={titleInputRef}
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    setIsAutoTitle(false);
-                  }}
-                  disabled={isLoading}
-                  maxLength={100}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder="Enter your title..."
-                  required
-                />
-              </>
-            )}
-          </div>
-          )}
+          {/* Title for participation polls - rendered below close after */}
+          {!isPreferencePoll && category !== 'yes_no' && titleField}
 
           {/* Optional details field */}
           <div>
