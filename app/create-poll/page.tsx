@@ -22,7 +22,7 @@ import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
-import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -986,21 +986,13 @@ function CreatePollContent() {
   const getTimeLabel = (option: string) => {
     const selected = deadlineOptions.find(opt => opt.value === option);
     if (!selected || option === "custom") return selected?.label || "";
-    
-    // Only calculate time on client to avoid hydration mismatch
-    if (typeof window === 'undefined') {
-      return selected.label; // Server-side: just return the label
+    // 10-second dev option: include seconds in the time
+    if (option === "10sec" && typeof window !== 'undefined') {
+      const deadline = new Date(Date.now() + selected.minutes * 60 * 1000);
+      const timeString = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      return `${selected.label} (${timeString})`;
     }
-    
-    const now = new Date();
-    const deadline = new Date(now.getTime() + selected.minutes * 60 * 1000);
-    
-    // For 10-second option, show seconds
-    const timeString = option === "10sec" 
-      ? deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      : deadline.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    return `${selected.label} (${timeString})`;
+    return formatDeadlineLabel(selected.minutes, selected.label);
   };
 
   // Calculate and format time until custom deadline
@@ -1474,7 +1466,9 @@ function CreatePollContent() {
                           }
                           return 'Custom';
                         }
-                        return VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption)?.label || deadlineOption;
+                        const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption);
+                        if (!opt) return deadlineOption;
+                        return formatDeadlineLabel(opt.minutes, opt.label);
                       })()}
                     </span>
                     <select
@@ -1486,7 +1480,9 @@ function CreatePollContent() {
                     >
                       <option value="none">None</option>
                       {VOTING_CUTOFF_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        <option key={opt.value} value={opt.value}>
+                          {formatDeadlineLabel(opt.minutes, opt.label)}
+                        </option>
                       ))}
                     </select>
                   </span>
@@ -1549,7 +1545,9 @@ function CreatePollContent() {
                               if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
                               return `${frac.fraction}x`;
                             }
-                            return ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff)?.label || suggestionCutoff;
+                            const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                            if (!absOpt) return suggestionCutoff;
+                            return formatDeadlineLabel(absOpt.minutes, absOpt.label);
                           })()}
                         </span>
                         <select
@@ -1575,7 +1573,9 @@ function CreatePollContent() {
                           )}
                           <optgroup label="Fixed Duration">
                             {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              <option key={opt.value} value={opt.value}>
+                                {formatDeadlineLabel(opt.minutes, opt.label)}
+                              </option>
                             ))}
                           </optgroup>
                           <option value="custom">Custom</option>
