@@ -673,7 +673,7 @@ export default function Template({ children }: AppTemplateProps) {
             className={`absolute bottom-0 left-0 right-0 rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
               modalClosing ? 'animate-slide-down' : 'animate-slide-up'
             }`}
-            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 15px)', overscrollBehavior: 'none' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Drag handle */}
