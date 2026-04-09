@@ -88,7 +88,6 @@ export default function Template({ children }: AppTemplateProps) {
   const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   const [pollPageTitle, setPollPageTitle] = useState('');
-  const [createPollType, setCreatePollType] = useState<'poll' | 'participation'>('poll');
 
   // Long-press detection for opening the debug modal (replaces simple tap)
   const { props: longPressProps } = useLongPress(() =>
@@ -102,7 +101,7 @@ export default function Template({ children }: AppTemplateProps) {
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname === '/create-poll' || pathname === '/create-poll/') {
-      setPageTitle('Ask For…');
+      setPageTitle('Create Poll');
       setLeftElement(<div className="w-6 h-6" />); // spacer
       setRightElement(<div className="w-6 h-6" />); // spacer
     } else if (pathname.startsWith('/p/')) {
@@ -127,19 +126,6 @@ export default function Template({ children }: AppTemplateProps) {
 
     return () => {
       window.removeEventListener('pageTitleChange', handleTitleChange as EventListener);
-    };
-  }, []);
-
-  // Listen for poll type changes from create-poll page
-  useEffect(() => {
-    const handlePollTypeChange = (event: CustomEvent) => {
-      setCreatePollType(event.detail.pollType);
-    };
-
-    window.addEventListener('pollTypeChange', handlePollTypeChange as EventListener);
-
-    return () => {
-      window.removeEventListener('pollTypeChange', handlePollTypeChange as EventListener);
     };
   }, []);
 
@@ -494,13 +480,7 @@ export default function Template({ children }: AppTemplateProps) {
                     className="text-2xl font-bold text-center whitespace-nowrap select-none"
                     {...longPressProps}
                   >
-                    Ask for{' '}
-                    <span
-                      className="text-blue-600 dark:text-blue-400"
-                      style={{ fontFamily: "'M PLUS 1 Code', monospace" }}
-                    >
-                      {createPollType === 'poll' ? 'Preferences' : 'Participation'}
-                    </span>
+                    Create Poll
                   </h1>
                 </div>
               )}
@@ -603,7 +583,7 @@ export default function Template({ children }: AppTemplateProps) {
               isProfilePage
                 ? 'text-blue-600 dark:text-blue-400'
                 : 'text-gray-500 dark:text-gray-400'
-            }`}>Account</span>
+            }`}>Profile</span>
           </button>
         </div>
         </div>,
