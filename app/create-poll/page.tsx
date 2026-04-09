@@ -1357,11 +1357,11 @@ export function CreatePollContent() {
     </div>
   );
 
-  const submitDisabled = isLoading || isSubmitted || !isFormValid() || (!!forkOf && !hasFormChanged);
+  const validationError = getValidationError();
+  const submitDisabled = isLoading || isSubmitted || !!validationError || (!!forkOf && !hasFormChanged);
 
   return (
     <div className="poll-content">
-      {/* Portal: Submit button in modal header (upper right) */}
       {submitPortal && createPortal(
         <button
           type="button"
@@ -1379,7 +1379,6 @@ export function CreatePollContent() {
         submitPortal
       )}
 
-      {/* Portal: Animated title below header */}
       {titlePortal && createPortal(
         <AnimatedTitle title={title} initialDelay={300} />,
         titlePortal
@@ -1875,9 +1874,9 @@ export function CreatePollContent() {
           </div>
         ) : null}
 
-        {getValidationError() && (
+        {validationError && (
           <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
-            {getValidationError()}
+            {validationError}
           </p>
         )}
 

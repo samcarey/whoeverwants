@@ -120,9 +120,10 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
     textEl.style.fontSize = `${lo}px`;
   }, []);
 
-  // Fit font whenever displayedText changes
+  // Fit font only when animation reaches final state (avoid layout thrashing
+  // from binary-search reflows on every intermediate animation step)
   useEffect(() => {
-    fitFont();
+    if (displayedRef.current === targetRef.current) fitFont();
   }, [displayedText, fitFont]);
 
   // Fit font on resize
@@ -207,7 +208,6 @@ export default function AnimatedTitle({ title, initialDelay = 0 }: AnimatedTitle
 
     if (delay > 0) {
       const timer = setTimeout(tick, delay);
-      const prevCancel = cancelRef.current;
       cancelRef.current = () => { cancelled = true; clearTimeout(timer); };
     } else {
       tick();
