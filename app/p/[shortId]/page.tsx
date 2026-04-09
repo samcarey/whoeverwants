@@ -20,7 +20,6 @@ function PollContent() {
   // Prefetch critical pages
   useEffect(() => {
     router.prefetch('/');
-    router.prefetch('/create-poll');
   }, [router]);
 
   useEffect(() => {

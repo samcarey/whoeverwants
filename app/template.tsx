@@ -1,13 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import React, { useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
+
+const LazyCreatePollContent = React.lazy(() =>
+  import('@/app/create-poll/page').then(m => ({ default: m.CreatePollContent }))
+);
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -34,8 +38,17 @@ const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
 const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
 
 export default function Template({ children }: AppTemplateProps) {
+  return (
+    <Suspense fallback={<div className="h-screen-safe flex flex-col" />}>
+      <TemplateInner>{children}</TemplateInner>
+    </Suspense>
+  );
+}
+
+function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isStandalone, setIsStandalone] = useState(false);
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
@@ -372,8 +385,208 @@ export default function Template({ children }: AppTemplateProps) {
   }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
-  const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
+  const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
+  const [modalClosing, setModalClosing] = useState(false);
+
+  // Refs for modal drag-to-dismiss — uses direct DOM manipulation for 60fps.
+  const modalSheetRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const modalScrollRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({
+    startY: 0,
+    currentTranslate: 0,
+    isDragging: false,
+    startedInHeader: false,
+    isClosing: false,
+    rAFPending: false,
+    rAFId: 0,
+    lastMoveTime: 0,
+    lastMoveY: 0,
+  });
+  const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Stable ref for close navigation — avoids searchParams in deps, preventing listener churn.
+  const navigateCloseModalRef = useRef(() => {});
+  useEffect(() => {
+    navigateCloseModalRef.current = () => {
+      const params = new URLSearchParams(searchParams.toString());
+      ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode']
+        .forEach(p => params.delete(p));
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    };
+  }, [router, pathname, searchParams]);
+
+  const handleCloseCreateModal = useCallback(() => {
+    if (dragState.current.isClosing) return;
+    dragState.current.isClosing = true;
+    setModalClosing(true);
+    closeTimerRef.current = setTimeout(() => {
+      navigateCloseModalRef.current();
+    }, 300);
+  }, []);
+
+  // Drag-to-dismiss touch handling for the create poll modal sheet.
+  useEffect(() => {
+    if (!isCreateModalOpen || !isMounted) return;
+    const sheet = modalSheetRef.current;
+    if (!sheet) return;
+
+    const state = dragState.current;
+
+    const updateDOM = () => {
+      state.rAFPending = false;
+      const t = state.currentTranslate;
+      if (modalSheetRef.current) {
+        modalSheetRef.current.style.transform = `translateY(${t}px)`;
+      }
+      if (backdropRef.current) {
+        const h = modalSheetRef.current?.offsetHeight || window.innerHeight;
+        const progress = Math.min(t / (h * 0.5), 1);
+        backdropRef.current.style.opacity = String(1 - progress * 0.7);
+      }
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (state.isClosing) return;
+      state.startY = e.touches[0].clientY;
+      state.isDragging = false;
+      state.currentTranslate = 0;
+      state.lastMoveTime = Date.now();
+      state.lastMoveY = e.touches[0].clientY;
+      const scrollEl = modalScrollRef.current;
+      if (scrollEl) {
+        const rect = scrollEl.getBoundingClientRect();
+        state.startedInHeader = e.touches[0].clientY < rect.top;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (state.isClosing) return;
+      const touchY = e.touches[0].clientY;
+      const deltaY = touchY - state.startY;
+
+      if (!state.isDragging) {
+        const scrollEl = modalScrollRef.current;
+        const scrollAtTop = !scrollEl || scrollEl.scrollTop <= 0;
+        if (!(state.startedInHeader || (scrollAtTop && deltaY > 5))) return;
+        state.isDragging = true;
+        if (scrollEl) scrollEl.style.overflowY = 'hidden';
+        if (modalSheetRef.current) modalSheetRef.current.style.transition = 'none';
+        if (backdropRef.current) backdropRef.current.style.transition = 'none';
+      }
+
+      // Track velocity from the last few touchmove events
+      state.lastMoveTime = Date.now();
+      state.lastMoveY = touchY;
+
+      state.currentTranslate = Math.max(0, deltaY);
+      if (!state.rAFPending) {
+        state.rAFPending = true;
+        state.rAFId = requestAnimationFrame(updateDOM);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (!state.isDragging || state.isClosing) return;
+      state.isDragging = false;
+
+      // Cancel any pending rAF so it doesn't overwrite the animation.
+      if (state.rAFPending) {
+        cancelAnimationFrame(state.rAFId);
+        state.rAFPending = false;
+      }
+
+      const scrollEl = modalScrollRef.current;
+      if (scrollEl) scrollEl.style.overflowY = '';
+
+      const modalHeight = modalSheetRef.current?.offsetHeight || window.innerHeight;
+      const threshold = modalHeight * 0.33;
+
+      // Compute downward velocity (px/ms) from the last touchmove to touchend.
+      const endY = e.changedTouches[0].clientY;
+      const dt = Date.now() - state.lastMoveTime;
+      const velocity = dt > 0 ? (endY - state.lastMoveY) / dt : 0;
+      // Dismiss if past halfway OR flicked downward fast (>0.5 px/ms ≈ 500px/s).
+      const shouldClose = state.currentTranslate > threshold || (velocity > 0.5 && state.currentTranslate > 30);
+
+      if (shouldClose) {
+        // Past halfway — close. Must force reflow between setting transition
+        // and target value, otherwise browser skips the animation (transition
+        // was 'none' during drag).
+        state.isClosing = true;
+        if (modalSheetRef.current) {
+          modalSheetRef.current.style.transition = 'transform 0.3s ease-in';
+          modalSheetRef.current.offsetHeight; // force reflow
+          modalSheetRef.current.style.transform = 'translateY(100%)';
+        }
+        if (backdropRef.current) {
+          backdropRef.current.style.transition = 'opacity 0.3s ease-in';
+          backdropRef.current.offsetHeight;
+          backdropRef.current.style.opacity = '0';
+        }
+        closeTimerRef.current = setTimeout(() => {
+          navigateCloseModalRef.current();
+        }, 300);
+      } else {
+        // Under halfway — spring back
+        if (modalSheetRef.current) {
+          modalSheetRef.current.style.transition = 'transform 0.3s ease-out';
+          modalSheetRef.current.offsetHeight;
+          modalSheetRef.current.style.transform = '';
+        }
+        if (backdropRef.current) {
+          backdropRef.current.style.transition = 'opacity 0.3s ease-out';
+          backdropRef.current.offsetHeight;
+          backdropRef.current.style.opacity = '';
+        }
+        setTimeout(() => {
+          if (modalSheetRef.current) modalSheetRef.current.style.transition = '';
+          if (backdropRef.current) backdropRef.current.style.transition = '';
+        }, 300);
+      }
+      state.currentTranslate = 0;
+    };
+
+    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', onTouchMove, { passive: true });
+    sheet.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      sheet.removeEventListener('touchstart', onTouchStart);
+      sheet.removeEventListener('touchmove', onTouchMove);
+      sheet.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [isCreateModalOpen, isMounted]);
+
+  // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
+  // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
+  useEffect(() => {
+    if (!isCreateModalOpen) return;
+    // Reset stale close state from previous dismiss
+    setModalClosing(false);
+    dragState.current.isClosing = false;
+    const scrollY = window.scrollY;
+    const html = document.documentElement;
+    html.style.overscrollBehavior = 'none';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      // Cancel any pending close animation timeout to prevent stale navigation.
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      html.style.overscrollBehavior = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, [isCreateModalOpen]);
 
   return (
     <>
@@ -413,7 +626,7 @@ export default function Template({ children }: AppTemplateProps) {
       )}
 
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
-      {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
+      {!isPollPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -457,9 +670,9 @@ export default function Template({ children }: AppTemplateProps) {
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
           <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
           {/* Spacer div for header elements that are now rendered in portal */}
-          {(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') && (
+          {(isPollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
-              
+
               {/* Poll page title */}
               {isPollPage && pollPageTitle && (
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
@@ -468,18 +681,6 @@ export default function Template({ children }: AppTemplateProps) {
                     {...longPressProps}
                   >
                     {pollPageTitle}
-                  </h1>
-                </div>
-              )}
-
-              {/* Create poll page title */}
-              {isCreatePollPage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1
-                    className="text-2xl font-bold text-center whitespace-nowrap select-none"
-                    {...longPressProps}
-                  >
-                    Create Poll
                   </h1>
                 </div>
               )}
@@ -499,16 +700,6 @@ export default function Template({ children }: AppTemplateProps) {
               {/* Home page title */}
               {pathname === '/' && (
                 <div className="relative max-w-4xl mx-auto px-2 pt-4 pb-1">
-                  {/* Create poll button - top right, scrolls with content */}
-                  <Link
-                    href="/create-poll"
-                    className="absolute right-2 top-4 w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                    aria-label="Create new poll"
-                  >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </Link>
                   <div className="text-center">
                     <h1
                       className="text-2xl font-bold mb-1 select-none"
@@ -523,11 +714,68 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
             {children}
           </div>
         </div>
       </div>
+
+      {/* Create poll modal - iOS-style sheet rendered via portal.
+           Triggered by ?create query param so the underlying page stays mounted. */}
+      {isCreateModalOpen && isMounted && createPortal(
+        <div className="fixed inset-0 z-[60]">
+          {/* Backdrop */}
+          <div
+            ref={backdropRef}
+            className={`absolute inset-0 bg-black/40 ${modalClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
+            onClick={handleCloseCreateModal}
+          />
+          {/* Modal sheet */}
+          <div
+            ref={modalSheetRef}
+            className={`absolute bottom-0 left-0 right-0 rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
+              modalClosing ? 'animate-slide-down' : 'animate-slide-up'
+            }`}
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 15px)', overscrollBehavior: 'none' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex-shrink-0 flex justify-center pt-2.5 pb-1">
+              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+            </div>
+            {/* Header */}
+            <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
+              <button
+                onClick={handleCloseCreateModal}
+                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
+                aria-label="Close"
+              >
+                <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
+                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+              <h2 className="text-[17px] font-semibold">Create Poll</h2>
+              <div className="w-[43px]" />
+            </div>
+            {/* Scrollable content */}
+            <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
+              <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
+                <Suspense fallback={
+                  <div className="flex justify-center items-center py-20">
+                    <svg className="animate-spin h-8 w-8 text-gray-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                }>
+                  <LazyCreatePollContent />
+                </Suspense>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
@@ -564,6 +812,27 @@ export default function Template({ children }: AppTemplateProps) {
             }`}>Home</span>
           </button>
 
+          {/* Create poll button */}
+          <button
+            onClick={() => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.set('create', '1');
+              router.push(`${pathname}?${params.toString()}`);
+            }}
+            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
+            aria-label="Create new poll"
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              isCreateModalOpen
+                ? 'bg-blue-600 dark:bg-blue-500'
+                : 'bg-blue-500 dark:bg-blue-600'
+            } shadow-md`}>
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+          </button>
+
           {/* Profile button */}
           <button
             onClick={isProfilePage ? undefined : () => router.push('/profile')}
@@ -594,7 +863,7 @@ export default function Template({ children }: AppTemplateProps) {
         {/* Back/home button in upper left — PWA standalone mode only.
              In regular browser tabs, the browser's own back button handles navigation.
              Shows back arrow if user has navigated within the app, home icon otherwise. */}
-        {isStandalone && (isPollPage || isCreatePollPage || isProfilePage) && (
+        {isStandalone && (isPollPage || isProfilePage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {hasAppHistory ? (
               <button

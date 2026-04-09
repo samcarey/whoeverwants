@@ -80,7 +80,7 @@ export function useAppPrefetch() {
   
   // Prefetch critical app routes
   useEffect(() => {
-    const criticalRoutes = ['/', '/create-poll'];
+    const criticalRoutes = ['/'];
     prefetchBatch(criticalRoutes, { priority: "high" });
   }, [prefetchBatch]);
   

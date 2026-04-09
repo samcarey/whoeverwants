@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
 import { debugLog } from "@/lib/debugLogger";
@@ -12,6 +12,7 @@ interface ForkButtonProps {
 
 export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleFork = () => {
     const forkData = buildPollSnapshot(poll);
@@ -23,8 +24,8 @@ export default function ForkButton({ poll, className = "" }: ForkButtonProps) {
     
     debugLog.logObject('Stored fork data', { storageKey, data: localStorage.getItem(storageKey) }, 'ForkButton');
     
-    // Navigate to create-poll with fork parameter
-    const navigateUrl = `/create-poll?fork=${poll.id}`;
+    // Open create modal with fork parameter
+    const navigateUrl = `${pathname}?create=1&fork=${poll.id}`;
     debugLog.info(`Navigating to: ${navigateUrl}`, 'ForkButton');
     router.push(navigateUrl);
   };

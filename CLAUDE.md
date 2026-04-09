@@ -974,6 +974,17 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Don't append category keywords (e.g., " restaurant") to Nominatim queries.** OSM tags fast food chains as `fast_food`, not `restaurant`, so the suffix causes Nominatim to miss them entirely. Instead, search with the raw query and post-filter results by `_FOOD_TYPES` (the `type` field in Nominatim's JSON response). The `_FOOD_TYPES` frozenset in `search.py` defines which OSM amenity types count as food/drink.
 - **Favicon cache is name-based and in-memory** (`_restaurant_favicon_cache` in `search.py`). Bounded to 500 entries with LRU eviction. Persists for the API process lifetime. Populated from OSM `website`, `contact:website`, and `brand:website` extratags.
 
+### Create Poll Modal (Query-Param Sheet)
+
+- **The create-poll form is a modal overlay**, not a separate route. It's triggered by the `?create` query parameter on any page. The underlying page stays mounted behind the backdrop.
+- **`CreatePollContent` is exported** from `app/create-poll/page.tsx` and lazy-loaded via `React.lazy` in `template.tsx`. The `/create-poll` route redirects to `/?create`.
+- **All buttons that open the create form** (FollowUp, Fork, Duplicate, VoteOnIt, bottom bar "+") append `?create=1` plus any action params to the current page URL via `router.push`. They do NOT navigate to `/create-poll`.
+- **Close removes `?create`** (and related params) from the URL via `router.replace`, keeping the user on their current page.
+- **Drag-to-dismiss** uses native touch listeners with refs for 60fps. Velocity-based dismissal (>500px/s flick) and 33% position threshold. Uses `requestAnimationFrame` coalescing. Force reflow (`offsetHeight`) is required between setting `transition` and the target `transform` after `transition: none` during drag.
+- **Body scroll lock on iOS** requires `position: fixed` on `<body>` — `overflow: hidden` alone doesn't prevent native pull-to-refresh in Safari/WebKit. Scroll position is saved/restored on mount/unmount.
+- **`navigateCloseModal` uses a ref** (`navigateCloseModalRef`) instead of a `useCallback` with `searchParams` in its deps. This prevents touch listeners from being re-attached on every query param change.
+- **ConfirmationModal z-index must be above z-60** (the create-poll modal). Currently at `z-[70]`. Any new modal that needs to appear over the create form must exceed z-60.
+
 ### Adding New Poll Categories
 
 - **Built-in categories** are defined in `TypeFieldInput.tsx: BUILT_IN_TYPES`. Add new entries there.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
@@ -14,6 +14,7 @@ interface FollowUpModalProps {
 
 export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: FollowUpModalProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   if (!isOpen) return null;
 
@@ -36,7 +37,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
           <div className="flex gap-3 mb-4">
             <button
               onClick={() => {
-                router.push(`/create-poll?followUpTo=${poll.id}`);
+                router.push(`${pathname}?create=1&followUpTo=${poll.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
@@ -50,7 +51,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
             <button
               onClick={() => {
                 localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(pollSnapshot));
-                router.push(`/create-poll?duplicate=${poll.id}`);
+                router.push(`${pathname}?create=1&duplicate=${poll.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
@@ -65,7 +66,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
             <button
               onClick={() => {
                 localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(pollSnapshot));
-                router.push(`/create-poll?fork=${poll.id}`);
+                router.push(`${pathname}?create=1&fork=${poll.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
