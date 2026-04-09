@@ -73,7 +73,11 @@ export default function RankingSection({
   isEditingSuggestions,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
-  const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (userVoteData?.is_abstain || isAbstaining);
+  // During suggestion phase, is_abstain may mean "abstained from suggestions" not "abstained from ranking"
+  // Only trust local isAbstaining state for ranking abstain during suggestion phase
+  const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (
+    canSubmitSuggestions ? isAbstaining : (userVoteData?.is_abstain || isAbstaining)
+  );
 
   // During suggestion phase: show summary when user has voted and isn't editing rankings
   const showSummary = canSubmitSuggestions && hasVoted && !isEditingRanking && (hasSubmittedRankings || abstainedNoRanking);
