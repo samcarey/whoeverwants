@@ -595,6 +595,48 @@ npm run debug:react poll-123 revisit   # Debug vote retrieval
 
 ---
 
+## Client Log Forwarding (Dev Sites Only)
+
+On dev/debug sites (`*.dev.whoeverwants.com`, `localhost`), the browser automatically forwards all `console.log/warn/error/info/debug` output plus unhandled errors/rejections to the server via `POST /api/client-logs`. Logs are stored in an in-memory ring buffer (last 2000 entries) on the API server.
+
+**This is NOT active on production** (whoeverwants.com).
+
+### When the user reports an issue
+
+**IMMEDIATELY check client logs** in addition to server-side logs. This is the fastest way to see what the browser was doing when the error occurred:
+
+```bash
+# Read recent client logs (most recent first)
+bash scripts/remote.sh "curl -s http://localhost:<api_port>/api/client-logs?limit=100" | python3 -m json.tool
+
+# Filter by level (error, warn, log, info, debug)
+bash scripts/remote.sh "curl -s 'http://localhost:<api_port>/api/client-logs?level=error&limit=50'" | python3 -m json.tool
+
+# Search for specific text in log messages
+bash scripts/remote.sh "curl -s 'http://localhost:<api_port>/api/client-logs?search=failed&limit=50'" | python3 -m json.tool
+
+# Clear logs (useful before reproducing an issue)
+bash scripts/remote.sh "curl -s -X DELETE http://localhost:<api_port>/api/client-logs"
+```
+
+Replace `<api_port>` with the dev server's API port (8001-8005).
+
+### Diagnostic checklist when user reports a bug
+
+1. **Client logs**: `curl http://localhost:<api_port>/api/client-logs?level=error&limit=50`
+2. **Server logs**: `docker compose logs --tail 100` or `tail -50 /root/dev-servers/<slug>/api.log`
+3. **Full client log dump**: `curl http://localhost:<api_port>/api/client-logs?limit=200` (includes info/debug for context)
+
+### How it works
+
+- `lib/clientLogForwarder.ts` patches `console.*` methods on dev sites only
+- Logs are batched every 2 seconds and sent via `navigator.sendBeacon` (survives page unloads)
+- Each entry includes: level, message, timestamp, page URL, user agent, session ID
+- Ring buffer auto-evicts entries beyond 2000 (no disk writes, no persistence across API restarts)
+- The forwarder is installed once in `app/template.tsx` on mount
+
+---
+
 ## Participation Poll Philosophy: Maximizing Inclusion
 
 ### Core Principle

@@ -62,6 +62,14 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         source: '/api/search/:path*',
         destination: `${apiDest}/api/search/:path*`,
       },
+      {
+        source: '/api/client-logs',
+        destination: `${apiDest}/api/client-logs`,
+      },
+      {
+        source: '/api/client-logs/',
+        destination: `${apiDest}/api/client-logs`,
+      },
     ],
     afterFiles: [],
     fallback: [],

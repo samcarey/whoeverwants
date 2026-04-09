@@ -7,6 +7,7 @@ import psycopg
 from middleware import RateLimitMiddleware
 from routers.polls import router as polls_router
 from routers.search import router as search_router
+from routers.client_logs import router as client_logs_router
 
 app = FastAPI(title="WhoeverWants API", redirect_slashes=False)
 
@@ -26,6 +27,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 app.include_router(polls_router)
 app.include_router(search_router)
+app.include_router(client_logs_router)
 
 
 @app.get("/health")
