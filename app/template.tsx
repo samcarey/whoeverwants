@@ -387,6 +387,9 @@ export default function Template({ children }: AppTemplateProps) {
     startedInHeader: false,
     isClosing: false,
     rAFPending: false,
+    rAFId: 0,
+    lastMoveTime: 0,
+    lastMoveY: 0,
   });
 
   const navigateCloseModal = useCallback(() => {
@@ -433,6 +436,8 @@ export default function Template({ children }: AppTemplateProps) {
       state.startY = e.touches[0].clientY;
       state.isDragging = false;
       state.currentTranslate = 0;
+      state.lastMoveTime = Date.now();
+      state.lastMoveY = e.touches[0].clientY;
       const scrollEl = modalScrollRef.current;
       if (scrollEl) {
         const rect = scrollEl.getBoundingClientRect();
@@ -455,16 +460,26 @@ export default function Template({ children }: AppTemplateProps) {
         if (backdropRef.current) backdropRef.current.style.transition = 'none';
       }
 
+      // Track velocity from the last few touchmove events
+      state.lastMoveTime = Date.now();
+      state.lastMoveY = touchY;
+
       state.currentTranslate = Math.max(0, deltaY);
       if (!state.rAFPending) {
         state.rAFPending = true;
-        requestAnimationFrame(updateDOM);
+        state.rAFId = requestAnimationFrame(updateDOM);
       }
     };
 
-    const onTouchEnd = () => {
+    const onTouchEnd = (e: TouchEvent) => {
       if (!state.isDragging || state.isClosing) return;
       state.isDragging = false;
+
+      // Cancel any pending rAF so it doesn't overwrite the animation.
+      if (state.rAFPending) {
+        cancelAnimationFrame(state.rAFId);
+        state.rAFPending = false;
+      }
 
       const scrollEl = modalScrollRef.current;
       if (scrollEl) scrollEl.style.overflowY = '';
@@ -472,7 +487,14 @@ export default function Template({ children }: AppTemplateProps) {
       const modalHeight = modalSheetRef.current?.offsetHeight || window.innerHeight;
       const threshold = modalHeight * 0.5;
 
-      if (state.currentTranslate > threshold) {
+      // Compute downward velocity (px/ms) from the last touchmove to touchend.
+      const endY = e.changedTouches[0].clientY;
+      const dt = Date.now() - state.lastMoveTime;
+      const velocity = dt > 0 ? (endY - state.lastMoveY) / dt : 0;
+      // Dismiss if past halfway OR flicked downward fast (>0.5 px/ms ≈ 500px/s).
+      const shouldClose = state.currentTranslate > threshold || (velocity > 0.5 && state.currentTranslate > 30);
+
+      if (shouldClose) {
         // Past halfway — close. Must force reflow between setting transition
         // and target value, otherwise browser skips the animation (transition
         // was 'none' during drag).
