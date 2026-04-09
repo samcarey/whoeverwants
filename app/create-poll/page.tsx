@@ -81,6 +81,7 @@ function CreatePollContent() {
   const forkOfParam = searchParams.get('fork');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
+  const modeParam = searchParams.get('mode');
 
   // Track duplicate and fork relationships as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -89,7 +90,16 @@ function CreatePollContent() {
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const [pollType, setPollType] = useState<'poll' | 'participation'>('poll');
+  const pollType = modeParam === 'participation' ? 'participation' : 'poll';
+  const setPollType = useCallback((type: 'poll' | 'participation') => {
+    const url = new URL(window.location.href);
+    if (type === 'participation') {
+      url.searchParams.set('mode', 'participation');
+    } else {
+      url.searchParams.delete('mode');
+    }
+    router.replace(url.pathname + url.search);
+  }, [router]);
   const [options, setOptions] = useState<string[]>(['']);
   const [minParticipants, setMinParticipants] = useState<number | null>(1);
   const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
@@ -117,7 +127,7 @@ function CreatePollContent() {
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
-  const [hasLoadedPollType, setHasLoadedPollType] = useState(false);
+
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
@@ -327,14 +337,7 @@ function CreatePollContent() {
     return `${m} month${m !== 1 ? 's' : ''}`;
   };
 
-  // Save poll type preference separately (persists across submissions)
-  const savePollTypePreference = useCallback((type: 'poll' | 'participation') => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pollTypePreference', type);
-    }
-  }, []);
-
-  // Save form state to localStorage (excluding poll type which is saved separately)
+  // Save form state to localStorage
   const saveFormState = useCallback(() => {
     if (typeof window !== 'undefined') {
       const formState = {
@@ -381,19 +384,7 @@ function CreatePollContent() {
     };
   };
 
-  // Load poll type preference from localStorage
-  const loadPollTypePreference = () => {
-    if (typeof window !== 'undefined') {
-      const savedPollType = localStorage.getItem('pollTypePreference');
-      if (savedPollType && (savedPollType === 'poll' || savedPollType === 'participation')) {
-        setPollType(savedPollType as 'poll' | 'participation');
-      }
-      // Delay enabling transitions to avoid animation on initial load
-      setTimeout(() => {
-        setHasLoadedPollType(true);
-      }, 50);
-    }
-  };
+  // Removed: poll type preference now comes from URL query param
 
   // Load form state from localStorage (excluding poll type which is loaded separately)
   const loadFormState = () => {
@@ -624,11 +615,6 @@ function CreatePollContent() {
     if (voteFromSuggestionParam) setVoteFromSuggestion(voteFromSuggestionParam);
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
 
-  // Load poll type preference first (runs once on mount)
-  useEffect(() => {
-    loadPollTypePreference();
-  }, []); // Empty deps - only run once on mount
-
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
@@ -660,20 +646,6 @@ function CreatePollContent() {
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
 
-  // Save poll type preference and emit poll type changes to update the header
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Only save after initial load to avoid overwriting saved preference
-      if (hasLoadedPollType) {
-        savePollTypePreference(pollType);
-      }
-
-      // Emit event to update the header
-      window.dispatchEvent(new CustomEvent('pollTypeChange', {
-        detail: { pollType }
-      }));
-    }
-  }, [pollType, hasLoadedPollType, savePollTypePreference]);
 
   // Load fork data if this is a fork
   useEffect(() => {
@@ -1359,49 +1331,18 @@ function CreatePollContent() {
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
-          <div className="flex justify-center">
-            <div className="relative w-36 bg-gray-100 dark:bg-gray-800 rounded-full p-0.5 -mb-2">
-              <div
-                className={`absolute top-0.5 bottom-0.5 rounded-full shadow-sm ${
-                  hasLoadedPollType ? 'transition-all duration-200 ease-in-out' : ''
-                } ${
-                  pollType === 'poll'
-                    ? 'bg-green-100 dark:bg-green-700/50'
-                    : 'bg-purple-100 dark:bg-purple-700/50'
-                }`}
-                style={{
-                  width: 'calc(50% - 3px)',
-                  left: pollType === 'poll' ? '2px' : 'calc(50% + 1px)'
-                }}
-              />
-              <div className="relative flex w-full">
-                <button
-                  type="button"
-                  onClick={() => setPollType('poll')}
-                  disabled={isLoading}
-                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'poll'
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  🗳️
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPollType('participation')}
-                  disabled={isLoading}
-                  className={`flex-1 py-1 text-xl rounded-md transition-colors duration-200 ${
-                    pollType === 'participation'
-                      ? 'text-gray-900 dark:text-white'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  🙋
-                </button>
-              </div>
+          {/* Participation mode: show link back to preferences form */}
+          {pollType === 'participation' && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setPollType('poll')}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Switch to Preferences Poll
+              </button>
             </div>
-          </div>
+          )}
 
           {/* Category and For fields for suggestion and poll types */}
           {pollType !== 'participation' && (

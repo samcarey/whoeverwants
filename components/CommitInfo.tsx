@@ -90,7 +90,7 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'build' | 'logs'>('build');
+  const [activeTab, setActiveTab] = useState<'build' | 'logs' | 'experimental'>('build');
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [copyLabel, setCopyLabel] = useState('Copy All Logs');
@@ -259,6 +259,16 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
               >
                 Logs
               </button>
+              <button
+                className={`flex-1 py-1.5 text-center text-xs cursor-pointer border-b-2 transition-colors select-none ${
+                  activeTab === 'experimental'
+                    ? 'text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-transparent'
+                }`}
+                onClick={() => setActiveTab('experimental')}
+              >
+                Experimental
+              </button>
             </div>
 
             {/* Build Info tab */}
@@ -328,6 +338,20 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
                 >
                   {copyLabel}
                 </button>
+              </div>
+            )}
+
+            {/* Experimental tab */}
+            {activeTab === 'experimental' && (
+              <div className="space-y-3 overflow-y-auto">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Hidden poll types and experimental features.</p>
+                <a
+                  href="/create-poll?mode=participation"
+                  className="block w-full px-3 py-2 text-sm text-center bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 rounded-md hover:bg-purple-200 dark:hover:bg-purple-800/50 transition-colors"
+                  onClick={() => setShowModal(false)}
+                >
+                  Create Participation Poll
+                </a>
               </div>
             )}
           </div>
