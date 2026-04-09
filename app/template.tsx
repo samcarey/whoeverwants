@@ -473,14 +473,18 @@ export default function Template({ children }: AppTemplateProps) {
       const threshold = modalHeight * 0.5;
 
       if (state.currentTranslate > threshold) {
-        // Past halfway — close
+        // Past halfway — close. Must force reflow between setting transition
+        // and target value, otherwise browser skips the animation (transition
+        // was 'none' during drag).
         state.isClosing = true;
         if (modalSheetRef.current) {
           modalSheetRef.current.style.transition = 'transform 0.3s ease-in';
+          modalSheetRef.current.offsetHeight; // force reflow
           modalSheetRef.current.style.transform = 'translateY(100%)';
         }
         if (backdropRef.current) {
           backdropRef.current.style.transition = 'opacity 0.3s ease-in';
+          backdropRef.current.offsetHeight;
           backdropRef.current.style.opacity = '0';
         }
         setTimeout(() => {
@@ -499,10 +503,12 @@ export default function Template({ children }: AppTemplateProps) {
         // Under halfway — spring back
         if (modalSheetRef.current) {
           modalSheetRef.current.style.transition = 'transform 0.3s ease-out';
+          modalSheetRef.current.offsetHeight;
           modalSheetRef.current.style.transform = '';
         }
         if (backdropRef.current) {
           backdropRef.current.style.transition = 'opacity 0.3s ease-out';
+          backdropRef.current.offsetHeight;
           backdropRef.current.style.opacity = '';
         }
         setTimeout(() => {
