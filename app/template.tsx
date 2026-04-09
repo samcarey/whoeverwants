@@ -415,7 +415,6 @@ export default function Template({ children }: AppTemplateProps) {
     if (dragState.current.isClosing) return;
     setModalClosing(true);
     setTimeout(() => {
-      setModalClosing(false);
       navigateCloseModal();
     }, 300);
   }, [navigateCloseModal]);
@@ -520,15 +519,6 @@ export default function Template({ children }: AppTemplateProps) {
           backdropRef.current.style.opacity = '0';
         }
         setTimeout(() => {
-          state.isClosing = false;
-          if (modalSheetRef.current) {
-            modalSheetRef.current.style.transform = '';
-            modalSheetRef.current.style.transition = '';
-          }
-          if (backdropRef.current) {
-            backdropRef.current.style.opacity = '';
-            backdropRef.current.style.transition = '';
-          }
           navigateCloseModal();
         }, 300);
       } else {
@@ -566,6 +556,9 @@ export default function Template({ children }: AppTemplateProps) {
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
     if (!isCreateModalOpen) return;
+    // Reset stale close state from previous dismiss
+    setModalClosing(false);
+    dragState.current.isClosing = false;
     const scrollY = window.scrollY;
     const html = document.documentElement;
     html.style.overscrollBehavior = 'none';
