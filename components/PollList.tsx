@@ -57,6 +57,7 @@ function OptionIcons({ poll }: { poll: Poll }) {
           alt=""
           className="inline-block h-[1em] w-[1em] object-cover rounded-sm align-middle ml-0.5"
           loading="lazy"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       ))}
       <span className="text-gray-400 dark:text-gray-500 align-middle text-[0.65em] ml-px select-none">…</span>
