@@ -452,7 +452,7 @@ export default function Template({ children }: AppTemplateProps) {
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className="pwa-safe-top relative" style={{ paddingBottom: '4rem' }}>
+        <div className="pwa-safe-top relative min-h-full" style={{ paddingBottom: '4rem' }}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
           <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
