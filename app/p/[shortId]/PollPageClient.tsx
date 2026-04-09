@@ -579,8 +579,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             }
 
             // Set UI state based on vote data from database columns
-            // Restore abstain: full abstain (is_abstain) or ranking-specific abstain (is_ranking_abstain)
-            const shouldRestoreAbstain = voteData.is_abstain || voteData.is_ranking_abstain;
+            // is_ranking_abstain always restores abstain state.
+            // is_abstain only restores for non-suggestion polls — in suggestion polls
+            // it means "abstained from suggestions", not "abstained from ranking".
+            const shouldRestoreAbstain = voteData.is_ranking_abstain || (voteData.is_abstain && !hasSuggestionPhase);
             setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
@@ -935,9 +937,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // During suggestion phase with pre-ranking, submitting rankings after the initial
     // suggestion vote is an implicit edit (updating the existing vote with rankings).
     // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
-    const hasOnlySuggestions = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_abstain && !userVoteData?.is_ranking_abstain;
+    // Includes users who abstained from suggestions (is_abstain) — they should still be able to rank.
+    const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
     const isImplicitEdit = hasVoted && !isAnyEditing && (
-      (canSubmitSuggestions && canSubmitRankings) || hasOnlySuggestions
+      (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet
     );
     if (isImplicitEdit) {
       setIsEditingVote(true);
