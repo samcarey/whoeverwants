@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
 import { debugLog } from "@/lib/debugLogger";
@@ -11,6 +11,7 @@ interface DuplicateButtonProps {
 
 export default function DuplicateButton({ poll }: DuplicateButtonProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleDuplicate = () => {
     const duplicateData = buildPollSnapshot(poll);
@@ -23,8 +24,8 @@ export default function DuplicateButton({ poll }: DuplicateButtonProps) {
     
     debugLog.logObject('Stored duplicate data', { storageKey, data: localStorage.getItem(storageKey) }, 'DuplicateButton');
     
-    // Navigate to create-poll with duplicate parameter
-    const navigateUrl = `/create-poll?duplicate=${poll.id}`;
+    // Open create modal with duplicate parameter
+    const navigateUrl = `${pathname}?create=1&duplicate=${poll.id}`;
     debugLog.info(`Navigating to: ${navigateUrl}`, 'DuplicateButton');
     router.push(navigateUrl);
   };

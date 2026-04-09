@@ -1,13 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import React, { useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
+
+const LazyCreatePollContent = React.lazy(() =>
+  import('@/app/create-poll/page').then(m => ({ default: m.CreatePollContent }))
+);
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -36,6 +40,7 @@ const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
 export default function Template({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isStandalone, setIsStandalone] = useState(false);
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
@@ -373,6 +378,7 @@ export default function Template({ children }: AppTemplateProps) {
 
   const isPollPage = pathname.startsWith('/p/');
   const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
+  const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
 
@@ -393,13 +399,17 @@ export default function Template({ children }: AppTemplateProps) {
   });
 
   const navigateCloseModal = useCallback(() => {
-    const navCount = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10);
-    if (navCount > 1) {
-      router.back();
-    } else {
-      router.push('/');
-    }
-  }, [router]);
+    // Remove ?create (and any create-poll params) from the URL, keeping the current page.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('create');
+    params.delete('followUpTo');
+    params.delete('fork');
+    params.delete('duplicate');
+    params.delete('voteFromSuggestion');
+    params.delete('mode');
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }, [router, pathname, searchParams]);
 
   const handleCloseCreateModal = useCallback(() => {
     if (dragState.current.isClosing) return;
@@ -412,7 +422,7 @@ export default function Template({ children }: AppTemplateProps) {
 
   // Drag-to-dismiss touch handling for the create poll modal sheet.
   useEffect(() => {
-    if (!isCreatePollPage || !isMounted) return;
+    if (!isCreateModalOpen || !isMounted) return;
     const sheet = modalSheetRef.current;
     if (!sheet) return;
 
@@ -550,12 +560,12 @@ export default function Template({ children }: AppTemplateProps) {
       sheet.removeEventListener('touchmove', onTouchMove);
       sheet.removeEventListener('touchend', onTouchEnd);
     };
-  }, [isCreatePollPage, isMounted, navigateCloseModal]);
+  }, [isCreateModalOpen, isMounted, navigateCloseModal]);
 
   // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
-    if (!isCreatePollPage) return;
+    if (!isCreateModalOpen) return;
     const scrollY = window.scrollY;
     const html = document.documentElement;
     html.style.overscrollBehavior = 'none';
@@ -573,7 +583,7 @@ export default function Template({ children }: AppTemplateProps) {
       document.body.style.overflow = '';
       window.scrollTo(0, scrollY);
     };
-  }, [isCreatePollPage]);
+  }, [isCreateModalOpen]);
 
   return (
     <>
@@ -701,16 +711,15 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          {!isCreatePollPage && (
-            <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
-              {children}
-            </div>
-          )}
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+            {children}
+          </div>
         </div>
       </div>
 
-      {/* Create poll modal - iOS-style sheet rendered via portal */}
-      {isCreatePollPage && isMounted && createPortal(
+      {/* Create poll modal - iOS-style sheet rendered via portal.
+           Triggered by ?create query param so the underlying page stays mounted. */}
+      {isCreateModalOpen && isMounted && createPortal(
         <div className="fixed inset-0 z-[60]">
           {/* Backdrop */}
           <div
@@ -748,7 +757,16 @@ export default function Template({ children }: AppTemplateProps) {
             {/* Scrollable content */}
             <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
-                {children}
+                <Suspense fallback={
+                  <div className="flex justify-center items-center py-20">
+                    <svg className="animate-spin h-8 w-8 text-gray-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                }>
+                  <LazyCreatePollContent />
+                </Suspense>
               </div>
             </div>
           </div>
@@ -792,13 +810,17 @@ export default function Template({ children }: AppTemplateProps) {
           </button>
 
           {/* Create poll button */}
-          <Link
-            href="/create-poll"
-            className="flex flex-col items-center gap-0.5 min-w-[64px]"
+          <button
+            onClick={() => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.set('create', '1');
+              router.push(`${pathname}?${params.toString()}`);
+            }}
+            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
             aria-label="Create new poll"
           >
             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-              isCreatePollPage
+              isCreateModalOpen
                 ? 'bg-blue-600 dark:bg-blue-500'
                 : 'bg-blue-500 dark:bg-blue-600'
             } shadow-md`}>
@@ -806,7 +828,7 @@ export default function Template({ children }: AppTemplateProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </div>
-          </Link>
+          </button>
 
           {/* Profile button */}
           <button

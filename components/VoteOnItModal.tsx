@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import { apiCreatePoll } from "@/lib/api";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -27,6 +27,7 @@ const DEADLINE_OPTIONS = [
 
 export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, onClose }: VoteOnItModalProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, 
       followUpTo: pollId,
     };
     localStorage.setItem(`vote-from-suggestion-${pollId}`, JSON.stringify(voteData));
-    router.push(`/create-poll?voteFromSuggestion=${pollId}`);
+    router.push(`${pathname}?create=1&voteFromSuggestion=${pollId}`);
     onClose();
   };
 
