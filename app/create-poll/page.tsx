@@ -384,9 +384,7 @@ function CreatePollContent() {
     };
   };
 
-  // Removed: poll type preference now comes from URL query param
-
-  // Load form state from localStorage (excluding poll type which is loaded separately)
+  // Load form state from localStorage
   const loadFormState = () => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('pollFormState');
@@ -645,7 +643,6 @@ function CreatePollContent() {
       }
     }
   }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
-
 
   // Load fork data if this is a fork
   useEffect(() => {

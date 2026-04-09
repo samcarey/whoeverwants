@@ -129,7 +129,6 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, []);
 
-
   // Handle scroll direction detection for bottom bar.
   // Uses touch events as primary mechanism (reliable on iOS PWA + browser),
   // with scroll event listener as fallback for desktop/mouse-wheel.
