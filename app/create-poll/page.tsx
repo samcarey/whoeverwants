@@ -1307,6 +1307,56 @@ export function CreatePollContent() {
     }
   };
 
+  const titleField = (
+    <div>
+      {isAutoTitle ? (
+        <button
+          type="button"
+          onClick={() => {
+            setIsAutoTitle(false);
+            setTitle('');
+            setTimeout(() => titleInputRef.current?.focus(), 0);
+          }}
+          className="block text-sm font-medium text-left"
+        >
+          Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
+        </button>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="title" className="text-sm font-medium">
+              Title
+            </label>
+            {category !== 'yes_no' && (
+              <button
+                type="button"
+                onClick={() => setIsAutoTitle(true)}
+                className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Generate
+              </button>
+            )}
+          </div>
+          <input
+            type="text"
+            id="title"
+            ref={titleInputRef}
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setIsAutoTitle(false);
+            }}
+            disabled={isLoading}
+            maxLength={100}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder="Enter your title..."
+            required
+          />
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="poll-content">
       {error && (
@@ -1352,6 +1402,7 @@ export function CreatePollContent() {
                   disabled={isLoading}
                 />
               </div>
+              {category !== 'yes_no' && (
               <div>
                 <label htmlFor="forField" className="block text-sm font-medium mb-1">
                   For <span className="text-gray-400 font-normal">(optional)</span>
@@ -1366,6 +1417,7 @@ export function CreatePollContent() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
+              )}
             </>
           )}
 
@@ -1449,8 +1501,11 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Preference/suggestion polls: voting cutoff, min responses, suggestion cutoff */}
-          {isPreferencePoll && (
+          {/* Title for yes/no polls - rendered above voting cutoff */}
+          {category === 'yes_no' && titleField}
+
+          {/* Voting cutoff (yes/no and preference polls), min responses, suggestion cutoff */}
+          {pollType === 'poll' && (
             <>
               <div>
                 <label className="block text-sm font-medium cursor-pointer">
@@ -1519,6 +1574,7 @@ export function CreatePollContent() {
                   </div>
                 )}
               </div>
+              {isPreferencePoll && (
               <CompactMinResponsesField
                 value={minResponses}
                 setValue={(val) => {
@@ -1529,6 +1585,7 @@ export function CreatePollContent() {
                 setShowPreliminary={setShowPreliminaryResults}
                 disabled={isLoading}
               />
+              )}
               {/* Suggestions Cutoff - shown when no options provided (suggestion mode) */}
               {isSuggestionMode && (
                 <div>
@@ -1656,8 +1713,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Response Deadline (for yes_no and participation polls) */}
-          {!isPreferencePoll && (
+          {/* Response Deadline (for participation polls) */}
+          {pollType === 'participation' && (
             <>
               <div>
                 <label className="block text-sm font-medium mb-1">Close After</label>
@@ -1719,56 +1776,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title field - hidden for preference polls (always auto-generated) */}
-          {!isPreferencePoll && (
-          <div>
-            {isAutoTitle ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAutoTitle(false);
-                  setTitle('');
-                  setTimeout(() => titleInputRef.current?.focus(), 0);
-                }}
-                className="block text-sm font-medium text-left"
-              >
-                Title: <span className="text-blue-600 dark:text-blue-400 font-normal">{title || <span className="italic">auto</span>}</span>
-              </button>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-1">
-                  <label htmlFor="title" className="text-sm font-medium">
-                    Title
-                  </label>
-                  {category !== 'yes_no' && (
-                    <button
-                      type="button"
-                      onClick={() => setIsAutoTitle(true)}
-                      className="text-xs px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      Generate
-                    </button>
-                  )}
-                </div>
-                <input
-                  type="text"
-                  id="title"
-                  ref={titleInputRef}
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    setIsAutoTitle(false);
-                  }}
-                  disabled={isLoading}
-                  maxLength={100}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder="Enter your title..."
-                  required
-                />
-              </>
-            )}
-          </div>
-          )}
+          {/* Title for participation polls - rendered below close after */}
+          {!isPreferencePoll && category !== 'yes_no' && titleField}
 
           {/* Optional details field */}
           <div>
