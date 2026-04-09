@@ -38,6 +38,14 @@ const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
 const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
 
 export default function Template({ children }: AppTemplateProps) {
+  return (
+    <Suspense fallback={<div className="h-screen-safe flex flex-col" />}>
+      <TemplateInner>{children}</TemplateInner>
+    </Suspense>
+  );
+}
+
+function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();

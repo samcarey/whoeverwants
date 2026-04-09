@@ -1898,23 +1898,12 @@ export function CreatePollContent() {
 }
 
 // Redirect /create-poll to /?create so the modal opens over the home page.
-function CreatePollRedirectInner() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
+export default function CreatePollRedirect() {
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(window.location.search);
     params.set('create', '1');
-    router.replace(`/?${params.toString()}`);
-  }, [router, searchParams]);
+    window.location.replace(`/?${params.toString()}`);
+  }, []);
 
   return null;
-}
-
-export default function CreatePollRedirect() {
-  return (
-    <Suspense fallback={null}>
-      <CreatePollRedirectInner />
-    </Suspense>
-  );
 }
