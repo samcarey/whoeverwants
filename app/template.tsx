@@ -377,7 +377,6 @@ export default function Template({ children }: AppTemplateProps) {
   }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
-  const isCreatePollPage = pathname === '/create-poll' || pathname === '/create-poll/';
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
@@ -397,27 +396,28 @@ export default function Template({ children }: AppTemplateProps) {
     lastMoveTime: 0,
     lastMoveY: 0,
   });
+  const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const navigateCloseModal = useCallback(() => {
-    // Remove ?create (and any create-poll params) from the URL, keeping the current page.
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('create');
-    params.delete('followUpTo');
-    params.delete('fork');
-    params.delete('duplicate');
-    params.delete('voteFromSuggestion');
-    params.delete('mode');
-    const qs = params.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  // Stable ref for close navigation — avoids searchParams in deps, preventing listener churn.
+  const navigateCloseModalRef = useRef(() => {});
+  useEffect(() => {
+    navigateCloseModalRef.current = () => {
+      const params = new URLSearchParams(searchParams.toString());
+      ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode']
+        .forEach(p => params.delete(p));
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    };
   }, [router, pathname, searchParams]);
 
   const handleCloseCreateModal = useCallback(() => {
     if (dragState.current.isClosing) return;
+    dragState.current.isClosing = true;
     setModalClosing(true);
-    setTimeout(() => {
-      navigateCloseModal();
+    closeTimerRef.current = setTimeout(() => {
+      navigateCloseModalRef.current();
     }, 300);
-  }, [navigateCloseModal]);
+  }, []);
 
   // Drag-to-dismiss touch handling for the create poll modal sheet.
   useEffect(() => {
@@ -518,8 +518,8 @@ export default function Template({ children }: AppTemplateProps) {
           backdropRef.current.offsetHeight;
           backdropRef.current.style.opacity = '0';
         }
-        setTimeout(() => {
-          navigateCloseModal();
+        closeTimerRef.current = setTimeout(() => {
+          navigateCloseModalRef.current();
         }, 300);
       } else {
         // Under halfway — spring back
@@ -550,7 +550,7 @@ export default function Template({ children }: AppTemplateProps) {
       sheet.removeEventListener('touchmove', onTouchMove);
       sheet.removeEventListener('touchend', onTouchEnd);
     };
-  }, [isCreateModalOpen, isMounted, navigateCloseModal]);
+  }, [isCreateModalOpen, isMounted]);
 
   // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
@@ -568,6 +568,8 @@ export default function Template({ children }: AppTemplateProps) {
     document.body.style.right = '0';
     document.body.style.overflow = 'hidden';
     return () => {
+      // Cancel any pending close animation timeout to prevent stale navigation.
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
       html.style.overscrollBehavior = '';
       document.body.style.position = '';
       document.body.style.top = '';
@@ -616,7 +618,7 @@ export default function Template({ children }: AppTemplateProps) {
       )}
 
       {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
-      {!isPollPage && !isCreatePollPage && !isProfilePage && pathname !== '/' && (
+      {!isPollPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -704,7 +706,7 @@ export default function Template({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isCreatePollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
             {children}
           </div>
         </div>
