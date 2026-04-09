@@ -524,6 +524,13 @@ export default function Template({ children }: AppTemplateProps) {
     };
   }, [isCreatePollPage, isMounted, navigateCloseModal]);
 
+  // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
+  useEffect(() => {
+    if (!isCreatePollPage) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [isCreatePollPage]);
+
   return (
     <>
       {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
