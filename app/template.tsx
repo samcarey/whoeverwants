@@ -446,13 +446,13 @@ export default function Template({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto safari-scroll-container"
+        className="flex-1 overflow-auto safari-scroll-container mb-14"
         style={{
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className="pwa-safe-top relative min-h-full" style={{ paddingBottom: '4rem' }}>
+        <div className="pwa-safe-top relative">
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode. */}
           <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>
