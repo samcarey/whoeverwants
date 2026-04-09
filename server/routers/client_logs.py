@@ -1,7 +1,6 @@
 """Client-side log collection endpoint (dev/debug only)."""
 
 import logging
-import os
 import time
 from collections import deque
 from typing import Optional
@@ -62,15 +61,13 @@ async def get_client_logs(
     - since: unix timestamp, only return logs received after this time
     - search: substring search in message text
     """
-    results = list(_LOG_BUFFER)
-
-    if level:
-        results = [r for r in results if r["level"] == level]
-    if since:
-        results = [r for r in results if r["receivedAt"] >= since]
-    if search:
-        search_lower = search.lower()
-        results = [r for r in results if search_lower in r["message"].lower()]
+    search_lower = search.lower() if search else None
+    results = [
+        r for r in _LOG_BUFFER
+        if (not level or r["level"] == level)
+        and (not since or r["receivedAt"] >= since)
+        and (not search_lower or search_lower in r["message"].lower())
+    ]
 
     # Return most recent first, capped at limit
     results = results[-limit:]

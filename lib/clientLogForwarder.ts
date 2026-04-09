@@ -47,7 +47,7 @@ function serialize(...args: unknown[]): string {
     if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ''}`;
     if (typeof arg === 'object') {
       try {
-        return JSON.stringify(arg, null, 2);
+        return JSON.stringify(arg);
       } catch {
         return String(arg);
       }
