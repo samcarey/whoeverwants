@@ -525,10 +525,26 @@ export default function Template({ children }: AppTemplateProps) {
   }, [isCreatePollPage, isMounted, navigateCloseModal]);
 
   // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
+  // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
     if (!isCreatePollPage) return;
+    const scrollY = window.scrollY;
+    const html = document.documentElement;
+    html.style.overscrollBehavior = 'none';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      html.style.overscrollBehavior = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
   }, [isCreatePollPage]);
 
   return (
