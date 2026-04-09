@@ -43,9 +43,11 @@ function getOptionIconUrls(poll: Poll): string[] {
 
 /** Inline option icons rendered after the poll title text.
  *  Shows icons from options_metadata that have an imageUrl (skips placeholders).
- *  Parent's line-clamp clips overflow naturally. */
+ *  Parent's line-clamp clips overflow naturally.
+ *  Ellipsis only appears once at least one icon loads successfully. */
 function OptionIcons({ poll }: { poll: Poll }) {
   const icons = getOptionIconUrls(poll);
+  const ellipsisRef = useRef<HTMLSpanElement>(null);
   if (icons.length === 0) return null;
   return (
     <>
@@ -57,10 +59,11 @@ function OptionIcons({ poll }: { poll: Poll }) {
           alt=""
           className="inline-block h-[1em] w-[1em] object-cover rounded-sm align-middle ml-0.5"
           loading="lazy"
+          onLoad={() => { if (ellipsisRef.current) ellipsisRef.current.style.display = ''; }}
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       ))}
-      <span className="text-gray-400 dark:text-gray-500 align-middle text-[0.65em] ml-px select-none">…</span>
+      <span ref={ellipsisRef} className="text-gray-400 dark:text-gray-500 align-middle text-[0.65em] ml-px select-none" style={{ display: 'none' }}>…</span>
     </>
   );
 }
