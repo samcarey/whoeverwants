@@ -485,7 +485,7 @@ export default function Template({ children }: AppTemplateProps) {
       if (scrollEl) scrollEl.style.overflowY = '';
 
       const modalHeight = modalSheetRef.current?.offsetHeight || window.innerHeight;
-      const threshold = modalHeight * 0.5;
+      const threshold = modalHeight * 0.33;
 
       // Compute downward velocity (px/ms) from the last touchmove to touchend.
       const endY = e.changedTouches[0].clientY;
