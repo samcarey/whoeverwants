@@ -687,8 +687,8 @@ export default function Template({ children }: AppTemplateProps) {
                 className="w-[48px] h-[48px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
                 aria-label="Close"
               >
-                <svg className="w-[27px] h-[27px] text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
-                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={3} d="M6 6l12 12M18 6L6 18" />
+                <svg className="w-[40px] h-[40px] text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
+                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={1.5} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
               <h2 className="text-[17px] font-semibold">Create Poll</h2>
