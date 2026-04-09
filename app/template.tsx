@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
+import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 
 interface AppTemplateProps {
   children: React.ReactNode;
@@ -67,9 +68,10 @@ export default function Template({ children }: AppTemplateProps) {
     setIsIOSPWA(isIOSSPWAStandalone());
   }, []);
 
-  // Set mounted state for portal rendering
+  // Set mounted state for portal rendering + install client log forwarder on dev sites
   useEffect(() => {
     setIsMounted(true);
+    installClientLogForwarder();
   }, []);
   
   // Determine initial state based on pathname to avoid layout shift
