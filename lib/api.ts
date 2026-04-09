@@ -41,6 +41,7 @@ export interface ApiVote {
   ranked_choices: string[] | null;
   suggestions: string[] | null;
   is_abstain: boolean;
+  is_ranking_abstain: boolean;
   voter_name: string | null;
   min_participants: number | null;
   max_participants: number | null;
@@ -253,6 +254,7 @@ export async function apiSubmitVote(pollId: string, params: {
   ranked_choices?: string[] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
+  is_ranking_abstain?: boolean;
   voter_name?: string | null;
   min_participants?: number | null;
   max_participants?: number | null;
@@ -275,6 +277,7 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
   ranked_choices?: string[] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
+  is_ranking_abstain?: boolean;
   voter_name?: string | null;
   min_participants?: number | null;
   max_participants?: number | null;

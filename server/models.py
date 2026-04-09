@@ -73,6 +73,7 @@ class SubmitVoteRequest(BaseModel):
     ranked_choices: list[str] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
+    is_ranking_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
@@ -87,6 +88,7 @@ class EditVoteRequest(BaseModel):
     ranked_choices: list[str] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
+    is_ranking_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None
@@ -185,6 +187,7 @@ class VoteResponse(BaseModel):
     ranked_choices: list[str] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
+    is_ranking_abstain: bool = False
     voter_name: str | None = None
     min_participants: int | None = None
     max_participants: int | None = None

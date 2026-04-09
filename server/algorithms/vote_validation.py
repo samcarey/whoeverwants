@@ -25,6 +25,7 @@ def validate_vote(
     ranked_choices: list[str] | None = None,
     suggestions: list[str] | None = None,
     is_abstain: bool = False,
+    is_ranking_abstain: bool = False,
     has_suggestion_phase: bool = False,
 ) -> None:
     """Validate vote structure for a given poll type.
@@ -48,7 +49,7 @@ def validate_vote(
     elif poll_type == "ranked_choice":
         _validate_ranked_choice_vote(
             yes_no_choice, ranked_choices, suggestions, is_abstain,
-            has_suggestion_phase,
+            is_ranking_abstain, has_suggestion_phase,
         )
     else:
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
@@ -82,6 +83,7 @@ def _validate_ranked_choice_vote(
     ranked_choices: list[str] | None,
     suggestions: list[str] | None,
     is_abstain: bool,
+    is_ranking_abstain: bool = False,
     has_suggestion_phase: bool = False,
 ) -> None:
     if yes_no_choice:
@@ -91,7 +93,24 @@ def _validate_ranked_choice_vote(
     if suggestions and not has_suggestion_phase:
         raise VoteValidationError("suggestions not allowed for ranked choice polls without a suggestion phase")
 
+    # is_ranking_abstain only makes sense for suggestion-phase polls
+    if is_ranking_abstain and not has_suggestion_phase:
+        raise VoteValidationError("is_ranking_abstain not allowed for ranked choice polls without a suggestion phase")
+
     if is_abstain:
+        return
+
+    # is_ranking_abstain with suggestions is valid (abstained from ranking only)
+    if is_ranking_abstain:
+        has_suggestions = suggestions and len(suggestions) > 0
+        if not has_suggestions:
+            raise VoteValidationError(
+                "is_ranking_abstain requires suggestions (use is_abstain for full abstain)"
+            )
+        if ranked_choices:
+            raise VoteValidationError(
+                "ranked_choices not allowed when is_ranking_abstain is true"
+            )
         return
 
     # Must have at least one of ranked_choices or suggestions

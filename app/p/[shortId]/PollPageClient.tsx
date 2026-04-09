@@ -110,7 +110,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   );
   // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
-  const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain;
+  const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -579,9 +579,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             }
 
             // Set UI state based on vote data from database columns
-            // During suggestion phase with pre-ranking, don't restore abstain from server —
-            // the abstain only applied to suggestions, user should still be able to rank
-            const shouldRestoreAbstain = voteData.is_abstain && !(hasSuggestionPhase && canSubmitRankings);
+            // Restore abstain: full abstain (is_abstain) or ranking-specific abstain (is_ranking_abstain)
+            const shouldRestoreAbstain = voteData.is_abstain || voteData.is_ranking_abstain;
             setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
@@ -936,7 +935,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // During suggestion phase with pre-ranking, submitting rankings after the initial
     // suggestion vote is an implicit edit (updating the existing vote with rankings).
     // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
-    const hasOnlySuggestions = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_abstain;
+    const hasOnlySuggestions = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_abstain && !userVoteData?.is_ranking_abstain;
     const isImplicitEdit = hasVoted && !isAnyEditing && (
       (canSubmitSuggestions && canSubmitRankings) || hasOnlySuggestions
     );
@@ -1115,13 +1114,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // During suggestion phase with no rankings and no suggestions: abstain
         const hasRankings = filteredRankedChoices.length > 0;
         const hasSuggestions = filteredSuggestions && filteredSuggestions.length > 0;
-        // If user has suggestions (from this or previous submission) but abstains from ranking,
-        // preserve suggestions — only full abstain when neither exists
         const previousSuggestions = userVoteData?.suggestions;
         const hasPreviousSuggestions = previousSuggestions && previousSuggestions.length > 0;
+        // Full abstain: no suggestions and no rankings at all
         const finalAbstain = isAbstaining && !hasSuggestions && !hasPreviousSuggestions
           ? true  // Full abstain: no suggestions at all
           : !hasRankings && !hasSuggestions && !hasPreviousSuggestions;
+        // Ranking-specific abstain: user explicitly abstained from ranking but has suggestions
+        const rankingAbstain = isAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions) && !finalAbstain;
 
         voteData = {
           poll_id: poll.id,
@@ -1129,6 +1129,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ranked_choices: isAbstaining || !hasRankings ? null : filteredRankedChoices,
           suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
           is_abstain: finalAbstain,
+          is_ranking_abstain: rankingAbstain,
           voter_name: voterName.trim() || null,
           options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
         };
@@ -1146,7 +1147,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
-          : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null };
+          : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
         
         
         
@@ -1797,7 +1798,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   ) : pollResults ? (
                     <>
                       {/* Results are now shown at the top, only show abstained bubble and button here */}
-                      {userVoteData?.is_abstain && (
+                      {(userVoteData?.is_abstain || userVoteData?.is_ranking_abstain) && (
                         <div className="mt-4 flex justify-center">
                           <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
                             <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
@@ -1821,7 +1822,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="flex items-center gap-2 min-w-0">
                         <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
                         {pollOptions.length === 2 && !isLoadingVoteData && (
-                          (userVoteData?.is_abstain || isAbstaining) ? (
+                          (userVoteData?.is_abstain || userVoteData?.is_ranking_abstain || isAbstaining) ? (
                             <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
                               Abstained
                             </span>
@@ -1852,7 +1853,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     ) : pollOptions.length !== 2 ? (
                       /* 2-option choice is shown inline in the header */
                       <div className="space-y-2">
-                        {userVoteData?.is_abstain || isAbstaining ? (
+                        {userVoteData?.is_abstain || userVoteData?.is_ranking_abstain || isAbstaining ? (
                           <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
                             <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
                             </span>
