@@ -746,19 +746,21 @@ function TemplateInner({ children }: AppTemplateProps) {
               <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
             </div>
             {/* Header */}
-            <div className="flex-shrink-0 flex items-center justify-between px-4 pb-2">
+            <div className="flex-shrink-0 relative flex items-center justify-between px-4 pb-2">
               <button
                 onClick={handleCloseCreateModal}
-                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer"
+                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
                 aria-label="Close"
               >
                 <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
                   <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
-              <h2 className="text-[17px] font-semibold">Create Poll</h2>
-              <div className="w-[43px]" />
+              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Poll</h2>
+              <div id="create-poll-submit-portal" className="flex-shrink-0 z-10" />
             </div>
+            {/* Generated title line */}
+            <div id="create-poll-title-portal" className="flex-shrink-0 px-4" />
             {/* Scrollable content */}
             <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
