@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
+import AnimatedTitle from "@/components/AnimatedTitle";
 import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
@@ -1378,11 +1379,9 @@ export function CreatePollContent() {
         submitPortal
       )}
 
-      {/* Portal: Generated title below header */}
-      {titlePortal && title && createPortal(
-        <p className="text-blue-600 dark:text-blue-400 font-bold text-center text-lg truncate pb-1">
-          {title}
-        </p>,
+      {/* Portal: Animated title below header */}
+      {titlePortal && createPortal(
+        <AnimatedTitle title={title} />,
         titlePortal
       )}
 
