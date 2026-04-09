@@ -1882,7 +1882,7 @@ export function CreatePollContent() {
         )}
 
         {!followUpTo && !forkOf && !duplicateOf && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-4">
             Private until you share the link
           </p>
         )}

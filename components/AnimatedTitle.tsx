@@ -37,6 +37,40 @@ function diffStrings(oldStr: string, newStr: string) {
   };
 }
 
+/**
+ * Check if a character at a given step should be animated instantly (0 delay).
+ * Spaces are instant. When typing " for X", the " for " prefix is instant
+ * so the first visible character appears right away.
+ */
+function shouldSkipDelay(
+  char: string,
+  phase: "delete" | "type",
+  middle: string,
+  charIndex: number,
+): boolean {
+  // Spaces are always instant
+  if (char === " ") return true;
+
+  // When typing, if the new middle starts with " for ", skip those chars
+  // so the user-typed character (after " for ") appears instantly
+  if (phase === "type" && middle.startsWith(" for ")) {
+    if (charIndex < " for ".length) return true;
+  }
+
+  // When deleting, if the old middle ends with " for " + content,
+  // skip the " for " portion
+  if (phase === "delete") {
+    const forIdx = middle.indexOf(" for ");
+    if (forIdx >= 0) {
+      // charIndex counts from the right during deletion
+      const posFromLeft = middle.length - 1 - charIndex;
+      if (posFromLeft >= forIdx && posFromLeft < forIdx + " for ".length) return true;
+    }
+  }
+
+  return false;
+}
+
 interface AnimatedTitleProps {
   title: string;
 }
@@ -44,7 +78,6 @@ interface AnimatedTitleProps {
 export default function AnimatedTitle({ title }: AnimatedTitleProps) {
   const [displayedText, setDisplayedText] = useState(title);
   const prevTitleRef = useRef(title);
-  const animatingRef = useRef(false);
   const cancelRef = useRef<() => void>(() => {});
   const containerRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
@@ -106,52 +139,76 @@ export default function AnimatedTitle({ title }: AnimatedTitleProps) {
     // If transitioning to/from empty, just set immediately
     if (!oldTitle || !title) {
       setDisplayedText(title);
-      animatingRef.current = false;
       return;
     }
 
     const { prefix, oldMiddle, newMiddle, suffix } = diffStrings(oldTitle, title);
     const deleteCount = oldMiddle.length;
     const typeCount = newMiddle.length;
-    const totalSteps = deleteCount + typeCount;
 
-    if (totalSteps === 0) {
+    // Build step list with delay info. Each step is { frame, instant }.
+    // Instant steps (spaces, " for " prefix) get 0 delay.
+    const steps: { phase: "delete" | "type"; index: number; instant: boolean }[] = [];
+    for (let i = 0; i < deleteCount; i++) {
+      const charIndex = i; // counts from right during deletion
+      const char = oldMiddle[oldMiddle.length - 1 - charIndex];
+      steps.push({
+        phase: "delete",
+        index: i,
+        instant: shouldSkipDelay(char, "delete", oldMiddle, charIndex),
+      });
+    }
+    for (let i = 0; i < typeCount; i++) {
+      const char = newMiddle[i];
+      steps.push({
+        phase: "type",
+        index: i,
+        instant: shouldSkipDelay(char, "type", newMiddle, i),
+      });
+    }
+
+    const animatedSteps = steps.filter((s) => !s.instant).length;
+    if (animatedSteps === 0) {
       setDisplayedText(title);
       return;
     }
 
-    const charDelay = Math.max(15, TOTAL_ANIMATION_MS / totalSteps);
-    animatingRef.current = true;
-    let step = 0;
+    const charDelay = Math.max(15, TOTAL_ANIMATION_MS / animatedSteps);
+    let stepIdx = 0;
     let cancelled = false;
 
     cancelRef.current = () => {
       cancelled = true;
     };
 
+    const applyStep = (s: (typeof steps)[number]) => {
+      if (s.phase === "delete") {
+        const remaining = oldMiddle.slice(0, oldMiddle.length - s.index - 1);
+        setDisplayedText(prefix + remaining + suffix);
+      } else {
+        const typed = newMiddle.slice(0, s.index + 1);
+        setDisplayedText(prefix + typed + suffix);
+      }
+    };
+
     const tick = () => {
       if (cancelled) {
-        // Jump to final state
         setDisplayedText(title);
-        animatingRef.current = false;
         return;
       }
 
-      if (step < deleteCount) {
-        // Deleting phase: remove chars from end of oldMiddle
-        const remaining = oldMiddle.slice(0, oldMiddle.length - step - 1);
-        setDisplayedText(prefix + remaining + suffix);
-      } else {
-        // Typing phase: add chars from start of newMiddle
-        const typed = newMiddle.slice(0, step - deleteCount + 1);
-        setDisplayedText(prefix + typed + suffix);
+      // Apply current step and all consecutive instant steps
+      applyStep(steps[stepIdx]);
+      stepIdx++;
+
+      // Fast-forward through any instant steps
+      while (stepIdx < steps.length && steps[stepIdx].instant) {
+        applyStep(steps[stepIdx]);
+        stepIdx++;
       }
 
-      step++;
-      if (step < totalSteps) {
+      if (stepIdx < steps.length) {
         setTimeout(tick, charDelay);
-      } else {
-        animatingRef.current = false;
       }
     };
 
