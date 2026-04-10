@@ -122,6 +122,34 @@ def generate_time_poll_slots(poll: dict, votes: list[dict]) -> list[str]:
     ]
 
 
+def _keep_longest_per_start_time(slots: list[str]) -> list[str]:
+    """For each (date, start_time), keep only the slot with the longest duration.
+
+    When the poll allows a duration range (e.g. 30 min – 2 h), multiple slots
+    share the same start time but differ in end time.  Voters only need to rank
+    one representative per start time: the longest available option.  Shorter
+    variants are redundant — if a voter prefers a shorter meeting they can rank
+    that start time lower relative to other start times.
+
+    The original sort order (longest duration first, then earliest start) is
+    preserved in the returned list.
+    """
+    best: dict[tuple[str, int], tuple[str, int]] = {}  # (date, start_min) → (slot_str, duration)
+
+    for slot_str in slots:
+        date, start_min, end_min = parse_slot_key(slot_str)
+        dur = end_min - start_min
+        if dur <= 0:
+            dur += 24 * 60  # cross-midnight
+
+        key = (date, start_min)
+        if key not in best or dur > best[key][1]:
+            best[key] = (slot_str, dur)
+
+    best_set = {slot_str for slot_str, _ in best.values()}
+    return [s for s in slots if s in best_set]
+
+
 def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str, int]:
     """Count how many availability voters cover each time slot.
 
@@ -189,6 +217,10 @@ def calculate_time_poll_results(poll: dict, votes: list[dict]) -> dict:
 
     # Slots ordered as in poll.options (largest duration first, then earliest)
     included_slots = [s for s in options if availability_counts.get(s, 0) >= min_acceptable]
+
+    # For each start time, keep only the longest-duration slot so voters aren't
+    # presented with near-duplicate options (e.g. 09:00-10:00 vs 09:00-10:30).
+    included_slots = _keep_longest_per_start_time(included_slots)
 
     winner = None
     rc_rounds: list[dict] = []
