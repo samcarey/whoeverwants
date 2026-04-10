@@ -2,9 +2,11 @@ import type { NextConfig } from "next";
 import { branchToSlug } from "./lib/slug";
 
 // Determine the backend API origin for rewrites.
+// On Vercel (production frontend), use external API URLs.
+// On dev server standalone builds, PYTHON_API_URL is set at build time.
 function getApiRewriteDestination(): string {
   const branch = process.env.VERCEL_GIT_COMMIT_REF || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF;
-  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+  if (process.env.VERCEL) {
     if (branch && branch !== 'main' && branch !== 'master') {
       return `https://${branchToSlug(branch)}.api.whoeverwants.com`;
     }
