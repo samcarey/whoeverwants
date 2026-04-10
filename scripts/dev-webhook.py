@@ -168,26 +168,23 @@ def deploy_production():
             capture_output=True,
             text=True,
         )
-        commits = result.stdout.strip().split("\n")
-        if len(commits) == 2 and commits[0] == commits[1]:
+        if result.returncode != 0:
+            log.error(f"Git rev-parse failed: {result.stderr}")
+            return
+        shas = result.stdout.strip().split("\n")
+        if len(shas) == 2 and shas[0] == shas[1]:
             log.info("No changes, skipping rebuild")
             return
 
         log.info("--- Resetting to origin/main ---")
         result = subprocess.run(
-            ["git", "checkout", "main"],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-        )
-        result = subprocess.run(
-            ["git", "reset", "--hard", "origin/main"],
+            ["git", "checkout", "-B", "main", "origin/main"],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
-            log.error(f"Git reset failed: {result.stderr}")
+            log.error(f"Git checkout failed: {result.stderr}")
             return
         log.info(f"Reset to: {result.stdout.strip()}")
 
@@ -222,27 +219,15 @@ def deploy_production():
         else:
             log.info(f"Migrations: {result.stdout.strip()[-200:]}")
 
-        # 4. Restart webhook service if the webhook script itself changed
-        # (The service reads the script at startup, so changes require a restart)
-        log.info("--- Restarting webhook service to pick up script changes ---")
+        # 4. Restart webhook service to pick up any script changes.
+        # This kills the current process, so log completion before restarting.
+        log.info("=== Production deploy complete — restarting webhook service ===")
         subprocess.run(
             ["systemctl", "restart", "dev-webhook"],
             capture_output=True,
             text=True,
             timeout=15,
         )
-        # Note: after restart, this thread is killed. Health check happens in new process.
-
-        # 5. Verify health
-        import urllib.request
-        try:
-            resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
-            if resp.status == 200:
-                log.info("=== Production deploy complete — health check OK ===")
-            else:
-                log.error(f"Health check returned {resp.status}")
-        except Exception as e:
-            log.error(f"Health check failed: {e}")
 
     except subprocess.TimeoutExpired as e:
         log.error(f"Production deploy timed out: {e}")
