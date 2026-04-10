@@ -126,11 +126,15 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
     """Finalize time slots for a time poll after its availability deadline passes.
 
     Generates all candidate time slots from the poll's day_time_windows + duration_window,
-    filtered to slots where at least one voter has submitted availability.
-    Stores the result in poll.options.
+    then applies the availability threshold filter and longest-per-start-time dedup so
+    poll.options contains only the slots voters will actually rank.
     """
     import json
-    from algorithms.time_poll import generate_time_poll_slots
+    from algorithms.time_poll import (
+        generate_time_poll_slots,
+        compute_slot_availability,
+        _keep_longest_per_start_time,
+    )
 
     poll = conn.execute(
         "SELECT * FROM polls WHERE id = %(poll_id)s",
@@ -143,8 +147,19 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
         "SELECT voter_day_time_windows, voter_duration FROM votes WHERE poll_id = %(poll_id)s",
         {"poll_id": poll_id},
     ).fetchall()
+    votes_list = [dict(v) for v in votes]
 
-    slots = generate_time_poll_slots(dict(poll), [dict(v) for v in votes])
+    all_slots = generate_time_poll_slots(dict(poll), votes_list)
+
+    # Apply availability threshold filter
+    threshold_pct = (poll.get("availability_threshold") or 5) / 100.0
+    availability_counts = compute_slot_availability(all_slots, votes_list)
+    max_avail = max(availability_counts.values(), default=0)
+    min_acceptable = max_avail * (1 - threshold_pct)
+    slots = [s for s in all_slots if availability_counts.get(s, 0) >= min_acceptable]
+
+    # Keep only the longest-duration slot per start time
+    slots = _keep_longest_per_start_time(slots)
 
     if slots:
         conn.execute(
