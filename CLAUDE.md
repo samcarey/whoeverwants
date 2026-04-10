@@ -985,6 +985,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Body scroll lock on iOS** requires `position: fixed` on `<body>` — `overflow: hidden` alone doesn't prevent native pull-to-refresh in Safari/WebKit. Scroll position is saved/restored on mount/unmount.
 - **`navigateCloseModal` uses a ref** (`navigateCloseModalRef`) instead of a `useCallback` with `searchParams` in its deps. This prevents touch listeners from being re-attached on every query param change.
 - **ConfirmationModal z-index must be above z-60** (the create-poll modal). Currently at `z-[70]`. Any new modal that needs to appear over the create form must exceed z-60.
+- **Scrollable children inside the modal must stop touch propagation.** The drag-to-dismiss handler on the modal sheet intercepts all touch events. Any scrollable child (like AutocompleteInput's dropdown `<ul>`) must call `e.stopPropagation()` on native `touchstart`/`touchmove` events so they don't bubble to the modal's drag handler. Use native `addEventListener` (not React's `onTouchStart`) to ensure listeners fire before the modal's bubble-phase handler. The template also has a general `startedInScrollableChild` check (walks DOM for `overflow-y: auto/scroll` ancestors) as a fallback, but explicit `stopPropagation` is more reliable.
 
 ### Adding New Poll Categories
 

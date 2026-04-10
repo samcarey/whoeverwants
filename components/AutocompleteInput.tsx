@@ -40,6 +40,7 @@ export default function AutocompleteInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const localInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLUListElement>(null);
 
   const lastSuccessfulQueryRef = useRef("");
   const lastResultsRef = useRef<SearchResult[]>([]);
@@ -137,6 +138,20 @@ export default function AutocompleteInput({
     };
   }, []);
 
+  // Stop touch events on the dropdown from bubbling to the modal's
+  // drag-to-dismiss handler, so scrolling inside the dropdown works.
+  useEffect(() => {
+    const el = dropdownRef.current;
+    if (!el) return;
+    const stop = (e: TouchEvent) => e.stopPropagation();
+    el.addEventListener('touchstart', stop, { passive: true });
+    el.addEventListener('touchmove', stop, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', stop);
+      el.removeEventListener('touchmove', stop);
+    };
+  }, [showSuggestions, suggestions.length]);
+
   return (
     <div ref={containerRef} className="relative">
       <input
@@ -155,7 +170,7 @@ export default function AutocompleteInput({
         placeholder={placeholder}
       />
       {showSuggestions && suggestions.length > 0 && (
-        <ul className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <ul ref={dropdownRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {suggestions.map((result, index) => (
             <li
               key={index}
