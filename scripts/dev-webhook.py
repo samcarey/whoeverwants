@@ -61,6 +61,34 @@ def verify_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
+# Email patterns to ignore for redirect mapping
+IGNORE_EMAIL_PATTERNS = [
+    "@anthropic.com",
+    "noreply@github.com",
+    "actions@github.com",
+]
+
+
+def is_ignored_email(email: str) -> bool:
+    """Check if an email should be ignored for redirect mapping."""
+    email_lower = email.lower()
+    return any(pattern in email_lower for pattern in IGNORE_EMAIL_PATTERNS)
+
+
+def extract_author_emails(payload: dict) -> set[str]:
+    """Extract unique non-bot author emails from a push event."""
+    emails = set()
+    for commit in payload.get("commits", []):
+        email = commit.get("author", {}).get("email", "")
+        if email and not is_ignored_email(email):
+            emails.add(email)
+    head = payload.get("head_commit") or {}
+    email = head.get("author", {}).get("email", "")
+    if email and not is_ignored_email(email):
+        emails.add(email)
+    return emails
+
+
 def get_branch(payload: dict) -> str | None:
     """Extract branch name from push event ref."""
     ref = payload.get("ref", "")
@@ -69,8 +97,8 @@ def get_branch(payload: dict) -> str | None:
     return None
 
 
-def trigger_upsert(branch: str):
-    """Run dev-server-manager.sh upsert for a branch."""
+def trigger_upsert(branch: str, emails: set[str]):
+    """Run dev-server-manager.sh upsert for a branch, then set up email redirects."""
     log.info(f"Triggering upsert: branch={branch}")
     try:
         result = subprocess.run(
@@ -85,8 +113,24 @@ def trigger_upsert(branch: str):
             log.error(f"Upsert failed for {branch}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
     except subprocess.TimeoutExpired:
         log.error(f"Upsert timed out for {branch}")
+        return
     except Exception as e:
         log.error(f"Upsert error for {branch}: {e}")
+        return
+
+    # Set up email-slug -> branch-slug redirects for backward compatibility
+    for email in emails:
+        try:
+            result = subprocess.run(
+                ["bash", MANAGER_SCRIPT, "redirect", email, branch],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                log.warning(f"Redirect setup failed for {email}: {result.stderr[-200:]}")
+        except Exception as e:
+            log.warning(f"Redirect error for {email}: {e}")
 
 
 def deploy_production():
@@ -237,7 +281,9 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b'{"status": "branch deleted"}')
             return
 
-        log.info(f"Push to {branch}")
+        # Extract author emails for redirect mapping
+        emails = extract_author_emails(payload)
+        log.info(f"Push to {branch} by {emails or '(no authors)'}")
 
         # Respond immediately, process in background
         self.send_response(202)
@@ -258,10 +304,11 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({
             "status": "accepted",
             "branch": branch,
+            "authors": list(emails),
         }).encode())
 
-        # Trigger one upsert per branch (not per author)
-        t = threading.Thread(target=trigger_upsert, args=(branch,))
+        # Trigger upsert + email redirects in background
+        t = threading.Thread(target=trigger_upsert, args=(branch, emails))
         t.daemon = True
         t.start()
 

@@ -62,6 +62,17 @@ branch_to_slug() {
     | cut -c1-50
 }
 
+# Convert email to URL-safe slug (for backward-compatible redirects)
+# sam@example.com -> sam-at-example-com
+email_to_slug() {
+  local email="$1"
+  echo "$email" | tr '[:upper:]' '[:lower:]' \
+    | sed 's/@/-at-/g' \
+    | sed 's/[^a-z0-9-]/-/g' \
+    | sed 's/--*/-/g' \
+    | sed 's/^-//; s/-$//'
+}
+
 # Convert slug to database name (replace hyphens with underscores)
 # fix-voting-bug -> dev_fix_voting_bug
 slug_to_dbname() {
@@ -383,6 +394,39 @@ remove_caddy() {
   rm -f "${CADDY_DEV_DIR}/${slug}.caddy"
   caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
   log "Caddy config removed for $slug"
+}
+
+# Configure a Caddy redirect from an email-based slug to a branch-based slug.
+# This provides backward compatibility for old email-based dev server URLs.
+# e.g., sam-at-samcarey-com.dev.whoeverwants.com -> fix-voting-bug.dev.whoeverwants.com
+configure_caddy_redirect() {
+  local email_slug="$1"
+  local branch_slug="$2"
+
+  ensure_caddy_import
+
+  # Don't overwrite an actual dev server config with a redirect
+  if [ -f "${DEV_DIR}/${email_slug}/.dev-meta.json" ]; then
+    log "Skipping redirect for $email_slug — active dev server exists with that slug"
+    return
+  fi
+
+  local redirect_file="${CADDY_DEV_DIR}/${email_slug}.caddy"
+  local target_url="https://${branch_slug}.dev.whoeverwants.com"
+
+  # Check if redirect already points to the right place
+  if [ -f "$redirect_file" ] && grep -q "$target_url" "$redirect_file" 2>/dev/null; then
+    return  # Already correct, skip reload
+  fi
+
+  cat > "$redirect_file" <<EOF
+${email_slug}.dev.whoeverwants.com {
+	redir ${target_url}{uri} temporary
+}
+EOF
+
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+  log "Caddy redirect: ${email_slug}.dev.whoeverwants.com -> ${target_url}"
 }
 
 # --- Eviction ---
@@ -938,6 +982,27 @@ cmd_suspend_idle() {
   done
 }
 
+# Set up a redirect from an email-based URL to a branch-based URL
+cmd_redirect() {
+  local email="${1:?Usage: dev-server-manager.sh redirect <email> <branch>}"
+  local branch="${2:?Usage: dev-server-manager.sh redirect <email> <branch>}"
+  local email_slug branch_slug
+  email_slug=$(email_to_slug "$email")
+  branch_slug=$(branch_to_slug "$branch")
+
+  if [ -z "$email_slug" ] || [ -z "$branch_slug" ]; then
+    log "ERROR: empty slug from email='$email' or branch='$branch'"
+    return 1
+  fi
+
+  # Don't redirect if the email slug is the same as the branch slug
+  if [ "$email_slug" = "$branch_slug" ]; then
+    return 0
+  fi
+
+  configure_caddy_redirect "$email_slug" "$branch_slug"
+}
+
 # --- Main ---
 case "${1:-help}" in
   upsert)       cmd_upsert "${2:-}" ;;
@@ -949,6 +1014,7 @@ case "${1:-help}" in
   suspend)      cmd_suspend "${2:-}" ;;
   resume)       cmd_resume "${2:-}" ;;
   suspend-idle) cmd_suspend_idle "${2:-30}" ;;
+  redirect)     cmd_redirect "${2:-}" "${3:-}" ;;
   *)
     echo "Usage: dev-server-manager.sh <command> [args]"
     echo ""
@@ -962,6 +1028,7 @@ case "${1:-help}" in
     echo "  suspend <slug>           Stop processes but keep build on disk"
     echo "  resume <slug>            Restart a suspended dev server"
     echo "  suspend-idle [minutes]   Suspend servers idle for N minutes (default: 30)"
+    echo "  redirect <email> <branch> Set up email-slug redirect to branch-slug"
     echo ""
     echo "Each dev server gets:"
     echo "  - Next.js standalone build (port 3001-3099)"
