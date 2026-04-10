@@ -940,12 +940,24 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **ScrollWheel's `suppressScrollHandler` flag can get permanently stuck.** `recenterLoop()` sets the flag and schedules an rAF to clear it, but `correctPosition()` runs synchronously right after and bails out because the flag is still set. If a touch interaction then overwrites `scrollTimeout`, the clearing rAF/timeout is lost and the flag stays true forever — silencing all `onChange` calls. Fix: defer `correctPosition` via rAF when suppression is active, and add a safety timeout (500ms) that guarantees the flag gets cleared.
 - **Use refs (not render-scope variables) for state that multiple scroll events may read/write within a single React render cycle.** `handleHourChange` in `TimeCounterInput` captured `periodIndex` from the render scope. When two scroll events crossed the AM/PM boundary before React re-rendered, the second event used the stale value and emitted the wrong time. Track such state in a `useRef` and update it immediately in the handler.
 
+### Time Poll Type
+
+- **Two-phase flow**: availability phase (voters submit `voter_day_time_windows`) → preferences phase (voters submit `liked_slots`/`disliked_slots` after cutoff).
+- **Slot finalization at cutoff**: `_finalize_time_slots()` runs at availability cutoff, applies the threshold filter (`max_availability * (1 - threshold_pct)`), deduplicates via `_keep_longest_per_start_time()`, and writes the filtered slot list to `poll.options`. Everything downstream uses `poll.options` directly — no re-filtering at results time.
+- **`null` vs `[]` semantics for liked/disliked slots**: `null` = voter hasn't submitted preferences yet; `[]` = submitted with all bubbles neutral. The frontend uses this distinction to show an implicit edit prompt (hasNotReactedYet).
+- **Winner algorithm**: fewest dislikes → most likes → earliest slot key (chronological tiebreak). Implemented in `_pick_winner_from_reactions()` in `server/algorithms/time_poll.py`.
+- **Category "Time" in create form**: selecting it from the category dropdown keeps the standard form and injects `ParticipationConditions` + threshold slider + availability cutoff in place of options. Uses a single `{(pollType === 'time' || (pollType === 'poll' && category === 'time'))}` condition — do NOT add a separate duplicate block for each case.
+- **`formatDayLabel(dateStr)`** is the canonical day-label formatter in `lib/timeUtils.ts`. Use it in all time-related components instead of local copies.
+- **Availability cutoff requires `suggestion_deadline_minutes` to be set** on the poll — the endpoint enforces `suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL`. Polls created without this field will fail the cutoff endpoint with 400.
+- **`ChunkLoadError` after new builds**: the browser has stale cached chunks from the previous build. The lazy `CreatePollContent` import and the global `unhandledrejection` handler in `template.tsx` both auto-reload the page when this happens. The service worker uses network-first for JS chunks so new builds take effect immediately.
+
 ### Service Worker Caching Strategy
 
 - **Never use `url.pathname.startsWith('/')` in service worker URL matching** — it matches ALL paths. Use exact equality (`===`) or more specific prefixes like `/create-poll`.
 - **Use network-first for HTML navigation, cache-first only for immutable assets.** Cache-first for navigation causes the PWA to serve stale HTML that references old JS bundles (also cached), making it impossible for users to get new code. Network-first ensures fresh HTML on every load; cache is only a fallback for offline.
 - **Skip API requests in the service worker** — let them go directly to the network. Caching API responses causes stale poll data with no visible error.
 - **Bump `CACHE_NAME` version when changing caching strategy** to force old caches to be deleted on activation. Without this, users keep stale cached content indefinitely.
+- **JS chunks need network-first too** — even with content-hash filenames, the old manifest chunk references old chunk names. After a new build, the manifest is cached with old chunk references; network-first for `/_next/static/chunks/` ensures the manifest is always fresh.
 
 ### iOS PWA Safe Area Positioning
 
