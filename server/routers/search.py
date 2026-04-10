@@ -33,9 +33,10 @@ def _load_favicon_cache() -> dict[str, str]:
     try:
         with open(_FAVICON_CACHE_PATH) as f:
             data = json.load(f)
-            if isinstance(data, dict):
-                logger.info("Loaded %d favicon cache entries from %s", len(data), _FAVICON_CACHE_PATH)
-                return data
+        if isinstance(data, dict):
+            logger.info("Loaded %d favicon cache entries from %s", len(data), _FAVICON_CACHE_PATH)
+            return data
+        logger.warning("Favicon cache at %s contained unexpected type, ignoring", _FAVICON_CACHE_PATH)
     except FileNotFoundError:
         pass
     except (json.JSONDecodeError, OSError) as e:
@@ -43,12 +44,14 @@ def _load_favicon_cache() -> dict[str, str]:
     return {}
 
 
+_FAVICON_CACHE_DIR = os.path.dirname(os.path.abspath(_FAVICON_CACHE_PATH))
+
+
 def _save_favicon_cache() -> None:
     try:
-        cache_dir = os.path.dirname(os.path.abspath(_FAVICON_CACHE_PATH))
-        os.makedirs(cache_dir, exist_ok=True)
-        with tempfile.NamedTemporaryFile("w", dir=cache_dir, delete=False, suffix=".tmp") as f:
-            json.dump(_restaurant_favicon_cache, f)
+        payload = json.dumps(_restaurant_favicon_cache)
+        with tempfile.NamedTemporaryFile("w", dir=_FAVICON_CACHE_DIR, delete=False, suffix=".tmp") as f:
+            f.write(payload)
             tmp_path = f.name
         os.replace(tmp_path, _FAVICON_CACHE_PATH)
     except OSError as e:
@@ -56,6 +59,7 @@ def _save_favicon_cache() -> None:
 
 
 _restaurant_favicon_cache: dict[str, str] = _load_favicon_cache()
+os.makedirs(_FAVICON_CACHE_DIR, exist_ok=True)
 
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 _NOMINATIM_HEADERS = {
