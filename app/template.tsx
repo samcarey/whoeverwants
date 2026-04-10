@@ -580,7 +580,21 @@ function TemplateInner({ children }: AppTemplateProps) {
   // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
-    if (!isCreateModalOpen) return;
+    if (!isCreateModalOpen) {
+      // Safety net: if the modal is closed but body still has scroll-lock styles
+      // (e.g. from a navigation race or error), clean them up proactively.
+      if (document.body.style.position === 'fixed') {
+        const scrollY = Math.abs(parseInt(document.body.style.top || '0', 10));
+        document.documentElement.style.overscrollBehavior = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.overflow = '';
+        window.scrollTo(0, scrollY);
+      }
+      return;
+    }
     // Reset stale close state from previous dismiss
     setModalClosing(false);
     dragState.current.isClosing = false;

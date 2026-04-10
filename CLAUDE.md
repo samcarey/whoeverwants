@@ -75,17 +75,18 @@ The droplet is hardened with:
 
 ### Development Workflow
 
-**Full-Stack Dev Servers** (auto-deployed per-user on push):
+**Full-Stack Dev Servers** (auto-deployed per-branch on push):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. GitHub webhook creates/updates your full-stack dev server on the droplet
-4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
+3. GitHub webhook creates/updates a dev server for the branch on the droplet
+4. Dev site URL is derived from the branch name (e.g., `claude/my-feature` → `my-feature.dev.whoeverwants.com`)
 
 Each dev server gets its own:
-- **Next.js frontend** on port 3001-3005
-- **FastAPI backend** on port 8001-8005 (runs via `uv run uvicorn`, 1 worker)
-- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_sam_at_samcarey_com`)
+- **Next.js standalone build** on port 3001-3099 (~50MB RAM vs ~300MB for `next dev`)
+- **FastAPI backend** on port 8001-8099 (runs via `uv run uvicorn`, 1 worker)
+- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_my_feature`)
 - **All migrations from the branch** auto-applied on creation and update
+- **Idle suspension**: Servers idle for 30+ min are auto-suspended (processes stopped, build retained). Resumed on next push or manual `resume` command.
 
 **Production Frontend** (Vercel):
 - Vercel auto-deploys on push to `main` → `whoeverwants.com`
@@ -98,17 +99,20 @@ Each dev server gets its own:
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
-**Per-User Dev Servers** (automatic on push):
-- Every push to GitHub auto-updates your dev server via webhook (restarts both frontend and API)
-- Frontend uses `next dev` with `PYTHON_API_URL` pointing to the local API
+**Per-Branch Dev Servers** (automatic on push):
+- Every push to GitHub auto-creates/updates a dev server for that branch via webhook
+- Frontend uses a **standalone build** (`npm run build` with `output: 'standalone'`), not `next dev`
 - API runs via `uv run uvicorn` with `DATABASE_URL` pointing to the dev database
 - Migrations from the branch are auto-applied to the dev database on each update
-- **After pushing, wait for the dev server to be ready.** The server takes ~30-60 seconds. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
-- URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
-  - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
-- URL stays the same regardless of branch — bookmark it
-- Claude/bot emails (`*@anthropic.com`) are ignored
+- **After pushing, wait for the dev server to be ready.** Build takes ~2-3 min. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
+- URL is derived from branch name: `<branch-slug>.dev.whoeverwants.com`
+  - Example: `claude/fix-voting-bug` → `https://fix-voting-bug.dev.whoeverwants.com`
+- **Backward-compatible redirects**: Old email-based URLs (e.g., `sam-at-samcarey-com.dev.whoeverwants.com`) auto-redirect to the branch-based URL via 302. Redirects are created automatically from commit author emails on each push.
+  - The URL stays in the browser (reverse proxy, not redirect) — you can bookmark and refresh the email-based URL to always see whatever branch you last pushed.
 - Dev servers are fully isolated — each has its own API and database
+- **Post-build cleanup**: `node_modules` and `.next/cache` are deleted after build to save disk (~500MB per server)
+- **Idle suspension**: Servers idle >30 min auto-suspend (0 RAM). Resumed on next push.
+- **Capacity**: Up to 20 concurrent dev servers (up from 3) on the 1GB RAM droplet
 - Auto-cleaned after 7 days of inactivity
 
 ```bash
@@ -116,10 +120,17 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh list"
 
 # Manually trigger a dev server update
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert user@example.com claude/my-branch" /root 600
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert claude/my-branch" /root 600
 
 # Destroy a dev server (also drops its database)
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy user-at-example-com"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy my-branch-slug"
+
+# Suspend/resume a dev server
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh suspend my-branch-slug"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh resume my-branch-slug"
+
+# Suspend all idle servers (>30 min since last update)
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh suspend-idle 30"
 
 # Check dev API health
 bash scripts/remote.sh "curl -s http://localhost:<api_port>/health"
@@ -960,8 +971,11 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### Dev Server Pitfalls
 
-- **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
-- **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
+- **Dev servers use standalone builds**, not `next dev`. There's no hot reload — each push triggers a full `npm run build`. The standalone server (`node .next/standalone/server.js`) uses ~50MB RAM vs ~300MB for `next dev`.
+- **`node_modules` is deleted after build** to save disk. If a build fails partway, the next upsert re-installs deps from scratch.
+- **Standalone server is a single `node` process** (not a process chain like `npm run dev`). PID management is simpler and more reliable.
+- **Dev server shows stale commit info** when the build/restart fails silently. Always check `dev-server-manager.sh list` for `DOWN` or `SUSPENDED` status after a push if the commit info doesn't update.
+- **Suspended servers use 0 RAM** but keep the build on disk (~200MB). Resume is instant (just restarts processes). A full upsert re-clones, rebuilds, and reinstalls.
 
 ### Nominatim / Location Search
 
