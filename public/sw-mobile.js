@@ -1,5 +1,5 @@
 // Enhanced Service Worker for Mobile Instant Loading
-const CACHE_NAME = 'whoeverwants-mobile-v3';
+const CACHE_NAME = 'whoeverwants-mobile-v4';
 
 const STATIC_FILE_RE = /\.(json|png|svg|ico|woff2?)$/;
 
