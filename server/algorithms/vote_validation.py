@@ -51,6 +51,8 @@ def validate_vote(
             yes_no_choice, ranked_choices, suggestions, is_abstain,
             is_ranking_abstain, has_suggestion_phase,
         )
+    elif poll_type == "time":
+        _validate_time_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     else:
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
 
@@ -121,3 +123,20 @@ def _validate_ranked_choice_vote(
         raise VoteValidationError(
             "ranked_choices or suggestions is required for ranked choice polls"
         )
+
+
+def _validate_time_vote(
+    yes_no_choice: str | None,
+    ranked_choices: list[str] | None,
+    suggestions: list[str] | None,
+    is_abstain: bool,
+) -> None:
+    if yes_no_choice:
+        raise VoteValidationError("yes_no_choice not allowed for time polls")
+    if suggestions:
+        raise VoteValidationError("suggestions not allowed for time polls")
+    if is_abstain:
+        return
+    # Must provide voter_day_time_windows (checked in router) or ranked_choices
+    # The DB constraint enforces the structure; here we just verify logical consistency.
+    # ranked_choices may be present (preferences phase) or absent (availability-only submission)

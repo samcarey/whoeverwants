@@ -19,9 +19,11 @@ interface RankableOptionsProps {
   storageKey?: string; // Optional key for localStorage persistence
   initialRanking?: string[]; // Optional initial ranking to override saved state
   optionsMetadata?: OptionsMetadata | null;
+  renderOption?: (option: string) => React.ReactNode;
+  preserveOrder?: boolean; // Skip initial shuffle (use for time slots, which have a natural order)
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata, renderOption, preserveOrder = false }: RankableOptionsProps) {
 
   // Load saved state from localStorage
   const loadSavedState = useCallback(() => {
@@ -553,9 +555,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           setMainList(positionedMainList);
           setNoPreferenceList(positionedNoPreferenceList);
         } else {
-          // Initialize with randomized order to prevent position bias
-          const shuffledOptions = shuffleArray(options);
-          const newRankedOptions = shuffledOptions.map((text, index) => ({
+          // Initialize with randomized order to prevent position bias,
+          // unless preserveOrder is set (e.g. time slots have a natural chronological order).
+          const orderedOptions = preserveOrder ? options : shuffleArray(options);
+          const newRankedOptions = orderedOptions.map((text, index) => ({
             id: `option-${index}`,
             text: text,
             top: index * totalItemHeight
@@ -645,7 +648,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       >
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
-            <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />
+            {renderOption ? renderOption(draggedOption.text) : <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />}
           </div>
           <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1042,7 +1045,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         ? 'text-gray-500 dark:text-gray-400'
                         : 'text-gray-900 dark:text-white'
                     }`}>
-                      <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
+                      {renderOption ? renderOption(option.text) : <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />}
                     </div>
 
                     {/* Right side: combined drag handle with tap zones for reordering

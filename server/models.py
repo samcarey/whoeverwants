@@ -10,6 +10,7 @@ class PollType(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
     participation = "participation"
+    time = "time"
 
 
 class CloseReason(str, Enum):
@@ -65,6 +66,8 @@ class CreatePollRequest(BaseModel):
     min_responses: int | None = None
     # Whether to show preliminary results once min_responses is met
     show_preliminary_results: bool = True
+    # Availability threshold % for time polls (slots within X% of max availability are included)
+    availability_threshold: int = 5
 
 
 class SubmitVoteRequest(BaseModel):
@@ -81,6 +84,9 @@ class SubmitVoteRequest(BaseModel):
     voter_duration: dict | None = None
     # Metadata for suggested options (merged into poll's options_metadata)
     options_metadata: dict | None = None
+    # Time poll preference reactions
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
 
 
 class EditVoteRequest(BaseModel):
@@ -94,6 +100,9 @@ class EditVoteRequest(BaseModel):
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    # Time poll preference reactions
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
 
 
 class ClosePollRequest(BaseModel):
@@ -176,6 +185,7 @@ class PollResponse(BaseModel):
     min_responses: int | None = None
     show_preliminary_results: bool = True
     response_count: int | None = None
+    availability_threshold: int | None = None
     results: "PollResultsResponse | None" = None
 
 
@@ -193,6 +203,8 @@ class VoteResponse(BaseModel):
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
     created_at: str
     updated_at: str
 
@@ -237,6 +249,12 @@ class PollResultsResponse(BaseModel):
     time_slot_rounds: list[TimeSlotResponse] | None = None
     participating_vote_ids: list[str] | None = None
     participating_voter_names: list[str] | None = None
+    # Time poll fields
+    availability_counts: dict | None = None  # {slot_key: voter_count}
+    max_availability: int | None = None
+    included_slots: list[str] | None = None  # slots passing availability threshold (kept for compat)
+    like_counts: dict | None = None   # {slot_key: like_count}
+    dislike_counts: dict | None = None  # {slot_key: dislike_count}
 
 
 class ParticipantResponse(BaseModel):

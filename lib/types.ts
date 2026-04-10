@@ -22,7 +22,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'participation';
+  poll_type: 'yes_no' | 'ranked_choice' | 'participation' | 'time';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -68,6 +68,7 @@ export interface Poll {
   min_responses?: number | null;
   show_preliminary_results?: boolean;
   response_count?: number | null;
+  availability_threshold?: number | null;
   results?: PollResults | null;
 }
 
@@ -104,7 +105,7 @@ export interface SuggestionCount {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'participation';
+  poll_type: 'yes_no' | 'ranked_choice' | 'participation' | 'time';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -125,6 +126,14 @@ export interface PollResults {
   time_slot_rounds?: TimeSlotResult[];
   participating_vote_ids?: string[];
   participating_voter_names?: string[];
+  // Time poll fields
+  availability_counts?: Record<string, number>;
+  max_availability?: number;
+  included_slots?: string[];
+  like_counts?: Record<string, number>;
+  dislike_counts?: Record<string, number>;
+  ranked_choice_rounds?: RankedChoiceRound[];
+  ranked_choice_winner?: string;
 }
 
 export interface TimeSlotResult {

@@ -27,6 +27,10 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
     return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
+  if (results.poll_type === 'time') {
+    return <TimeResults results={results} isPollClosed={isPollClosed} />;
+  }
+
   return null;
 }
 
@@ -597,6 +601,130 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
       <div className="text-gray-600 dark:text-gray-400 text-sm">
         Poll is still open - results will show when closed
       </div>
+    </div>
+  );
+}
+
+function formatTimeSlot(slot: string): string {
+  // "YYYY-MM-DD HH:MM-HH:MM" → "Mon Apr 28 • 10:00 AM – 10:30 AM (30m)"
+  try {
+    const [datePart, timePart] = slot.split(' ');
+    const [startStr, endStr] = timePart.split('-');
+    const [sy, sm, sd] = datePart.split('-').map(Number);
+    const [sh, smin] = startStr.split(':').map(Number);
+    const [eh, emin] = endStr.split(':').map(Number);
+
+    const date = new Date(sy, sm - 1, sd);
+    const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+
+    const fmt = (h: number, m: number) => {
+      const period = h < 12 ? 'AM' : 'PM';
+      const h12 = h % 12 || 12;
+      return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
+    };
+
+    const startMins = sh * 60 + smin;
+    let endMins = eh * 60 + emin;
+    if (endMins <= startMins) endMins += 24 * 60;
+    const durMins = endMins - startMins;
+    const durStr = durMins >= 60
+      ? (durMins % 60 === 0 ? `${durMins / 60}h` : `${Math.floor(durMins / 60)}h ${durMins % 60}m`)
+      : `${durMins}m`;
+
+    return `${weekday} ${month} ${sd} • ${fmt(sh, smin)} – ${fmt(eh, emin)} (${durStr})`;
+  } catch {
+    return slot;
+  }
+}
+
+function TimeResults({ results, isPollClosed }: { results: PollResults; isPollClosed?: boolean }) {
+  const winner = results.winner;
+  const options = results.options ?? [];
+  const availCounts = results.availability_counts;
+  const maxAvail = results.max_availability;
+  const likeCounts = results.like_counts;
+  const dislikeCounts = results.dislike_counts;
+
+  if (!isPollClosed) {
+    return (
+      <div className="text-center py-3">
+        <div className="text-gray-600 dark:text-gray-400 text-sm">
+          Results will show when the poll closes
+        </div>
+      </div>
+    );
+  }
+
+  if (options.length === 0) {
+    return (
+      <div className="text-center py-4">
+        <p className="text-gray-600 dark:text-gray-400">No time slots met the availability threshold.</p>
+      </div>
+    );
+  }
+
+  // Sort options for display: fewest dislikes → most likes → earliest
+  const sorted = [...options].sort((a, b) => {
+    const da = dislikeCounts?.[a] ?? 0;
+    const db = dislikeCounts?.[b] ?? 0;
+    if (da !== db) return da - db;
+    const la = likeCounts?.[a] ?? 0;
+    const lb = likeCounts?.[b] ?? 0;
+    if (lb !== la) return lb - la;
+    return a < b ? -1 : 1; // chronological
+  });
+
+  return (
+    <div className="space-y-4">
+      {winner && (
+        <div className="text-center">
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Scheduled Time</p>
+          <div className="inline-flex items-center px-4 py-2 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded-xl">
+            <span className="text-sm font-semibold text-green-800 dark:text-green-200">
+              {formatTimeSlot(winner)}
+            </span>
+          </div>
+          {maxAvail != null && availCounts?.[winner] != null && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+              {availCounts[winner]} of {maxAvail} available
+            </p>
+          )}
+        </div>
+      )}
+
+      {sorted.length > 1 && (
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
+            All qualifying slots ({sorted.length})
+          </p>
+          <div className="space-y-1 max-h-56 overflow-y-auto">
+            {sorted.map((slot) => {
+              const likes = likeCounts?.[slot] ?? 0;
+              const dislikes = dislikeCounts?.[slot] ?? 0;
+              const isWinner = slot === winner;
+              return (
+                <div
+                  key={slot}
+                  className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-sm gap-2 ${
+                    isWinner
+                      ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800'
+                      : 'bg-gray-50 dark:bg-gray-800'
+                  }`}
+                >
+                  <span className={`truncate ${isWinner ? 'font-medium text-green-800 dark:text-green-200' : 'text-gray-700 dark:text-gray-300'}`}>
+                    {formatTimeSlot(slot)}
+                  </span>
+                  <span className="flex items-center gap-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                    {likes > 0 && <span className="text-green-600 dark:text-green-400">+{likes}</span>}
+                    {dislikes > 0 && <span className="text-red-500 dark:text-red-400">−{dislikes}</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

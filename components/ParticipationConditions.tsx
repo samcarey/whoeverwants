@@ -15,12 +15,13 @@ export interface DayTimeWindow {
 }
 
 interface ParticipationConditionsProps {
-  minValue: number | null;
-  maxValue: number | null;
-  maxEnabled: boolean;
-  onMinChange: (value: number | null) => void;
-  onMaxChange: (value: number | null) => void;
-  onMaxEnabledChange: (enabled: boolean) => void;
+  minValue?: number | null;
+  maxValue?: number | null;
+  maxEnabled?: boolean;
+  onMinChange?: (value: number | null) => void;
+  onMaxChange?: (value: number | null) => void;
+  onMaxEnabledChange?: (enabled: boolean) => void;
+  hideParticipantCounters?: boolean;
   disabled?: boolean;
   pollMinParticipants?: number | null;
   pollMaxParticipants?: number | null;
@@ -48,12 +49,13 @@ interface ParticipationConditionsProps {
 }
 
 export default function ParticipationConditions({
-  minValue,
-  maxValue,
-  maxEnabled,
+  minValue = null,
+  maxValue = null,
+  maxEnabled = false,
   onMinChange,
   onMaxChange,
   onMaxEnabledChange,
+  hideParticipantCounters = false,
   disabled = false,
   pollMinParticipants = null,
   pollMaxParticipants = null,
@@ -137,6 +139,7 @@ export default function ParticipationConditions({
   return (
     <div className="space-y-3" data-testid="participation-conditions">
       {/* Participants */}
+      {!hideParticipantCounters && (
       <div className="-mt-2 mb-1">
         <label className="block text-sm font-medium mb-1">
           Participants
@@ -146,9 +149,9 @@ export default function ParticipationConditions({
             minValue={minValue}
             maxValue={maxValue}
             maxEnabled={maxEnabled}
-            onMinChange={onMinChange}
-            onMaxChange={onMaxChange}
-            onMaxEnabledChange={onMaxEnabledChange}
+            onMinChange={onMinChange!}
+            onMaxChange={onMaxChange!}
+            onMaxEnabledChange={onMaxEnabledChange!}
             increment={1}
             minLimit={enforcedMinLimit}
             maxLimit={enforcedMaxLimit}
@@ -158,6 +161,7 @@ export default function ParticipationConditions({
           />
         </div>
       </div>
+      )}
 
       {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (

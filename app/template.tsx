@@ -10,7 +10,15 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 
 const LazyCreatePollContent = React.lazy(() =>
-  import('@/app/create-poll/page').then(m => ({ default: m.CreatePollContent }))
+  import('@/app/create-poll/page')
+    .then(m => ({ default: m.CreatePollContent }))
+    .catch((err) => {
+      // Stale cached chunk after a new deploy — reload to get fresh assets.
+      if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
+        window.location.reload();
+      }
+      throw err;
+    })
 );
 
 interface AppTemplateProps {
@@ -85,6 +93,16 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     setIsMounted(true);
     installClientLogForwarder();
+
+    // Reload on ChunkLoadError — stale cached chunks after a new deploy.
+    const handleChunkError = (event: PromiseRejectionEvent) => {
+      const err = event.reason;
+      if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk')) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleChunkError);
+    return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
   
   // Determine initial state based on pathname to avoid layout shift
