@@ -35,16 +35,18 @@ function getCategoryIcon(poll: Poll): string {
 function getOptionIconUrls(poll: Poll): string[] {
   const meta = poll.options_metadata;
   if (!meta) return [];
-  // Use poll.options order if available, otherwise metadata key order
   const keys = poll.options?.filter(o => meta[o]?.imageUrl) ??
     Object.keys(meta).filter(k => meta[k]?.imageUrl);
   return keys.map(k => meta[k].imageUrl!);
 }
 
+// Re-check overflow after lazy images load/fail
+const IMAGE_SETTLE_MS = 1500;
+
 /** Poll title h3 with inline option icons and overflow-based ellipsis. */
-function PollTitle({ title, poll, className }: { title: string; poll: Poll; className: string }) {
+function PollTitle({ poll, className }: { poll: Poll; className: string }) {
   const ref = useRef<HTMLHeadingElement>(null);
-  const icons = getOptionIconUrls(poll);
+  const icons = useMemo(() => getOptionIconUrls(poll), [poll]);
   const [overflows, setOverflows] = useState(false);
 
   useEffect(() => {
@@ -52,20 +54,20 @@ function PollTitle({ title, poll, className }: { title: string; poll: Poll; clas
     if (!el || icons.length === 0) { setOverflows(false); return; }
     const check = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
     check();
-    const t = setTimeout(check, 1500);
+    const t = setTimeout(check, IMAGE_SETTLE_MS);
     return () => clearTimeout(t);
-  }, [icons, title]);
+  }, [icons, poll.title]);
 
   return (
     <div className="relative">
       <h3 ref={ref} className={className}>
-        {title}
+        {poll.title}
         {icons.length > 0 && (
           <>
             {' '}
-            {icons.map((url, i) => (
+            {icons.map((url) => (
               <img
-                key={i}
+                key={url}
                 src={url}
                 alt=""
                 className="inline-block h-[1em] w-[1em] object-cover rounded-sm align-middle ml-0.5"
@@ -497,7 +499,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </ClientOnly>
                         </span>
                       </div>
-                      <PollTitle title={poll.title} poll={poll} className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white" />
+                      <PollTitle poll={poll} className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white" />
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                           <ClientOnly fallback={null}>
@@ -643,7 +645,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                           </span>
                         )}
                       </div>
-                      <PollTitle title={poll.title} poll={poll} className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1" />
+                      <PollTitle poll={poll} className="font-medium text-lg leading-[1.2] line-clamp-2 text-gray-900 dark:text-white mt-1 mb-1" />
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                           <ClientOnly fallback={null}>
