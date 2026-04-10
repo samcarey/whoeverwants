@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation";
 import { Poll, PollResults } from "@/lib/types";
 import { getUserName } from "@/lib/userProfile";
+import { getSeenPollOptions } from "@/lib/browserPollAccess";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
@@ -187,6 +188,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
   const [pollVoteIds, setPollVoteIds] = useState<Record<string, string>>({});
+  const [pollsWithNewOptions, setPollsWithNewOptions] = useState<Set<string>>(new Set());
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -237,10 +239,28 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
         }
       });
       setPollVoteIds(voteIds);
+
+      // Detect polls where new suggestions were added since the user last voted.
+      // Compare stored seen-options against current poll data (suggestion_counts or options).
+      const withNew = new Set<string>();
+      for (const poll of polls) {
+        if (poll.poll_type !== 'ranked_choice') continue;
+        if (poll.is_closed) continue;
+        if (!voted.has(poll.id)) continue; // only for polls the user voted on
+        const seen = getSeenPollOptions(poll.id);
+        if (seen.length === 0) continue; // no stored baseline → can't compare
+        const current: string[] =
+          poll.results?.suggestion_counts?.map((sc: { option: string }) => sc.option) ??
+          (Array.isArray(poll.options) ? poll.options : []);
+        if (current.some(o => !seen.includes(o))) {
+          withNew.add(poll.id);
+        }
+      }
+      setPollsWithNewOptions(withNew);
     } catch (error) {
       console.error('Error loading voted polls:', error);
     }
-  }, []);
+  }, [polls]);
   
   // Function to categorize and sort polls
   const categorizePollsByTime = useCallback(() => {
@@ -439,6 +459,16 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                         </span>
                       </div>
                       <PollTitle poll={poll} className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white" />
+                      <ClientOnly fallback={null}>
+                        {pollsWithNewOptions.has(poll.id) && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                            </svg>
+                            <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">New options available</span>
+                          </div>
+                        )}
+                      </ClientOnly>
                       <div className="flex items-center justify-between">
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                           <ClientOnly fallback={null}>
