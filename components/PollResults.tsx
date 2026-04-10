@@ -640,9 +640,11 @@ function formatTimeSlot(slot: string): string {
 
 function TimeResults({ results, isPollClosed }: { results: PollResults; isPollClosed?: boolean }) {
   const winner = results.winner;
-  const includedSlots = results.included_slots;
+  const options = results.options ?? [];
   const availCounts = results.availability_counts;
   const maxAvail = results.max_availability;
+  const likeCounts = results.like_counts;
+  const dislikeCounts = results.dislike_counts;
 
   if (!isPollClosed) {
     return (
@@ -654,13 +656,24 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
     );
   }
 
-  if (!winner && (!includedSlots || includedSlots.length === 0)) {
+  if (options.length === 0) {
     return (
       <div className="text-center py-4">
         <p className="text-gray-600 dark:text-gray-400">No time slots met the availability threshold.</p>
       </div>
     );
   }
+
+  // Sort options for display: fewest dislikes → most likes → earliest
+  const sorted = [...options].sort((a, b) => {
+    const da = dislikeCounts?.[a] ?? 0;
+    const db = dislikeCounts?.[b] ?? 0;
+    if (da !== db) return da - db;
+    const la = likeCounts?.[a] ?? 0;
+    const lb = likeCounts?.[b] ?? 0;
+    if (lb !== la) return lb - la;
+    return a < b ? -1 : 1; // chronological
+  });
 
   return (
     <div className="space-y-4">
@@ -672,40 +685,40 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
               {formatTimeSlot(winner)}
             </span>
           </div>
-          {maxAvail != null && availCounts && availCounts[winner] != null && (
+          {maxAvail != null && availCounts?.[winner] != null && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-              {availCounts[winner]} of {maxAvail} people available
+              {availCounts[winner]} of {maxAvail} available
             </p>
           )}
         </div>
       )}
 
-      {includedSlots && includedSlots.length > 1 && (
+      {sorted.length > 1 && (
         <div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
-            All qualifying slots ({includedSlots.length})
+            All qualifying slots ({sorted.length})
           </p>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {includedSlots.map((slot) => {
-              const count = availCounts?.[slot] ?? 0;
+          <div className="space-y-1 max-h-56 overflow-y-auto">
+            {sorted.map((slot) => {
+              const likes = likeCounts?.[slot] ?? 0;
+              const dislikes = dislikeCounts?.[slot] ?? 0;
               const isWinner = slot === winner;
               return (
                 <div
                   key={slot}
-                  className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-sm ${
+                  className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-sm gap-2 ${
                     isWinner
                       ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800'
                       : 'bg-gray-50 dark:bg-gray-800'
                   }`}
                 >
-                  <span className={isWinner ? 'font-medium text-green-800 dark:text-green-200' : 'text-gray-700 dark:text-gray-300'}>
+                  <span className={`truncate ${isWinner ? 'font-medium text-green-800 dark:text-green-200' : 'text-gray-700 dark:text-gray-300'}`}>
                     {formatTimeSlot(slot)}
                   </span>
-                  {maxAvail != null && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 flex-shrink-0">
-                      {count}/{maxAvail}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                    {likes > 0 && <span className="text-green-600 dark:text-green-400">+{likes}</span>}
+                    {dislikes > 0 && <span className="text-red-500 dark:text-red-400">−{dislikes}</span>}
+                  </span>
                 </div>
               );
             })}

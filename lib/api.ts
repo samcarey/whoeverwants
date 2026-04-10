@@ -47,6 +47,8 @@ export interface ApiVote {
   max_participants: number | null;
   voter_day_time_windows: any[] | null;
   voter_duration: any | null;
+  liked_slots: string[] | null;
+  disliked_slots: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -164,6 +166,8 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     availability_counts: data.availability_counts ?? undefined,
     max_availability: data.max_availability ?? undefined,
     included_slots: data.included_slots ?? undefined,
+    like_counts: data.like_counts ?? undefined,
+    dislike_counts: data.dislike_counts ?? undefined,
   };
 }
 
@@ -268,6 +272,8 @@ export async function apiSubmitVote(pollId: string, params: {
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
   options_metadata?: OptionsMetadata | null;
+  liked_slots?: string[] | null;
+  disliked_slots?: string[] | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
     method: 'POST',
@@ -290,6 +296,8 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
   max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
+  liked_slots?: string[] | null;
+  disliked_slots?: string[] | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`, {
     method: 'PUT',

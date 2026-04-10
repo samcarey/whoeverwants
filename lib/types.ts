@@ -130,6 +130,8 @@ export interface PollResults {
   availability_counts?: Record<string, number>;
   max_availability?: number;
   included_slots?: string[];
+  like_counts?: Record<string, number>;
+  dislike_counts?: Record<string, number>;
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
 }

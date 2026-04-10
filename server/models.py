@@ -84,6 +84,9 @@ class SubmitVoteRequest(BaseModel):
     voter_duration: dict | None = None
     # Metadata for suggested options (merged into poll's options_metadata)
     options_metadata: dict | None = None
+    # Time poll preference reactions
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
 
 
 class EditVoteRequest(BaseModel):
@@ -97,6 +100,9 @@ class EditVoteRequest(BaseModel):
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    # Time poll preference reactions
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
 
 
 class ClosePollRequest(BaseModel):
@@ -197,6 +203,8 @@ class VoteResponse(BaseModel):
     max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
     created_at: str
     updated_at: str
 
@@ -244,7 +252,9 @@ class PollResultsResponse(BaseModel):
     # Time poll fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
     max_availability: int | None = None
-    included_slots: list[str] | None = None  # slots passing availability threshold
+    included_slots: list[str] | None = None  # slots passing availability threshold (kept for compat)
+    like_counts: dict | None = None   # {slot_key: like_count}
+    dislike_counts: dict | None = None  # {slot_key: dislike_count}
 
 
 class ParticipantResponse(BaseModel):

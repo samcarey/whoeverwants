@@ -2,10 +2,10 @@
 
 Two-phase scheduling poll:
 1. Availability phase: voters enter day/time windows (stored in voter_day_time_windows)
-2. Preferences phase: voters rank generated time slots (stored in ranked_choices)
+2. Preferences phase: voters react to generated slots with liked_slots / disliked_slots
 
 Slots are generated from the poll creator's day_time_windows + duration_window.
-Resolution: filter slots by availability threshold, then run IRV on preference ballots.
+Resolution: fewest-dislikes → most-likes → earliest chronologically.
 
 Slot key format: "YYYY-MM-DD HH:MM-HH:MM"
   e.g. "2026-04-15 09:00-10:00" or "2026-04-15 23:00-01:00" (cross-midnight)
@@ -19,7 +19,6 @@ from algorithms.time_slots import (
     _voter_available_at,
     _window_effective_end,
 )
-from algorithms.ranked_choice import calculate_ranked_choice_winner
 
 
 def _minutes_to_time(minutes: int) -> str:
@@ -126,10 +125,8 @@ def _keep_longest_per_start_time(slots: list[str]) -> list[str]:
     """For each (date, start_time), keep only the slot with the longest duration.
 
     When the poll allows a duration range (e.g. 30 min – 2 h), multiple slots
-    share the same start time but differ in end time.  Voters only need to rank
-    one representative per start time: the longest available option.  Shorter
-    variants are redundant — if a voter prefers a shorter meeting they can rank
-    that start time lower relative to other start times.
+    share the same start time but differ in end time.  Voters only need to react
+    to one representative per start time: the longest available option.
 
     The original sort order (longest duration first, then earliest start) is
     preserved in the returned list.
@@ -172,31 +169,70 @@ def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str
     return counts
 
 
+def _pick_winner_from_reactions(options: list[str], votes: list[dict]) -> tuple[str | None, dict[str, int], dict[str, int]]:
+    """Pick the winning slot from like/dislike reactions.
+
+    Algorithm:
+    1. Fewest dislikes across all preference voters.
+    2. Most likes among those.
+    3. Earliest chronologically to break ties.
+
+    Returns (winner, like_counts, dislike_counts).
+    """
+    pref_votes = [
+        v for v in votes
+        if v.get("liked_slots") is not None or v.get("disliked_slots") is not None
+    ]
+
+    like_counts: dict[str, int] = {s: 0 for s in options}
+    dislike_counts: dict[str, int] = {s: 0 for s in options}
+
+    for v in pref_votes:
+        for s in (v.get("liked_slots") or []):
+            if s in like_counts:
+                like_counts[s] += 1
+        for s in (v.get("disliked_slots") or []):
+            if s in dislike_counts:
+                dislike_counts[s] += 1
+
+    if not options:
+        return None, like_counts, dislike_counts
+
+    # Step 1: fewest dislikes
+    min_dislikes = min(dislike_counts[s] for s in options)
+    candidates = [s for s in options if dislike_counts[s] == min_dislikes]
+
+    # Step 2: most likes
+    max_likes = max(like_counts[s] for s in candidates)
+    candidates = [s for s in candidates if like_counts[s] == max_likes]
+
+    # Step 3: earliest chronologically
+    candidates.sort(key=lambda s: parse_slot_key(s)[:2])  # (date, start_min)
+    winner = candidates[0] if candidates else None
+
+    return winner, like_counts, dislike_counts
+
+
 def calculate_time_poll_results(poll: dict, votes: list[dict]) -> dict:
     """Calculate results for a time poll.
 
-    Steps:
-    1. Compute slot availability counts from availability votes.
-    2. Find max_availability across all slots.
-    3. Filter to slots with count >= max * (1 - threshold/100).
-    4. Filter preference ballots to only included slots (preserving order).
-    5. Run IRV on filtered ballots.
+    poll.options already contains only the filtered, deduped slots (set at finalization).
 
     Returns dict with:
         availability_counts: {slot_key: count}
         max_availability: int
-        included_slots: [slot_key, ...]
         winner: slot_key | None
-        ranked_choice_rounds: [{round_number, option_name, vote_count, ...}, ...]
+        like_counts: {slot_key: count}
+        dislike_counts: {slot_key: count}
     """
     raw_options = poll.get("options")
     if raw_options is None:
         return {
             "availability_counts": {},
             "max_availability": 0,
-            "included_slots": [],
             "winner": None,
-            "ranked_choice_rounds": [],
+            "like_counts": {},
+            "dislike_counts": {},
         }
 
     options: list[str] = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
@@ -204,59 +240,20 @@ def calculate_time_poll_results(poll: dict, votes: list[dict]) -> dict:
         return {
             "availability_counts": {},
             "max_availability": 0,
-            "included_slots": [],
             "winner": None,
-            "ranked_choice_rounds": [],
+            "like_counts": {},
+            "dislike_counts": {},
         }
-
-    threshold_pct = (poll.get("availability_threshold") or 5) / 100.0
 
     availability_counts = compute_slot_availability(options, votes)
     max_avail = max(availability_counts.values(), default=0)
-    min_acceptable = max_avail * (1 - threshold_pct)
 
-    # Slots ordered as in poll.options (largest duration first, then earliest)
-    included_slots = [s for s in options if availability_counts.get(s, 0) >= min_acceptable]
-
-    # For each start time, keep only the longest-duration slot so voters aren't
-    # presented with near-duplicate options (e.g. 09:00-10:00 vs 09:00-10:30).
-    included_slots = _keep_longest_per_start_time(included_slots)
-
-    winner = None
-    rc_rounds: list[dict] = []
-
-    pref_votes = [v for v in votes if v.get("ranked_choices")]
-
-    if pref_votes and included_slots:
-        if len(included_slots) == 1:
-            winner = included_slots[0]
-        else:
-            included_set = set(included_slots)
-            # Pre-filter ballots to only included slots
-            filtered_votes = []
-            for v in pref_votes:
-                filtered = [s for s in (v.get("ranked_choices") or []) if s in included_set]
-                if filtered:
-                    filtered_votes.append({**dict(v), "ranked_choices": filtered})
-
-            if filtered_votes:
-                result = calculate_ranked_choice_winner(filtered_votes, included_slots)
-                winner = result.winner
-                for round_idx, round_entries in enumerate(result.rounds):
-                    for entry in round_entries:
-                        rc_rounds.append({
-                            "round_number": round_idx + 1,
-                            "option_name": entry.option_name,
-                            "vote_count": entry.vote_count,
-                            "is_eliminated": entry.is_eliminated,
-                            "borda_score": entry.borda_score,
-                            "tie_broken_by_borda": entry.tie_broken_by_borda,
-                        })
+    winner, like_counts, dislike_counts = _pick_winner_from_reactions(options, votes)
 
     return {
         "availability_counts": availability_counts,
         "max_availability": max_avail,
-        "included_slots": included_slots,
         "winner": winner,
-        "ranked_choice_rounds": rc_rounds,
+        "like_counts": like_counts,
+        "dislike_counts": dislike_counts,
     }

@@ -25,6 +25,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 import RankableOptions from "@/components/RankableOptions";
+import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -53,6 +54,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const isNewPoll = searchParams.get("new") === "true";
   const [pollUrl, setPollUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
+  // Time poll preferences: liked/disliked slot sets (null = not yet submitted)
+  const [likedSlots, setLikedSlots] = useState<string[] | null>(null);
+  const [dislikedSlots, setDislikedSlots] = useState<string[] | null>(null);
   const [optionsInitialized, setOptionsInitialized] = useState(false);
   const [yesNoChoice, setYesNoChoice] = useState<'yes' | 'no' | null>(null);
   const [isAbstaining, setIsAbstaining] = useState(false);
@@ -626,6 +630,18 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             } else if (poll.poll_type === 'ranked_choice') {
               if (voteData.ranked_choices) setRankedChoices(voteData.ranked_choices);
               if (voteData.suggestions) setSuggestionChoices(voteData.suggestions);
+            } else if (poll.poll_type === 'time') {
+              // Restore time poll availability windows
+              if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
+                setVoterDayTimeWindows(voteData.voter_day_time_windows);
+              }
+              // Restore preferences phase reactions (null = not yet submitted)
+              if (voteData.liked_slots !== null && voteData.liked_slots !== undefined) {
+                setLikedSlots(voteData.liked_slots);
+              }
+              if (voteData.disliked_slots !== null && voteData.disliked_slots !== undefined) {
+                setDislikedSlots(voteData.disliked_slots);
+              }
             }
           } else {
           }
@@ -1022,8 +1038,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
     // Includes users who abstained from suggestions (is_abstain) — they should still be able to rank.
     const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
+    // For time polls in preferences phase: not yet reacted if liked_slots is still null
+    const hasNotReactedYet = poll.poll_type === 'time' && !inAvailabilityPhase && hasVoted
+      && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
     const isImplicitEdit = hasVoted && !isAnyEditing && (
-      (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet
+      (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
     );
     if (isImplicitEdit) {
       setIsEditingVote(true);
@@ -1232,16 +1251,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             voter_name: voterName.trim() || null,
           };
         } else {
-          // Preferences phase: submit ranked_choices
-          const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
-          if (filteredRankedChoices.length === 0 && !isAbstaining) {
-            setVoteError("Please rank at least one time slot or abstain");
-            setIsSubmitting(false);
-            return;
-          }
+          // Preferences phase: submit liked/disliked reactions
           voteData = {
             vote_type: 'time' as const,
-            ranked_choices: isAbstaining ? null : filteredRankedChoices,
+            liked_slots: isAbstaining ? null : (likedSlots ?? []),
+            disliked_slots: isAbstaining ? null : (dislikedSlots ?? []),
             is_abstain: isAbstaining,
             voter_name: voterName.trim() || null,
           };
@@ -1261,7 +1275,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           : poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
           : poll.poll_type === 'time'
-          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, ranked_choices: voteData.ranked_choices, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null }
+          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null }
           : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
         
         
@@ -1952,14 +1966,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               ) : hasVoted && !isEditingVote ? (
                 <div className="py-3">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium">{inAvailabilityPhase ? 'Your availability:' : 'Your ranking:'}</h4>
+                    <h4 className="font-medium">{inAvailabilityPhase ? 'Your availability:' : 'Your preferences:'}</h4>
                     {editVoteButton}
                   </div>
                   {isLoadingVoteData ? (
                     <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                       <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       <span className="font-medium text-gray-600 dark:text-gray-400">Loading your response...</span>
                     </div>
@@ -1971,16 +1985,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg">
                       <p className="text-sm text-green-800 dark:text-green-200">Availability submitted for {userVoteData.voter_day_time_windows.length} day(s).</p>
                     </div>
-                  ) : !inAvailabilityPhase && userVoteData?.ranked_choices ? (
-                    <div className="space-y-2">
-                      {userVoteData.ranked_choices.map((slot: string, index: number) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">{index + 1}</span>
-                          <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm">
-                            {formatTimeSlot(slot)}
-                          </div>
-                        </div>
-                      ))}
+                  ) : !inAvailabilityPhase && (userVoteData?.liked_slots !== null || userVoteData?.disliked_slots !== null) ? (
+                    <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg text-sm text-green-800 dark:text-green-200">
+                      {(userVoteData?.liked_slots?.length ?? 0) > 0 && (
+                        <p>Liked: {userVoteData!.liked_slots!.map(formatTimeSlot).join(', ')}</p>
+                      )}
+                      {(userVoteData?.disliked_slots?.length ?? 0) > 0 && (
+                        <p>Disliked: {userVoteData!.disliked_slots!.map(formatTimeSlot).join(', ')}</p>
+                      )}
+                      {(userVoteData?.liked_slots?.length ?? 0) === 0 && (userVoteData?.disliked_slots?.length ?? 0) === 0 && (
+                        <p>Preferences submitted (all neutral).</p>
+                      )}
                     </div>
                   ) : null}
 
@@ -2051,39 +2066,28 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </>
                   ) : (
                     <>
-                      {/* Preferences phase: rank the generated time slots */}
+                      {/* Preferences phase: tap bubbles to like/dislike time slots */}
                       <div className="mb-4">
-                        <h3 className="text-lg font-semibold mb-2 text-center">Rank Your Preferences</h3>
-                        {pollResults?.max_availability != null && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">
-                            Slots are ordered by duration (longest first), then by time. Slots with a ⚠️ exclude some voters.
-                          </p>
-                        )}
-                        <RankableOptions
+                        <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
+                        <TimeSlotBubbles
                           options={pollOptions}
-                          onRankingChange={(ranked) => setRankedChoices(ranked)}
-                          initialRanking={rankedChoices}
-                          disabled={isSubmitting}
-                          storageKey={`time-ranking-${poll.id}`}
-                          preserveOrder={true}
-                          renderOption={(slot) => {
-                            const count = pollResults?.availability_counts?.[slot];
-                            const maxAvail = pollResults?.max_availability;
-                            const threshold = poll.availability_threshold ?? 5;
-                            const minAcceptable = maxAvail != null ? Math.floor(maxAvail * (1 - threshold / 100)) : null;
-                            const excluded = maxAvail != null && count != null && count < maxAvail ? maxAvail - count : 0;
-                            const isUnderThreshold = minAcceptable != null && count != null && count < minAcceptable;
-                            return (
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                {excluded > 0 && !isUnderThreshold && (
-                                  <span className="flex-shrink-0 text-red-500 text-sm" title={`Excludes ${excluded} voter(s)`}>
-                                    ⚠️{excluded}
-                                  </span>
-                                )}
-                                <span className="text-sm truncate">{formatTimeSlot(slot)}</span>
-                              </div>
-                            );
+                          likedSlots={likedSlots ?? []}
+                          dislikedSlots={dislikedSlots ?? []}
+                          onToggle={(slot, nextState) => {
+                            setLikedSlots(prev => {
+                              const s = new Set(prev ?? []);
+                              if (nextState === 'liked') s.add(slot); else s.delete(slot);
+                              return Array.from(s);
+                            });
+                            setDislikedSlots(prev => {
+                              const s = new Set(prev ?? []);
+                              if (nextState === 'disliked') s.add(slot); else s.delete(slot);
+                              return Array.from(s);
+                            });
                           }}
+                          availabilityCounts={pollResults?.availability_counts}
+                          maxAvailability={pollResults?.max_availability}
+                          disabled={isSubmitting}
                         />
                       </div>
 
@@ -2102,7 +2106,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <button
                         type="button"
                         onClick={handleVoteClick}
-                        disabled={isSubmitting || (!isAbstaining && rankedChoices.length === 0)}
+                        disabled={isSubmitting}
                         className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                       >
                         {isSubmitting ? 'Submitting...' : 'Submit Preferences'}

@@ -242,6 +242,8 @@ def _row_to_vote(row: dict) -> VoteResponse:
         max_participants=row.get("max_participants"),
         voter_day_time_windows=row.get("voter_day_time_windows"),
         voter_duration=row.get("voter_duration"),
+        liked_slots=row.get("liked_slots"),
+        disliked_slots=row.get("disliked_slots"),
         created_at=row["created_at"].isoformat() if isinstance(row["created_at"], datetime) else str(row["created_at"]),
         updated_at=row["updated_at"].isoformat() if isinstance(row["updated_at"], datetime) else str(row["updated_at"]),
     )
@@ -715,11 +717,13 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                                suggestions, is_abstain, is_ranking_abstain, voter_name,
                                min_participants, max_participants,
                                voter_day_time_windows, voter_duration,
+                               liked_slots, disliked_slots,
                                created_at, updated_at)
             VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
                     %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
                     %(min_participants)s, %(max_participants)s,
                     %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
+                    %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -736,6 +740,8 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "max_participants": req.max_participants,
                 "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
                 "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+                "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
+                "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
                 "now": now,
             },
         ).fetchone()
@@ -856,6 +862,8 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 max_participants = %(max_participants)s,
                 voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
                 voter_duration = %(voter_duration)s::jsonb,
+                liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
+                disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
                 updated_at = %(now)s
             WHERE id = %(vote_id)s AND poll_id = %(poll_id)s
             RETURNING *
@@ -871,6 +879,8 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
                 "max_participants": req.max_participants,
                 "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
                 "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+                "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
+                "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
                 "now": now,
                 "vote_id": vote_id,
                 "poll_id": poll_id,
@@ -1123,18 +1133,6 @@ def _compute_results(poll, votes) -> PollResultsResponse:
         vote_dicts = [dict(v) for v in votes]
         time_result = calculate_time_poll_results(dict(poll), vote_dicts)
 
-        rc_rounds = [
-            RankedChoiceRoundResponse(
-                round_number=r["round_number"],
-                option_name=r["option_name"],
-                vote_count=r["vote_count"],
-                is_eliminated=r["is_eliminated"],
-                borda_score=r.get("borda_score"),
-                tie_broken_by_borda=r.get("tie_broken_by_borda", False),
-            )
-            for r in time_result["ranked_choice_rounds"]
-        ]
-
         return PollResultsResponse(
             poll_id=str(poll["id"]),
             title=poll["title"],
@@ -1144,11 +1142,10 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             options=poll_options,
             total_votes=len(votes),
             winner=time_result["winner"],
-            ranked_choice_winner=time_result["winner"],
-            ranked_choice_rounds=rc_rounds if rc_rounds else None,
             availability_counts=time_result["availability_counts"],
             max_availability=time_result["max_availability"],
-            included_slots=time_result["included_slots"],
+            like_counts=time_result["like_counts"],
+            dislike_counts=time_result["dislike_counts"],
         )
 
     # For other poll types, return basic structure (to be extended in later phases)
