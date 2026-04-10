@@ -398,6 +398,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     currentTranslate: 0,
     isDragging: false,
     startedInHeader: false,
+    startedInScrollableChild: false,
     isClosing: false,
     rAFPending: false,
     rAFId: 0,
@@ -460,6 +461,22 @@ function TemplateInner({ children }: AppTemplateProps) {
         const rect = scrollEl.getBoundingClientRect();
         state.startedInHeader = e.touches[0].clientY < rect.top;
       }
+      // Check if touch started inside a scrollable child (e.g. autocomplete dropdown).
+      // If so, don't engage drag-to-dismiss — let the child scroll naturally.
+      state.startedInScrollableChild = false;
+      if (scrollEl) {
+        let el = e.target as HTMLElement | null;
+        while (el && el !== scrollEl) {
+          if (el.scrollHeight > el.clientHeight) {
+            const overflowY = window.getComputedStyle(el).overflowY;
+            if (overflowY === 'auto' || overflowY === 'scroll') {
+              state.startedInScrollableChild = true;
+              break;
+            }
+          }
+          el = el.parentElement;
+        }
+      }
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -470,7 +487,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       if (!state.isDragging) {
         const scrollEl = modalScrollRef.current;
         const scrollAtTop = !scrollEl || scrollEl.scrollTop <= 0;
-        if (!(state.startedInHeader || (scrollAtTop && deltaY > 5))) return;
+        if (!(state.startedInHeader || (!state.startedInScrollableChild && scrollAtTop && deltaY > 5))) return;
         state.isDragging = true;
         if (scrollEl) scrollEl.style.overflowY = 'hidden';
         if (modalSheetRef.current) modalSheetRef.current.style.transition = 'none';
