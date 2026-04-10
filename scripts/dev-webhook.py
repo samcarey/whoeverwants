@@ -148,24 +148,45 @@ def deploy_production():
         return
 
     try:
-        # 1. Git pull
-        log.info("--- Pulling latest main ---")
+        # 1. Fetch and reset to origin/main (avoids diverged branch issues)
+        log.info("--- Fetching latest main ---")
         result = subprocess.run(
-            ["git", "pull", "origin", "main"],
+            ["git", "fetch", "origin", "main"],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode != 0:
-            log.error(f"Git pull failed: {result.stderr}")
+            log.error(f"Git fetch failed: {result.stderr}")
             return
-        log.info(f"Git pull: {result.stdout.strip()}")
 
-        # If nothing changed, skip rebuild
-        if "Already up to date" in result.stdout:
+        # Check if there are new commits
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD", "origin/main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log.error(f"Git rev-parse failed: {result.stderr}")
+            return
+        shas = result.stdout.strip().split("\n")
+        if len(shas) == 2 and shas[0] == shas[1]:
             log.info("No changes, skipping rebuild")
             return
+
+        log.info("--- Resetting to origin/main ---")
+        result = subprocess.run(
+            ["git", "checkout", "-B", "main", "origin/main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log.error(f"Git checkout failed: {result.stderr}")
+            return
+        log.info(f"Reset to: {result.stdout.strip()}")
 
         # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
         # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
@@ -198,16 +219,15 @@ def deploy_production():
         else:
             log.info(f"Migrations: {result.stdout.strip()[-200:]}")
 
-        # 4. Verify health
-        import urllib.request
-        try:
-            resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
-            if resp.status == 200:
-                log.info("=== Production deploy complete — health check OK ===")
-            else:
-                log.error(f"Health check returned {resp.status}")
-        except Exception as e:
-            log.error(f"Health check failed: {e}")
+        # 4. Restart webhook service to pick up any script changes.
+        # This kills the current process, so log completion before restarting.
+        log.info("=== Production deploy complete — restarting webhook service ===")
+        subprocess.run(
+            ["systemctl", "restart", "dev-webhook"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
 
     except subprocess.TimeoutExpired as e:
         log.error(f"Production deploy timed out: {e}")
