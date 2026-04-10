@@ -1532,7 +1532,7 @@ export function CreatePollContent() {
           )}
 
           {/* Time poll: Duration + DayTimeWindows + threshold + deadlines */}
-          {pollType === 'time' && (
+          {(pollType === 'time' || (pollType === 'poll' && category === 'time')) && (
             <>
               <ParticipationConditions
                 hideParticipantCounters={true}
@@ -1751,105 +1751,6 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Time poll fields — injected in place of options when category is Time */}
-          {pollType === 'poll' && category === 'time' && (
-            <>
-              <ParticipationConditions
-                hideParticipantCounters={true}
-                disabled={isLoading}
-                durationMinValue={durationMinValue}
-                durationMaxValue={durationMaxValue}
-                durationMinEnabled={durationMinEnabled}
-                durationMaxEnabled={durationMaxEnabled}
-                onDurationMinChange={setDurationMinValue}
-                onDurationMaxChange={setDurationMaxValue}
-                onDurationMinEnabledChange={setDurationMinEnabled}
-                onDurationMaxEnabledChange={setDurationMaxEnabled}
-                dayTimeWindows={dayTimeWindows}
-                onDayTimeWindowsChange={setDayTimeWindows}
-                isCreationForm={true}
-              />
-
-              {/* Availability Threshold */}
-              <div>
-                <label className="block text-sm font-medium">
-                  Availability Threshold:{' '}
-                  <span className="font-normal text-blue-600 dark:text-blue-400">
-                    {availabilityThreshold}%
-                  </span>
-                </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
-                  Include time slots where at least this percentage of the maximum responders are available.
-                </p>
-                <input
-                  type="range"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={availabilityThreshold}
-                  onChange={(e) => setAvailabilityThreshold(Number(e.target.value))}
-                  disabled={isLoading}
-                  className="w-full accent-blue-500 disabled:opacity-50"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-                  <span>0% (max only)</span>
-                  <span>50%</span>
-                </div>
-              </div>
-
-              {/* Availability Phase Deadline */}
-              <div>
-                <label className="block text-sm font-medium cursor-pointer">
-                  <span>Availability Cutoff: </span>
-                  <span className="relative inline-flex">
-                    <span className="font-normal text-blue-600 dark:text-blue-400">
-                      {(() => {
-                        if (suggestionCutoff === 'custom') return 'Custom';
-                        const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                        if (frac) {
-                          const votingMin = getVotingDeadlineMinutes();
-                          if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
-                          return `${frac.fraction}x`;
-                        }
-                        const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                        if (!absOpt) return suggestionCutoff;
-                        return formatDeadlineLabel(absOpt.minutes, absOpt.label);
-                      })()}
-                    </span>
-                    <select
-                      value={suggestionCutoff}
-                      onChange={(e) => setSuggestionCutoff(e.target.value)}
-                      disabled={isLoading}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="Availability cutoff duration"
-                    >
-                      {getVotingDeadlineMinutes() != null && (
-                        <optgroup label="Relative to Preferences Cutoff">
-                          {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
-                            const votingMin = getVotingDeadlineMinutes()!;
-                            const mins = votingMin * opt.fraction;
-                            return (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.fraction}x ({formatMinutesLabel(mins)})
-                              </option>
-                            );
-                          })}
-                        </optgroup>
-                      )}
-                      <optgroup label="Fixed Duration">
-                        {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>
-                            {formatDeadlineLabel(opt.minutes, opt.label)}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </span>
-                </label>
-              </div>
-            </>
-          )}
 
           {/* Title for yes/no polls - rendered above voting cutoff */}
           {category === 'yes_no' && titleField}

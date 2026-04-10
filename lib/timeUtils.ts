@@ -1,3 +1,9 @@
+/** Format a "YYYY-MM-DD" date string as a short day label, e.g. "Mon, Jan 15" */
+export function formatDayLabel(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00');
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 /** Convert "HH:MM" to total minutes since midnight */
 export function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);

@@ -15,6 +15,7 @@
  */
 
 import { useMemo } from "react";
+import { formatDayLabel } from "@/lib/timeUtils";
 
 export type SlotState = "neutral" | "liked" | "disliked";
 
@@ -41,11 +42,6 @@ function parseSlotDate(slot: string): string {
   return slot.split(" ")[0]; // "YYYY-MM-DD"
 }
 
-function formatDayLabel(dateStr: string): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-}
 
 function getBubbleLabel(slot: string, prevSlot: string | null): string {
   const { h, m } = parseSlotStart(slot);
