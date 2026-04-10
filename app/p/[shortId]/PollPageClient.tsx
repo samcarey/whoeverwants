@@ -2054,21 +2054,27 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       {/* Preferences phase: rank the generated time slots */}
                       <div className="mb-4">
                         <h3 className="text-lg font-semibold mb-2 text-center">Rank Your Preferences</h3>
-                        {pollResults?.max_availability != null && (
+                        {pollResults == null ? (
+                          <div className="flex justify-center py-8">
+                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        ) : (
+                        <>
+                        {pollResults.max_availability != null && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">
                             Slots are ordered by duration (longest first), then by time. Slots with a ⚠️ exclude some voters.
                           </p>
                         )}
                         <RankableOptions
-                          options={pollResults?.included_slots ?? pollOptions}
+                          options={pollResults.included_slots ?? pollOptions}
                           onRankingChange={(ranked) => setRankedChoices(ranked)}
                           initialRanking={rankedChoices}
                           disabled={isSubmitting}
                           storageKey={`time-ranking-${poll.id}`}
                           preserveOrder={true}
                           renderOption={(slot) => {
-                            const count = pollResults?.availability_counts?.[slot];
-                            const maxAvail = pollResults?.max_availability;
+                            const count = pollResults.availability_counts?.[slot];
+                            const maxAvail = pollResults.max_availability;
                             const threshold = poll.availability_threshold ?? 5;
                             const minAcceptable = maxAvail != null ? Math.floor(maxAvail * (1 - threshold / 100)) : null;
                             const excluded = maxAvail != null && count != null && count < maxAvail ? maxAvail - count : 0;
@@ -2085,6 +2091,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             );
                           }}
                         />
+                        </>
+                        )}
                       </div>
 
                       <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
