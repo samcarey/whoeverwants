@@ -9,7 +9,7 @@ import FollowUpModal from "@/components/FollowUpModal";
 import { getBuiltInType } from "@/components/TypeFieldInput";
 
 const POLL_TYPE_SYMBOLS: Record<string, string> = {
-  yes_no: '☐',
+  yes_no: '👍',
   ranked_choice: '🗳️',
   participation: '🙋',
 };
