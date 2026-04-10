@@ -133,6 +133,7 @@ function toPoll(data: any): Poll {
     min_responses: data.min_responses ?? undefined,
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
+    availability_threshold: data.availability_threshold ?? undefined,
   };
 }
 
@@ -160,6 +161,8 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     time_slot_rounds: data.time_slot_rounds ?? undefined,
     participating_vote_ids: data.participating_vote_ids ?? undefined,
     participating_voter_names: data.participating_voter_names ?? undefined,
+    availability_counts: data.availability_counts ?? undefined,
+    max_availability: data.max_availability ?? undefined,
   };
 }
 
@@ -210,6 +213,9 @@ export async function apiCreatePoll(params: {
   reference_location_label?: string;
   min_responses?: number;
   show_preliminary_results?: boolean;
+  availability_threshold?: number;
+  suggestion_deadline_minutes?: number;
+  is_auto_title?: boolean;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -315,6 +321,14 @@ export async function apiClosePoll(pollId: string, creatorSecret: string, closeR
 
 export async function apiCutoffSuggestions(pollId: string, creatorSecret: string): Promise<Poll> {
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-suggestions`, {
+    method: 'POST',
+    body: JSON.stringify({ creator_secret: creatorSecret }),
+  });
+  return toPoll(data);
+}
+
+export async function apiCutoffAvailability(pollId: string, creatorSecret: string): Promise<Poll> {
+  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-availability`, {
     method: 'POST',
     body: JSON.stringify({ creator_secret: creatorSecret }),
   });

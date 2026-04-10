@@ -10,6 +10,7 @@ class PollType(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
     participation = "participation"
+    time = "time"
 
 
 class CloseReason(str, Enum):
@@ -65,6 +66,8 @@ class CreatePollRequest(BaseModel):
     min_responses: int | None = None
     # Whether to show preliminary results once min_responses is met
     show_preliminary_results: bool = True
+    # Availability threshold % for time polls (slots within X% of max availability are included)
+    availability_threshold: int = 5
 
 
 class SubmitVoteRequest(BaseModel):
@@ -176,6 +179,7 @@ class PollResponse(BaseModel):
     min_responses: int | None = None
     show_preliminary_results: bool = True
     response_count: int | None = None
+    availability_threshold: int | None = None
     results: "PollResultsResponse | None" = None
 
 
@@ -237,6 +241,9 @@ class PollResultsResponse(BaseModel):
     time_slot_rounds: list[TimeSlotResponse] | None = None
     participating_vote_ids: list[str] | None = None
     participating_voter_names: list[str] | None = None
+    # Time poll fields
+    availability_counts: dict | None = None  # {slot_key: voter_count}
+    max_availability: int | None = None
 
 
 class ParticipantResponse(BaseModel):

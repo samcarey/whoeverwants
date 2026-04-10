@@ -122,6 +122,41 @@ def _finalize_suggestion_options(conn, poll_id: str, now: datetime) -> None:
         )
 
 
+def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
+    """Finalize time slots for a time poll after its availability deadline passes.
+
+    Generates all candidate time slots from the poll's day_time_windows + duration_window,
+    filtered to slots where at least one voter has submitted availability.
+    Stores the result in poll.options.
+    """
+    import json
+    from algorithms.time_poll import generate_time_poll_slots
+
+    poll = conn.execute(
+        "SELECT * FROM polls WHERE id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()
+    if not poll or poll.get("options"):
+        return  # Already finalized or missing
+
+    votes = conn.execute(
+        "SELECT voter_day_time_windows, voter_duration FROM votes WHERE poll_id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchall()
+
+    slots = generate_time_poll_slots(dict(poll), [dict(v) for v in votes])
+
+    if slots:
+        conn.execute(
+            """UPDATE polls SET options = %(options)s::jsonb, updated_at = %(now)s
+               WHERE id = %(poll_id)s""",
+            {
+                "options": json.dumps(slots),
+                "now": now,
+                "poll_id": poll_id,
+            },
+        )
+
 
 def _row_to_poll(row: dict) -> PollResponse:
     """Convert a database row to a PollResponse."""
@@ -172,6 +207,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
+        availability_threshold=row.get("availability_threshold"),
     )
 
 
@@ -395,6 +431,7 @@ def create_poll(req: CreatePollRequest):
                                reference_location_label,
                                is_auto_title,
                                min_responses, show_preliminary_results,
+                               availability_threshold,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -415,6 +452,7 @@ def create_poll(req: CreatePollRequest):
                     %(reference_location_label)s,
                     %(is_auto_title)s,
                     %(min_responses)s, %(show_preliminary_results)s,
+                    %(availability_threshold)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -457,6 +495,7 @@ def create_poll(req: CreatePollRequest):
                 "is_auto_title": req.is_auto_title,
                 "min_responses": req.min_responses,
                 "show_preliminary_results": req.show_preliminary_results,
+                "availability_threshold": req.availability_threshold if req.poll_type == PollType.time else None,
                 "now": now,
             },
         ).fetchone()
@@ -589,11 +628,16 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         if poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
 
-        # Deferred suggestion deadline: start timer on first suggestion
+        # Deferred suggestion/availability deadline: start timer on first submission
+        # For ranked_choice polls: triggered by first suggestion
+        # For time polls: triggered by first availability entry (voter_day_time_windows)
         has_deferred_deadline = (
             poll.get("suggestion_deadline_minutes")
             and not poll.get("suggestion_deadline")
-            and req.suggestions
+            and (
+                req.suggestions
+                or (poll["poll_type"] == "time" and req.voter_day_time_windows)
+            )
         )
         if has_deferred_deadline:
             new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
@@ -624,8 +668,13 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
             if not in_suggestion_phase and req.suggestions:
                 raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
 
-            # Reject rankings before cutoff if pre-ranking is disabled
-            if in_suggestion_phase and req.ranked_choices:
+            # For time polls: reject ranked_choices while still in availability phase
+            # (slots aren't finalized yet, so rankings can't be submitted)
+            if poll["poll_type"] == "time" and in_suggestion_phase and req.ranked_choices:
+                raise HTTPException(status_code=400, detail="Rankings not allowed until availability phase has closed")
+
+            # Reject rankings before cutoff if pre-ranking is disabled (ranked_choice polls)
+            if poll["poll_type"] != "time" and in_suggestion_phase and req.ranked_choices:
                 if not poll["allow_pre_ranking"]:
                     raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
 
@@ -744,8 +793,12 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             if not in_suggestion_phase and req.suggestions:
                 raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
 
-            # Reject rankings before cutoff if pre-ranking is disabled
-            if in_suggestion_phase and req.ranked_choices and not poll["allow_pre_ranking"]:
+            # For time polls: reject ranked_choices while still in availability phase
+            if poll["poll_type"] == "time" and in_suggestion_phase and req.ranked_choices:
+                raise HTTPException(status_code=400, detail="Rankings not allowed until availability phase has closed")
+
+            # Reject rankings before cutoff if pre-ranking is disabled (ranked_choice polls)
+            if poll["poll_type"] != "time" and in_suggestion_phase and req.ranked_choices and not poll["allow_pre_ranking"]:
                 raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
 
             # Prevent unsuggesting options that others have ranked
@@ -838,6 +891,19 @@ def get_results(poll_id: str):
         ):
             _finalize_suggestion_options(conn, poll_id, now)
             # Re-read poll to get updated options
+            poll = conn.execute(
+                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                {"poll_id": poll_id},
+            ).fetchone()
+
+        # For time polls: finalize time slot options when availability deadline passes
+        if (
+            poll["poll_type"] == "time"
+            and poll.get("suggestion_deadline")
+            and poll["suggestion_deadline"] <= now
+            and not poll.get("options")  # Not yet finalized
+        ):
+            _finalize_time_slots(conn, poll_id, now)
             poll = conn.execute(
                 "SELECT * FROM polls WHERE id = %(poll_id)s",
                 {"poll_id": poll_id},
@@ -1030,6 +1096,45 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             participating_voter_names=[p.voter_name for p in participating if p.voter_name],
         )
 
+    if poll_type == "time":
+        import json
+        from algorithms.time_poll import calculate_time_poll_results
+
+        raw_options = poll.get("options")
+        poll_options = None
+        if raw_options:
+            poll_options = json.loads(raw_options) if isinstance(raw_options, str) else raw_options
+
+        vote_dicts = [dict(v) for v in votes]
+        time_result = calculate_time_poll_results(dict(poll), vote_dicts)
+
+        rc_rounds = [
+            RankedChoiceRoundResponse(
+                round_number=r["round_number"],
+                option_name=r["option_name"],
+                vote_count=r["vote_count"],
+                is_eliminated=r["is_eliminated"],
+                borda_score=r.get("borda_score"),
+                tie_broken_by_borda=r.get("tie_broken_by_borda", False),
+            )
+            for r in time_result["ranked_choice_rounds"]
+        ]
+
+        return PollResultsResponse(
+            poll_id=str(poll["id"]),
+            title=poll["title"],
+            poll_type=poll_type,
+            created_at=poll["created_at"].isoformat() if isinstance(poll["created_at"], datetime) else str(poll["created_at"]),
+            response_deadline=poll["response_deadline"].isoformat() if poll.get("response_deadline") else None,
+            options=poll_options,
+            total_votes=len(votes),
+            winner=time_result["winner"],
+            ranked_choice_winner=time_result["winner"],
+            ranked_choice_rounds=rc_rounds if rc_rounds else None,
+            availability_counts=time_result["availability_counts"],
+            max_availability=time_result["max_availability"],
+        )
+
     # For other poll types, return basic structure (to be extended in later phases)
     return PollResultsResponse(
         poll_id=str(poll["id"]),
@@ -1168,6 +1273,51 @@ def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
 
         _finalize_suggestion_options(conn, poll_id, now)
 
+    return _row_to_poll(row)
+
+
+@router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)
+def cutoff_availability(poll_id: str, req: CutoffSuggestionsRequest):
+    """End the availability phase of a time poll immediately. Requires creator_secret."""
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        # Verify it's a time poll and availability phase hasn't ended
+        row = conn.execute(
+            """
+            UPDATE polls
+            SET suggestion_deadline = %(now)s,
+                updated_at = %(now)s
+            WHERE id = %(poll_id)s
+              AND poll_type = 'time'
+              AND creator_secret = %(creator_secret)s
+              AND (
+                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
+                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
+              )
+              AND EXISTS (
+                SELECT 1 FROM votes
+                WHERE poll_id = %(poll_id)s
+                  AND voter_day_time_windows IS NOT NULL
+              )
+            RETURNING *
+            """,
+            {
+                "poll_id": poll_id,
+                "creator_secret": req.creator_secret,
+                "now": now,
+            },
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail="No availability entries to cutoff, invalid creator secret, or availability phase already ended"
+            )
+
+        _finalize_time_slots(conn, poll_id, now)
+
+    # Re-read to get updated options
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM polls WHERE id = %(poll_id)s", {"poll_id": poll_id}).fetchone()
     return _row_to_poll(row)
 
 

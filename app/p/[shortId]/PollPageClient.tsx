@@ -23,7 +23,8 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import RankableOptions from "@/components/RankableOptions";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
@@ -74,6 +75,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
+  const [isCuttingOffAvailability, setIsCuttingOffAvailability] = useState(false);
+  const [showCutoffAvailabilityConfirmModal, setShowCutoffAvailabilityConfirmModal] = useState(false);
   const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
   const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
@@ -108,6 +111,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
     !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
   );
+
+  // Time poll phase helpers: availability phase while options haven't been generated yet
+  const inAvailabilityPhase = poll.poll_type === 'time' && (!optionsOverride?.length) && (!poll.options || poll.options.length === 0);
+  const availabilityTimerStarted = !!(suggestionDeadlineOverride || poll.suggestion_deadline);
+  const inActiveAvailabilityPhase = inAvailabilityPhase && (
+    !availabilityTimerStarted
+    || (currentTime ? currentTime < new Date((suggestionDeadlineOverride || poll.suggestion_deadline)!) : true)
+  );
   // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
@@ -140,12 +151,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [durationMinEnabled, setDurationMinEnabled] = useState(poll.duration_window?.minEnabled ?? false);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(poll.duration_window?.maxEnabled ?? false);
 
-  // Restore ballot draft from localStorage on mount (participation polls only)
+  // Restore ballot draft from localStorage on mount (participation and time polls)
   const draftRestoredRef = useRef(false);
   useEffect(() => {
     if (draftRestoredRef.current) return;
     draftRestoredRef.current = true;
-    if (poll.poll_type !== 'participation') return;
+    if (poll.poll_type !== 'participation' && poll.poll_type !== 'time') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       if (votedPolls[poll.id]) return;
@@ -167,7 +178,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (poll.poll_type !== 'participation' || hasVoted) return;
+    if ((poll.poll_type !== 'participation' && poll.poll_type !== 'time') || hasVoted) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       saveBallotDraft(poll.id, {
@@ -626,7 +637,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
 
-  // Separate effect to fetch results when poll closes or for participation polls
+  // Separate effect to fetch results when poll closes or for participation/time polls
   useEffect(() => {
     // Fetch results if poll is closed (reactive to state changes)
     const isClosed = pollClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
@@ -634,10 +645,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     // Also fetch results for participation polls when voted (to show condition status)
     const shouldFetchForParticipation = poll.poll_type === 'participation' && hasVoted && !isClosed;
 
-    if (isClosed || shouldFetchForParticipation) {
+    // Fetch results for time polls in preferences phase (to get availability_counts for caution symbols)
+    const shouldFetchForTimePoll = poll.poll_type === 'time' && !inAvailabilityPhase;
+
+    if (isClosed || shouldFetchForParticipation || shouldFetchForTimePoll) {
       fetchPollResults();
     }
-  }, [pollClosed, poll.response_deadline, poll.poll_type, hasVoted, fetchPollResults]);
+  }, [pollClosed, poll.response_deadline, poll.poll_type, hasVoted, fetchPollResults, inAvailabilityPhase]);
 
   // Load saved user name
   useEffect(() => {
@@ -789,6 +803,39 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   };
 
+  // Format a time slot string "YYYY-MM-DD HH:MM-HH:MM" into a readable label
+  const formatTimeSlot = (slot: string): string => {
+    try {
+      const spaceIdx = slot.indexOf(' ');
+      const datePart = slot.slice(0, spaceIdx);
+      const timePart = slot.slice(spaceIdx + 1);
+      const dashIdx = timePart.indexOf('-');
+      const startStr = timePart.slice(0, dashIdx);
+      const endStr = timePart.slice(dashIdx + 1);
+      const [year, month, day] = datePart.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const fmtTime = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        const ampm = h < 12 ? 'AM' : 'PM';
+        const h12 = h % 12 === 0 ? 12 : h % 12;
+        return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+      };
+      const [sh, sm] = startStr.split(':').map(Number);
+      const [eh, em] = endStr.split(':').map(Number);
+      const startMins = sh * 60 + sm;
+      let endMins = eh * 60 + em;
+      if (endMins <= startMins) endMins += 24 * 60; // cross-midnight
+      const durMins = endMins - startMins;
+      const durH = Math.floor(durMins / 60);
+      const durM = durMins % 60;
+      const durLabel = durM === 0 ? `${durH}h` : `${durH}h ${durM}m`;
+      return `${dayLabel} • ${fmtTime(startStr)} – ${fmtTime(endStr)} (${durLabel})`;
+    } catch {
+      return slot;
+    }
+  };
+
   const handleCloseClick = () => {
     const isDev = process.env.NODE_ENV === 'development';
     
@@ -884,6 +931,41 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       alert('Failed to cutoff suggestions. Please try again.');
     } finally {
       setIsCuttingOffSuggestions(false);
+    }
+  };
+
+  const handleCutoffAvailabilityClick = () => {
+    if (isCuttingOffAvailability || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) {
+      alert('You do not have permission to end the availability phase.');
+      return;
+    }
+    setShowCutoffAvailabilityConfirmModal(true);
+  };
+
+  const handleCutoffAvailability = async () => {
+    setShowCutoffAvailabilityConfirmModal(false);
+    if (isCuttingOffAvailability || !isCreator) return;
+    const creatorSecret = getCreatorSecret(poll.id);
+    if (!creatorSecret) return;
+
+    setIsCuttingOffAvailability(true);
+    try {
+      const updatedPoll = await apiCutoffAvailability(poll.id, creatorSecret);
+      if (updatedPoll) {
+        setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
+        if (updatedPoll.options) {
+          const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
+          setOptionsOverride(opts);
+        }
+        await fetchPollResults();
+      }
+    } catch (error) {
+      console.error('Error cutting off availability:', error);
+      alert('Failed to end availability phase. Please try again.');
+    } finally {
+      setIsCuttingOffAvailability(false);
     }
   };
 
@@ -1135,6 +1217,35 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           voter_name: voterName.trim() || null,
           options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
         };
+      } else if (poll.poll_type === 'time') {
+        if (inAvailabilityPhase) {
+          voteData = {
+            vote_type: 'time' as const,
+            voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
+            voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
+              minValue: durationMinValue,
+              maxValue: durationMaxValue,
+              minEnabled: durationMinEnabled,
+              maxEnabled: durationMaxEnabled
+            } : null,
+            is_abstain: isAbstaining,
+            voter_name: voterName.trim() || null,
+          };
+        } else {
+          // Preferences phase: submit ranked_choices
+          const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
+          if (filteredRankedChoices.length === 0 && !isAbstaining) {
+            setVoteError("Please rank at least one time slot or abstain");
+            setIsSubmitting(false);
+            return;
+          }
+          voteData = {
+            vote_type: 'time' as const,
+            ranked_choices: isAbstaining ? null : filteredRankedChoices,
+            is_abstain: isAbstaining,
+            voter_name: voterName.trim() || null,
+          };
+        }
       }
 
       let voteId: string | undefined;
@@ -1149,6 +1260,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
           : poll.poll_type === 'participation'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
+          : poll.poll_type === 'time'
+          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, ranked_choices: voteData.ranked_choices, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null }
           : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
         
         
@@ -1219,6 +1332,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
       // Trigger voter list refresh immediately
       setVoterListRefresh(prev => prev + 1);
+
+      // Start deferred availability deadline on first time poll availability submission
+      if (poll.poll_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
+        const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+        setSuggestionDeadlineOverride(newDeadline.toISOString());
+      }
 
       // Refresh suggestion list for polls with suggestion phase
       if (hasSuggestionPhase) {
@@ -1413,6 +1532,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   <div className="mb-3 text-center">
                     <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
                       Suggestions cutoff {durationLabel} after first suggestion
+                    </span>
+                  </div>
+                );
+              }
+            }
+            // Time poll in availability phase: show availability deadline
+            if (poll.poll_type === 'time' && inAvailabilityPhase) {
+              const effectiveAvailDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
+              if (effectiveAvailDeadline) {
+                return <Countdown deadline={effectiveAvailDeadline} label="Availability cutoff" />;
+              }
+              if (poll.suggestion_deadline_minutes) {
+                const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
+                return (
+                  <div className="mb-3 text-center">
+                    <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                      Availability cutoff {durationLabel} after first response
                     </span>
                   </div>
                 );
@@ -1786,6 +1922,200 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                 </>
               )}
             </div>
+          ) : poll.poll_type === 'time' ? (
+            <div>
+              {isPollClosed ? (
+                <div className="py-6">
+                  {loadingResults ? (
+                    <div className="flex justify-center items-center py-8">
+                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  ) : pollResults ? (
+                    <>
+                      {userVoteData?.is_abstain && (
+                        <div className="mt-4 flex justify-center">
+                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
+                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">You Abstained</span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
+                    </div>
+                  )}
+                </div>
+              ) : hasVoted && !isEditingVote ? (
+                <div className="py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium">{inAvailabilityPhase ? 'Your availability:' : 'Your ranking:'}</h4>
+                    {editVoteButton}
+                  </div>
+                  {isLoadingVoteData ? (
+                    <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                      <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Loading your response...</span>
+                    </div>
+                  ) : userVoteData?.is_abstain ? (
+                    <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+                      <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
+                    </div>
+                  ) : inAvailabilityPhase && userVoteData?.voter_day_time_windows ? (
+                    <div className="p-3 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg">
+                      <p className="text-sm text-green-800 dark:text-green-200">Availability submitted for {userVoteData.voter_day_time_windows.length} day(s).</p>
+                    </div>
+                  ) : !inAvailabilityPhase && userVoteData?.ranked_choices ? (
+                    <div className="space-y-2">
+                      {userVoteData.ranked_choices.map((slot: string, index: number) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">{index + 1}</span>
+                          <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm">
+                            {formatTimeSlot(slot)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
+                    <div className="mt-4">
+                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {inAvailabilityPhase ? (
+                    <>
+                      {/* Availability phase: show time window picker */}
+                      <div className="mb-4">
+                        <h3 className="text-lg font-semibold mb-3 text-center">Your Availability</h3>
+                        <ParticipationConditions
+                          hideParticipantCounters={true}
+                          disabled={isSubmitting}
+                          durationMinValue={durationMinValue}
+                          durationMaxValue={durationMaxValue}
+                          durationMinEnabled={durationMinEnabled}
+                          durationMaxEnabled={durationMaxEnabled}
+                          onDurationMinChange={setDurationMinValue}
+                          onDurationMaxChange={setDurationMaxValue}
+                          onDurationMinEnabledChange={setDurationMinEnabled}
+                          onDurationMaxEnabledChange={setDurationMaxEnabled}
+                          dayTimeWindows={voterDayTimeWindows}
+                          onDayTimeWindowsChange={setVoterDayTimeWindows}
+                          pollDayTimeWindows={poll.day_time_windows || undefined}
+                          pollDurationWindow={poll.duration_window || undefined}
+                        />
+                      </div>
+
+                      {inActiveAvailabilityPhase && isCreator && (
+                        <div className="mb-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={handleCutoffAvailabilityClick}
+                            disabled={isCuttingOffAvailability}
+                            className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-md disabled:opacity-50"
+                          >
+                            {isCuttingOffAvailability ? 'Ending...' : 'End Availability Phase'}
+                          </button>
+                        </div>
+                      )}
+
+                      <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+
+                      {voteError && (
+                        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
+                          <p className="text-sm text-red-800 dark:text-red-200">{voteError}</p>
+                        </div>
+                      )}
+
+                      <div className="mb-4">
+                        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleVoteClick}
+                        disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
+                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                      >
+                        {isSubmitting ? 'Submitting...' : 'Submit Availability'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {/* Preferences phase: rank the generated time slots */}
+                      <div className="mb-4">
+                        <h3 className="text-lg font-semibold mb-2 text-center">Rank Your Preferences</h3>
+                        {pollResults?.max_availability != null && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center mb-3">
+                            Slots are ordered by duration (longest first), then by time. Slots with a ⚠️ exclude some voters.
+                          </p>
+                        )}
+                        <RankableOptions
+                          options={pollOptions}
+                          onRankingChange={(ranked) => setRankedChoices(ranked)}
+                          initialRanking={rankedChoices}
+                          disabled={isSubmitting}
+                          storageKey={`time-ranking-${poll.id}`}
+                          renderOption={(slot) => {
+                            const count = pollResults?.availability_counts?.[slot];
+                            const maxAvail = pollResults?.max_availability;
+                            const threshold = poll.availability_threshold ?? 5;
+                            const minAcceptable = maxAvail != null ? Math.floor(maxAvail * (1 - threshold / 100)) : null;
+                            const excluded = maxAvail != null && count != null && count < maxAvail ? maxAvail - count : 0;
+                            const isUnderThreshold = minAcceptable != null && count != null && count < minAcceptable;
+                            return (
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                {excluded > 0 && !isUnderThreshold && (
+                                  <span className="flex-shrink-0 text-red-500 text-sm" title={`Excludes ${excluded} voter(s)`}>
+                                    ⚠️{excluded}
+                                  </span>
+                                )}
+                                <span className="text-sm truncate">{formatTimeSlot(slot)}</span>
+                              </div>
+                            );
+                          }}
+                        />
+                      </div>
+
+                      <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+
+                      {voteError && (
+                        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
+                          <p className="text-sm text-red-800 dark:text-red-200">{voteError}</p>
+                        </div>
+                      )}
+
+                      <div className="mb-4">
+                        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleVoteClick}
+                        disabled={isSubmitting || (!isAbstaining && rankedChoices.length === 0)}
+                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                      >
+                        {isSubmitting ? 'Submitting...' : 'Submit Preferences'}
+                      </button>
+                    </>
+                  )}
+
+                  <div className="mt-4">
+                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
+                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
             <div>
               {isPollClosed ? (
@@ -2034,6 +2364,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         title="Cutoff Suggestions"
         message="Are you sure you want to end the suggestion phase now? No more suggestions will be accepted and ranking will begin immediately."
         confirmText="Cutoff Now"
+        cancelText="Cancel"
+        confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
+      />
+
+      <ConfirmationModal
+        isOpen={showCutoffAvailabilityConfirmModal}
+        onConfirm={handleCutoffAvailability}
+        onCancel={() => setShowCutoffAvailabilityConfirmModal(false)}
+        title="End Availability Phase"
+        message="Are you sure you want to end the availability phase now? Time slots will be generated and preference ranking will begin immediately."
+        confirmText="End Now"
         cancelText="Cancel"
         confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
       />

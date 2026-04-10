@@ -84,11 +84,13 @@ export function CreatePollContent() {
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const pollType = modeParam === 'participation' ? 'participation' : 'poll';
-  const setPollType = useCallback((type: 'poll' | 'participation') => {
+  const pollType = modeParam === 'participation' ? 'participation' : modeParam === 'time' ? 'time' : 'poll';
+  const setPollType = useCallback((type: 'poll' | 'participation' | 'time') => {
     const url = new URL(window.location.href);
     if (type === 'participation') {
       url.searchParams.set('mode', 'participation');
+    } else if (type === 'time') {
+      url.searchParams.set('mode', 'time');
     } else {
       url.searchParams.delete('mode');
     }
@@ -104,6 +106,7 @@ export function CreatePollContent() {
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
+  const [availabilityThreshold, setAvailabilityThreshold] = useState<number>(5);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -215,14 +218,19 @@ export function CreatePollContent() {
     }
 
     // participation
-    if (locationMode === 'set' && locationValue.trim()) {
-      return `Who's going to ${shortenLocation(locationValue)}?`;
+    if (pollType === 'participation') {
+      if (locationMode === 'set' && locationValue.trim()) {
+        return `Who's going to ${shortenLocation(locationValue)}?`;
+      }
+      if (locationMode === 'preferences') {
+        const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
+        if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
+      }
+      return "Who's in?";
     }
-    if (locationMode === 'preferences') {
-      const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
-      if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
-    }
-    return "Who's in?";
+
+    // time
+    return "When works?";
   }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
 
   // Focus details textarea when opening
@@ -435,9 +443,12 @@ export function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' => {
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' | 'time' => {
     if (pollType === 'participation') {
       return 'participation';
+    }
+    if (pollType === 'time') {
+      return 'time';
     }
     if (category === 'yes_no') {
       return 'yes_no';
@@ -525,6 +536,28 @@ export function CreatePollContent() {
         return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
       }
       // Check minimum duration on all time windows
+      if (durationMinEnabled && durationMinValue != null) {
+        const minDurMinutes = Math.round(durationMinValue * 60);
+        if (minDurMinutes > 0) {
+          const tooShort = dayTimeWindows.some(dtw =>
+            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
+          );
+          if (tooShort) {
+            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
+          }
+        }
+      }
+    }
+
+    // Time poll: same day/window requirements as participation
+    if (dbPollType === 'time') {
+      if (dayTimeWindows.length === 0) {
+        return "Please select at least one day.";
+      }
+      const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
+      if (emptyDays.length > 0) {
+        return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
+      }
       if (durationMinEnabled && durationMinValue != null) {
         const minDurMinutes = Math.round(durationMinValue * 60);
         if (minDurMinutes > 0) {
@@ -695,6 +728,10 @@ export function CreatePollContent() {
               setMaxEnabled(false);
               setMaxParticipants(null);
             }
+          } else if (forkData.poll_type === 'time') {
+            setPollType('time');
+            setOptions(['']);
+            if (forkData.availability_threshold != null) setAvailabilityThreshold(forkData.availability_threshold);
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1199,6 +1236,25 @@ export function CreatePollContent() {
         }
       }
 
+      // Add time poll specific fields
+      if (dbPollType === 'time') {
+        if (dayTimeWindows.length > 0) {
+          pollData.day_time_windows = dayTimeWindows;
+        }
+        if (durationMinEnabled || durationMaxEnabled) {
+          pollData.duration_window = {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          };
+        }
+        pollData.availability_threshold = availabilityThreshold;
+        // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
+        const cutoffMinutes = getSuggestionCutoffMinutes();
+        pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
+      }
+
       // Add location field for participation polls
       if (dbPollType === 'participation') {
         const addFieldData = (
@@ -1386,8 +1442,8 @@ export function CreatePollContent() {
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
-          {/* Participation mode: show link back to preferences form */}
-          {pollType === 'participation' && (
+          {/* Non-default modes: show link back to preferences form */}
+          {(pollType === 'participation' || pollType === 'time') && (
             <div className="flex justify-center">
               <button
                 type="button"
@@ -1400,7 +1456,7 @@ export function CreatePollContent() {
           )}
 
           {/* Category and For fields for suggestion and poll types */}
-          {pollType !== 'participation' && (
+          {pollType === 'poll' && (
             <>
               <div>
                 <label htmlFor="category" className="block text-sm font-medium mb-1">
@@ -1476,6 +1532,187 @@ export function CreatePollContent() {
               onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
             />
+          )}
+
+          {/* Time poll: Duration + DayTimeWindows + threshold + deadlines */}
+          {pollType === 'time' && (
+            <>
+              <ParticipationConditions
+                hideParticipantCounters={true}
+                disabled={isLoading}
+                durationMinValue={durationMinValue}
+                durationMaxValue={durationMaxValue}
+                durationMinEnabled={durationMinEnabled}
+                durationMaxEnabled={durationMaxEnabled}
+                onDurationMinChange={setDurationMinValue}
+                onDurationMaxChange={setDurationMaxValue}
+                onDurationMinEnabledChange={setDurationMinEnabled}
+                onDurationMaxEnabledChange={setDurationMaxEnabled}
+                dayTimeWindows={dayTimeWindows}
+                onDayTimeWindowsChange={setDayTimeWindows}
+                isCreationForm={true}
+              />
+
+              {/* Availability Threshold */}
+              <div>
+                <label className="block text-sm font-medium">
+                  Availability Threshold:{' '}
+                  <span className="font-normal text-blue-600 dark:text-blue-400">
+                    {availabilityThreshold}%
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+                  Include time slots where at least this percentage of the maximum responders are available.
+                </p>
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={availabilityThreshold}
+                  onChange={(e) => setAvailabilityThreshold(Number(e.target.value))}
+                  disabled={isLoading}
+                  className="w-full accent-blue-500 disabled:opacity-50"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+                  <span>0% (max only)</span>
+                  <span>50%</span>
+                </div>
+              </div>
+
+              {/* Availability Phase Deadline */}
+              <div>
+                <label className="block text-sm font-medium cursor-pointer">
+                  <span>Availability Cutoff: </span>
+                  <span className="relative inline-flex">
+                    <span className="font-normal text-blue-600 dark:text-blue-400">
+                      {(() => {
+                        if (suggestionCutoff === 'custom') return 'Custom';
+                        const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                        if (frac) {
+                          const votingMin = getVotingDeadlineMinutes();
+                          if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
+                          return `${frac.fraction}x`;
+                        }
+                        const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                        if (!absOpt) return suggestionCutoff;
+                        return formatDeadlineLabel(absOpt.minutes, absOpt.label);
+                      })()}
+                    </span>
+                    <select
+                      value={suggestionCutoff}
+                      onChange={(e) => setSuggestionCutoff(e.target.value)}
+                      disabled={isLoading}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      aria-label="Availability cutoff duration"
+                    >
+                      {getVotingDeadlineMinutes() != null && (
+                        <optgroup label="Relative to Preferences Cutoff">
+                          {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
+                            const votingMin = getVotingDeadlineMinutes()!;
+                            const mins = votingMin * opt.fraction;
+                            return (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.fraction}x ({formatMinutesLabel(mins)})
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      )}
+                      <optgroup label="Fixed Duration">
+                        {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {formatDeadlineLabel(opt.minutes, opt.label)}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </span>
+                </label>
+                {suggestionCutoff === 'custom' && (
+                  <div className="mt-2 flex justify-between gap-2">
+                    <div className="w-auto">
+                      <label htmlFor="customSuggestionDate2" className="block text-xs text-gray-500 mb-1">Date</label>
+                      <input
+                        type="date"
+                        id="customSuggestionDate2"
+                        value={customSuggestionDate}
+                        onChange={(e) => setCustomSuggestionDate(e.target.value)}
+                        disabled={isLoading}
+                        min={isClient ? getTodayDate() : ''}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                    <div className="w-auto">
+                      <label htmlFor="customSuggestionTime2" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
+                      <input
+                        type="time"
+                        id="customSuggestionTime2"
+                        value={customSuggestionTime}
+                        onChange={(e) => setCustomSuggestionTime(e.target.value)}
+                        disabled={isLoading}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Preferences Phase Deadline */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Preferences Cutoff</label>
+                <select
+                  value={deadlineOption}
+                  onChange={(e) => setDeadlineOption(e.target.value)}
+                  disabled={isLoading}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {deadlineOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {isClient ? getTimeLabel(option.value) : option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {deadlineOption === 'custom' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Custom Preferences Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
+                  </label>
+                  <div className="flex justify-between gap-2">
+                    <div className="w-auto">
+                      <label htmlFor="customDateTimePoll" className="block text-xs text-gray-500 mb-1">Date</label>
+                      <input
+                        type="date"
+                        id="customDateTimePoll"
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        disabled={isLoading}
+                        min={isClient ? getTodayDate() : ''}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                    <div className="w-auto">
+                      <label htmlFor="customTimeTimePoll" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
+                      <input
+                        type="time"
+                        id="customTimeTimePoll"
+                        value={customTime}
+                        onChange={(e) => setCustomTime(e.target.value)}
+                        disabled={isLoading}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Location field for participation polls */}
