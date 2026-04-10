@@ -976,6 +976,9 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Standalone server is a single `node` process** (not a process chain like `npm run dev`). PID management is simpler and more reliable.
 - **Dev server shows stale commit info** when the build/restart fails silently. Always check `dev-server-manager.sh list` for `DOWN` or `SUSPENDED` status after a push if the commit info doesn't update.
 - **Suspended servers use 0 RAM** but keep the build on disk (~200MB). Resume is instant (just restarts processes). A full upsert re-clones, rebuilds, and reinstalls.
+- **Two concurrent builds on the 1GB droplet will spike RAM** to ~850MB used + ~800MB swap (`npm ci` alone uses ~500MB). Builds are serialized via a global `flock` semaphore in `dev-server-manager.sh`; git fetch, migrations, and server startup still run concurrently.
+- **The `/root/whoeverwants` repo must stay on `main`**. If it drifts to a feature branch (e.g., someone ran git commands manually on the droplet), production deploys fail. `dev-webhook.py` uses `git checkout -B main origin/main` (not `git pull`) so it's robust regardless of current branch state.
+- **`systemctl restart dev-webhook` kills the calling process**. Any code after that call in `deploy_production()` is dead. Log completion *before* calling restart, not after.
 
 ### Nominatim / Location Search
 
