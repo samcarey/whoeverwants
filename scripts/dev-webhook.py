@@ -222,7 +222,18 @@ def deploy_production():
         else:
             log.info(f"Migrations: {result.stdout.strip()[-200:]}")
 
-        # 4. Verify health
+        # 4. Restart webhook service if the webhook script itself changed
+        # (The service reads the script at startup, so changes require a restart)
+        log.info("--- Restarting webhook service to pick up script changes ---")
+        subprocess.run(
+            ["systemctl", "restart", "dev-webhook"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        # Note: after restart, this thread is killed. Health check happens in new process.
+
+        # 5. Verify health
         import urllib.request
         try:
             resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)

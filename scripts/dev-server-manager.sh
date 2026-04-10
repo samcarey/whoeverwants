@@ -532,6 +532,9 @@ cmd_upsert() {
     return 0
   fi
 
+  # Global build semaphore opened here, acquired just before the heavy build steps below.
+  local build_lock="${LOCK_DIR}/_build.lock"
+
   log "=== Upsert dev server: branch=$branch (slug: $slug) ==="
 
   local dir="${DEV_DIR}/${slug}"
@@ -622,6 +625,11 @@ cmd_upsert() {
   stop_api "$slug"
   stop_nextjs "$slug"
 
+  # --- Acquire global build semaphore (max 1 concurrent npm/next build, each ~500MB RAM) ---
+  exec 201>"$build_lock"
+  log "Waiting for build slot..."
+  flock 201
+
   # --- Install JS deps (needed for build) ---
   if [ "$needs_npm_install" = true ] || [ ! -d "${dir}/node_modules" ]; then
     log "--- Installing JS dependencies ---"
@@ -631,6 +639,9 @@ cmd_upsert() {
   # --- Build Next.js standalone ---
   log "--- Building Next.js standalone ---"
   build_nextjs "$slug" "$api_port"
+
+  # --- Release build semaphore (allow next queued build to start) ---
+  flock --unlock 201
 
   # --- Post-build cleanup: delete node_modules and build cache to free disk ---
   log "--- Post-build cleanup ---"
