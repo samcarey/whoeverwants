@@ -1455,19 +1455,6 @@ export function CreatePollContent() {
             </div>
           )}
 
-          {/* Default poll mode: offer scheduling poll option */}
-          {pollType === 'poll' && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setPollType('time')}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Switch to Scheduling Poll
-              </button>
-            </div>
-          )}
-
           {/* Category and For fields for suggestion and poll types */}
           {pollType === 'poll' && (
             <>
@@ -1478,6 +1465,10 @@ export function CreatePollContent() {
                 <TypeFieldInput
                   value={category}
                   onChange={(val) => {
+                    if (val === 'scheduling') {
+                      setPollType('time');
+                      return;
+                    }
                     setCategory(val);
                     if (val === 'yes_no') {
                       setIsAutoTitle(false);
