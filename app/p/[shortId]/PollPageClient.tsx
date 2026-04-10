@@ -2065,6 +2065,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           initialRanking={rankedChoices}
                           disabled={isSubmitting}
                           storageKey={`time-ranking-${poll.id}`}
+                          preserveOrder={true}
                           renderOption={(slot) => {
                             const count = pollResults?.availability_counts?.[slot];
                             const maxAvail = pollResults?.max_availability;

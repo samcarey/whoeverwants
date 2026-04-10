@@ -20,9 +20,10 @@ interface RankableOptionsProps {
   initialRanking?: string[]; // Optional initial ranking to override saved state
   optionsMetadata?: OptionsMetadata | null;
   renderOption?: (option: string) => React.ReactNode;
+  preserveOrder?: boolean; // Skip initial shuffle (use for time slots, which have a natural order)
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata, renderOption }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata, renderOption, preserveOrder = false }: RankableOptionsProps) {
 
   // Load saved state from localStorage
   const loadSavedState = useCallback(() => {
@@ -554,9 +555,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           setMainList(positionedMainList);
           setNoPreferenceList(positionedNoPreferenceList);
         } else {
-          // Initialize with randomized order to prevent position bias
-          const shuffledOptions = shuffleArray(options);
-          const newRankedOptions = shuffledOptions.map((text, index) => ({
+          // Initialize with randomized order to prevent position bias,
+          // unless preserveOrder is set (e.g. time slots have a natural chronological order).
+          const orderedOptions = preserveOrder ? options : shuffleArray(options);
+          const newRankedOptions = orderedOptions.map((text, index) => ({
             id: `option-${index}`,
             text: text,
             top: index * totalItemHeight
