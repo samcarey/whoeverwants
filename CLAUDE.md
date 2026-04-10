@@ -107,6 +107,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 - **After pushing, wait for the dev server to be ready.** Build takes ~2-3 min. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
 - URL is derived from branch name: `<branch-slug>.dev.whoeverwants.com`
   - Example: `claude/fix-voting-bug` → `https://fix-voting-bug.dev.whoeverwants.com`
+- **Backward-compatible redirects**: Old email-based URLs (e.g., `sam-at-samcarey-com.dev.whoeverwants.com`) auto-redirect to the branch-based URL via 302. Redirects are created automatically from commit author emails on each push.
 - Dev servers are fully isolated — each has its own API and database
 - **Post-build cleanup**: `node_modules` and `.next/cache` are deleted after build to save disk (~500MB per server)
 - **Idle suspension**: Servers idle >30 min auto-suspend (0 RAM). Resumed on next push.
