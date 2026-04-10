@@ -1133,6 +1133,7 @@ def _compute_results(poll, votes) -> PollResultsResponse:
             ranked_choice_rounds=rc_rounds if rc_rounds else None,
             availability_counts=time_result["availability_counts"],
             max_availability=time_result["max_availability"],
+            included_slots=time_result["included_slots"],
         )
 
     # For other poll types, return basic structure (to be extended in later phases)

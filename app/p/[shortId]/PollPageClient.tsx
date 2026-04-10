@@ -2060,7 +2060,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                           </p>
                         )}
                         <RankableOptions
-                          options={pollOptions}
+                          options={pollResults?.included_slots ?? pollOptions}
                           onRankingChange={(ranked) => setRankedChoices(ranked)}
                           initialRanking={rankedChoices}
                           disabled={isSubmitting}

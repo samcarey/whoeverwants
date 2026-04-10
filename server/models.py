@@ -244,6 +244,7 @@ class PollResultsResponse(BaseModel):
     # Time poll fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
     max_availability: int | None = None
+    included_slots: list[str] | None = None  # slots passing availability threshold
 
 
 class ParticipantResponse(BaseModel):

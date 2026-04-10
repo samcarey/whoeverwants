@@ -129,6 +129,7 @@ export interface PollResults {
   // Time poll fields
   availability_counts?: Record<string, number>;
   max_availability?: number;
+  included_slots?: string[];
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
 }
