@@ -36,100 +36,96 @@ const nextConfig: NextConfig = {
 };
 
 if (process.env.NEXT_OUTPUT === 'standalone') {
-  // Docker production build: standalone output for minimal image size
   nextConfig.output = 'standalone';
-} else {
-  const apiDest = getApiRewriteDestination();
-
-  // Proxy /api/polls to the backend API (same-origin for Safari ITP compatibility)
-  nextConfig.rewrites = async () => ({
-    beforeFiles: [
-      // API rewrites must be in beforeFiles so they take priority over
-      // the trailingSlash redirect (which otherwise 308s API POST requests)
-      {
-        source: '/api/polls',
-        destination: `${apiDest}/api/polls`,
-      },
-      {
-        source: '/api/polls/',
-        destination: `${apiDest}/api/polls`,
-      },
-      {
-        source: '/api/polls/:path*',
-        destination: `${apiDest}/api/polls/:path*`,
-      },
-      {
-        source: '/api/search/:path*',
-        destination: `${apiDest}/api/search/:path*`,
-      },
-      {
-        source: '/api/client-logs',
-        destination: `${apiDest}/api/client-logs`,
-      },
-      {
-        source: '/api/client-logs/',
-        destination: `${apiDest}/api/client-logs`,
-      },
-    ],
-    afterFiles: [],
-    fallback: [],
-  });
-
-  // Headers for tunnel compatibility and environment-specific caching
-  // (not supported with static export)
-  nextConfig.headers = async () => {
-    const isDev = process.env.NODE_ENV === 'development';
-
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Forwarded-Proto',
-            value: 'https'
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
-          // Cache control for pages
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
-          },
-        ],
-      },
-      {
-        source: '/_next/static/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=31536000, immutable',
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*'
-          },
-        ],
-      },
-      // API routes caching
-      {
-        source: '/api/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: isDev
-              ? 'no-cache, no-store, must-revalidate, max-age=0'
-              : 'public, max-age=3600, stale-while-revalidate=3600'
-          },
-        ],
-      },
-    ];
-  };
 }
+
+const apiDest = getApiRewriteDestination();
+
+// Proxy /api/polls to the backend API (same-origin for Safari ITP compatibility)
+// Always configured so standalone dev server builds bake in rewrites at build time.
+nextConfig.rewrites = async () => ({
+  beforeFiles: [
+    // API rewrites must be in beforeFiles so they take priority over
+    // the trailingSlash redirect (which otherwise 308s API POST requests)
+    {
+      source: '/api/polls',
+      destination: `${apiDest}/api/polls`,
+    },
+    {
+      source: '/api/polls/',
+      destination: `${apiDest}/api/polls`,
+    },
+    {
+      source: '/api/polls/:path*',
+      destination: `${apiDest}/api/polls/:path*`,
+    },
+    {
+      source: '/api/search/:path*',
+      destination: `${apiDest}/api/search/:path*`,
+    },
+    {
+      source: '/api/client-logs',
+      destination: `${apiDest}/api/client-logs`,
+    },
+    {
+      source: '/api/client-logs/',
+      destination: `${apiDest}/api/client-logs`,
+    },
+  ],
+  afterFiles: [],
+  fallback: [],
+});
+
+nextConfig.headers = async () => {
+  const isDev = process.env.NODE_ENV === 'development';
+
+  return [
+    {
+      source: '/(.*)',
+      headers: [
+        {
+          key: 'X-Forwarded-Proto',
+          value: 'https'
+        },
+        {
+          key: 'Access-Control-Allow-Origin',
+          value: '*'
+        },
+        {
+          key: 'Cache-Control',
+          value: isDev
+            ? 'no-cache, no-store, must-revalidate, max-age=0'
+            : 'public, max-age=3600, stale-while-revalidate=3600'
+        },
+      ],
+    },
+    {
+      source: '/_next/static/(.*)',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: isDev
+            ? 'no-cache, no-store, must-revalidate, max-age=0'
+            : 'public, max-age=31536000, immutable',
+        },
+        {
+          key: 'Access-Control-Allow-Origin',
+          value: '*'
+        },
+      ],
+    },
+    {
+      source: '/api/(.*)',
+      headers: [
+        {
+          key: 'Cache-Control',
+          value: isDev
+            ? 'no-cache, no-store, must-revalidate, max-age=0'
+            : 'public, max-age=3600, stale-while-revalidate=3600'
+        },
+      ],
+    },
+  ];
+};
 
 export default nextConfig;

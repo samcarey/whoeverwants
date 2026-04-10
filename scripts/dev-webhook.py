@@ -4,7 +4,7 @@ GitHub webhook handler for the WhoeverWants droplet.
 
 Handles two types of push events:
 1. Push to `main` → auto-deploy production backend (git pull + docker compose rebuild)
-2. Push to any branch → update per-user dev servers based on commit author email
+2. Push to any other branch → update per-branch dev server (standalone build)
 
 Runs as a systemd service on the droplet, listening on port 9091.
 Caddy proxies hooks.api.whoeverwants.com -> localhost:9091.
@@ -27,13 +27,6 @@ SECRET_FILE = "/etc/dev-webhook-secret"
 MANAGER_SCRIPT = "/root/whoeverwants/scripts/dev-server-manager.sh"
 REPO_DIR = "/root/whoeverwants"
 DEPLOY_LOCK = "/tmp/production-deploy.lock"
-
-# Claude/bot email patterns to ignore
-IGNORE_PATTERNS = [
-    "@anthropic.com",
-    "noreply@github.com",
-    "actions@github.com",
-]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,37 +61,6 @@ def verify_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
-def is_ignored_email(email: str) -> bool:
-    """Check if an email should be ignored."""
-    email_lower = email.lower()
-    for pattern in IGNORE_PATTERNS:
-        if pattern in email_lower:
-            return True
-    return False
-
-
-def extract_author_emails(payload: dict) -> set[str]:
-    """Extract unique non-bot author emails from a push event."""
-    emails = set()
-
-    # Get author emails from all commits in the push
-    for commit in payload.get("commits", []):
-        author = commit.get("author", {})
-        email = author.get("email", "")
-        if email and not is_ignored_email(email):
-            emails.add(email)
-
-    # Also check head_commit
-    head = payload.get("head_commit", {})
-    if head:
-        author = head.get("author", {})
-        email = author.get("email", "")
-        if email and not is_ignored_email(email):
-            emails.add(email)
-
-    return emails
-
-
 def get_branch(payload: dict) -> str | None:
     """Extract branch name from push event ref."""
     ref = payload.get("ref", "")
@@ -107,24 +69,24 @@ def get_branch(payload: dict) -> str | None:
     return None
 
 
-def trigger_upsert(email: str, branch: str):
-    """Run dev-server-manager.sh upsert in background."""
-    log.info(f"Triggering upsert: email={email}, branch={branch}")
+def trigger_upsert(branch: str):
+    """Run dev-server-manager.sh upsert for a branch."""
+    log.info(f"Triggering upsert: branch={branch}")
     try:
         result = subprocess.run(
-            ["bash", MANAGER_SCRIPT, "upsert", email, branch],
+            ["bash", MANAGER_SCRIPT, "upsert", branch],
             capture_output=True,
             text=True,
             timeout=600,  # 10 minute timeout for npm ci + build
         )
         if result.returncode == 0:
-            log.info(f"Upsert succeeded for {email}: {result.stdout[-200:] if result.stdout else '(no output)'}")
+            log.info(f"Upsert succeeded for {branch}: {result.stdout[-200:] if result.stdout else '(no output)'}")
         else:
-            log.error(f"Upsert failed for {email}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
+            log.error(f"Upsert failed for {branch}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
     except subprocess.TimeoutExpired:
-        log.error(f"Upsert timed out for {email}")
+        log.error(f"Upsert timed out for {branch}")
     except Exception as e:
-        log.error(f"Upsert error for {email}: {e}")
+        log.error(f"Upsert error for {branch}: {e}")
 
 
 def deploy_production():
@@ -275,16 +237,7 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b'{"status": "branch deleted"}')
             return
 
-        # Extract author emails
-        emails = extract_author_emails(payload)
-        if not emails:
-            log.info(f"No non-bot author emails in push to {branch}")
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status": "no authors"}')
-            return
-
-        log.info(f"Push to {branch} by {emails}")
+        log.info(f"Push to {branch}")
 
         # Respond immediately, process in background
         self.send_response(202)
@@ -305,14 +258,12 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({
             "status": "accepted",
             "branch": branch,
-            "authors": list(emails),
         }).encode())
 
-        # Trigger upsert for each author in background threads
-        for email in emails:
-            t = threading.Thread(target=trigger_upsert, args=(email, branch))
-            t.daemon = True
-            t.start()
+        # Trigger one upsert per branch (not per author)
+        t = threading.Thread(target=trigger_upsert, args=(branch,))
+        t.daemon = True
+        t.start()
 
     def do_GET(self):
         if self.path == "/health":
