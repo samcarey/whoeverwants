@@ -21,8 +21,11 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://whoeverwants:whoeverwants@db:5432/whoeverwants
+      FAVICON_CACHE_PATH: /app/cache/favicon_cache.json
     env_file:
       - .env.api
+    volumes:
+      - api_cache:/app/cache
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -34,3 +37,4 @@ services:
 
 volumes:
   pgdata:
+  api_cache:
