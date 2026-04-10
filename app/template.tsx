@@ -463,16 +463,16 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
       // Check if touch started inside a scrollable child (e.g. autocomplete dropdown).
       // If so, don't engage drag-to-dismiss — let the child scroll naturally.
+      // Only check for overflow-y style, not scrollHeight vs clientHeight — the height
+      // check has edge cases near the max-height boundary that cause false negatives.
       state.startedInScrollableChild = false;
       if (scrollEl) {
         let el = e.target as HTMLElement | null;
         while (el && el !== scrollEl) {
-          if (el.scrollHeight > el.clientHeight) {
-            const overflowY = window.getComputedStyle(el).overflowY;
-            if (overflowY === 'auto' || overflowY === 'scroll') {
-              state.startedInScrollableChild = true;
-              break;
-            }
+          const overflowY = window.getComputedStyle(el).overflowY;
+          if (overflowY === 'auto' || overflowY === 'scroll') {
+            state.startedInScrollableChild = true;
+            break;
           }
           el = el.parentElement;
         }
