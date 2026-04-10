@@ -1107,6 +1107,23 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [noPreferenceList, dragState.isDragging, newOptions, updateItemPositions]);
 
+  // Keep new options pinned to the top of the no-preference list.
+  // Runs after any move (drag, tap, keyboard) that drops a new option somewhere
+  // other than position 0. Not active during a drag so animations aren't interrupted.
+  useEffect(() => {
+    if (dragState.isDragging || !newOptions || newOptions.length === 0 || noPreferenceList.length < 2) return;
+
+    const newSet = new Set(newOptions);
+    const desiredOrder = [
+      ...noPreferenceList.filter(item => newSet.has(item.text)),
+      ...noPreferenceList.filter(item => !newSet.has(item.text)),
+    ];
+    const alreadySorted = noPreferenceList.every((item, i) => item.id === desiredOrder[i].id);
+    if (!alreadySorted) {
+      setNoPreferenceList(updateItemPositions(desiredOrder));
+    }
+  }, [noPreferenceList, dragState.isDragging, newOptions, updateItemPositions]);
+
   // Reset to random order (for testing/debugging)
   const resetToRandomOrder = useCallback(() => {
     if (storageKey) {
