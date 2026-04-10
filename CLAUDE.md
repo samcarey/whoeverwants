@@ -108,6 +108,7 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 - URL is derived from branch name: `<branch-slug>.dev.whoeverwants.com`
   - Example: `claude/fix-voting-bug` → `https://fix-voting-bug.dev.whoeverwants.com`
 - **Backward-compatible redirects**: Old email-based URLs (e.g., `sam-at-samcarey-com.dev.whoeverwants.com`) auto-redirect to the branch-based URL via 302. Redirects are created automatically from commit author emails on each push.
+  - The URL stays in the browser (reverse proxy, not redirect) — you can bookmark and refresh the email-based URL to always see whatever branch you last pushed.
 - Dev servers are fully isolated — each has its own API and database
 - **Post-build cleanup**: `node_modules` and `.next/cache` are deleted after build to save disk (~500MB per server)
 - **Idle suspension**: Servers idle >30 min auto-suspend (0 RAM). Resumed on next push.

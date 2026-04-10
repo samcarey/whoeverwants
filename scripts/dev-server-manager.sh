@@ -396,37 +396,44 @@ remove_caddy() {
   log "Caddy config removed for $slug"
 }
 
-# Configure a Caddy redirect from an email-based slug to a branch-based slug.
-# This provides backward compatibility for old email-based dev server URLs.
-# e.g., sam-at-samcarey-com.dev.whoeverwants.com -> fix-voting-bug.dev.whoeverwants.com
+# Configure a Caddy reverse proxy from an email-based slug to a branch-based server.
+# The email URL stays in the browser — it proxies to the branch server's port.
+# e.g., sam-at-samcarey-com.dev.whoeverwants.com proxies to 127.0.0.1:<branch-server-port>
 configure_caddy_redirect() {
   local email_slug="$1"
   local branch_slug="$2"
 
   ensure_caddy_import
 
-  # Don't overwrite an actual dev server config with a redirect
+  # Don't overwrite an actual dev server config with a proxy
   if [ -f "${DEV_DIR}/${email_slug}/.dev-meta.json" ]; then
-    log "Skipping redirect for $email_slug — active dev server exists with that slug"
+    log "Skipping proxy for $email_slug — active dev server exists with that slug"
     return
   fi
 
-  local redirect_file="${CADDY_DEV_DIR}/${email_slug}.caddy"
-  local target_url="https://${branch_slug}.dev.whoeverwants.com"
+  # Look up the branch server's frontend port
+  local port
+  port=$(get_dev_port "$branch_slug")
+  if [ -z "$port" ]; then
+    log "WARNING: No port found for branch slug '$branch_slug', skipping proxy for $email_slug"
+    return
+  fi
 
-  # Check if redirect already points to the right place
-  if [ -f "$redirect_file" ] && grep -q "$target_url" "$redirect_file" 2>/dev/null; then
+  local proxy_file="${CADDY_DEV_DIR}/${email_slug}.caddy"
+
+  # Check if proxy already points to the right port
+  if [ -f "$proxy_file" ] && grep -q "127.0.0.1:${port}" "$proxy_file" 2>/dev/null; then
     return  # Already correct, skip reload
   fi
 
-  cat > "$redirect_file" <<EOF
+  cat > "$proxy_file" <<EOF
 ${email_slug}.dev.whoeverwants.com {
-	redir ${target_url}{uri} temporary
+	reverse_proxy 127.0.0.1:${port}
 }
 EOF
 
   caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
-  log "Caddy redirect: ${email_slug}.dev.whoeverwants.com -> ${target_url}"
+  log "Caddy proxy: ${email_slug}.dev.whoeverwants.com -> 127.0.0.1:${port} (branch: ${branch_slug})"
 }
 
 # --- Eviction ---
