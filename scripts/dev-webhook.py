@@ -148,24 +148,48 @@ def deploy_production():
         return
 
     try:
-        # 1. Git pull
-        log.info("--- Pulling latest main ---")
+        # 1. Fetch and reset to origin/main (avoids diverged branch issues)
+        log.info("--- Fetching latest main ---")
         result = subprocess.run(
-            ["git", "pull", "origin", "main"],
+            ["git", "fetch", "origin", "main"],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode != 0:
-            log.error(f"Git pull failed: {result.stderr}")
+            log.error(f"Git fetch failed: {result.stderr}")
             return
-        log.info(f"Git pull: {result.stdout.strip()}")
 
-        # If nothing changed, skip rebuild
-        if "Already up to date" in result.stdout:
+        # Check if there are new commits
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD", "origin/main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+        )
+        commits = result.stdout.strip().split("\n")
+        if len(commits) == 2 and commits[0] == commits[1]:
             log.info("No changes, skipping rebuild")
             return
+
+        log.info("--- Resetting to origin/main ---")
+        result = subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+        )
+        result = subprocess.run(
+            ["git", "reset", "--hard", "origin/main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log.error(f"Git reset failed: {result.stderr}")
+            return
+        log.info(f"Reset to: {result.stdout.strip()}")
 
         # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
         # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
