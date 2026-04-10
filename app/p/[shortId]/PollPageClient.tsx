@@ -761,11 +761,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     return [];
   }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
 
-  // Options added since the user last voted — shown as a "new options available" alert
+  // Options added since the user last voted — shown as a "new options available" alert.
+  // Only meaningful for users who have already submitted rankings (no-op for suggestion-only voters).
+  // Also excludes options the user themselves suggested so their own submissions don't trigger it.
   const newOptions = useMemo(() => {
     if (!hasSuggestionPhase || !hasVoted || isPollClosed || seenPollOptions.length === 0) return [];
-    return (pollOptions as string[]).filter(o => !seenPollOptions.includes(o));
-  }, [hasSuggestionPhase, hasVoted, isPollClosed, seenPollOptions, pollOptions]);
+    if (!userVoteData?.ranked_choices?.length) return []; // hasn't ranked yet — banner irrelevant
+    const ownSuggestions: string[] = userVoteData?.suggestions ?? [];
+    return (pollOptions as string[]).filter(
+      o => !seenPollOptions.includes(o) && !ownSuggestions.includes(o)
+    );
+  }, [hasSuggestionPhase, hasVoted, isPollClosed, seenPollOptions, pollOptions, userVoteData]);
 
   // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
