@@ -94,12 +94,25 @@ find_available_port_in_range() {
   return 1
 }
 
+# Read one or more fields from a .dev-meta.json file in a single python3 call.
+# Usage: read_meta <meta_file> <field1> [field2] ...
+# Prints one value per line (empty string for missing fields).
+read_meta() {
+  local meta="$1"; shift
+  python3 -c "
+import json, sys
+d = json.load(open('$meta'))
+for f in sys.argv[1:]:
+    print(d.get(f, ''))
+" "$@" 2>/dev/null
+}
+
 # Get port from existing dev server metadata
 get_dev_port() {
   local slug="$1"
   local meta="${DEV_DIR}/${slug}/.dev-meta.json"
   if [ -f "$meta" ]; then
-    python3 -c "import json; print(json.load(open('$meta'))['port'])" 2>/dev/null || echo ""
+    read_meta "$meta" port
   fi
 }
 
@@ -108,7 +121,7 @@ get_api_port() {
   local slug="$1"
   local meta="${DEV_DIR}/${slug}/.dev-meta.json"
   if [ -f "$meta" ]; then
-    python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))" 2>/dev/null || echo ""
+    read_meta "$meta" api_port
   fi
 }
 
@@ -373,7 +386,12 @@ ensure_caddy_import() {
   fi
 }
 
-configure_caddy() {
+reload_caddy() {
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+}
+
+# Write a Caddy reverse proxy config for a slug → port. Does NOT reload Caddy.
+write_caddy_proxy() {
   local slug="$1"
   local port="$2"
 
@@ -384,34 +402,34 @@ ${slug}.dev.whoeverwants.com {
 	reverse_proxy 127.0.0.1:${port}
 }
 EOF
+}
 
-  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+configure_caddy() {
+  local slug="$1"
+  local port="$2"
+  write_caddy_proxy "$slug" "$port"
+  reload_caddy
   log "Caddy configured for ${slug}.dev.whoeverwants.com -> port $port"
 }
 
 remove_caddy() {
   local slug="$1"
   rm -f "${CADDY_DEV_DIR}/${slug}.caddy"
-  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+  reload_caddy
   log "Caddy config removed for $slug"
 }
 
-# Configure a Caddy reverse proxy from an email-based slug to a branch-based server.
-# The email URL stays in the browser — it proxies to the branch server's port.
-# e.g., sam-at-samcarey-com.dev.whoeverwants.com proxies to 127.0.0.1:<branch-server-port>
+# Set up a Caddy reverse proxy from an email-slug to a branch server's port.
+# The email URL stays in the browser — proxies to the same port as the branch server.
 configure_caddy_redirect() {
   local email_slug="$1"
   local branch_slug="$2"
 
-  ensure_caddy_import
-
-  # Don't overwrite an actual dev server config with a proxy
+  # Don't overwrite an actual dev server config
   if [ -f "${DEV_DIR}/${email_slug}/.dev-meta.json" ]; then
-    log "Skipping proxy for $email_slug — active dev server exists with that slug"
     return
   fi
 
-  # Look up the branch server's frontend port
   local port
   port=$(get_dev_port "$branch_slug")
   if [ -z "$port" ]; then
@@ -419,20 +437,14 @@ configure_caddy_redirect() {
     return
   fi
 
+  # Skip if already pointing to the right port
   local proxy_file="${CADDY_DEV_DIR}/${email_slug}.caddy"
-
-  # Check if proxy already points to the right port
   if [ -f "$proxy_file" ] && grep -q "127.0.0.1:${port}" "$proxy_file" 2>/dev/null; then
-    return  # Already correct, skip reload
+    return
   fi
 
-  cat > "$proxy_file" <<EOF
-${email_slug}.dev.whoeverwants.com {
-	reverse_proxy 127.0.0.1:${port}
-}
-EOF
-
-  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
+  write_caddy_proxy "$email_slug" "$port"
+  reload_caddy
   log "Caddy proxy: ${email_slug}.dev.whoeverwants.com -> 127.0.0.1:${port} (branch: ${branch_slug})"
 }
 
@@ -449,8 +461,7 @@ evict_excess_servers() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug updated
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
-    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
+    { read -r slug; read -r updated; } < <(read_meta "$meta" slug updated_at)
     servers+=("${updated}|${slug}")
   done
 
@@ -688,14 +699,21 @@ cmd_list() {
     [ ! -f "$meta" ] && continue
     found=1
     local slug branch port api_port updated pid api_pid suspended fe_status api_status
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
-    branch=$(python3 -c "import json; print(json.load(open('$meta'))['branch'])")
-    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
-    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', 'N/A'))")
-    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'][:19])")
-    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', 'N/A'))")
-    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', 'N/A'))")
-    suspended=$(python3 -c "import json; print(json.load(open('$meta')).get('suspended', False))" 2>/dev/null || echo "False")
+    {
+      read -r slug; read -r branch; read -r port; read -r api_port
+      read -r updated; read -r pid; read -r api_pid; read -r suspended
+    } < <(python3 -c "
+import json
+d = json.load(open('$meta'))
+print(d.get('slug',''))
+print(d.get('branch',''))
+print(d.get('port',''))
+print(d.get('api_port','N/A'))
+print(d.get('updated_at','')[:19])
+print(d.get('pid','N/A'))
+print(d.get('api_pid','N/A'))
+print(d.get('suspended', False))
+" 2>/dev/null)
 
     if [ "$suspended" = "True" ]; then
       fe_status="SUSPENDED"
@@ -764,7 +782,7 @@ cmd_destroy_all() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    read -r slug < <(read_meta "$meta" slug)
     cmd_destroy "$slug"
   done
 
@@ -783,8 +801,7 @@ cmd_cleanup_old() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug updated created_epoch age_days
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
-    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
+    { read -r slug; read -r updated; } < <(read_meta "$meta" slug updated_at)
     created_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
 
     if [ "$created_epoch" -eq 0 ]; then
@@ -809,12 +826,12 @@ cmd_revive() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug port api_port db_name pid api_pid
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
-    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
-    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))")
-    db_name=$(python3 -c "import json; print(json.load(open('$meta')).get('db_name', ''))")
-    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', '0'))")
-    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', '0'))")
+    {
+      read -r slug; read -r port; read -r api_port; read -r db_name
+      read -r pid; read -r api_pid
+    } < <(read_meta "$meta" slug port api_port db_name pid api_pid)
+    [ -z "$pid" ] && pid=0
+    [ -z "$api_pid" ] && api_pid=0
 
     local dir="${DEV_DIR}/${slug}"
 
@@ -840,7 +857,8 @@ with open('$meta', 'r+') as f:
     # Revive frontend if not running (standalone build must exist)
     if ! kill -0 "$pid" 2>/dev/null; then
       local suspended
-      suspended=$(python3 -c "import json; print(json.load(open('$meta')).get('suspended', False))" 2>/dev/null || echo "False")
+      read -r suspended < <(read_meta "$meta" suspended)
+      [ -z "$suspended" ] && suspended="False"
       if [ "$suspended" = "True" ]; then
         log "Dev server '$slug' is suspended, skipping revive"
       elif [ -f "${dir}/.next/standalone/server.js" ] && [ -n "$api_port" ]; then
@@ -904,9 +922,7 @@ cmd_resume() {
   fi
 
   local port api_port db_name
-  port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
-  api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))")
-  db_name=$(python3 -c "import json; print(json.load(open('$meta')).get('db_name', ''))")
+  { read -r port; read -r api_port; read -r db_name; } < <(read_meta "$meta" port api_port db_name)
 
   if [ ! -f "${DEV_DIR}/${slug}/.next/standalone/server.js" ]; then
     log "ERROR: No standalone build found for '$slug'. Run upsert instead."
@@ -953,11 +969,13 @@ cmd_suspend_idle() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug updated updated_epoch idle_minutes pid api_pid suspended
-    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
-    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
-    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', '0'))")
-    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', '0'))")
-    suspended=$(python3 -c "import json; print(json.load(open('$meta')).get('suspended', False))" 2>/dev/null || echo "False")
+    {
+      read -r slug; read -r updated; read -r pid; read -r api_pid; read -r suspended
+    } < <(read_meta "$meta" slug updated_at pid api_pid suspended)
+
+    # Default empty fields
+    [ -z "$pid" ] && pid=0
+    [ -z "$api_pid" ] && api_pid=0
 
     # Skip already suspended servers
     if [ "$suspended" = "True" ]; then
