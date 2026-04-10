@@ -25,7 +25,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 
-import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
+import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
@@ -92,6 +92,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  // Options the user saw when they last voted — used to detect newly added suggestions
+  const [seenPollOptions, setSeenPollOptions] = useState<string[]>([]);
 
   // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline or suggestion_deadline_minutes
   // has an optional suggestion collection phase before ranking begins.
@@ -495,6 +497,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
   }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
+  // Load the options seen at last vote time from localStorage (for new-options detection)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && hasSuggestionPhase) {
+      setSeenPollOptions(getSeenPollOptions(poll.id));
+    }
+  }, [poll.id, hasSuggestionPhase]);
+
   // Clean up URL parameter when new poll is shown
   useEffect(() => {
     if (isNewPoll) {
@@ -751,6 +760,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
     return [];
   }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
+
+  // Options added since the user last voted — shown as a "new options available" alert
+  const newOptions = useMemo(() => {
+    if (!hasSuggestionPhase || !hasVoted || isPollClosed || seenPollOptions.length === 0) return [];
+    return (pollOptions as string[]).filter(o => !seenPollOptions.includes(o));
+  }, [hasSuggestionPhase, hasVoted, isPollClosed, seenPollOptions, pollOptions]);
 
   // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
@@ -1243,6 +1258,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         markPollAsVoted(poll.id, voteId, isAbstaining);
         // Update hasPollData state
         setHasPollDataState(true);
+      }
+      // Record which options the user saw at vote/edit time so we can detect newly added
+      // suggestions on future visits and show a "new options available" banner.
+      if (hasSuggestionPhase && pollOptions.length > 0) {
+        storeSeenPollOptions(poll.id, pollOptions);
+        setSeenPollOptions(pollOptions);
       }
       // Clear ballot draft now that vote is saved to the database
       clearBallotDraft(poll.id);
@@ -1955,6 +1976,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     justCancelledAbstain={justCancelledAbstain}
                     twoOptionDisplayOrder={twoOptionDisplayOrder}
                     isEditingSuggestions={isEditingVote}
+                    newOptions={newOptions}
                   />
 
                   {/* Show follow-up/fork header after submit button */}

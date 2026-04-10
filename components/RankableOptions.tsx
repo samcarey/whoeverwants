@@ -19,9 +19,10 @@ interface RankableOptionsProps {
   storageKey?: string; // Optional key for localStorage persistence
   initialRanking?: string[]; // Optional initial ranking to override saved state
   optionsMetadata?: OptionsMetadata | null;
+  newOptions?: string[]; // Options added since the user last ranked — highlighted at top of no-preference
 }
 
-export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata }: RankableOptionsProps) {
+export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, optionsMetadata, newOptions }: RankableOptionsProps) {
 
   // Load saved state from localStorage
   const loadSavedState = useCallback(() => {
@@ -525,8 +526,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           top: index * totalItemHeight
         }));
         
-        // Put any remaining options (not in initialRanking) into no preference
-        const remainingOptions = options.filter(opt => !initialRanking.includes(opt));
+        // Put remaining options (not in initialRanking) into no preference,
+        // with any newly added options sorted to the top so they're visible immediately.
+        const isNew = (opt: string) => !!(newOptions && newOptions.includes(opt));
+        const remaining = options.filter(opt => !initialRanking.includes(opt));
+        const remainingOptions = [
+          ...remaining.filter(isNew),         // new options first
+          ...remaining.filter(opt => !isNew(opt))  // existing no-preference after
+        ];
         const noPreferenceOptions = remainingOptions.map((text, index) => ({
           id: `option-${options.indexOf(text)}`, // Use consistent ID based on original option order
           text: text,
@@ -1007,6 +1014,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 return null;
               }
 
+              const isNewOption = listType === 'noPreference' && !!(newOptions && newOptions.includes(option.text));
+
               return (
                 <div
                   key={option.id}
@@ -1015,9 +1024,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   }}
                   className={`
                     absolute left-0 right-0 rounded-md shadow-sm
-                    ${disabled ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
+                    ${disabled
+                      ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600'
+                      : isNewOption
+                        ? 'cursor-grab active:cursor-grabbing bg-amber-50 dark:bg-amber-900/40 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                        : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
                     ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
-                    border border-gray-300 dark:border-gray-500 p-3 select-none
+                    ${isNewOption ? 'border border-amber-400 dark:border-amber-600' : 'border border-gray-300 dark:border-gray-500'}
+                    p-3 select-none
                   `}
                   style={{
                     top: `${option.top}px`,
@@ -1037,12 +1051,17 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 >
                   <div className="flex items-center justify-between h-full relative">
                     {/* Content area - not draggable, allows normal scrolling */}
-                    <div className={`flex-1 flex items-center pr-12 min-w-0 ${
+                    <div className={`flex-1 flex items-center pr-12 min-w-0 gap-2 ${
                       disabled
                         ? 'text-gray-500 dark:text-gray-400'
                         : 'text-gray-900 dark:text-white'
                     }`}>
                       <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />
+                      {isNewOption && (
+                        <span className="flex-shrink-0 text-[10px] font-bold px-1 py-0.5 rounded bg-amber-400 dark:bg-amber-600 text-amber-900 dark:text-amber-100 uppercase tracking-wide leading-none">
+                          New
+                        </span>
+                      )}
                     </div>
 
                     {/* Right side: combined drag handle with tap zones for reordering
