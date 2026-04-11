@@ -20,6 +20,7 @@ import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
+import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
@@ -107,7 +108,8 @@ export function CreatePollContent() {
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
-  const [availabilityThreshold, setAvailabilityThreshold] = useState<number>(5);
+  const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
+  const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -729,7 +731,7 @@ export function CreatePollContent() {
           } else if (forkData.poll_type === 'time') {
             setPollType('time');
             setOptions(['']);
-            if (forkData.availability_threshold != null) setAvailabilityThreshold(forkData.availability_threshold);
+            if (forkData.availability_threshold != null) setMinimumParticipation(100 - forkData.availability_threshold);
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1247,7 +1249,7 @@ export function CreatePollContent() {
             maxEnabled: durationMaxEnabled
           };
         }
-        pollData.availability_threshold = availabilityThreshold;
+        pollData.availability_threshold = 100 - minimumParticipation;
         // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
         const cutoffMinutes = getSuggestionCutoffMinutes();
         pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
@@ -1529,6 +1531,7 @@ export function CreatePollContent() {
               dayTimeWindows={dayTimeWindows}
               onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
+              highlightDaysButton={dayTimeWindows.length === 0}
             />
           )}
 
@@ -1549,33 +1552,21 @@ export function CreatePollContent() {
                 dayTimeWindows={dayTimeWindows}
                 onDayTimeWindowsChange={setDayTimeWindows}
                 isCreationForm={true}
+                highlightDaysButton={dayTimeWindows.length === 0}
               />
 
-              {/* Availability Threshold */}
-              <div>
-                <label className="block text-sm font-medium">
-                  Availability Threshold:{' '}
-                  <span className="font-normal text-blue-600 dark:text-blue-400">
-                    {availabilityThreshold}%
-                  </span>
-                </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
-                  Include time slots where at least this percentage of the maximum responders are available.
-                </p>
-                <input
-                  type="range"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={availabilityThreshold}
-                  onChange={(e) => setAvailabilityThreshold(Number(e.target.value))}
+              {/* Minimum Participation */}
+              <div className="text-sm font-medium">
+                Minimum Participation:{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowMinParticipationModal(true)}
                   disabled={isLoading}
-                  className="w-full accent-blue-500 disabled:opacity-50"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-                  <span>0% (max only)</span>
-                  <span>50%</span>
-                </div>
+                  className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                  aria-label="Adjust minimum participation percentage"
+                >
+                  {minimumParticipation}%
+                </button>
               </div>
 
               {/* Availability Phase Deadline */}
@@ -2014,7 +2005,15 @@ export function CreatePollContent() {
             Private until you share the link
           </p>
         )}
-      
+
+        <MinimumParticipationModal
+          isOpen={showMinParticipationModal}
+          onClose={() => setShowMinParticipationModal(false)}
+          value={minimumParticipation}
+          onChange={setMinimumParticipation}
+          disabled={isLoading}
+        />
+
     </div>
   );
 }
