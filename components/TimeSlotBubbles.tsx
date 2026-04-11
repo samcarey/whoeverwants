@@ -15,7 +15,13 @@
  */
 
 import { useMemo } from "react";
-import { formatDayLabel } from "@/lib/timeUtils";
+
+function formatStackedDayLabel(dateStr: string): { weekday: string; monthDay: string } {
+  const date = new Date(dateStr + "T00:00:00");
+  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+  const monthDay = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return { weekday, monthDay };
+}
 
 export type SlotState = "neutral" | "liked" | "disliked";
 
@@ -105,11 +111,14 @@ export default function TimeSlotBubbles({
 
   return (
     <div className="space-y-3">
-      {days.map(([dateStr, slots]) => (
-        <div key={dateStr} className="flex gap-3 items-start">
-          {/* Day label */}
-          <div className="w-20 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-right leading-tight">
-            {formatDayLabel(dateStr)}
+      {days.map(([dateStr, slots]) => {
+        const { weekday, monthDay } = formatStackedDayLabel(dateStr);
+        return (
+        <div key={dateStr} className="flex gap-2 items-start">
+          {/* Day label — stacked, left-aligned, narrow fixed width for consistent bubble alignment */}
+          <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
+            <div>{weekday}</div>
+            <div>{monthDay}</div>
           </div>
 
           {/* Bubbles */}
@@ -130,7 +139,7 @@ export default function TimeSlotBubbles({
                   disabled={disabled}
                   title={slot}
                   className={[
-                    "relative select-none rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                    "relative select-none rounded-full px-2.5 py-1 text-[0.9rem] font-medium transition-colors",
                     "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                     disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                     state === "liked"
@@ -151,7 +160,8 @@ export default function TimeSlotBubbles({
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {/* Legend */}
       <div className="flex items-center gap-3 pt-1 text-xs text-gray-400 dark:text-gray-500">
