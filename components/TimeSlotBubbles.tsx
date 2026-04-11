@@ -6,16 +6,15 @@
  * Layout: one row per day, day label on the left, tappable time bubbles on the right.
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.
  *
- * Bubble labels use compressed notation to reduce visual clutter:
- *   First bubble of day (or different AM/PM):  "9 AM", "1 PM"
- *   Same AM/PM period but different hour:       "10", "11"
- *   Same hour as previous bubble:               ":15", ":30", ":45"
- *
  * An orange badge (top-right) shows how many availability voters are excluded by that slot.
  */
 
 import { useMemo } from "react";
-import { formatDayLabel } from "@/lib/timeUtils";
+import {
+  formatStackedDayLabel,
+  getBubbleLabel,
+  groupSlotsByDay,
+} from "@/lib/timeUtils";
 
 export type SlotState = "neutral" | "liked" | "disliked";
 
@@ -31,42 +30,6 @@ interface TimeSlotBubblesProps {
   disabled?: boolean;
 }
 
-function parseSlotStart(slot: string): { h: number; m: number } {
-  // slot format: "YYYY-MM-DD HH:MM-HH:MM"
-  const startStr = slot.split(" ")[1].split("-")[0];
-  const [h, m] = startStr.split(":").map(Number);
-  return { h, m };
-}
-
-function parseSlotDate(slot: string): string {
-  return slot.split(" ")[0]; // "YYYY-MM-DD"
-}
-
-
-function getBubbleLabel(slot: string, prevSlot: string | null): string {
-  const { h, m } = parseSlotStart(slot);
-  const period = h < 12 ? "AM" : "PM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-
-  if (prevSlot) {
-    const prev = parseSlotStart(prevSlot);
-    const prevPeriod = prev.h < 12 ? "AM" : "PM";
-    const prevH12 = prev.h % 12 === 0 ? 12 : prev.h % 12;
-
-    if (h12 === prevH12 && period === prevPeriod) {
-      // Same hour → show only :MM
-      return `:${String(m).padStart(2, "0")}`;
-    }
-    if (period === prevPeriod) {
-      // Same AM/PM → show hour, omit period
-      return String(h12);
-    }
-  }
-
-  // First bubble or period changed → full label
-  return `${h12} ${period}`;
-}
-
 export default function TimeSlotBubbles({
   options,
   likedSlots,
@@ -80,15 +43,7 @@ export default function TimeSlotBubbles({
   const dislikedSet = useMemo(() => new Set(dislikedSlots), [dislikedSlots]);
 
   // Group slots by date, preserving order
-  const days = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const slot of options) {
-      const date = parseSlotDate(slot);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(slot);
-    }
-    return Array.from(map.entries()); // [dateStr, slots[]]
-  }, [options]);
+  const days = useMemo(() => groupSlotsByDay(options), [options]);
 
   function getState(slot: string): SlotState {
     if (likedSet.has(slot)) return "liked";
@@ -104,15 +59,16 @@ export default function TimeSlotBubbles({
   }
 
   return (
-    <div className="space-y-3">
-      {days.map(([dateStr, slots]) => (
-        <div key={dateStr} className="flex gap-3 items-start">
-          {/* Day label */}
-          <div className="w-20 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-right leading-tight">
-            {formatDayLabel(dateStr)}
+    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+      {days.map(([dateStr, slots]) => {
+        const { weekday, monthDay } = formatStackedDayLabel(dateStr);
+        return (
+        <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
+          <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
+            <div>{weekday}</div>
+            <div>{monthDay}</div>
           </div>
 
-          {/* Bubbles */}
           <div className="flex flex-wrap gap-1.5">
             {slots.map((slot, idx) => {
               const state = getState(slot);
@@ -130,7 +86,8 @@ export default function TimeSlotBubbles({
                   disabled={disabled}
                   title={slot}
                   className={[
-                    "relative select-none rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                    "relative select-none rounded-full text-[0.9rem] font-medium transition-colors",
+                    "w-12 h-8 flex items-center justify-center tabular-nums leading-none",
                     "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                     disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                     state === "liked"
@@ -140,7 +97,7 @@ export default function TimeSlotBubbles({
                       : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
                   ].join(" ")}
                 >
-                  {label}
+                  <span className="block cap-height-text">{label}</span>
                   {excluded > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white leading-none pointer-events-none">
                       {excluded}
@@ -151,7 +108,8 @@ export default function TimeSlotBubbles({
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {/* Legend */}
       <div className="flex items-center gap-3 pt-1 text-xs text-gray-400 dark:text-gray-500">

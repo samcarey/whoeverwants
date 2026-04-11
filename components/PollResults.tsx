@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
+import {
+  formatStackedDayLabel,
+  formatTimeSlot,
+  getBubbleLabel,
+  groupSlotsByDay,
+} from "@/lib/timeUtils";
 
 
 interface PollResultsProps {
@@ -605,39 +611,6 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function formatTimeSlot(slot: string): string {
-  // "YYYY-MM-DD HH:MM-HH:MM" → "Mon Apr 28 • 10:00 AM – 10:30 AM (30m)"
-  try {
-    const [datePart, timePart] = slot.split(' ');
-    const [startStr, endStr] = timePart.split('-');
-    const [sy, sm, sd] = datePart.split('-').map(Number);
-    const [sh, smin] = startStr.split(':').map(Number);
-    const [eh, emin] = endStr.split(':').map(Number);
-
-    const date = new Date(sy, sm - 1, sd);
-    const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-
-    const fmt = (h: number, m: number) => {
-      const period = h < 12 ? 'AM' : 'PM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
-    };
-
-    const startMins = sh * 60 + smin;
-    let endMins = eh * 60 + emin;
-    if (endMins <= startMins) endMins += 24 * 60;
-    const durMins = endMins - startMins;
-    const durStr = durMins >= 60
-      ? (durMins % 60 === 0 ? `${durMins / 60}h` : `${Math.floor(durMins / 60)}h ${durMins % 60}m`)
-      : `${durMins}m`;
-
-    return `${weekday} ${month} ${sd} • ${fmt(sh, smin)} – ${fmt(eh, emin)} (${durStr})`;
-  } catch {
-    return slot;
-  }
-}
-
 function TimeResults({ results, isPollClosed }: { results: PollResults; isPollClosed?: boolean }) {
   const winner = results.winner;
   const options = results.options ?? [];
@@ -645,6 +618,10 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
   const maxAvail = results.max_availability;
   const likeCounts = results.like_counts;
   const dislikeCounts = results.dislike_counts;
+
+  // Slot keys ("YYYY-MM-DD HH:MM-HH:MM") already arrive in chronological
+  // order from the backend, so no sort is needed before grouping.
+  const slotsByDay = useMemo(() => groupSlotsByDay(options), [options]);
 
   if (!isPollClosed) {
     return (
@@ -664,17 +641,6 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
     );
   }
 
-  // Sort options for display: fewest dislikes → most likes → earliest
-  const sorted = [...options].sort((a, b) => {
-    const da = dislikeCounts?.[a] ?? 0;
-    const db = dislikeCounts?.[b] ?? 0;
-    if (da !== db) return da - db;
-    const la = likeCounts?.[a] ?? 0;
-    const lb = likeCounts?.[b] ?? 0;
-    if (lb !== la) return lb - la;
-    return a < b ? -1 : 1; // chronological
-  });
-
   return (
     <div className="space-y-4">
       {winner && (
@@ -693,32 +659,76 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
         </div>
       )}
 
-      {sorted.length > 1 && (
+      {options.length > 1 && (
         <div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 text-center">
-            All qualifying slots ({sorted.length})
-          </p>
-          <div className="space-y-1 max-h-56 overflow-y-auto">
-            {sorted.map((slot) => {
-              const likes = likeCounts?.[slot] ?? 0;
-              const dislikes = dislikeCounts?.[slot] ?? 0;
-              const isWinner = slot === winner;
+          <div className="flex items-baseline justify-between gap-3 mb-3">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Candidate Slots ({options.length})
+            </h3>
+            <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
+              </span>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            {slotsByDay.map(([dateStr, slots]) => {
+              const { weekday, monthDay } = formatStackedDayLabel(dateStr);
               return (
-                <div
-                  key={slot}
-                  className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-sm gap-2 ${
-                    isWinner
-                      ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800'
-                      : 'bg-gray-50 dark:bg-gray-800'
-                  }`}
-                >
-                  <span className={`truncate ${isWinner ? 'font-medium text-green-800 dark:text-green-200' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {formatTimeSlot(slot)}
-                  </span>
-                  <span className="flex items-center gap-2 flex-shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                    {likes > 0 && <span className="text-green-600 dark:text-green-400">+{likes}</span>}
-                    {dislikes > 0 && <span className="text-red-500 dark:text-red-400">−{dislikes}</span>}
-                  </span>
+                <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
+                  <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
+                    <div>{weekday}</div>
+                    <div>{monthDay}</div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {slots.map((slot, idx) => {
+                      const label = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
+                      const likes = likeCounts?.[slot] ?? 0;
+                      const dislikes = dislikeCounts?.[slot] ?? 0;
+                      const unavailable =
+                        maxAvail != null && availCounts?.[slot] != null
+                          ? maxAvail - availCounts[slot]
+                          : 0;
+                      const isWinner = slot === winner;
+
+                      return (
+                        <div
+                          key={slot}
+                          title={formatTimeSlot(slot)}
+                          className={[
+                            "relative w-12 h-8 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                            isWinner
+                              ? "border-2 border-green-500 shadow-sm"
+                              : "border border-gray-300 dark:border-gray-600",
+                          ].join(" ")}
+                        >
+                          <span className="block cap-height-text">{label}</span>
+                          {likes > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {likes}
+                            </span>
+                          )}
+                          {dislikes > 0 && (
+                            <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {dislikes}
+                            </span>
+                          )}
+                          {unavailable > 0 && (
+                            <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {unavailable}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}

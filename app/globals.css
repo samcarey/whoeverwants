@@ -87,6 +87,16 @@ body {
   display: none;  /* Safari and Chrome */
 }
 
+/* Trim a text box to its cap-height / alphabetic-baseline bounds so
+ * flex centering lines up the visible glyphs rather than the padded
+ * line box. Used on time-slot bubble labels which are purely
+ * cap-height text ("7 PM", ":15", digits, colons). */
+.cap-height-text {
+  line-height: 1;
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+}
+
 /* Modal animations */
 @keyframes slide-up {
   from {
