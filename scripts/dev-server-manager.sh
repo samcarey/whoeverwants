@@ -922,6 +922,46 @@ with open(meta_path, 'r+') as f:
   log "=== Dev server '$slug' suspended (processes stopped, build retained) ==="
 }
 
+# Restart just the Next.js frontend for a dev server (keeps API + DB running).
+# Useful after adding new files to `.next/standalone/public/` — Next.js caches
+# the public-folder file list at startup, so new runtime additions aren't served
+# until the process is restarted.
+cmd_restart_frontend() {
+  local slug="${1:?Usage: dev-server-manager.sh restart-frontend <slug>}"
+  local meta="${DEV_DIR}/${slug}/.dev-meta.json"
+
+  if [ ! -f "$meta" ]; then
+    log "ERROR: No dev server found with slug '$slug'"
+    return 1
+  fi
+
+  local port api_port
+  { read -r port; read -r api_port; } < <(read_meta "$meta" port api_port)
+
+  if [ ! -f "${DEV_DIR}/${slug}/.next/standalone/server.js" ]; then
+    log "ERROR: No standalone build found for '$slug'. Run upsert instead."
+    return 1
+  fi
+
+  log "=== Restarting frontend for: $slug ==="
+  stop_nextjs "$slug"
+
+  local frontend_pid
+  frontend_pid=$(start_nextjs "$slug" "$port" "$api_port")
+
+  # Update metadata with new frontend PID
+  python3 -c "
+import json
+with open('$meta', 'r+') as f:
+    d = json.load(f)
+    d['pid'] = $frontend_pid
+    f.seek(0)
+    json.dump(d, f, indent=2)
+    f.truncate()
+"
+  log "=== Frontend restarted for '$slug' (FE PID $frontend_pid) ==="
+}
+
 # Resume a suspended dev server (restart processes from existing build)
 cmd_resume() {
   local slug="${1:?Usage: dev-server-manager.sh resume <slug>}"
@@ -1049,6 +1089,7 @@ case "${1:-help}" in
   revive)       cmd_revive ;;
   suspend)      cmd_suspend "${2:-}" ;;
   resume)       cmd_resume "${2:-}" ;;
+  restart-frontend) cmd_restart_frontend "${2:-}" ;;
   suspend-idle) cmd_suspend_idle "${2:-30}" ;;
   redirect)     cmd_redirect "${2:-}" "${3:-}" ;;
   *)
@@ -1063,6 +1104,7 @@ case "${1:-help}" in
     echo "  revive                   Restart any stopped (non-suspended) dev servers"
     echo "  suspend <slug>           Stop processes but keep build on disk"
     echo "  resume <slug>            Restart a suspended dev server"
+    echo "  restart-frontend <slug>  Restart just the Next.js frontend (keeps API running)"
     echo "  suspend-idle [minutes]   Suspend servers idle for N minutes (default: 30)"
     echo "  redirect <email> <branch> Set up email-slug redirect to branch-slug"
     echo ""
