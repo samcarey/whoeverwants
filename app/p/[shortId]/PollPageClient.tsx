@@ -2043,7 +2043,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         </div>
                       )}
 
-                      <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+                      <div className="mb-6">
+                        <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+                      </div>
 
                       {voteError && (
                         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
@@ -2091,7 +2093,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         />
                       </div>
 
-                      <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+                      <div className="mb-6">
+                        <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
+                      </div>
 
                       {voteError && (
                         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
