@@ -1561,7 +1561,7 @@ export function CreatePollContent() {
                     type="button"
                     onClick={() => setShowMinParticipationModal(true)}
                     disabled={isLoading}
-                    className="font-normal text-blue-600 dark:text-blue-400 underline underline-offset-2 decoration-dotted disabled:opacity-50"
+                    className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
                     aria-label="Adjust minimum participation percentage"
                   >
                     {minimumParticipation}%
