@@ -46,6 +46,7 @@ interface ParticipationConditionsProps {
     maxEnabled: boolean;
   };
   isCreationForm?: boolean;
+  highlightDaysButton?: boolean;
 }
 
 export default function ParticipationConditions({
@@ -72,6 +73,7 @@ export default function ParticipationConditions({
   pollDayTimeWindows,
   pollDurationWindow,
   isCreationForm = false,
+  highlightDaysButton = false,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Cache windows for removed days so they can be restored on re-add
@@ -201,7 +203,11 @@ export default function ParticipationConditions({
               type="button"
               onClick={() => setIsDaysPickerOpen(true)}
               disabled={disabled}
-              className="px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                highlightDaysButton
+                  ? 'text-white bg-red-500 hover:bg-red-600 ring-2 ring-red-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 animate-pulse'
+                  : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
             >
               {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
             </button>

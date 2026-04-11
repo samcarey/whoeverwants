@@ -1531,6 +1531,7 @@ export function CreatePollContent() {
               dayTimeWindows={dayTimeWindows}
               onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
+              highlightDaysButton={validationError === "Please select at least one day."}
             />
           )}
 
@@ -1551,6 +1552,7 @@ export function CreatePollContent() {
                 dayTimeWindows={dayTimeWindows}
                 onDayTimeWindowsChange={setDayTimeWindows}
                 isCreationForm={true}
+                highlightDaysButton={validationError === "Please select at least one day."}
               />
 
               {/* Minimum Participation */}
