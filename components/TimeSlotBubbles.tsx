@@ -88,8 +88,8 @@ export default function TimeSlotBubbles({
                   disabled={disabled}
                   title={slot}
                   className={[
-                    "relative select-none rounded-full py-1 text-[0.9rem] font-medium transition-colors",
-                    "w-12 text-center tabular-nums",
+                    "relative select-none rounded-full text-[0.9rem] font-medium transition-colors",
+                    "w-12 h-8 flex items-center justify-center tabular-nums",
                     "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                     disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                     state === "liked"

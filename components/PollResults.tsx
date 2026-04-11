@@ -736,7 +736,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
                           key={slot}
                           title={formatTimeSlot(slot)}
                           className={[
-                            "relative w-12 py-1 text-center rounded-full text-[0.9rem] font-medium tabular-nums bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                            "relative w-12 h-8 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
                             isWinner
                               ? "border-2 border-green-500 shadow-sm"
                               : "border border-gray-300 dark:border-gray-600",
