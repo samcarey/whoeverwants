@@ -1,23 +1,21 @@
 #!/bin/bash
-# Per-BRANCH full-stack dev server manager for the WhoeverWants droplet.
-# Each branch gets its own:
-#   - Next.js standalone build on a unique port (3001-3099)
-#   - FastAPI backend on a unique port (8001-8099)
+# Per-user FULL-STACK dev server manager for the WhoeverWants droplet.
+# Each developer (identified by git author email) gets their own:
+#   - Next.js frontend on a unique port (3001-3005)
+#   - FastAPI backend on a unique port (8001-8005)
 #   - PostgreSQL database (shared instance, separate DB per dev server)
-#   - All migrations from the branch auto-applied
+#   - All migrations from their branch auto-applied
 #
 # Usage (run on droplet):
-#   dev-server-manager.sh upsert <branch>
+#   dev-server-manager.sh upsert <email> <branch>
 #   dev-server-manager.sh list
-#   dev-server-manager.sh destroy <slug>
+#   dev-server-manager.sh destroy <email-slug>
 #   dev-server-manager.sh destroy-all
 #   dev-server-manager.sh cleanup [days]
-#   dev-server-manager.sh suspend <slug>      # Stop processes, keep build
-#   dev-server-manager.sh resume <slug>       # Restart stopped processes
 #
-# Branch-to-slug mapping (matches lib/slug.ts branchToSlug):
-#   claude/fix-voting-bug-abc123 -> fix-voting-bug-abc123
-#   feature/my-thing -> feature-my-thing
+# Email-to-slug mapping:
+#   sam@example.com -> sam-at-example-com
+#   user.name@company.co.uk -> user-name-at-company-co-uk
 
 set -euo pipefail
 
@@ -25,10 +23,10 @@ DEV_DIR="/root/dev-servers"
 CADDY_DEV_DIR="/etc/caddy/dev-servers"
 REPO_URL="https://github.com/samcarey/whoeverwants.git"
 FRONTEND_PORT_START=3001
-FRONTEND_PORT_MAX=3099
+FRONTEND_PORT_MAX=3005
 API_PORT_START=8001
-API_PORT_MAX=8099
-MAX_DEV_SERVERS=20
+API_PORT_MAX=8005
+MAX_DEV_SERVERS=3
 LOCK_DIR="/tmp/dev-server-locks"
 LOG_FILE="/var/log/dev-server-manager.log"
 
@@ -42,27 +40,21 @@ DB_PORT="5432"
 # Path to uv (installed via astral.sh)
 UV_BIN="/root/.local/bin/uv"
 
+# Claude/bot email patterns to ignore
+IGNORE_EMAIL_PATTERNS=(
+  "noreply@anthropic.com"
+  "claude@anthropic.com"
+  "noreply@github.com"
+  "actions@github.com"
+)
+
 log() {
   local msg="[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
   echo "$msg" >&2
   echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
 }
 
-# Convert branch name to URL-safe slug (matches lib/slug.ts branchToSlug)
-# claude/fix-voting-bug-abc123 -> fix-voting-bug-abc123
-# feature/my-thing -> feature-my-thing
-branch_to_slug() {
-  local branch="$1"
-  echo "$branch" \
-    | sed 's|^claude/||' \
-    | tr '[:upper:]' '[:lower:]' \
-    | sed 's/[^a-z0-9-]/-/g' \
-    | sed 's/--*/-/g' \
-    | sed 's/^-//; s/-$//' \
-    | cut -c1-50
-}
-
-# Convert email to URL-safe slug (for backward-compatible redirects)
+# Convert email to URL-safe slug
 # sam@example.com -> sam-at-example-com
 email_to_slug() {
   local email="$1"
@@ -74,10 +66,25 @@ email_to_slug() {
 }
 
 # Convert slug to database name (replace hyphens with underscores)
-# fix-voting-bug -> dev_fix_voting_bug
+# sam-at-example-com -> dev_sam_at_example_com
 slug_to_dbname() {
   local slug="$1"
   echo "dev_${slug//-/_}"
+}
+
+# Check if email should be ignored (Claude, bots, etc.)
+is_ignored_email() {
+  local email="$1"
+  for pattern in "${IGNORE_EMAIL_PATTERNS[@]}"; do
+    if [ "$email" = "$pattern" ]; then
+      return 0
+    fi
+  done
+  # Also ignore any *@anthropic.com
+  if echo "$email" | grep -qi '@anthropic\.com$'; then
+    return 0
+  fi
+  return 1
 }
 
 # Find an available port in a range
@@ -94,25 +101,12 @@ find_available_port_in_range() {
   return 1
 }
 
-# Read one or more fields from a .dev-meta.json file in a single python3 call.
-# Usage: read_meta <meta_file> <field1> [field2] ...
-# Prints one value per line (empty string for missing fields).
-read_meta() {
-  local meta="$1"; shift
-  python3 -c "
-import json, sys
-d = json.load(open('$meta'))
-for f in sys.argv[1:]:
-    print(d.get(f, ''))
-" "$@" 2>/dev/null
-}
-
 # Get port from existing dev server metadata
 get_dev_port() {
   local slug="$1"
   local meta="${DEV_DIR}/${slug}/.dev-meta.json"
   if [ -f "$meta" ]; then
-    read_meta "$meta" port
+    python3 -c "import json; print(json.load(open('$meta'))['port'])" 2>/dev/null || echo ""
   fi
 }
 
@@ -121,7 +115,7 @@ get_api_port() {
   local slug="$1"
   local meta="${DEV_DIR}/${slug}/.dev-meta.json"
   if [ -f "$meta" ]; then
-    read_meta "$meta" api_port
+    python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))" 2>/dev/null || echo ""
   fi
 }
 
@@ -205,42 +199,7 @@ stop_api() {
   fi
 }
 
-# Build the Next.js standalone output (run once, before start_nextjs)
-build_nextjs() {
-  local slug="$1"
-  local api_port="$2"
-  local dir="${DEV_DIR}/${slug}"
-
-  cd "$dir"
-
-  local git_sha git_branch
-  git_sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo "")
-  git_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-
-  log "Building Next.js standalone for $slug (API on port $api_port)..."
-
-  # PYTHON_API_URL is baked into the build for rewrite destinations.
-  # NEXT_OUTPUT=standalone triggers output: 'standalone' in next.config.ts.
-  PYTHON_API_URL="http://localhost:${api_port}" \
-  NEXT_OUTPUT=standalone \
-  NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA="$git_sha" \
-  NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF="$git_branch" \
-    npm run build >> "${dir}/nextjs-build.log" 2>&1
-
-  if [ ! -f "${dir}/.next/standalone/server.js" ]; then
-    log "ERROR: Standalone build failed for $slug. Last 30 lines of build log:"
-    tail -30 "${dir}/nextjs-build.log" >&2 2>/dev/null || true
-    return 1
-  fi
-
-  # Copy static assets into standalone output (Next.js doesn't do this automatically)
-  cp -r "${dir}/public" "${dir}/.next/standalone/public" 2>/dev/null || true
-  cp -r "${dir}/.next/static" "${dir}/.next/standalone/.next/static" 2>/dev/null || true
-
-  log "Next.js standalone build complete for $slug"
-}
-
-# Start the Next.js standalone server (must call build_nextjs first)
+# Start the Next.js dev server
 # NOTE: Only the PID is written to stdout (for capture). All log messages go to stderr.
 start_nextjs() {
   local slug="$1"
@@ -250,28 +209,33 @@ start_nextjs() {
 
   cd "$dir"
 
-  if [ ! -f "${dir}/.next/standalone/server.js" ]; then
-    log "ERROR: No standalone build found for $slug. Run build_nextjs first."
-    return 1
-  fi
+  log "Starting Next.js dev server for $slug on port $frontend_port (API on $api_port)..."
 
-  log "Starting Next.js standalone server for $slug on port $frontend_port..."
+  local git_sha git_branch
+  git_sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo "")
+  git_branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
+  # PYTHON_API_URL tells next.config.ts where to proxy /api/polls requests.
+  # Do NOT set NEXT_PUBLIC_API_URL — it leaks into the client bundle and
+  # the browser can't reach localhost on the server. Client uses relative
+  # /api/polls path, proxied by Next.js rewrites via PYTHON_API_URL.
+  PYTHON_API_URL="http://localhost:${api_port}" \
+  NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA="$git_sha" \
+  NEXT_PUBLIC_VERCEL_GIT_COMMIT_REF="$git_branch" \
   HOSTNAME=0.0.0.0 \
-  PORT="$frontend_port" \
-    node "${dir}/.next/standalone/server.js" \
+    npm run dev -- -p "$frontend_port" \
     >> "${dir}/nextjs.log" 2>&1 200>&- &
   local new_pid=$!
   echo "$new_pid" > "${dir}/.nextjs.pid"
 
-  sleep 3
+  sleep 5
   if ! kill -0 "$new_pid" 2>/dev/null; then
-    log "ERROR: Next.js standalone server failed to start for $slug. Last 20 lines of log:"
+    log "ERROR: Next.js dev server failed to start for $slug. Last 20 lines of log:"
     tail -20 "${dir}/nextjs.log" 2>/dev/null || true
     return 1
   fi
 
-  log "Next.js standalone server started for $slug (PID $new_pid, port $frontend_port)"
+  log "Next.js dev server started for $slug (PID $new_pid, port $frontend_port)"
   echo "$new_pid"
 }
 
@@ -386,12 +350,7 @@ ensure_caddy_import() {
   fi
 }
 
-reload_caddy() {
-  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
-}
-
-# Write a Caddy reverse proxy config for a slug → port. Does NOT reload Caddy.
-write_caddy_proxy() {
+configure_caddy() {
   local slug="$1"
   local port="$2"
 
@@ -402,50 +361,16 @@ ${slug}.dev.whoeverwants.com {
 	reverse_proxy 127.0.0.1:${port}
 }
 EOF
-}
 
-configure_caddy() {
-  local slug="$1"
-  local port="$2"
-  write_caddy_proxy "$slug" "$port"
-  reload_caddy
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
   log "Caddy configured for ${slug}.dev.whoeverwants.com -> port $port"
 }
 
 remove_caddy() {
   local slug="$1"
   rm -f "${CADDY_DEV_DIR}/${slug}.caddy"
-  reload_caddy
+  caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
   log "Caddy config removed for $slug"
-}
-
-# Set up a Caddy reverse proxy from an email-slug to a branch server's port.
-# The email URL stays in the browser — proxies to the same port as the branch server.
-configure_caddy_redirect() {
-  local email_slug="$1"
-  local branch_slug="$2"
-
-  # Don't overwrite an actual dev server config
-  if [ -f "${DEV_DIR}/${email_slug}/.dev-meta.json" ]; then
-    return
-  fi
-
-  local port
-  port=$(get_dev_port "$branch_slug")
-  if [ -z "$port" ]; then
-    log "WARNING: No port found for branch slug '$branch_slug', skipping proxy for $email_slug"
-    return
-  fi
-
-  # Skip if already pointing to the right port
-  local proxy_file="${CADDY_DEV_DIR}/${email_slug}.caddy"
-  if [ -f "$proxy_file" ] && grep -q "127.0.0.1:${port}" "$proxy_file" 2>/dev/null; then
-    return
-  fi
-
-  write_caddy_proxy "$email_slug" "$port"
-  reload_caddy
-  log "Caddy proxy: ${email_slug}.dev.whoeverwants.com -> 127.0.0.1:${port} (branch: ${branch_slug})"
 }
 
 # --- Eviction ---
@@ -461,7 +386,8 @@ evict_excess_servers() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug updated
-    { read -r slug; read -r updated; } < <(read_meta "$meta" slug updated_at)
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
     servers+=("${updated}|${slug}")
   done
 
@@ -500,18 +426,13 @@ evict_excess_servers() {
 # --- Commands ---
 
 cmd_upsert() {
-  local branch="${1:?Usage: dev-server-manager.sh upsert <branch>}"
+  local email="${1:?Usage: dev-server-manager.sh upsert <email> <branch>}"
+  local branch="${2:?Usage: dev-server-manager.sh upsert <email> <branch>}"
   local slug
-  slug=$(branch_to_slug "$branch")
+  slug=$(email_to_slug "$email")
 
-  if [ -z "$slug" ]; then
-    log "ERROR: branch '$branch' produced empty slug"
-    return 1
-  fi
-
-  # Don't create dev servers for main/master
-  if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
-    log "Skipping dev server for $branch"
+  if is_ignored_email "$email"; then
+    log "Ignoring email: $email"
     return 0
   fi
 
@@ -523,7 +444,7 @@ cmd_upsert() {
 
   evict_excess_servers "$slug"
 
-  # Lock to prevent concurrent updates for same branch
+  # Lock to prevent concurrent updates for same user
   mkdir -p "$LOCK_DIR"
   local lockfile="${LOCK_DIR}/${slug}.lock"
   exec 200>"$lockfile"
@@ -532,10 +453,7 @@ cmd_upsert() {
     return 0
   fi
 
-  # Global build semaphore opened here, acquired just before the heavy build steps below.
-  local build_lock="${LOCK_DIR}/_build.lock"
-
-  log "=== Upsert dev server: branch=$branch (slug: $slug) ==="
+  log "=== Upsert dev server: $email (slug: $slug, branch: $branch) ==="
 
   local dir="${DEV_DIR}/${slug}"
   local db_name
@@ -625,37 +543,20 @@ cmd_upsert() {
   stop_api "$slug"
   stop_nextjs "$slug"
 
-  # --- Acquire global build semaphore (max 1 concurrent npm/next build, each ~500MB RAM) ---
-  exec 201>"$build_lock"
-  log "Waiting for build slot..."
-  flock 201
-
-  # --- Install JS deps (needed for build) ---
-  if [ "$needs_npm_install" = true ] || [ ! -d "${dir}/node_modules" ]; then
+  # --- Install JS deps if needed ---
+  if [ "$needs_npm_install" = true ]; then
     log "--- Installing JS dependencies ---"
     npm ci --prefer-offline 2>&1 | tail -5
+    if [ "$is_new" = true ]; then
+      rm -rf .next
+    fi
   fi
-
-  # --- Build Next.js standalone ---
-  log "--- Building Next.js standalone ---"
-  build_nextjs "$slug" "$api_port"
-
-  # --- Release build semaphore (allow next queued build to start) ---
-  flock --unlock 201
-
-  # --- Post-build cleanup: delete node_modules and build cache to free disk ---
-  log "--- Post-build cleanup ---"
-  rm -rf "${dir}/node_modules"
-  rm -rf "${dir}/.next/cache"
-  local disk_saved
-  disk_saved=$(du -sh "${dir}" 2>/dev/null | cut -f1)
-  log "  Dev server disk usage after cleanup: $disk_saved"
 
   # --- Start API server ---
   local api_pid
   api_pid=$(start_api "$slug" "$api_port" "$db_name")
 
-  # --- Start Next.js standalone server ---
+  # --- Start Next.js frontend ---
   local frontend_pid
   frontend_pid=$(start_nextjs "$slug" "$frontend_port" "$api_port")
 
@@ -665,6 +566,7 @@ cmd_upsert() {
   cat > "${dir}/.dev-meta.json" <<EOF
 {
   "slug": "${slug}",
+  "email": "${email}",
   "branch": "${branch}",
   "port": ${frontend_port},
   "api_port": ${api_port},
@@ -689,6 +591,7 @@ EOF
   log ""
   log "=== Dev server ready ==="
   log "  URL:       https://${slug}.dev.whoeverwants.com"
+  log "  Email:     $email"
   log "  Branch:    $branch"
   log "  Commit:    ${commit_sha:0:8}"
   log "  Frontend:  port $frontend_port (PID $frontend_pid)"
@@ -697,8 +600,8 @@ EOF
 }
 
 cmd_list() {
-  printf "%-35s %-40s %-5s %-5s %-20s %s\n" "SLUG" "BRANCH" "FE" "API" "UPDATED" "STATUS"
-  printf "%-35s %-40s %-5s %-5s %-20s %s\n" "----" "------" "--" "---" "-------" "------"
+  printf "%-35s %-30s %-30s %-5s %-5s %-20s %s\n" "SLUG" "EMAIL" "BRANCH" "FE" "API" "UPDATED" "STATUS"
+  printf "%-35s %-30s %-30s %-5s %-5s %-20s %s\n" "----" "-----" "------" "--" "---" "-------" "------"
 
   if [ ! -d "$DEV_DIR" ]; then
     echo "(no dev servers)"
@@ -709,39 +612,27 @@ cmd_list() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     found=1
-    local slug branch port api_port updated pid api_pid suspended fe_status api_status
-    {
-      read -r slug; read -r branch; read -r port; read -r api_port
-      read -r updated; read -r pid; read -r api_pid; read -r suspended
-    } < <(python3 -c "
-import json
-d = json.load(open('$meta'))
-print(d.get('slug',''))
-print(d.get('branch',''))
-print(d.get('port',''))
-print(d.get('api_port','N/A'))
-print(d.get('updated_at','')[:19])
-print(d.get('pid','N/A'))
-print(d.get('api_pid','N/A'))
-print(d.get('suspended', False))
-" 2>/dev/null)
+    local slug branch email port api_port updated pid api_pid fe_status api_status
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    email=$(python3 -c "import json; print(json.load(open('$meta'))['email'])")
+    branch=$(python3 -c "import json; print(json.load(open('$meta'))['branch'])")
+    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', 'N/A'))")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'][:19])")
+    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', 'N/A'))")
+    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', 'N/A'))")
 
-    if [ "$suspended" = "True" ]; then
-      fe_status="SUSPENDED"
-      api_status="SUSPENDED"
-    else
-      fe_status="DOWN"
-      if [ "$pid" != "N/A" ] && [ "$pid" != "0" ] && kill -0 "$pid" 2>/dev/null; then
-        fe_status="UP"
-      fi
-      api_status="DOWN"
-      if [ "$api_pid" != "N/A" ] && [ "$api_pid" != "0" ] && kill -0 "$api_pid" 2>/dev/null; then
-        api_status="UP"
-      fi
+    fe_status="DOWN"
+    if [ "$pid" != "N/A" ] && kill -0 "$pid" 2>/dev/null; then
+      fe_status="UP"
+    fi
+    api_status="DOWN"
+    if [ "$api_pid" != "N/A" ] && kill -0 "$api_pid" 2>/dev/null; then
+      api_status="UP"
     fi
 
-    printf "%-35s %-40s %-5s %-5s %-20s FE:%s API:%s\n" \
-      "$slug" "$branch" "$port" "$api_port" "$updated" "$fe_status" "$api_status"
+    printf "%-35s %-30s %-30s %-5s %-5s %-20s FE:%s API:%s\n" \
+      "$slug" "$email" "$branch" "$port" "$api_port" "$updated" "$fe_status" "$api_status"
   done
 
   if [ "$found" -eq 0 ]; then
@@ -793,7 +684,7 @@ cmd_destroy_all() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug
-    read -r slug < <(read_meta "$meta" slug)
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
     cmd_destroy "$slug"
   done
 
@@ -812,7 +703,8 @@ cmd_cleanup_old() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug updated created_epoch age_days
-    { read -r slug; read -r updated; } < <(read_meta "$meta" slug updated_at)
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    updated=$(python3 -c "import json; print(json.load(open('$meta'))['updated_at'])")
     created_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
 
     if [ "$created_epoch" -eq 0 ]; then
@@ -837,12 +729,12 @@ cmd_revive() {
   for meta in "${DEV_DIR}"/*/.dev-meta.json; do
     [ ! -f "$meta" ] && continue
     local slug port api_port db_name pid api_pid
-    {
-      read -r slug; read -r port; read -r api_port; read -r db_name
-      read -r pid; read -r api_pid
-    } < <(read_meta "$meta" slug port api_port db_name pid api_pid)
-    [ -z "$pid" ] && pid=0
-    [ -z "$api_pid" ] && api_pid=0
+    slug=$(python3 -c "import json; print(json.load(open('$meta'))['slug'])")
+    port=$(python3 -c "import json; print(json.load(open('$meta'))['port'])")
+    api_port=$(python3 -c "import json; print(json.load(open('$meta')).get('api_port', ''))")
+    db_name=$(python3 -c "import json; print(json.load(open('$meta')).get('db_name', ''))")
+    pid=$(python3 -c "import json; print(json.load(open('$meta')).get('pid', '0'))")
+    api_pid=$(python3 -c "import json; print(json.load(open('$meta')).get('api_pid', '0'))")
 
     local dir="${DEV_DIR}/${slug}"
 
@@ -865,14 +757,9 @@ with open('$meta', 'r+') as f:
       fi
     fi
 
-    # Revive frontend if not running (standalone build must exist)
+    # Revive frontend if not running
     if ! kill -0 "$pid" 2>/dev/null; then
-      local suspended
-      read -r suspended < <(read_meta "$meta" suspended)
-      [ -z "$suspended" ] && suspended="False"
-      if [ "$suspended" = "True" ]; then
-        log "Dev server '$slug' is suspended, skipping revive"
-      elif [ -f "${dir}/.next/standalone/server.js" ] && [ -n "$api_port" ]; then
+      if [ -d "$dir/node_modules" ] && [ -n "$api_port" ]; then
         log "Frontend for '$slug' is not running, restarting on port $port..."
         local new_pid
         new_pid=$(start_nextjs "$slug" "$port" "$api_port")
@@ -887,230 +774,34 @@ with open('$meta', 'r+') as f:
 "
         log "Revived frontend for '$slug' with PID $new_pid"
       else
-        log "Missing standalone build or api_port for '$slug', skipping (needs full upsert)"
+        log "Missing node_modules or api_port for '$slug', skipping (needs full upsert)"
       fi
     fi
   done
 }
 
-# Suspend a dev server (stop processes, keep build on disk for fast resume)
-cmd_suspend() {
-  local slug="${1:?Usage: dev-server-manager.sh suspend <slug>}"
-
-  if [ ! -f "${DEV_DIR}/${slug}/.dev-meta.json" ]; then
-    log "ERROR: No dev server found with slug '$slug'"
-    return 1
-  fi
-
-  log "=== Suspending dev server: $slug ==="
-  stop_api "$slug"
-  stop_nextjs "$slug"
-
-  # Mark as suspended in metadata
-  python3 -c "
-import json
-meta_path = '${DEV_DIR}/${slug}/.dev-meta.json'
-with open(meta_path, 'r+') as f:
-    d = json.load(f)
-    d['suspended'] = True
-    d['pid'] = 0
-    d['api_pid'] = 0
-    f.seek(0)
-    json.dump(d, f, indent=2)
-    f.truncate()
-"
-  log "=== Dev server '$slug' suspended (processes stopped, build retained) ==="
-}
-
-# Restart just the Next.js frontend for a dev server (keeps API + DB running).
-# Useful after adding new files to `.next/standalone/public/` — Next.js caches
-# the public-folder file list at startup, so new runtime additions aren't served
-# until the process is restarted.
-cmd_restart_frontend() {
-  local slug="${1:?Usage: dev-server-manager.sh restart-frontend <slug>}"
-  local meta="${DEV_DIR}/${slug}/.dev-meta.json"
-
-  if [ ! -f "$meta" ]; then
-    log "ERROR: No dev server found with slug '$slug'"
-    return 1
-  fi
-
-  local port api_port
-  { read -r port; read -r api_port; } < <(read_meta "$meta" port api_port)
-
-  if [ ! -f "${DEV_DIR}/${slug}/.next/standalone/server.js" ]; then
-    log "ERROR: No standalone build found for '$slug'. Run upsert instead."
-    return 1
-  fi
-
-  log "=== Restarting frontend for: $slug ==="
-  stop_nextjs "$slug"
-
-  local frontend_pid
-  frontend_pid=$(start_nextjs "$slug" "$port" "$api_port")
-
-  # Update metadata with new frontend PID
-  python3 -c "
-import json
-with open('$meta', 'r+') as f:
-    d = json.load(f)
-    d['pid'] = $frontend_pid
-    f.seek(0)
-    json.dump(d, f, indent=2)
-    f.truncate()
-"
-  log "=== Frontend restarted for '$slug' (FE PID $frontend_pid) ==="
-}
-
-# Resume a suspended dev server (restart processes from existing build)
-cmd_resume() {
-  local slug="${1:?Usage: dev-server-manager.sh resume <slug>}"
-  local meta="${DEV_DIR}/${slug}/.dev-meta.json"
-
-  if [ ! -f "$meta" ]; then
-    log "ERROR: No dev server found with slug '$slug'"
-    return 1
-  fi
-
-  local port api_port db_name
-  { read -r port; read -r api_port; read -r db_name; } < <(read_meta "$meta" port api_port db_name)
-
-  if [ ! -f "${DEV_DIR}/${slug}/.next/standalone/server.js" ]; then
-    log "ERROR: No standalone build found for '$slug'. Run upsert instead."
-    return 1
-  fi
-
-  log "=== Resuming dev server: $slug ==="
-
-  # Start API
-  local api_pid=0
-  if [ -n "$api_port" ] && [ -n "$db_name" ]; then
-    api_pid=$(start_api "$slug" "$api_port" "$db_name")
-  fi
-
-  # Start frontend
-  local frontend_pid
-  frontend_pid=$(start_nextjs "$slug" "$port" "$api_port")
-
-  # Update metadata
-  python3 -c "
-import json
-with open('$meta', 'r+') as f:
-    d = json.load(f)
-    d['suspended'] = False
-    d['pid'] = $frontend_pid
-    d['api_pid'] = $api_pid
-    f.seek(0)
-    json.dump(d, f, indent=2)
-    f.truncate()
-"
-  log "=== Dev server '$slug' resumed (FE PID $frontend_pid, API PID $api_pid) ==="
-}
-
-# Suspend dev servers idle for more than N minutes (default: 30)
-cmd_suspend_idle() {
-  local max_idle_minutes="${1:-30}"
-  local now
-  now=$(date +%s)
-
-  if [ ! -d "$DEV_DIR" ]; then
-    return
-  fi
-
-  for meta in "${DEV_DIR}"/*/.dev-meta.json; do
-    [ ! -f "$meta" ] && continue
-    local slug updated updated_epoch idle_minutes pid api_pid suspended
-    {
-      read -r slug; read -r updated; read -r pid; read -r api_pid; read -r suspended
-    } < <(read_meta "$meta" slug updated_at pid api_pid suspended)
-
-    # Default empty fields
-    [ -z "$pid" ] && pid=0
-    [ -z "$api_pid" ] && api_pid=0
-
-    # Skip already suspended servers
-    if [ "$suspended" = "True" ]; then
-      continue
-    fi
-
-    # Skip servers with no running processes
-    local fe_running=false api_running=false
-    if [ "$pid" != "0" ] && kill -0 "$pid" 2>/dev/null; then
-      fe_running=true
-    fi
-    if [ "$api_pid" != "0" ] && kill -0 "$api_pid" 2>/dev/null; then
-      api_running=true
-    fi
-    if [ "$fe_running" = false ] && [ "$api_running" = false ]; then
-      continue
-    fi
-
-    updated_epoch=$(date -d "$updated" +%s 2>/dev/null || echo 0)
-    if [ "$updated_epoch" -eq 0 ]; then
-      continue
-    fi
-
-    idle_minutes=$(( (now - updated_epoch) / 60 ))
-    if [ "$idle_minutes" -ge "$max_idle_minutes" ]; then
-      log "Dev server '$slug' idle for ${idle_minutes} min (max: ${max_idle_minutes}). Suspending..."
-      cmd_suspend "$slug"
-    fi
-  done
-}
-
-# Set up a redirect from an email-based URL to a branch-based URL
-cmd_redirect() {
-  local email="${1:?Usage: dev-server-manager.sh redirect <email> <branch>}"
-  local branch="${2:?Usage: dev-server-manager.sh redirect <email> <branch>}"
-  local email_slug branch_slug
-  email_slug=$(email_to_slug "$email")
-  branch_slug=$(branch_to_slug "$branch")
-
-  if [ -z "$email_slug" ] || [ -z "$branch_slug" ]; then
-    log "ERROR: empty slug from email='$email' or branch='$branch'"
-    return 1
-  fi
-
-  # Don't redirect if the email slug is the same as the branch slug
-  if [ "$email_slug" = "$branch_slug" ]; then
-    return 0
-  fi
-
-  configure_caddy_redirect "$email_slug" "$branch_slug"
-}
-
 # --- Main ---
 case "${1:-help}" in
-  upsert)       cmd_upsert "${2:-}" ;;
-  list)         cmd_list ;;
-  destroy)      cmd_destroy "${2:-}" ;;
-  destroy-all)  cmd_destroy_all ;;
-  cleanup)      cmd_cleanup_old "${2:-7}" ;;
-  revive)       cmd_revive ;;
-  suspend)      cmd_suspend "${2:-}" ;;
-  resume)       cmd_resume "${2:-}" ;;
-  restart-frontend) cmd_restart_frontend "${2:-}" ;;
-  suspend-idle) cmd_suspend_idle "${2:-30}" ;;
-  redirect)     cmd_redirect "${2:-}" "${3:-}" ;;
+  upsert)      cmd_upsert "${2:-}" "${3:-}" ;;
+  list)        cmd_list ;;
+  destroy)     cmd_destroy "${2:-}" ;;
+  destroy-all) cmd_destroy_all ;;
+  cleanup)     cmd_cleanup_old "${2:-7}" ;;
+  revive)      cmd_revive ;;
   *)
     echo "Usage: dev-server-manager.sh <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  upsert <branch>          Create or update a dev server for a branch"
-    echo "  list                     List all dev servers"
-    echo "  destroy <slug>           Destroy a dev server (including database)"
-    echo "  destroy-all              Destroy all dev servers"
-    echo "  cleanup [days]           Destroy dev servers not updated in N days (default: 7)"
-    echo "  revive                   Restart any stopped (non-suspended) dev servers"
-    echo "  suspend <slug>           Stop processes but keep build on disk"
-    echo "  resume <slug>            Restart a suspended dev server"
-    echo "  restart-frontend <slug>  Restart just the Next.js frontend (keeps API running)"
-    echo "  suspend-idle [minutes]   Suspend servers idle for N minutes (default: 30)"
-    echo "  redirect <email> <branch> Set up email-slug redirect to branch-slug"
+    echo "  upsert <email> <branch>   Create or update a full-stack dev server"
+    echo "  list                      List all active dev servers"
+    echo "  destroy <email-slug>      Destroy a specific dev server (including database)"
+    echo "  destroy-all               Destroy all dev servers"
+    echo "  cleanup [days]            Destroy dev servers not updated in N days (default: 7)"
+    echo "  revive                    Restart any stopped dev servers"
     echo ""
     echo "Each dev server gets:"
-    echo "  - Next.js standalone build (port 3001-3099)"
-    echo "  - FastAPI backend (port 8001-8099)"
+    echo "  - Next.js frontend (port 3001-3005)"
+    echo "  - FastAPI backend (port 8001-8005)"
     echo "  - PostgreSQL database (shared instance, separate DB)"
     echo "  - Migrations auto-applied from branch"
     exit 1

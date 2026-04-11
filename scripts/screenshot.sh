@@ -92,21 +92,11 @@ take_screenshot() {
     local remote_path="${REMOTE_DIR}/${name}.png"
     local serve_cmd=""
 
-    # If serving, copy the screenshot into TWO locations:
-    #   1. .next/standalone/public/screenshots/ — served by the currently running
-    #      Next.js process (but only after a restart, since standalone scans public/
-    #      at startup and caches the listing).
-    #   2. public/screenshots/ in the repo clone — untracked (gitignored) file that
-    #      survives `git reset --hard` and gets re-copied into .next/standalone/public/
-    #      by `cp -r public .next/standalone/public` on the next rebuild. Without this
-    #      step, the next push would wipe the screenshot from the standalone public
-    #      dir when `.next/` is cleared at build start.
+    # If serving, copy to public dir in the same remote call as the screenshot
     if [[ -n "$serve_slug" ]]; then
         validate_safe_string "slug" "$serve_slug"
-        local dev_dir="/root/dev-servers/${serve_slug}"
-        local standalone_dir="${dev_dir}/.next/standalone/public/screenshots"
-        local repo_dir="${dev_dir}/public/screenshots"
-        serve_cmd=" && mkdir -p ${standalone_dir} ${repo_dir} && cp ${remote_path} ${standalone_dir}/${name}.png && cp ${remote_path} ${repo_dir}/${name}.png && bash ${dev_dir}/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
+        local public_dir="/root/dev-servers/${serve_slug}/public/screenshots"
+        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png"
     fi
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
@@ -122,7 +112,7 @@ const { chromium } = require('playwright');
   console.log('Screenshot saved: ${remote_path}');
   await browser.close();
 })().catch(e => { console.error(e.message); process.exit(1); });
-\"${serve_cmd}" /root 60
+\"${serve_cmd}" /root 30
 
     echo "Transferring to local machine..."
     local b64
@@ -146,14 +136,10 @@ serve_screenshot() {
     validate_safe_string "name" "$name"
     validate_safe_string "slug" "$slug"
 
-    # See take_screenshot for why we copy to BOTH .next/standalone/public/ and
-    # the repo's public/ dir, and why we restart the frontend.
-    local dev_dir="/root/dev-servers/${slug}"
-    local standalone_dir="${dev_dir}/.next/standalone/public/screenshots"
-    local repo_dir="${dev_dir}/public/screenshots"
+    local public_dir="/root/dev-servers/${slug}/public/screenshots"
 
     echo "Serving screenshot to ${slug}..."
-    bash "$REMOTE" "mkdir -p ${standalone_dir} ${repo_dir} && cp ${REMOTE_DIR}/${name}.png ${standalone_dir}/${name}.png && cp ${REMOTE_DIR}/${name}.png ${repo_dir}/${name}.png && bash ${dev_dir}/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 60
+    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png" /root 10
     echo "URL: $(screenshot_url "$slug" "$name")"
 }
 
