@@ -940,6 +940,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **`formatDayLabel(dateStr)`** is the canonical day-label formatter in `lib/timeUtils.ts`. Use it in all time-related components instead of local copies.
 - **Availability cutoff requires `suggestion_deadline_minutes` to be set** on the poll — the endpoint enforces `suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL`. Polls created without this field will fail the cutoff endpoint with 400.
 - **`ChunkLoadError` after new builds**: the browser has stale cached chunks from the previous build. The lazy `CreatePollContent` import and the global `unhandledrejection` handler in `template.tsx` both auto-reload the page when this happens. The service worker uses network-first for JS chunks so new builds take effect immediately.
+- **Autotitle convention**: time polls use `"Time?"` as the autotitle (matching the `BUILT_IN_TYPES` label), not a bespoke prompt like "When works?". Every branch of `generateTitle()` in `app/create-poll/page.tsx` must call `appendFor(...)` on its return value so the "for X" suffix gets appended — the standalone `pollType === 'time'` fallback originally returned a raw string and silently dropped `forSuffix`.
 
 ### Service Worker Caching Strategy
 
