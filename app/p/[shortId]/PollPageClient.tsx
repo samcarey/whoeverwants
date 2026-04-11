@@ -2070,7 +2070,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <>
                       {/* Preferences phase: tap bubbles to like/dislike time slots */}
                       <div className="mb-4">
-                        <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
+                        <h3 className="text-lg font-semibold mb-3 text-center">
+                          Mark Your Preferences
+                          <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                            Select time slots to fine-tune
+                          </span>
+                        </h3>
                         <TimeSlotBubbles
                           options={pollOptions}
                           likedSlots={likedSlots ?? []}
