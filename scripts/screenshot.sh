@@ -100,7 +100,7 @@ take_screenshot() {
     if [[ -n "$serve_slug" ]]; then
         validate_safe_string "slug" "$serve_slug"
         local public_dir="/root/dev-servers/${serve_slug}/.next/standalone/public/screenshots"
-        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png && bash /root/whoeverwants/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
+        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png && bash /root/dev-servers/${serve_slug}/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
     fi
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
@@ -146,7 +146,7 @@ serve_screenshot() {
     local public_dir="/root/dev-servers/${slug}/.next/standalone/public/screenshots"
 
     echo "Serving screenshot to ${slug}..."
-    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png && bash /root/whoeverwants/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 30
+    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png && bash /root/dev-servers/${slug}/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 30
     echo "URL: $(screenshot_url "$slug" "$name")"
 }
 
