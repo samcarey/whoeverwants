@@ -2011,12 +2011,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <>
                       {/* Availability phase: show time window picker */}
                       <div className="mb-4">
-                        <h3 className="text-lg font-semibold mb-3 text-center">
-                          Your Availability
-                          <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
-                            Select time slots to fine-tune
-                          </span>
-                        </h3>
+                        <h3 className="text-lg font-semibold mb-3 text-center">Your Availability</h3>
                         <ParticipationConditions
                           hideParticipantCounters={true}
                           disabled={isSubmitting}
@@ -2048,6 +2043,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         </div>
                       )}
 
+                      <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+                        Select time slots to fine-tune
+                      </p>
                       <div className="mb-6">
                         <AbstainButton isAbstaining={isAbstaining} onClick={handleAbstain} />
                       </div>
