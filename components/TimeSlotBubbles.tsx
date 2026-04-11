@@ -110,18 +110,18 @@ export default function TimeSlotBubbles({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="divide-y divide-gray-200 dark:divide-gray-700">
       {days.map(([dateStr, slots]) => {
         const { weekday, monthDay } = formatStackedDayLabel(dateStr);
         return (
-        <div key={dateStr} className="flex gap-2 items-start">
+        <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
           {/* Day label — stacked, left-aligned, narrow fixed width for consistent bubble alignment */}
           <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
             <div>{weekday}</div>
             <div>{monthDay}</div>
           </div>
 
-          {/* Bubbles */}
+          {/* Bubbles — fixed width so labels sit in vertically aligned columns */}
           <div className="flex flex-wrap gap-1.5">
             {slots.map((slot, idx) => {
               const state = getState(slot);
@@ -139,7 +139,8 @@ export default function TimeSlotBubbles({
                   disabled={disabled}
                   title={slot}
                   className={[
-                    "relative select-none rounded-full px-2.5 py-1 text-[0.9rem] font-medium transition-colors",
+                    "relative select-none rounded-full py-1 text-[0.9rem] font-medium transition-colors",
+                    "w-12 text-center tabular-nums",
                     "border focus:outline-none focus:ring-2 focus:ring-offset-1",
                     disabled ? "cursor-default opacity-60" : "cursor-pointer active:scale-95",
                     state === "liked"
