@@ -736,13 +736,13 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
                           key={slot}
                           title={formatTimeSlot(slot)}
                           className={[
-                            "relative w-12 h-8 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
+                            "relative w-12 h-8 flex items-center justify-center rounded-full text-[0.9rem] font-medium tabular-nums leading-none bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
                             isWinner
                               ? "border-2 border-green-500 shadow-sm"
                               : "border border-gray-300 dark:border-gray-600",
                           ].join(" ")}
                         >
-                          {label}
+                          <span className="block translate-y-[1px]">{label}</span>
                           {likes > 0 && (
                             <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                               {likes}
