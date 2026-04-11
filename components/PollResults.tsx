@@ -742,7 +742,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
                               : "border border-gray-300 dark:border-gray-600",
                           ].join(" ")}
                         >
-                          <span className="block translate-y-[1px]">{label}</span>
+                          <span className="block translate-y-[3px]">{label}</span>
                           {likes > 0 && (
                             <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                               {likes}
