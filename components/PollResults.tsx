@@ -4,6 +4,11 @@ import { useState, useEffect } from "react";
 import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
+import {
+  formatStackedDayLabel,
+  getBubbleLabel,
+  groupSlotsByDay,
+} from "@/lib/timeUtils";
 
 
 interface PollResultsProps {
@@ -664,16 +669,8 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
     );
   }
 
-  // Sort options for display: fewest dislikes → most likes → earliest
-  const sorted = [...options].sort((a, b) => {
-    const da = dislikeCounts?.[a] ?? 0;
-    const db = dislikeCounts?.[b] ?? 0;
-    if (da !== db) return da - db;
-    const la = likeCounts?.[a] ?? 0;
-    const lb = likeCounts?.[b] ?? 0;
-    if (lb !== la) return lb - la;
-    return a < b ? -1 : 1; // chronological
-  });
+  // Group slots by day in chronological order for the bubble grid
+  const slotsByDay = groupSlotsByDay([...options].sort());
 
   return (
     <div className="space-y-4">
@@ -693,65 +690,78 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
         </div>
       )}
 
-      {sorted.length > 1 && (
+      {options.length > 1 && (
         <div>
-          <div className="flex items-baseline justify-between gap-3 mb-2">
+          <div className="flex items-baseline justify-between gap-3 mb-3">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Candidate Slots ({sorted.length})
+              Candidate Slots ({options.length})
             </h3>
             <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
               <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400" /> liked
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
               </span>
               <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavailable
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" /> unavail.
               </span>
             </div>
           </div>
-          <div className="space-y-1 max-h-56 overflow-y-auto">
-            {sorted.map((slot) => {
-              const likes = likeCounts?.[slot] ?? 0;
-              const dislikes = dislikeCounts?.[slot] ?? 0;
-              const unavailable =
-                maxAvail != null && availCounts?.[slot] != null
-                  ? maxAvail - availCounts[slot]
-                  : 0;
-              const isWinner = slot === winner;
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            {slotsByDay.map(([dateStr, slots]) => {
+              const { weekday, monthDay } = formatStackedDayLabel(dateStr);
               return (
-                <div
-                  key={slot}
-                  className={`flex items-center justify-between px-3 py-1.5 rounded-lg text-sm gap-2 ${
-                    isWinner
-                      ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800'
-                      : 'bg-gray-50 dark:bg-gray-800'
-                  }`}
-                >
-                  <span className={`truncate ${isWinner ? 'font-medium text-green-800 dark:text-green-200' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {formatTimeSlot(slot)}
-                  </span>
-                  <span className="flex items-center gap-2 flex-shrink-0 text-xs tabular-nums">
-                    {likes > 0 && (
-                      <span className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-300">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
-                        {likes}
-                      </span>
-                    )}
-                    {dislikes > 0 && (
-                      <span className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-300">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
-                        {dislikes}
-                      </span>
-                    )}
-                    {unavailable > 0 && (
-                      <span className="inline-flex items-center gap-1 text-gray-600 dark:text-gray-300">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500" />
-                        {unavailable}
-                      </span>
-                    )}
-                  </span>
+                <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
+                  {/* Day label */}
+                  <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
+                    <div>{weekday}</div>
+                    <div>{monthDay}</div>
+                  </div>
+
+                  {/* Bubbles */}
+                  <div className="flex flex-wrap gap-2">
+                    {slots.map((slot, idx) => {
+                      const label = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
+                      const likes = likeCounts?.[slot] ?? 0;
+                      const dislikes = dislikeCounts?.[slot] ?? 0;
+                      const unavailable =
+                        maxAvail != null && availCounts?.[slot] != null
+                          ? maxAvail - availCounts[slot]
+                          : 0;
+                      const isWinner = slot === winner;
+
+                      return (
+                        <div
+                          key={slot}
+                          title={formatTimeSlot(slot)}
+                          className={[
+                            "relative w-12 py-1 text-center rounded-full border text-[0.9rem] font-medium tabular-nums",
+                            isWinner
+                              ? "bg-green-500 border-green-600 text-white shadow-sm"
+                              : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300",
+                          ].join(" ")}
+                        >
+                          {label}
+                          {likes > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-yellow-400 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {likes}
+                            </span>
+                          )}
+                          {dislikes > 0 && (
+                            <span className="absolute -top-1.5 -left-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {dislikes}
+                            </span>
+                          )}
+                          {unavailable > 0 && (
+                            <span className="absolute -bottom-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                              {unavailable}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}

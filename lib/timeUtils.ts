@@ -40,3 +40,62 @@ export function formatDeadlineLabel(minutes: number, label: string): string {
   const timeString = deadline.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `${label} (${timeString})`;
 }
+
+// --- Time slot helpers (slot format: "YYYY-MM-DD HH:MM-HH:MM") ---
+
+/** Parse slot start time → {h, m} */
+export function parseSlotStart(slot: string): { h: number; m: number } {
+  const startStr = slot.split(' ')[1].split('-')[0];
+  const [h, m] = startStr.split(':').map(Number);
+  return { h, m };
+}
+
+/** Extract "YYYY-MM-DD" from a slot key */
+export function parseSlotDate(slot: string): string {
+  return slot.split(' ')[0];
+}
+
+/** Format a date string as stacked day label: { weekday: "Sat", monthDay: "Apr 18" } */
+export function formatStackedDayLabel(dateStr: string): { weekday: string; monthDay: string } {
+  const date = new Date(dateStr + 'T00:00:00');
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+  const monthDay = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return { weekday, monthDay };
+}
+
+/** Generate a compact bubble label for a slot based on its predecessor.
+ *  First bubble of day / period change: "1 PM"
+ *  Same AM/PM, different hour:          "2"
+ *  Same hour, different minute:         ":15"
+ */
+export function getBubbleLabel(slot: string, prevSlot: string | null): string {
+  const { h, m } = parseSlotStart(slot);
+  const period = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+
+  if (prevSlot) {
+    const prev = parseSlotStart(prevSlot);
+    const prevPeriod = prev.h < 12 ? 'AM' : 'PM';
+    const prevH12 = prev.h % 12 === 0 ? 12 : prev.h % 12;
+
+    if (h12 === prevH12 && period === prevPeriod) {
+      return `:${String(m).padStart(2, '0')}`;
+    }
+    if (period === prevPeriod) {
+      return String(h12);
+    }
+  }
+
+  return `${h12} ${period}`;
+}
+
+/** Group slot keys by date, preserving order within each day. */
+export function groupSlotsByDay(options: string[]): [string, string[]][] {
+  const map = new Map<string, string[]>();
+  for (const slot of options) {
+    const date = parseSlotDate(slot);
+    if (!map.has(date)) map.set(date, []);
+    map.get(date)!.push(slot);
+  }
+  return Array.from(map.entries());
+}

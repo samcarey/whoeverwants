@@ -6,22 +6,15 @@
  * Layout: one row per day, day label on the left, tappable time bubbles on the right.
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.
  *
- * Bubble labels use compressed notation to reduce visual clutter:
- *   First bubble of day (or different AM/PM):  "9 AM", "1 PM"
- *   Same AM/PM period but different hour:       "10", "11"
- *   Same hour as previous bubble:               ":15", ":30", ":45"
- *
  * An orange badge (top-right) shows how many availability voters are excluded by that slot.
  */
 
 import { useMemo } from "react";
-
-function formatStackedDayLabel(dateStr: string): { weekday: string; monthDay: string } {
-  const date = new Date(dateStr + "T00:00:00");
-  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
-  const monthDay = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return { weekday, monthDay };
-}
+import {
+  formatStackedDayLabel,
+  getBubbleLabel,
+  groupSlotsByDay,
+} from "@/lib/timeUtils";
 
 export type SlotState = "neutral" | "liked" | "disliked";
 
@@ -37,42 +30,6 @@ interface TimeSlotBubblesProps {
   disabled?: boolean;
 }
 
-function parseSlotStart(slot: string): { h: number; m: number } {
-  // slot format: "YYYY-MM-DD HH:MM-HH:MM"
-  const startStr = slot.split(" ")[1].split("-")[0];
-  const [h, m] = startStr.split(":").map(Number);
-  return { h, m };
-}
-
-function parseSlotDate(slot: string): string {
-  return slot.split(" ")[0]; // "YYYY-MM-DD"
-}
-
-
-function getBubbleLabel(slot: string, prevSlot: string | null): string {
-  const { h, m } = parseSlotStart(slot);
-  const period = h < 12 ? "AM" : "PM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-
-  if (prevSlot) {
-    const prev = parseSlotStart(prevSlot);
-    const prevPeriod = prev.h < 12 ? "AM" : "PM";
-    const prevH12 = prev.h % 12 === 0 ? 12 : prev.h % 12;
-
-    if (h12 === prevH12 && period === prevPeriod) {
-      // Same hour → show only :MM
-      return `:${String(m).padStart(2, "0")}`;
-    }
-    if (period === prevPeriod) {
-      // Same AM/PM → show hour, omit period
-      return String(h12);
-    }
-  }
-
-  // First bubble or period changed → full label
-  return `${h12} ${period}`;
-}
-
 export default function TimeSlotBubbles({
   options,
   likedSlots,
@@ -86,15 +43,7 @@ export default function TimeSlotBubbles({
   const dislikedSet = useMemo(() => new Set(dislikedSlots), [dislikedSlots]);
 
   // Group slots by date, preserving order
-  const days = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const slot of options) {
-      const date = parseSlotDate(slot);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(slot);
-    }
-    return Array.from(map.entries()); // [dateStr, slots[]]
-  }, [options]);
+  const days = useMemo(() => groupSlotsByDay(options), [options]);
 
   function getState(slot: string): SlotState {
     if (likedSet.has(slot)) return "liked";
