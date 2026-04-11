@@ -2012,11 +2012,9 @@ export function CreatePollContent() {
         )}
 
       {showMinParticipationModal && (() => {
-        const parsed = parseInt(minParticipationInput, 10);
-        const isValid = !isNaN(parsed) && parsed >= 50 && parsed <= 100;
+        const current = parseInt(minParticipationInput, 10);
         const save = () => {
-          if (!isValid) return;
-          setMinimumParticipation(parsed);
+          setMinimumParticipation(current);
           setShowMinParticipationModal(false);
         };
         return (
@@ -2028,33 +2026,27 @@ export function CreatePollContent() {
               <div className="absolute inset-0 bg-black/50 dark:bg-black/70" />
               <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full p-5">
                 <h3 className="text-base font-semibold mb-2 text-gray-900 dark:text-white">
-                  Minimum Participation
+                  Minimum Participation:{' '}
+                  <span className="font-normal text-blue-600 dark:text-blue-400">
+                    {current}%
+                  </span>
                 </h3>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                  Include time slots where at least this percentage of the maximum responders are available. Enter a value between 50 and 100.
+                  Include time slots where at least this percentage of the maximum responders are available.
                 </p>
-                <div className="flex items-center gap-2 mb-4">
-                  <input
-                    type="number"
-                    min={50}
-                    max={100}
-                    step={1}
-                    value={minParticipationInput}
-                    onChange={(e) => setMinParticipationInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') save();
-                      else if (e.key === 'Escape') setShowMinParticipationModal(false);
-                    }}
-                    autoFocus
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white text-base"
-                  />
-                  <span className="text-base text-gray-700 dark:text-gray-300">%</span>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={1}
+                  value={current}
+                  onChange={(e) => setMinParticipationInput(e.target.value)}
+                  className="w-full accent-blue-500"
+                />
+                <div className="flex justify-between text-xs text-gray-400 mt-0.5 mb-4">
+                  <span>50%</span>
+                  <span>100% (max only)</span>
                 </div>
-                {!isValid && minParticipationInput !== '' && (
-                  <p className="text-xs text-red-500 dark:text-red-400 mb-2">
-                    Must be a whole number between 50 and 100.
-                  </p>
-                )}
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
@@ -2066,8 +2058,7 @@ export function CreatePollContent() {
                   <button
                     type="button"
                     onClick={save}
-                    disabled={!isValid}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
                   >
                     Save
                   </button>
