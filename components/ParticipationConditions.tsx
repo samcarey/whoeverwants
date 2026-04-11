@@ -205,7 +205,7 @@ export default function ParticipationConditions({
               disabled={disabled}
               className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
                 highlightDaysButton
-                  ? 'text-white bg-red-500 hover:bg-red-600 ring-2 ring-red-400 ring-offset-2 ring-offset-white dark:ring-offset-gray-900 animate-pulse'
+                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
                   : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
