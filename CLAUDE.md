@@ -1056,6 +1056,12 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Poll data snapshots (fork/duplicate/follow-up)** are passed between pages via localStorage. When adding new poll fields, update `buildPollSnapshot()` in `lib/pollCreator.ts` — it's used by `FollowUpModal.tsx`, `DuplicateButton.tsx`, and `ForkButton.tsx`.
 - **PWA clients cache old JS bundles** — snapshot structure changes (new fields in `buildPollSnapshot`) won't take effect until users get new JS. Always add backward-compatible detection in the consumer (create-poll page) rather than relying solely on snapshot fields. The `is_auto_title` detection uses a ref-based comparison against `generateTitle()` output to handle old snapshots that lack the field.
 
+### Edit-in-Modal Pattern for Form Fields
+
+- **Extract edit modals to their own component with local draft state.** When a form field opens a modal for editing (e.g., a range slider), keep the draft value as local state inside the modal component, and only propagate to the parent via `onSave`. This isolates high-frequency updates (slider drags at 60Hz, number input keystrokes) from the parent form, which may have dozens of other `useState` hooks. An inline modal with draft state in the parent component will re-render the entire form on every slider tick.
+- **Sync the draft to the committed value via `useEffect([isOpen, value])`.** When the modal opens, reset the draft to match the current committed value. Don't rely on mounting alone — if the modal component stays mounted across open/close cycles, the draft state becomes stale.
+- **Don't duplicate `document.body.style.overflow = 'hidden'`** when opening a modal inside the create-poll modal. The parent sheet already locks body scroll via `position: fixed`, and stacking another `overflow: hidden` can clobber the restored state when only one of them unmounts.
+
 ### Drag-to-Reorder & Tap-to-Move (RankableOptions)
 
 - **Delay drag start until pointer moves >8px.** On `pointerdown`, save intent in a ref (`pendingDragRef`) but don't call `startDrag`. On `pointermove`, if threshold exceeded, start the actual drag. On `pointerup`, if drag never started, it's a tap. This avoids React's async state update issue: `pointerup` fires before `isDragging` state is processed, leaving drag state stuck.

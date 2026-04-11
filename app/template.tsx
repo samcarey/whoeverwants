@@ -433,7 +433,9 @@ function TemplateInner({ children }: AppTemplateProps) {
       ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode']
         .forEach(p => params.delete(p));
       const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      console.log('[CLOSE] navigate', { pathname, currentSearch: searchParams.toString(), qs, target });
+      router.replace(target);
     };
   }, [router, pathname, searchParams]);
 

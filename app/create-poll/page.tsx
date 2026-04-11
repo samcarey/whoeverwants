@@ -21,6 +21,7 @@ import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinMaxCounter from "@/components/MinMaxCounter";
+import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
@@ -107,7 +108,8 @@ export function CreatePollContent() {
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
-  const [availabilityThreshold, setAvailabilityThreshold] = useState<number>(5);
+  const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
+  const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -205,7 +207,7 @@ export function CreatePollContent() {
         return '';
       }
       if (category === 'time') {
-        return appendFor("When works?");
+        return appendFor("Time?");
       }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
@@ -234,7 +236,7 @@ export function CreatePollContent() {
     }
 
     // time
-    return "When works?";
+    return appendFor("Time?");
   }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
 
   // Focus details textarea when opening
@@ -729,7 +731,9 @@ export function CreatePollContent() {
           } else if (forkData.poll_type === 'time') {
             setPollType('time');
             setOptions(['']);
-            if (forkData.availability_threshold != null) setAvailabilityThreshold(forkData.availability_threshold);
+            if (forkData.availability_threshold != null) {
+              setMinimumParticipation(Math.max(50, Math.min(100, 100 - forkData.availability_threshold)));
+            }
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1247,7 +1251,7 @@ export function CreatePollContent() {
             maxEnabled: durationMaxEnabled
           };
         }
-        pollData.availability_threshold = availabilityThreshold;
+        pollData.availability_threshold = 100 - minimumParticipation;
         // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
         const cutoffMinutes = getSuggestionCutoffMinutes();
         pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
@@ -1551,31 +1555,19 @@ export function CreatePollContent() {
                 isCreationForm={true}
               />
 
-              {/* Availability Threshold */}
+              {/* Minimum Participation */}
               <div>
                 <label className="block text-sm font-medium">
-                  Availability Threshold:{' '}
-                  <span className="font-normal text-blue-600 dark:text-blue-400">
-                    {availabilityThreshold}%
-                  </span>
+                  <span>Minimum Participation: </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowMinParticipationModal(true)}
+                    disabled={isLoading}
+                    className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50 cursor-pointer"
+                  >
+                    {minimumParticipation}%
+                  </button>
                 </label>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1.5">
-                  Include time slots where at least this percentage of the maximum responders are available.
-                </p>
-                <input
-                  type="range"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={availabilityThreshold}
-                  onChange={(e) => setAvailabilityThreshold(Number(e.target.value))}
-                  disabled={isLoading}
-                  className="w-full accent-blue-500 disabled:opacity-50"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-0.5">
-                  <span>0% (max only)</span>
-                  <span>50%</span>
-                </div>
               </div>
 
               {/* Availability Phase Deadline */}
@@ -2014,7 +2006,14 @@ export function CreatePollContent() {
             Private until you share the link
           </p>
         )}
-      
+
+      <MinimumParticipationModal
+        isOpen={showMinParticipationModal}
+        value={minimumParticipation}
+        onSave={setMinimumParticipation}
+        onClose={() => setShowMinParticipationModal(false)}
+      />
+
     </div>
   );
 }
