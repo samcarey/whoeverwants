@@ -92,15 +92,21 @@ take_screenshot() {
     local remote_path="${REMOTE_DIR}/${name}.png"
     local serve_cmd=""
 
-    # If serving, copy to the STANDALONE public dir (not the repo's public dir).
-    # The standalone Next.js server serves files from .next/standalone/public/,
-    # and it scans that directory at startup — so we also need to restart the
-    # frontend process to make the new file visible. See scripts/dev-server-manager.sh
-    # restart-frontend command.
+    # If serving, copy the screenshot into TWO locations:
+    #   1. .next/standalone/public/screenshots/ — served by the currently running
+    #      Next.js process (but only after a restart, since standalone scans public/
+    #      at startup and caches the listing).
+    #   2. public/screenshots/ in the repo clone — untracked (gitignored) file that
+    #      survives `git reset --hard` and gets re-copied into .next/standalone/public/
+    #      by `cp -r public .next/standalone/public` on the next rebuild. Without this
+    #      step, the next push would wipe the screenshot from the standalone public
+    #      dir when `.next/` is cleared at build start.
     if [[ -n "$serve_slug" ]]; then
         validate_safe_string "slug" "$serve_slug"
-        local public_dir="/root/dev-servers/${serve_slug}/.next/standalone/public/screenshots"
-        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png && bash /root/dev-servers/${serve_slug}/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
+        local dev_dir="/root/dev-servers/${serve_slug}"
+        local standalone_dir="${dev_dir}/.next/standalone/public/screenshots"
+        local repo_dir="${dev_dir}/public/screenshots"
+        serve_cmd=" && mkdir -p ${standalone_dir} ${repo_dir} && cp ${remote_path} ${standalone_dir}/${name}.png && cp ${remote_path} ${repo_dir}/${name}.png && bash ${dev_dir}/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
     fi
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
@@ -140,13 +146,14 @@ serve_screenshot() {
     validate_safe_string "name" "$name"
     validate_safe_string "slug" "$slug"
 
-    # Standalone Next.js serves static files from .next/standalone/public/ and
-    # caches the directory listing at startup, so new files require a frontend
-    # restart to become visible.
-    local public_dir="/root/dev-servers/${slug}/.next/standalone/public/screenshots"
+    # See take_screenshot for why we copy to BOTH .next/standalone/public/ and
+    # the repo's public/ dir, and why we restart the frontend.
+    local dev_dir="/root/dev-servers/${slug}"
+    local standalone_dir="${dev_dir}/.next/standalone/public/screenshots"
+    local repo_dir="${dev_dir}/public/screenshots"
 
     echo "Serving screenshot to ${slug}..."
-    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png && bash /root/dev-servers/${slug}/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 30
+    bash "$REMOTE" "mkdir -p ${standalone_dir} ${repo_dir} && cp ${REMOTE_DIR}/${name}.png ${standalone_dir}/${name}.png && cp ${REMOTE_DIR}/${name}.png ${repo_dir}/${name}.png && bash ${dev_dir}/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 60
     echo "URL: $(screenshot_url "$slug" "$name")"
 }
 
