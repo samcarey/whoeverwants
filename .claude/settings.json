@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/block-push-to-main.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-push-to-main.py\"",
             "timeout": 5
           }
         ]

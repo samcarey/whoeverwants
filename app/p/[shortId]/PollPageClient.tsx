@@ -54,6 +54,10 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const isNewPoll = searchParams.get("new") === "true";
   const [pollUrl, setPollUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
+  // Tiered ballot (equal-ranking groups). Each inner array is a tier of
+  // options tied for the same rank. When it has no ties, every inner array
+  // is a singleton and this is equivalent to rankedChoices.
+  const [rankedChoiceTiers, setRankedChoiceTiers] = useState<string[][]>([]);
   // Time poll preferences: liked/disliked slot sets (null = not yet submitted)
   const [likedSlots, setLikedSlots] = useState<string[] | null>(null);
   const [dislikedSlots, setDislikedSlots] = useState<string[] | null>(null);
@@ -629,6 +633,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               }
             } else if (poll.poll_type === 'ranked_choice') {
               if (voteData.ranked_choices) setRankedChoices(voteData.ranked_choices);
+              if (voteData.ranked_choice_tiers) {
+                setRankedChoiceTiers(voteData.ranked_choice_tiers);
+              } else if (voteData.ranked_choices) {
+                // No tiers present — synthesize singleton tiers so the
+                // current state is internally consistent.
+                setRankedChoiceTiers(voteData.ranked_choices.map((c: string) => [c]));
+              }
               if (voteData.suggestions) setSuggestionChoices(voteData.suggestions);
             } else if (poll.poll_type === 'time') {
               // Restore time poll availability windows
@@ -759,8 +770,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     };
   }, [poll.id, pollClosed, fetchPollResults]);
 
-  const handleRankingChange = useCallback((newRankedChoices: string[]) => {
+  const handleRankingChange = useCallback((newRankedChoices: string[], newTiers: string[][]) => {
     setRankedChoices(newRankedChoices);
+    setRankedChoiceTiers(newTiers);
     // Clear the flag when user interacts with rankings after cancelling abstain
     if (justCancelledAbstain) {
       setJustCancelledAbstain(false);
@@ -1155,6 +1167,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
         const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
         const filteredSuggestionsForValidation = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
+        // Filter and validate tiers in lockstep with ranked_choices. Drop
+        // empty strings from each tier and drop empty tiers.
+        const filteredTiers: string[][] = rankedChoiceTiers
+          .map(tier => tier.filter(c => c && c.trim().length > 0))
+          .filter(tier => tier.length > 0);
+        // Only send tiers if they actually encode ties (at least one tier has
+        // size > 1). Otherwise the flat ranked_choices list is sufficient and
+        // we avoid storing redundant singleton tiers.
+        const hasTies = filteredTiers.some(tier => tier.length > 1);
 
         if (filteredRankedChoices.length === 0 && !isAbstaining && (!canSubmitSuggestions || filteredSuggestionsForValidation.length === 0)) {
           if (!canSubmitSuggestions) {
@@ -1197,6 +1218,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           poll_id: poll.id,
           vote_type: 'ranked_choice' as const,
           ranked_choices: isAbstaining || !hasRankings ? null : filteredRankedChoices,
+          ranked_choice_tiers:
+            isAbstaining || !hasRankings || !hasTies ? null : filteredTiers,
           suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
           is_abstain: finalAbstain,
           is_ranking_abstain: rankingAbstain,
@@ -1243,7 +1266,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
           : poll.poll_type === 'time'
           ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null }
-          : { ranked_choices: voteData.ranked_choices, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
+          : { ranked_choices: voteData.ranked_choices, ranked_choice_tiers: voteData.ranked_choice_tiers, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
         
         
         
@@ -2170,22 +2193,42 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
-                        ) : (
-                          rankedChoices.map((choice, index) => (
-                            <div key={index} className="flex items-center gap-2">
-                              <div className="flex-shrink-0" style={{ width: '32px' }}>
-                                <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                  {index + 1}
-                                </span>
-                              </div>
-                              <div className="flex-1 flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                                <div className="min-w-0 overflow-hidden">
-                                  <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                        ) : (() => {
+                          // Render the user's ranking, collapsing tied ranks
+                          // into visually-grouped blocks with a shared rank
+                          // number. Falls back to singleton tiers when no
+                          // tiered data is present.
+                          const tiersToRender: string[][] =
+                            rankedChoiceTiers && rankedChoiceTiers.length > 0
+                              ? rankedChoiceTiers
+                              : rankedChoices.map(c => [c]);
+                          let posSoFar = 0;
+                          return tiersToRender.map((tier, tierIdx) => {
+                            const rank = posSoFar + 1;
+                            posSoFar += tier.length;
+                            return (
+                              <div key={tierIdx} className="flex items-start gap-2">
+                                <div className="flex-shrink-0 flex items-center" style={{ width: '32px', minHeight: '2.5rem' }}>
+                                  <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                                    {rank}
+                                  </span>
+                                </div>
+                                <div className="flex-1 flex flex-col gap-1 min-w-0">
+                                  {tier.map((choice, innerIdx) => (
+                                    <div key={`${tierIdx}-${innerIdx}`} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
+                                      <div className="min-w-0 overflow-hidden">
+                                        <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                                      </div>
+                                      {tier.length > 1 && innerIdx === 0 && (
+                                        <span className="ml-auto flex-shrink-0 text-xs text-blue-600 dark:text-blue-400 italic">tied</span>
+                                      )}
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
-                            </div>
-                          ))
-                        )}
+                            );
+                          });
+                        })()}
                       </div>
                     ) : null}
                   </div>
