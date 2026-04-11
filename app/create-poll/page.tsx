@@ -1604,7 +1604,7 @@ export function CreatePollContent() {
                       aria-label="Availability cutoff duration"
                     >
                       {getVotingDeadlineMinutes() != null && (
-                        <optgroup label="Relative to Preferences Cutoff">
+                        <optgroup label="Relative to Voting Cutoff">
                           {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
                             const votingMin = getVotingDeadlineMinutes()!;
                             const mins = votingMin * opt.fraction;
@@ -1658,29 +1658,44 @@ export function CreatePollContent() {
                 )}
               </div>
 
-              {/* Preferences Phase Deadline */}
+              {/* Voting Cutoff (preferences phase deadline) */}
               <div>
-                <label className="block text-sm font-medium mb-1">Preferences Cutoff</label>
-                <select
-                  value={deadlineOption}
-                  onChange={(e) => setDeadlineOption(e.target.value)}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  {deadlineOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {isClient ? getTimeLabel(option.value) : option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {deadlineOption === 'custom' && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Custom Preferences Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
-                  </label>
-                  <div className="flex justify-between gap-2">
+                <label className="block text-sm font-medium cursor-pointer">
+                  <span>Voting Cutoff: </span>
+                  <span className="relative inline-flex">
+                    <span className="font-normal text-blue-600 dark:text-blue-400">
+                      {(() => {
+                        if (deadlineOption === 'none') return 'None';
+                        if (deadlineOption === 'custom') {
+                          if (customDate && customTime) {
+                            const dt = new Date(`${customDate}T${customTime}`);
+                            return dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                          }
+                          return 'Custom';
+                        }
+                        const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption);
+                        if (!opt) return deadlineOption;
+                        return formatDeadlineLabel(opt.minutes, opt.label);
+                      })()}
+                    </span>
+                    <select
+                      value={deadlineOption}
+                      onChange={(e) => setDeadlineOption(e.target.value)}
+                      disabled={isLoading}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      aria-label="Voting cutoff duration"
+                    >
+                      <option value="none">None</option>
+                      {VOTING_CUTOFF_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {formatDeadlineLabel(opt.minutes, opt.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </span>
+                </label>
+                {deadlineOption === 'custom' && (
+                  <div className="mt-2 flex justify-between gap-2">
                     <div className="w-auto">
                       <label htmlFor="customDateTimePoll" className="block text-xs text-gray-500 mb-1">Date</label>
                       <input
@@ -1692,6 +1707,7 @@ export function CreatePollContent() {
                         min={isClient ? getTodayDate() : ''}
                         className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
                         style={{ fontSize: '14px' }}
+                        required
                       />
                     </div>
                     <div className="w-auto">
@@ -1704,11 +1720,12 @@ export function CreatePollContent() {
                         disabled={isLoading}
                         className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
                         style={{ fontSize: '14px' }}
+                        required
                       />
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
 
