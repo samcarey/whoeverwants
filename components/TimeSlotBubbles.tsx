@@ -99,7 +99,16 @@ export default function TimeSlotBubbles({
                       : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-400 focus:ring-blue-400",
                   ].join(" ")}
                 >
-                  <span className="block" style={{ transform: 'translateY(-2px)' }}>{label}</span>
+                  <span
+                    className="block"
+                    style={{
+                      lineHeight: 1,
+                      textBoxTrim: 'trim-both',
+                      textBoxEdge: 'cap alphabetic',
+                    } as React.CSSProperties}
+                  >
+                    {label}
+                  </span>
                   {excluded > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white leading-none pointer-events-none">
                       {excluded}
