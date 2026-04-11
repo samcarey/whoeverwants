@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import {
   formatStackedDayLabel,
+  formatTimeSlot,
   getBubbleLabel,
   groupSlotsByDay,
 } from "@/lib/timeUtils";
@@ -610,39 +611,6 @@ function ParticipationResults({ results, isPollClosed, userVoteData, onFollowUpC
   );
 }
 
-function formatTimeSlot(slot: string): string {
-  // "YYYY-MM-DD HH:MM-HH:MM" → "Mon Apr 28 • 10:00 AM – 10:30 AM (30m)"
-  try {
-    const [datePart, timePart] = slot.split(' ');
-    const [startStr, endStr] = timePart.split('-');
-    const [sy, sm, sd] = datePart.split('-').map(Number);
-    const [sh, smin] = startStr.split(':').map(Number);
-    const [eh, emin] = endStr.split(':').map(Number);
-
-    const date = new Date(sy, sm - 1, sd);
-    const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
-    const month = date.toLocaleDateString('en-US', { month: 'short' });
-
-    const fmt = (h: number, m: number) => {
-      const period = h < 12 ? 'AM' : 'PM';
-      const h12 = h % 12 || 12;
-      return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
-    };
-
-    const startMins = sh * 60 + smin;
-    let endMins = eh * 60 + emin;
-    if (endMins <= startMins) endMins += 24 * 60;
-    const durMins = endMins - startMins;
-    const durStr = durMins >= 60
-      ? (durMins % 60 === 0 ? `${durMins / 60}h` : `${Math.floor(durMins / 60)}h ${durMins % 60}m`)
-      : `${durMins}m`;
-
-    return `${weekday} ${month} ${sd} • ${fmt(sh, smin)} – ${fmt(eh, emin)} (${durStr})`;
-  } catch {
-    return slot;
-  }
-}
-
 function TimeResults({ results, isPollClosed }: { results: PollResults; isPollClosed?: boolean }) {
   const winner = results.winner;
   const options = results.options ?? [];
@@ -650,6 +618,10 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
   const maxAvail = results.max_availability;
   const likeCounts = results.like_counts;
   const dislikeCounts = results.dislike_counts;
+
+  // Slot keys ("YYYY-MM-DD HH:MM-HH:MM") already arrive in chronological
+  // order from the backend, so no sort is needed before grouping.
+  const slotsByDay = useMemo(() => groupSlotsByDay(options), [options]);
 
   if (!isPollClosed) {
     return (
@@ -668,9 +640,6 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
       </div>
     );
   }
-
-  // Group slots by day in chronological order for the bubble grid
-  const slotsByDay = groupSlotsByDay([...options].sort());
 
   return (
     <div className="space-y-4">
@@ -713,13 +682,11 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
               const { weekday, monthDay } = formatStackedDayLabel(dateStr);
               return (
                 <div key={dateStr} className="flex gap-2 items-start py-3 first:pt-0 last:pb-0">
-                  {/* Day label */}
                   <div className="w-12 shrink-0 pt-1 text-xs font-medium text-gray-500 dark:text-gray-400 text-left leading-tight">
                     <div>{weekday}</div>
                     <div>{monthDay}</div>
                   </div>
 
-                  {/* Bubbles */}
                   <div className="flex flex-wrap gap-2">
                     {slots.map((slot, idx) => {
                       const label = getBubbleLabel(slot, idx > 0 ? slots[idx - 1] : null);
@@ -742,16 +709,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
                               : "border border-gray-300 dark:border-gray-600",
                           ].join(" ")}
                         >
-                          <span
-                            className="block"
-                            style={{
-                              lineHeight: 1,
-                              textBoxTrim: 'trim-both',
-                              textBoxEdge: 'cap alphabetic',
-                            } as React.CSSProperties}
-                          >
-                            {label}
-                          </span>
+                          <span className="block cap-height-text">{label}</span>
                           {likes > 0 && (
                             <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                               {likes}

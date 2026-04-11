@@ -36,7 +36,7 @@ import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
-import { windowDurationMinutes, formatDurationLabel } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatTimeSlot } from "@/lib/timeUtils";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -816,39 +816,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (poll.poll_type === 'ranked_choice') {
         setJustCancelledAbstain(true);
       }
-    }
-  };
-
-  // Format a time slot string "YYYY-MM-DD HH:MM-HH:MM" into a readable label
-  const formatTimeSlot = (slot: string): string => {
-    try {
-      const spaceIdx = slot.indexOf(' ');
-      const datePart = slot.slice(0, spaceIdx);
-      const timePart = slot.slice(spaceIdx + 1);
-      const dashIdx = timePart.indexOf('-');
-      const startStr = timePart.slice(0, dashIdx);
-      const endStr = timePart.slice(dashIdx + 1);
-      const [year, month, day] = datePart.split('-').map(Number);
-      const date = new Date(year, month - 1, day);
-      const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      const fmtTime = (t: string) => {
-        const [h, m] = t.split(':').map(Number);
-        const ampm = h < 12 ? 'AM' : 'PM';
-        const h12 = h % 12 === 0 ? 12 : h % 12;
-        return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-      };
-      const [sh, sm] = startStr.split(':').map(Number);
-      const [eh, em] = endStr.split(':').map(Number);
-      const startMins = sh * 60 + sm;
-      let endMins = eh * 60 + em;
-      if (endMins <= startMins) endMins += 24 * 60; // cross-midnight
-      const durMins = endMins - startMins;
-      const durH = Math.floor(durMins / 60);
-      const durM = durMins % 60;
-      const durLabel = durM === 0 ? `${durH}h` : `${durH}h ${durM}m`;
-      return `${dayLabel} • ${fmtTime(startStr)} – ${fmtTime(endStr)} (${durLabel})`;
-    } catch {
-      return slot;
     }
   };
 

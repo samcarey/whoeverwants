@@ -99,3 +99,25 @@ export function groupSlotsByDay(options: string[]): [string, string[]][] {
   }
   return Array.from(map.entries());
 }
+
+/** Format a slot key "YYYY-MM-DD HH:MM-HH:MM" as a readable label like
+ *  "Mon, Apr 28 • 10:00 AM – 10:30 AM (30m)". */
+export function formatTimeSlot(slot: string): string {
+  try {
+    const [datePart, timePart] = slot.split(' ');
+    const [startStr, endStr] = timePart.split('-');
+    const dayLabel = formatDayLabel(datePart);
+    const fmtTime = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    };
+    const startMins = timeToMinutes(startStr);
+    let durMins = timeToMinutes(endStr) - startMins;
+    if (durMins <= 0) durMins += 24 * 60;
+    return `${dayLabel} • ${fmtTime(startStr)} – ${fmtTime(endStr)} (${formatDurationLabel(durMins)})`;
+  } catch {
+    return slot;
+  }
+}
