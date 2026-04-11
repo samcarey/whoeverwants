@@ -1531,7 +1531,7 @@ export function CreatePollContent() {
               dayTimeWindows={dayTimeWindows}
               onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
-              highlightDaysButton={validationError === "Please select at least one day."}
+              highlightDaysButton={dayTimeWindows.length === 0}
             />
           )}
 
@@ -1552,23 +1552,21 @@ export function CreatePollContent() {
                 dayTimeWindows={dayTimeWindows}
                 onDayTimeWindowsChange={setDayTimeWindows}
                 isCreationForm={true}
-                highlightDaysButton={validationError === "Please select at least one day."}
+                highlightDaysButton={dayTimeWindows.length === 0}
               />
 
               {/* Minimum Participation */}
-              <div>
-                <label className="block text-sm font-medium">
-                  Minimum Participation:{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowMinParticipationModal(true)}
-                    disabled={isLoading}
-                    className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                    aria-label="Adjust minimum participation percentage"
-                  >
-                    {minimumParticipation}%
-                  </button>
-                </label>
+              <div className="text-sm font-medium">
+                Minimum Participation:{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowMinParticipationModal(true)}
+                  disabled={isLoading}
+                  className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                  aria-label="Adjust minimum participation percentage"
+                >
+                  {minimumParticipation}%
+                </button>
               </div>
 
               {/* Availability Phase Deadline */}
