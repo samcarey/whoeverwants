@@ -698,7 +698,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
             </h3>
             <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
               <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400" /> liked
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" /> liked
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" /> disliked
@@ -736,15 +736,15 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
                           key={slot}
                           title={formatTimeSlot(slot)}
                           className={[
-                            "relative w-12 py-1 text-center rounded-full border text-[0.9rem] font-medium tabular-nums",
+                            "relative w-12 py-1 text-center rounded-full text-[0.9rem] font-medium tabular-nums bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300",
                             isWinner
-                              ? "bg-green-500 border-green-600 text-white shadow-sm"
-                              : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300",
+                              ? "border-2 border-green-500 shadow-sm"
+                              : "border border-gray-300 dark:border-gray-600",
                           ].join(" ")}
                         >
                           {label}
                           {likes > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-yellow-400 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
+                            <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] px-1 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white leading-none ring-1 ring-white dark:ring-gray-900">
                               {likes}
                             </span>
                           )}
