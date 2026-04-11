@@ -49,7 +49,7 @@ export default function MinimumParticipationModal({
         <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-sm w-full shadow-xl">
           <h3 className="text-lg font-semibold mb-1">Minimum Participation</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            Include time slots where at least this percentage of the maximum responders are available.
+            Time slots with less than 100% availability of respondents will display a warning during voting. Slots with less than this percentage will not be shown at all.
           </p>
 
           <div className="mb-4 text-center">
