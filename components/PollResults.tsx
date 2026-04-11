@@ -697,7 +697,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
         <div>
           <div className="flex items-baseline justify-between gap-3 mb-2">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              All qualifying slots ({sorted.length})
+              Candidate Slots ({sorted.length})
             </h3>
             <div className="flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400 flex-shrink-0">
               <span className="inline-flex items-center gap-1">
