@@ -205,7 +205,7 @@ export function CreatePollContent() {
         return '';
       }
       if (category === 'time') {
-        return appendFor("When works?");
+        return appendFor("Time?");
       }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
@@ -234,7 +234,7 @@ export function CreatePollContent() {
     }
 
     // time
-    return "When works?";
+    return appendFor("Time?");
   }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
 
   // Focus details textarea when opening
