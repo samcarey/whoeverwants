@@ -92,11 +92,15 @@ take_screenshot() {
     local remote_path="${REMOTE_DIR}/${name}.png"
     local serve_cmd=""
 
-    # If serving, copy to public dir in the same remote call as the screenshot
+    # If serving, copy to the STANDALONE public dir (not the repo's public dir).
+    # The standalone Next.js server serves files from .next/standalone/public/,
+    # and it scans that directory at startup — so we also need to restart the
+    # frontend process to make the new file visible. See scripts/dev-server-manager.sh
+    # restart-frontend command.
     if [[ -n "$serve_slug" ]]; then
         validate_safe_string "slug" "$serve_slug"
-        local public_dir="/root/dev-servers/${serve_slug}/public/screenshots"
-        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png"
+        local public_dir="/root/dev-servers/${serve_slug}/.next/standalone/public/screenshots"
+        serve_cmd=" && mkdir -p ${public_dir} && cp ${remote_path} ${public_dir}/${name}.png && bash /root/whoeverwants/scripts/dev-server-manager.sh restart-frontend ${serve_slug}"
     fi
 
     echo "Taking screenshot: ${url} (${width}x${height}, wait ${wait}ms)..."
@@ -112,7 +116,7 @@ const { chromium } = require('playwright');
   console.log('Screenshot saved: ${remote_path}');
   await browser.close();
 })().catch(e => { console.error(e.message); process.exit(1); });
-\"${serve_cmd}" /root 30
+\"${serve_cmd}" /root 60
 
     echo "Transferring to local machine..."
     local b64
@@ -136,10 +140,13 @@ serve_screenshot() {
     validate_safe_string "name" "$name"
     validate_safe_string "slug" "$slug"
 
-    local public_dir="/root/dev-servers/${slug}/public/screenshots"
+    # Standalone Next.js serves static files from .next/standalone/public/ and
+    # caches the directory listing at startup, so new files require a frontend
+    # restart to become visible.
+    local public_dir="/root/dev-servers/${slug}/.next/standalone/public/screenshots"
 
     echo "Serving screenshot to ${slug}..."
-    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png" /root 10
+    bash "$REMOTE" "mkdir -p ${public_dir} && cp ${REMOTE_DIR}/${name}.png ${public_dir}/${name}.png && bash /root/whoeverwants/scripts/dev-server-manager.sh restart-frontend ${slug}" /root 30
     echo "URL: $(screenshot_url "$slug" "$name")"
 }
 
