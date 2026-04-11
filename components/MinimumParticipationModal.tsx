@@ -70,7 +70,7 @@ export default function MinimumParticipationModal({
           />
           <div className="flex justify-between text-xs text-gray-400 mt-0.5 mb-5">
             <span>{min}%</span>
-            <span>{max}% (max only)</span>
+            <span>{max}%</span>
           </div>
 
           <button
