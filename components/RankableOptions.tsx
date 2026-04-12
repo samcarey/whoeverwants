@@ -238,6 +238,83 @@ function LinkCircle({
 }
 
 /**
+ * Pure, testable drop-target computation for main-list drags. Given the
+ * dragged tier's visual center (from cursor + grab offset) and the list
+ * layout, returns the original-list index where the tier should land.
+ *
+ * Algorithm: for every valid insertion point (between non-dragged units
+ * or at the edges), compute where the tier's center would be in the
+ * resulting layout. Return the insertion point whose layout center is
+ * closest to the tier's actual visual center. This naturally gives
+ * symmetric thresholds (midpoint between two adjacent layout centers)
+ * and treats linked groups as atomic.
+ */
+export function computeDropTarget(
+  itemIds: readonly string[],
+  linkedPairs: ReadonlySet<string>,
+  tierStart: number,
+  tierSize: number,
+  tierVisualCenter: number,
+  itemHeight: number,
+  groupedGapSize: number,
+  totalItemHeight: number,
+): number {
+  const tEnd = tierStart + tierSize - 1;
+  const tierH = tierSize > 1
+    ? tierSize * itemHeight + (tierSize - 1) * groupedGapSize
+    : itemHeight;
+
+  // Build non-dragged unit groups
+  const allTiers = computeTierIndices(
+    itemIds.map(id => ({ id })),
+    linkedPairs,
+  );
+
+  // Collect valid target indices (boundaries between non-dragged units)
+  const validTargets: number[] = [];
+  for (const tier of allTiers) {
+    const first = tier[0];
+    const last = tier[tier.length - 1];
+    if (first >= tierStart && last <= tEnd) continue; // skip dragged tier
+    validTargets.push(first); // insert-before-this-unit position
+  }
+  // After the last non-dragged unit
+  const lastNonDragged = allTiers.filter(
+    t => !(t[0] >= tierStart && t[t.length - 1] <= tEnd),
+  );
+  if (lastNonDragged.length > 0) {
+    const last = lastNonDragged[lastNonDragged.length - 1];
+    validTargets.push(last[last.length - 1] + 1);
+  }
+
+  if (validTargets.length === 0) return tierStart;
+
+  // For each valid target, compute the tier's "natural center" in the
+  // resulting layout. Each item takes one totalItemHeight slot. The tier
+  // occupies tierSize slots starting at "slot = number of non-dragged
+  // items before the insertion point".
+  let bestTarget = validTargets[0];
+  let bestDist = Infinity;
+
+  for (const target of validTargets) {
+    // Count non-dragged items whose original index < target
+    let itemsBefore = 0;
+    for (let i = 0; i < itemIds.length; i++) {
+      if (i >= tierStart && i <= tEnd) continue;
+      if (i < target) itemsBefore++;
+    }
+    const tierNaturalCenter = itemsBefore * totalItemHeight + tierH / 2;
+    const dist = Math.abs(tierVisualCenter - tierNaturalCenter);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestTarget = target;
+    }
+  }
+
+  return bestTarget;
+}
+
+/**
  * Return `[tierStart, tierSize]` for the tier containing `index` in the
  * given list + links. A tier is a maximal run of consecutive items connected
  * by linked pairs. An untied item returns `[index, 1]`.
@@ -425,17 +502,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
 
-        // Compute the drop target using non-dragged "units" (singletons or
-        // linked groups) with their actual visual centers. The reorder fires
-        // when the dragged tier's visual center crosses the midpoint between
-        // two adjacent unit centers — giving natural, symmetric thresholds
-        // that treat groups as atomic and respect their compressed height.
+        // Use the pure computeDropTarget for all main-list drags.
         if (dragState.sourceList === 'main' && dragState.tierStart !== null) {
           const tStart = dragState.tierStart;
           const tSize = dragState.tierSize;
-          const tEnd = tStart + tSize - 1;
 
-          // Dragged tier's visual extent
+          // Reconstruct tier's visual center from cursor
           const grabRow = (dragState.dragStartIndex ?? tStart) - tStart;
           const cursorOffsetFromTierTop = grabRow * groupedStepSize + dragState.mouseOffset.y;
           const tierVisualTop = relativeY - cursorOffsetFromTierTop;
@@ -444,41 +516,17 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             : itemHeight;
           const tierVisualCenter = tierVisualTop + tierVisualHeight / 2;
 
-          // Build non-dragged units with their natural visual centers
-          const allTiers = computeTierIndices(mainList, linkedPairs);
-          const units: { firstIdx: number; lastIdx: number; centerY: number }[] = [];
-          for (const tier of allTiers) {
-            const first = tier[0];
-            const last = tier[tier.length - 1];
-            // Skip the dragged tier
-            if (first >= tStart && last <= tEnd) continue;
-            const unitTop = first * totalItemHeight;
-            const unitH = tier.length > 1
-              ? tier.length * itemHeight + (tier.length - 1) * groupedGapSize
-              : itemHeight;
-            units.push({ firstIdx: first, lastIdx: last, centerY: unitTop + unitH / 2 });
-          }
-
-          if (units.length === 0) {
-            return { list: 'main' as const, index: tStart };
-          }
-
-          // Before first unit
-          if (tierVisualCenter < units[0].centerY) {
-            return { list: 'main' as const, index: units[0].firstIdx };
-          }
-
-          // Between units — find the gap whose midpoint the tier center
-          // has crossed
-          for (let u = 0; u < units.length - 1; u++) {
-            const gapMid = (units[u].centerY + units[u + 1].centerY) / 2;
-            if (tierVisualCenter < gapMid) {
-              return { list: 'main' as const, index: units[u].lastIdx + 1 };
-            }
-          }
-
-          // After last unit
-          return { list: 'main' as const, index: units[units.length - 1].lastIdx + 1 };
+          const target = computeDropTarget(
+            mainList.map(m => m.id),
+            linkedPairs,
+            tStart,
+            tSize,
+            tierVisualCenter,
+            itemHeight,
+            groupedGapSize,
+            totalItemHeight,
+          );
+          return { list: 'main' as const, index: target };
         }
 
         // Fallback: uniform-grid index for drags originating from
