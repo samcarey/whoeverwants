@@ -425,36 +425,60 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
 
-        // Compute the drop target using the "nearest slot" approach for ALL
-        // main-list drags (singletons and tiers alike). This reconstructs the
-        // tier's visual top from the cursor position and grab offset, then
-        // rounds to the nearest totalItemHeight grid position. The reorder
-        // fires at the midpoint between adjacent slots (~32px of dragging),
-        // giving symmetric thresholds in both directions.
+        // Compute the drop target using non-dragged "units" (singletons or
+        // linked groups) with their actual visual centers. The reorder fires
+        // when the dragged tier's visual center crosses the midpoint between
+        // two adjacent unit centers — giving natural, symmetric thresholds
+        // that treat groups as atomic and respect their compressed height.
         if (dragState.sourceList === 'main' && dragState.tierStart !== null) {
           const tStart = dragState.tierStart;
           const tSize = dragState.tierSize;
+          const tEnd = tStart + tSize - 1;
 
-          // Cursor offset from the tier's visual top edge:
-          //   (grabbed row within tier) * groupedStepSize + mouseOffsetY
+          // Dragged tier's visual extent
           const grabRow = (dragState.dragStartIndex ?? tStart) - tStart;
           const cursorOffsetFromTierTop = grabRow * groupedStepSize + dragState.mouseOffset.y;
-
-          // Tier's visual top in container coordinates
           const tierVisualTop = relativeY - cursorOffsetFromTierTop;
+          const tierVisualHeight = tSize > 1
+            ? tSize * itemHeight + (tSize - 1) * groupedGapSize
+            : itemHeight;
+          const tierVisualCenter = tierVisualTop + tierVisualHeight / 2;
 
-          // Nearest slot (each slot = totalItemHeight)
-          const slot = Math.round(tierVisualTop / totalItemHeight);
-          const maxSlot = mainList.length - tSize;
-          const clampedSlot = Math.max(0, Math.min(maxSlot, slot));
+          // Build non-dragged units with their natural visual centers
+          const allTiers = computeTierIndices(mainList, linkedPairs);
+          const units: { firstIdx: number; lastIdx: number; centerY: number }[] = [];
+          for (const tier of allTiers) {
+            const first = tier[0];
+            const last = tier[tier.length - 1];
+            // Skip the dragged tier
+            if (first >= tStart && last <= tEnd) continue;
+            const unitTop = first * totalItemHeight;
+            const unitH = tier.length > 1
+              ? tier.length * itemHeight + (tier.length - 1) * groupedGapSize
+              : itemHeight;
+            units.push({ firstIdx: first, lastIdx: last, centerY: unitTop + unitH / 2 });
+          }
 
-          // Convert slot to original list index. Slots below the tier's
-          // current start need to account for the tier's own indices.
-          const targetIdx = clampedSlot < tStart
-            ? clampedSlot           // moving up: slot IS the target index
-            : clampedSlot + tSize;  // moving down: shift past tier's indices
+          if (units.length === 0) {
+            return { list: 'main' as const, index: tStart };
+          }
 
-          return { list: 'main' as const, index: targetIdx };
+          // Before first unit
+          if (tierVisualCenter < units[0].centerY) {
+            return { list: 'main' as const, index: units[0].firstIdx };
+          }
+
+          // Between units — find the gap whose midpoint the tier center
+          // has crossed
+          for (let u = 0; u < units.length - 1; u++) {
+            const gapMid = (units[u].centerY + units[u + 1].centerY) / 2;
+            if (tierVisualCenter < gapMid) {
+              return { list: 'main' as const, index: units[u].lastIdx + 1 };
+            }
+          }
+
+          // After last unit
+          return { list: 'main' as const, index: units[units.length - 1].lastIdx + 1 };
         }
 
         // Fallback: uniform-grid index for drags originating from
