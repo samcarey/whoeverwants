@@ -1498,6 +1498,41 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP, dropLinkedPairsFor]);
 
+  /** Move a contiguous tier (one or more grouped items) between lists. */
+  const moveTierBetweenLists = useCallback((
+    sourceList: 'main' | 'noPreference',
+    sourceStart: number,
+    tierSize: number,
+    targetList: 'main' | 'noPreference',
+    targetIndex: number
+  ) => {
+    const sourceListRef = sourceList === 'main' ? mainList : noPreferenceList;
+    const items = sourceListRef.slice(sourceStart, sourceStart + tierSize);
+    if (items.length === 0) return;
+
+    const sourceSetter = sourceList === 'main' ? setMainList : setNoPreferenceList;
+    const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
+
+    animateWithFLIP(() => {
+      sourceSetter(prev => {
+        const newList = [...prev];
+        newList.splice(sourceStart, tierSize);
+        return updateItemPositions(newList);
+      });
+      targetSetter(prev => {
+        const newList = [...prev];
+        newList.splice(targetIndex, 0, ...items);
+        return updateItemPositions(newList);
+      });
+    });
+    // Drop linked pairs for all moved items leaving main
+    if (sourceList === 'main' && targetList !== 'main') {
+      for (const item of items) {
+        dropLinkedPairsFor(item.id);
+      }
+    }
+  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP, dropLinkedPairsFor]);
+
   // Memoize the tier structure so it's computed once per render, not once
   // per section (rank numbers, link circles, tier cards all use it).
   const mainTiers = useMemo(
@@ -1807,7 +1842,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             const relativeY = e.clientY - rect.top;
                             const half = rect.height / 2;
                             if (listType === 'noPreference') {
-                              moveItemBetweenLists(firstItem.id, 'noPreference', tierIndices[0], 'main', mainList.length);
+                              moveTierBetweenLists('noPreference', tierIndices[0], size, 'main', mainList.length);
                             } else if (relativeY < half) {
                               if (tierIndices[0] > 0) {
                                 moveTierByOneUnit(tierIndices[0], size, 'up');
@@ -1817,7 +1852,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                               if (lastIdx < listItems.length - 1) {
                                 moveTierByOneUnit(tierIndices[0], size, 'down');
                               } else {
-                                moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
+                                moveTierBetweenLists('main', tierIndices[0], size, 'noPreference', noPreferenceList.length);
                               }
                             }
                           }
