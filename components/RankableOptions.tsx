@@ -72,6 +72,75 @@ export function tiersFromList(
 }
 
 /**
+ * Small round button that toggles whether two adjacent items are tied.
+ * Uses the same chain-link glyph in both states — just blue when active
+ * (linked) and muted gray when inactive (unlinked).
+ *
+ * Centered on the left edge of the cards column so the circle overlaps the
+ * corners of the two items it sits between.
+ */
+const LINK_CIRCLE_SIZE = 28; // diameter in px
+const LINK_ICON_SIZE = 18;   // chain glyph in px (25% bigger than original 14px)
+
+function LinkCircle({
+  entry,
+  disabled,
+  onToggle,
+  translateY,
+}: {
+  entry: { topCenter: number; linked: boolean; idA: string; idB: string };
+  disabled: boolean;
+  onToggle: (idA: string, idB: string) => void;
+  translateY?: number;
+}) {
+  const { topCenter, linked, idA, idB } = entry;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggle(idA, idB);
+      }}
+      className={`absolute rounded-full flex items-center justify-center border-2 shadow-sm transition-colors ${
+        disabled
+          ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600'
+          : linked
+            ? 'cursor-pointer border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-500 dark:bg-blue-500 dark:hover:bg-blue-400'
+            : 'cursor-pointer border-gray-300 bg-white text-gray-400 hover:border-blue-400 hover:text-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-500 dark:hover:border-blue-500 dark:hover:text-blue-400'
+      }`}
+      style={{
+        // Center the circle on the left edge of the cards container
+        // (x = 0 within the container, circle horizontal center = 0).
+        left: `-${LINK_CIRCLE_SIZE / 2}px`,
+        top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
+        width: `${LINK_CIRCLE_SIZE}px`,
+        height: `${LINK_CIRCLE_SIZE}px`,
+        zIndex: 3,
+        transform: translateY ? `translateY(${translateY}px)` : undefined,
+      }}
+      aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
+      title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
+    >
+      <svg
+        width={LINK_ICON_SIZE}
+        height={LINK_ICON_SIZE}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </svg>
+    </button>
+  );
+}
+
+/**
  * Return `[tierStart, tierSize]` for the tier containing `index` in the
  * given list + links. A tier is a maximal run of consecutive items connected
  * by linked pairs. An untied item returns `[index, 1]`.
@@ -851,7 +920,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   };
 
   // Render dragged item(s) — for tied tiers, stack all members together so
-  // the whole group drags as a unit under the cursor.
+  // the whole group drags as a unit under the cursor. Internal tier links
+  // render between stacked items so they visibly drag with the group.
   const renderDraggedItem = () => {
     const items = getDraggedItems();
     if (items.length === 0) return null;
@@ -864,6 +934,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const grabbedIndex = items.findIndex(it => it.id === dragState.draggedId);
     const y = mousePosition.y - mouseOffset.y - Math.max(0, grabbedIndex) * totalItemHeight;
     const width = mainContainerRef.current ? mainContainerRef.current.offsetWidth : 300;
+    const showInternalLinks = items.length > 1 && dragState.sourceList === 'main';
 
     return (
       <div
@@ -876,12 +947,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           pointerEvents: 'none',
           transform: 'scale(1.02)',
           filter: 'drop-shadow(0 8px 25px rgba(0,0,0,0.3))',
+          overflow: 'visible',
         }}
       >
         {items.map((item, i) => (
           <div
             key={item.id}
-            className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md p-3 select-none"
+            className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md p-3 select-none relative"
             style={{
               height: `${itemHeight}px`,
               marginTop: i === 0 ? 0 : `${gapSize}px`,
@@ -902,6 +974,37 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             </div>
           </div>
         ))}
+        {/* Internal tier links between the stacked items — same styling as
+            the stationary link circles, positioned at the gap midpoints. */}
+        {showInternalLinks && items.slice(0, -1).map((item, i) => {
+          const topCenter = (i + 1) * totalItemHeight - gapSize / 2;
+          return (
+            <div
+              key={`preview-link-${item.id}`}
+              className="absolute flex items-center justify-center rounded-full border-2 border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-500 dark:bg-blue-500"
+              style={{
+                left: `-${LINK_CIRCLE_SIZE / 2}px`,
+                top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
+                width: `${LINK_CIRCLE_SIZE}px`,
+                height: `${LINK_CIRCLE_SIZE}px`,
+              }}
+            >
+              <svg
+                width={LINK_ICON_SIZE}
+                height={LINK_ICON_SIZE}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.25"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -1210,14 +1313,12 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         )}
 
         <div className="flex">
-          {/* Rank number + link column - only for main list.
+          {/* Rank number column — only for main list.
               Renders one rank number per tier, vertically centered on the
               tier's items, using standard competition ranking (1, 2, 2, 4).
-              Link icons sit between every pair of adjacent items, allowing
-              the user to toggle tied rankings. */}
+              Link circles live in the cards container below, so they can
+              overlap the left edge of the cards. */}
           {listType === 'main' && numberSlotCount > 0 && (() => {
-            // When dragging from noPreference INTO main, we reserve one extra
-            // slot at the bottom as a placeholder; tiers don't extend to it.
             const effectiveMainList = mainList;
             const tiers = computeTierIndices(effectiveMainList, linkedPairs);
             // Add the extra slot as its own singleton tier if needed
@@ -1225,55 +1326,32 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               tiers.push([effectiveMainList.length]);
             }
             // Build rank number entries with standard competition ranking
-            const rankEntries: { rank: number; top: number; height: number; width: number; key: string }[] = [];
+            const rankEntries: { rank: number; top: number; height: number; key: string }[] = [];
             let positionsSoFar = 0;
             tiers.forEach((tier, tierIdx) => {
               const startIdx = tier[0];
               const size = tier.length;
               const rank = positionsSoFar + 1;
-              // Center a rank pill that spans the tier's full visible height
               const top = startIdx * totalItemHeight;
               const height = size * itemHeight + (size - 1) * gapSize;
               rankEntries.push({
                 rank,
                 top,
                 height,
-                width: 0,
                 key: `rank-${tierIdx}-${startIdx}`,
               });
               positionsSoFar += size;
             });
-            // Build link icon entries between every pair of adjacent items
-            // (only within the actual main list, not the placeholder slot).
-            const linkEntries: {
-              topCenter: number;
-              linked: boolean;
-              idA: string;
-              idB: string;
-              key: string;
-            }[] = [];
-            for (let i = 0; i < effectiveMainList.length - 1; i++) {
-              const a = effectiveMainList[i];
-              const b = effectiveMainList[i + 1];
-              linkEntries.push({
-                // Midpoint of the gap between item i and item i+1
-                topCenter: (i + 1) * totalItemHeight - gapSize / 2,
-                linked: linkedPairs.has(pairKey(a.id, b.id)),
-                idA: a.id,
-                idB: b.id,
-                key: `link-${a.id}-${b.id}`,
-              });
-            }
             return (
               <div
                 className="flex-shrink-0 relative"
-                style={{ width: '48px', height: `${dynamicHeight}px`, minHeight: `${totalItemHeight}px` }}
+                style={{ width: '32px', height: `${dynamicHeight}px`, minHeight: `${totalItemHeight}px` }}
               >
                 {rankEntries.map(entry => (
                   <div
                     key={entry.key}
-                    className="absolute left-0 flex items-center justify-center pointer-events-none"
-                    style={{ top: `${entry.top}px`, height: `${entry.height}px`, width: '32px' }}
+                    className="absolute left-0 right-0 flex items-center justify-center pointer-events-none"
+                    style={{ top: `${entry.top}px`, height: `${entry.height}px` }}
                   >
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
                       disabled
@@ -1283,46 +1361,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       {entry.rank}
                     </div>
                   </div>
-                ))}
-                {!disableGrouping && !dragState.isDragging && linkEntries.map(entry => (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    disabled={disabled}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toggleLinkBetween(entry.idA, entry.idB);
-                    }}
-                    className={`absolute rounded-full flex items-center justify-center transition-colors ${
-                      disabled
-                        ? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
-                        : entry.linked
-                          ? 'text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 cursor-pointer'
-                          : 'text-gray-300 dark:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-500 dark:hover:text-gray-400 cursor-pointer'
-                    }`}
-                    style={{
-                      left: '30px',
-                      top: `${entry.topCenter - 10}px`,
-                      width: '18px',
-                      height: '20px',
-                    }}
-                    aria-label={entry.linked ? 'Break tied ranking' : 'Tie these rankings together'}
-                    title={entry.linked ? 'Break tied ranking' : 'Tie these rankings together'}
-                  >
-                    {entry.linked ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M9 17H7a5 5 0 0 1-5-5a5 5 0 0 1 5-5h2" />
-                        <path d="M15 7h2a5 5 0 0 1 5 5a5 5 0 0 1-5 5h-2" />
-                        <line x1="8" y1="12" x2="16" y2="12" strokeDasharray="3 3" />
-                      </svg>
-                    )}
-                  </button>
                 ))}
               </div>
             );
@@ -1337,12 +1375,62 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             }`}
             style={{
               height: `${dynamicHeight}px`,
-              minHeight: `${totalItemHeight}px`
+              minHeight: `${totalItemHeight}px`,
+              // Link circles overflow the container's left edge so they
+              // can overlap the corners of the option cards.
+              overflow: 'visible',
             }}
             role="listbox"
             aria-label={listType === 'main' ? 'Ranked choice options' : 'No preference options'}
             aria-describedby={`${listType}-description`}
           >
+            {/* Link circles — for main list only. Rendered inside the cards
+                container (with overflow: visible) so they can overlap the
+                left edge of the cards. Each circle is centered on the gap
+                between two adjacent items. During a drag, links INTERNAL to
+                the dragged tier render inside the floating drag preview
+                instead; links OUTSIDE the tier stay stationary here. */}
+            {listType === 'main' && !disableGrouping && mainList.length > 1 && (() => {
+              const entries: {
+                topCenter: number;
+                linked: boolean;
+                idA: string;
+                idB: string;
+                key: string;
+                inDraggedTier: boolean;
+              }[] = [];
+              const tierStart = dragState.tierStart;
+              const tierEnd = tierStart !== null ? tierStart + dragState.tierSize - 1 : -1;
+              for (let i = 0; i < mainList.length - 1; i++) {
+                const a = mainList[i];
+                const b = mainList[i + 1];
+                const inDraggedTier =
+                  dragState.isDragging &&
+                  dragState.sourceList === 'main' &&
+                  tierStart !== null &&
+                  i >= tierStart &&
+                  i < tierEnd;
+                entries.push({
+                  topCenter: (i + 1) * totalItemHeight - gapSize / 2,
+                  linked: linkedPairs.has(pairKey(a.id, b.id)),
+                  idA: a.id,
+                  idB: b.id,
+                  key: `link-${a.id}-${b.id}`,
+                  inDraggedTier,
+                });
+              }
+              return entries
+                .filter(e => !e.inDraggedTier)
+                .map(entry => (
+                  <LinkCircle
+                    key={entry.key}
+                    entry={entry}
+                    disabled={disabled}
+                    onToggle={toggleLinkBetween}
+                  />
+                ));
+            })()}
+
             {/* Show empty state message if list is empty */}
             {listItems.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center">
