@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
@@ -950,30 +950,50 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           overflow: 'visible',
         }}
       >
-        {items.map((item, i) => (
-          <div
-            key={item.id}
-            className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md p-3 select-none relative"
-            style={{
-              height: `${itemHeight}px`,
-              marginTop: i === 0 ? 0 : `${gapSize}px`,
-            }}
-          >
-            <div className="flex items-center justify-between h-full">
-              <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
-                {renderOption ? renderOption(item.text) : <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />}
+        {/* Merged card wrapper for dragged tier */}
+        <div
+          className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md select-none relative"
+          style={{
+            height: `${items.length * itemHeight + (items.length - 1) * gapSize}px`,
+          }}
+        >
+          {items.map((item, i) => (
+            <React.Fragment key={item.id}>
+              <div
+                className="absolute left-0 right-0 p-3"
+                style={{
+                  top: `${i * totalItemHeight}px`,
+                  height: `${itemHeight}px`,
+                }}
+              >
+                <div className="flex items-center justify-between h-full">
+                  <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
+                    {renderOption ? renderOption(item.text) : <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />}
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="18 15 12 9 6 15" />
-                </svg>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </div>
-            </div>
+              {i < items.length - 1 && (
+                <div
+                  className="absolute pointer-events-none border-t border-blue-300 dark:border-blue-600"
+                  style={{
+                    top: `${i * totalItemHeight + itemHeight + gapSize / 2}px`,
+                    left: '12px',
+                    right: '12px',
+                  }}
+                />
+              )}
+            </React.Fragment>
+          ))}
+          {/* Single drag handle for the group, vertically centered */}
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0 text-gray-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </div>
-        ))}
+        </div>
         {/* Internal tier links between the stacked items — same styling as
             the stationary link circles, positioned at the gap midpoints. */}
         {showInternalLinks && items.slice(0, -1).map((item, i) => {
@@ -1447,120 +1467,190 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               </div>
             )}
 
-            {/* Render all items in this list */}
-            {listItems.map((option, index) => {
-              // Skip rendering items that are currently being dragged. For
-              // main-list drags, this includes *every* tier member so the
-              // whole tied group visually moves together.
-              if (dragState.isDragging && listType === dragState.sourceList) {
-                if (listType === 'main' && dragState.tierStart !== null) {
-                  const inTier =
-                    index >= dragState.tierStart &&
-                    index < dragState.tierStart + dragState.tierSize;
-                  if (inTier) return null;
-                } else if (option.id === dragState.draggedId) {
-                  return null;
+            {/* Render items grouped by tier. In the main list, consecutive
+                items tied together render as a single merged card with
+                horizontal dividers between rows. In the no-preference list
+                every item is its own singleton tier (same visual as before). */}
+            {(() => {
+              const displayTiers: number[][] = listType === 'main'
+                ? computeTierIndices(listItems, linkedPairs)
+                : listItems.map((_, i) => [i]);
+
+              return displayTiers.map((tierIndices, tierIdx) => {
+                // Skip the entire tier if it's the dragged tier (all its
+                // members are rendered in the floating drag preview).
+                if (dragState.isDragging && listType === dragState.sourceList) {
+                  if (listType === 'main' && dragState.tierStart !== null) {
+                    const draggedStart = dragState.tierStart;
+                    const draggedEnd = draggedStart + dragState.tierSize - 1;
+                    if (
+                      tierIndices[0] >= draggedStart &&
+                      tierIndices[tierIndices.length - 1] <= draggedEnd
+                    ) {
+                      return null;
+                    }
+                  } else if (
+                    tierIndices.length === 1 &&
+                    listItems[tierIndices[0]].id === dragState.draggedId
+                  ) {
+                    return null;
+                  }
                 }
-              }
 
-              return (
-                <div
-                  key={option.id}
-                  ref={el => {
-                    elementRefs.current[option.id] = el;
-                  }}
-                  className={`
-                    absolute left-0 right-0 rounded-md shadow-sm
-                    ${disabled ? 'cursor-not-allowed bg-gray-200 dark:bg-gray-600' : 'cursor-grab active:cursor-grabbing bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'}
-                    ${keyboardMode && focusedItemId === option.id ? 'ring-2 ring-blue-500 ring-offset-2' : ''}
-                    border border-gray-300 dark:border-gray-500 p-3 select-none
-                  `}
-                  style={{
-                    top: `${option.top}px`,
-                    height: `${itemHeight}px`,
-                    transition: dragState.isDragging
-                      ? 'top 0.2s ease, background-color 0.15s, color 0.15s'
-                      : 'top 0.3s ease, background-color 0.15s, color 0.15s',
-                    zIndex: 1
-                  }}
-                  onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
-                  onContextMenu={(e) => e.preventDefault()}
-                  tabIndex={disabled ? -1 : 0}
-                  role="option"
-                  aria-selected={keyboardMode && focusedItemId === option.id}
-                  aria-label={`${option.text}, ${listType === 'main' ? `ranked ${index + 1}` : 'no preference'}`}
-                  aria-describedby={`${option.id}-instructions`}
-                >
-                  <div className="flex items-center justify-between h-full relative">
-                    {/* Content area - not draggable, allows normal scrolling */}
-                    <div className={`flex-1 flex items-center pr-12 min-w-0 ${
+                const firstItem = listItems[tierIndices[0]];
+                const size = tierIndices.length;
+                const cardTop = firstItem.top;
+                const cardHeight = size * itemHeight + (size - 1) * gapSize;
+
+                return (
+                  <div
+                    key={`tier-${firstItem.id}`}
+                    className={`absolute left-0 right-0 rounded-md shadow-sm select-none ${
                       disabled
-                        ? 'text-gray-500 dark:text-gray-400'
-                        : 'text-gray-900 dark:text-white'
-                    }`}>
-                      {renderOption ? renderOption(option.text) : <OptionLabel text={option.text} metadata={optionsMetadata?.[option.text]} className="min-w-0 overflow-hidden" />}
-                    </div>
+                        ? 'bg-gray-200 dark:bg-gray-600'
+                        : 'bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    } border border-gray-300 dark:border-gray-500`}
+                    style={{
+                      top: `${cardTop}px`,
+                      height: `${cardHeight}px`,
+                      transition: dragState.isDragging
+                        ? 'top 0.2s ease, background-color 0.15s, color 0.15s'
+                        : 'top 0.3s ease, background-color 0.15s, color 0.15s',
+                      zIndex: 1,
+                    }}
+                  >
+                    {tierIndices.map((itemIdx, rowIdx) => {
+                      const option = listItems[itemIdx];
+                      const rowTop = rowIdx * totalItemHeight;
+                      const isLastRow = rowIdx === size - 1;
+                      return (
+                        <React.Fragment key={option.id}>
+                          <div
+                            ref={el => {
+                              elementRefs.current[option.id] = el;
+                            }}
+                            className={`absolute left-0 right-0 p-3 ${
+                              disabled
+                                ? 'cursor-not-allowed'
+                                : 'cursor-grab active:cursor-grabbing'
+                            } ${
+                              keyboardMode && focusedItemId === option.id
+                                ? 'ring-2 ring-blue-500 ring-offset-2 rounded-md'
+                                : ''
+                            }`}
+                            style={{
+                              top: `${rowTop}px`,
+                              height: `${itemHeight}px`,
+                            }}
+                            onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
+                            onContextMenu={(e) => e.preventDefault()}
+                            tabIndex={disabled ? -1 : 0}
+                            role="option"
+                            aria-selected={keyboardMode && focusedItemId === option.id}
+                            aria-label={`${option.text}, ${listType === 'main' ? `ranked ${itemIdx + 1}` : 'no preference'}`}
+                            aria-describedby={`${option.id}-instructions`}
+                          >
+                            <div className="flex items-center justify-between h-full relative">
+                              {/* Content area - not draggable, allows normal scrolling */}
+                              <div
+                                className={`flex-1 flex items-center pr-12 min-w-0 ${
+                                  disabled
+                                    ? 'text-gray-500 dark:text-gray-400'
+                                    : 'text-gray-900 dark:text-white'
+                                }`}
+                              >
+                                {renderOption
+                                  ? renderOption(option.text)
+                                  : (
+                                    <OptionLabel
+                                      text={option.text}
+                                      metadata={optionsMetadata?.[option.text]}
+                                      className="min-w-0 overflow-hidden"
+                                    />
+                                  )}
+                              </div>
 
-                    {/* Right side: combined drag handle with tap zones for reordering
-                         Drag starts on pointerdown; if released without moving, treated as tap */}
+                              {/* Per-row drag handle is hidden for multi-item
+                                  tiers — those get ONE shared handle on the
+                                  tier card instead (see below). For singleton
+                                  tiers and noPreference items, the per-row
+                                  handle is still used. */}
+                            </div>
+                          </div>
+                          {/* Divider between tied rows inside a merged card */}
+                          {!isLastRow && (
+                            <div
+                              className="absolute border-t border-gray-200 dark:border-gray-700 pointer-events-none"
+                              style={{
+                                top: `${rowTop + itemHeight + gapSize / 2}px`,
+                                left: '12px',
+                                right: '12px',
+                              }}
+                            />
+                          )}
+                          <div id={`${option.id}-instructions`} className="absolute -left-[10000px] w-1 h-1 overflow-hidden">
+                            {keyboardMode && focusedItemId === option.id
+                              ? `Selected for moving. Use arrow keys to move within list, left arrow to move to main list, right arrow to move to no preference, escape to cancel.`
+                              : `Press Enter or Space to select for moving. Use arrow keys to navigate between options.`
+                            }
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                    {/* Single drag handle for the entire tier card —
+                        vertically centered on the card. On tap (no drag),
+                        move the entire tier up/down. */}
                     {!disabled && (
                       <div
                         className="absolute -right-3 cursor-grab active:cursor-grabbing"
                         style={{
                           width: 'calc(14% + 0.525rem)',
-                          top: `-${12 + gapSize / 2}px`,
-                          bottom: `-${12 + gapSize / 2}px`,
+                          top: 0,
+                          bottom: 0,
                           touchAction: 'none',
                           zIndex: 2,
                         }}
-                        onPointerDown={!disabled ? (e) => {
-                          // Always start drag — tap detection happens on pointerup
-                          handlePointerStart(e, option.id);
-                        } : undefined}
-                        onPointerUp={!disabled ? (e) => {
-                          // If drag never started (pointer moved <8px), it's a tap
+                        onPointerDown={(e) => {
+                          handlePointerStart(e, firstItem.id);
+                        }}
+                        onPointerUp={(e) => {
                           const pending = pendingDragRef.current;
-                          if (pending && !pending.started && pending.id === option.id) {
-                            pendingDragRef.current = null; // Clear before document handler runs
-
+                          if (pending && !pending.started && pending.id === firstItem.id) {
+                            pendingDragRef.current = null;
                             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                             const relativeY = e.clientY - rect.top;
                             const half = rect.height / 2;
-
                             if (listType === 'noPreference') {
-                              moveItemBetweenLists(option.id, 'noPreference', index, 'main', mainList.length);
+                              moveItemBetweenLists(firstItem.id, 'noPreference', tierIndices[0], 'main', mainList.length);
                             } else if (relativeY < half) {
-                              if (index > 0) {
-                                moveItemInList(listType, index, index - 1);
+                              if (tierIndices[0] > 0) {
+                                moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
                               }
                             } else {
-                              if (index < listItems.length - 1) {
-                                moveItemInList(listType, index, index + 1);
+                              const lastIdx = tierIndices[tierIndices.length - 1];
+                              if (lastIdx < listItems.length - 1) {
+                                moveItemInList(listType, lastIdx, lastIdx + 1);
                               } else {
-                                moveItemBetweenLists(option.id, 'main', index, 'noPreference', noPreferenceList.length);
+                                moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
                               }
                             }
                           }
-                        } : undefined}
+                        }}
                         title=""
                       >
-                        {/* Visual: arrows + drag handle */}
                         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0">
                           {listType === 'main' ? (
                             <>
-                              {/* Up arrow */}
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className={index === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}
+                                className={tierIndices[0] === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}
                               >
                                 <polyline points="18 15 12 9 6 15" />
                               </svg>
-                              {/* Drag handle lines */}
                               <div className="flex flex-col items-center justify-center my-0.5">
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
                               </div>
-                              {/* Down arrow */}
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                                 className="text-gray-400 dark:text-gray-500"
                               >
@@ -1569,20 +1659,17 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             </>
                           ) : (
                             <>
-                              {/* Plus symbol above */}
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                                 className="text-green-500 dark:text-green-400"
                               >
                                 <line x1="12" y1="5" x2="12" y2="19" />
                                 <line x1="5" y1="12" x2="19" y2="12" />
                               </svg>
-                              {/* Drag handle lines */}
                               <div className="flex flex-col items-center justify-center my-0.5">
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
                                 <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
                               </div>
-                              {/* Plus symbol below */}
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                                 className="text-green-500 dark:text-green-400"
                               >
@@ -1595,15 +1682,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       </div>
                     )}
                   </div>
-                  <div id={`${option.id}-instructions`} className="absolute -left-[10000px] w-1 h-1 overflow-hidden">
-                    {keyboardMode && focusedItemId === option.id
-                      ? `Selected for moving. Use arrow keys to move within list, left arrow to move to main list, right arrow to move to no preference, escape to cancel.`
-                      : `Press Enter or Space to select for moving. Use arrow keys to navigate between options.`
-                    }
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
