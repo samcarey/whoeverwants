@@ -4,6 +4,7 @@ import {
   computeTierIndices,
   tiersFromList,
   tierRanks,
+  getTierRange,
 } from '@/components/RankableOptions';
 
 describe('pairKey', () => {
@@ -106,6 +107,62 @@ describe('tierRanks (standard competition ranking)', () => {
 
   it('returns empty array for no tiers', () => {
     expect(tierRanks([])).toEqual([]);
+  });
+});
+
+describe('getTierRange', () => {
+  const mk = (...ids: string[]) => ids.map(id => ({ id }));
+
+  it('returns [index, 1] for an untied item', () => {
+    const list = mk('a', 'b', 'c');
+    expect(getTierRange(list, new Set(), 1)).toEqual([1, 1]);
+  });
+
+  it('returns full tier range when item is in the middle of a tier', () => {
+    const list = mk('a', 'b', 'c', 'd', 'e');
+    // a-b-c are tied
+    const linked = new Set([pairKey('a', 'b'), pairKey('b', 'c')]);
+    // Grab the middle item
+    expect(getTierRange(list, linked, 1)).toEqual([0, 3]);
+  });
+
+  it('returns full tier range when grabbing the tier head', () => {
+    const list = mk('a', 'b', 'c');
+    const linked = new Set([pairKey('a', 'b'), pairKey('b', 'c')]);
+    expect(getTierRange(list, linked, 0)).toEqual([0, 3]);
+  });
+
+  it('returns full tier range when grabbing the tier tail', () => {
+    const list = mk('a', 'b', 'c');
+    const linked = new Set([pairKey('a', 'b'), pairKey('b', 'c')]);
+    expect(getTierRange(list, linked, 2)).toEqual([0, 3]);
+  });
+
+  it('handles a two-item tier', () => {
+    const list = mk('a', 'b', 'c', 'd');
+    // b-c are tied
+    const linked = new Set([pairKey('b', 'c')]);
+    expect(getTierRange(list, linked, 1)).toEqual([1, 2]);
+    expect(getTierRange(list, linked, 2)).toEqual([1, 2]);
+    // Outside the tier
+    expect(getTierRange(list, linked, 0)).toEqual([0, 1]);
+    expect(getTierRange(list, linked, 3)).toEqual([3, 1]);
+  });
+
+  it('does not cross a tier boundary when adjacent tiers exist', () => {
+    const list = mk('a', 'b', 'c', 'd');
+    // a-b tied, c-d tied, but b-c NOT tied
+    const linked = new Set([pairKey('a', 'b'), pairKey('c', 'd')]);
+    expect(getTierRange(list, linked, 0)).toEqual([0, 2]);
+    expect(getTierRange(list, linked, 1)).toEqual([0, 2]);
+    expect(getTierRange(list, linked, 2)).toEqual([2, 2]);
+    expect(getTierRange(list, linked, 3)).toEqual([2, 2]);
+  });
+
+  it('returns [index, 1] for out-of-bounds indices', () => {
+    const list = mk('a', 'b');
+    expect(getTierRange(list, new Set(), -1)).toEqual([-1, 1]);
+    expect(getTierRange(list, new Set(), 5)).toEqual([5, 1]);
   });
 });
 

@@ -72,6 +72,30 @@ export function tiersFromList(
 }
 
 /**
+ * Return `[tierStart, tierSize]` for the tier containing `index` in the
+ * given list + links. A tier is a maximal run of consecutive items connected
+ * by linked pairs. An untied item returns `[index, 1]`.
+ */
+export function getTierRange(
+  list: readonly { id: string }[],
+  linkedPairs: ReadonlySet<string>,
+  index: number,
+): [number, number] {
+  if (index < 0 || index >= list.length) return [index, 1];
+  // Walk backward while the previous pair is linked
+  let start = index;
+  while (start > 0 && linkedPairs.has(pairKey(list[start - 1].id, list[start].id))) {
+    start--;
+  }
+  // Walk forward while the next pair is linked
+  let end = index;
+  while (end < list.length - 1 && linkedPairs.has(pairKey(list[end].id, list[end + 1].id))) {
+    end++;
+  }
+  return [start, end - start + 1];
+}
+
+/**
  * Compute standard-competition ranks for a tiered ballot (1, 2, 2, 4).
  * Returns one integer per tier: the display rank for that tier.
  */
@@ -156,6 +180,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     isDragging: false,
     draggedId: null as string | null,
     dragStartIndex: null as number | null,
+    // For main-list drags, the tier (group of tied items) the dragged item
+    // belongs to. A singleton tier is just the item itself. Tied items move
+    // together during the drag.
+    tierStart: null as number | null,   // Index of the first item in the tier
+    tierSize: 1,                          // Number of items in the tier (1 = untied)
     targetIndex: null as number | null,
     sourceList: null as 'main' | 'noPreference' | null,
     targetList: null as 'main' | 'noPreference' | null,
@@ -318,11 +347,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
     const rect = element.getBoundingClientRect();
 
+    // For main-list drags, compute the tier (group of tied items) so they
+    // can move together as one unit. No-preference items never have tiers.
+    const [tierStart, tierSize] = sourceList === 'main'
+      ? getTierRange(mainList, linkedPairs, itemIndex)
+      : [itemIndex, 1];
+
     // Store drag state
     setDragState({
       isDragging: true,
       draggedId: id,
       dragStartIndex: itemIndex,
+      tierStart,
+      tierSize,
       targetIndex: itemIndex,
       sourceList,
       targetList: sourceList,
@@ -332,7 +369,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       },
       mousePosition: { x: clientX, y: clientY }
     });
-  }, [disabled, dragState.isDragging, mainList, noPreferenceList]);
+  }, [disabled, dragState.isDragging, mainList, noPreferenceList, linkedPairs]);
 
   // Handle drag movement
   const handleDragMove = useCallback((e: PointerEvent) => {
@@ -366,6 +403,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         if (newTargetList !== dragState.targetList || newTargetIndex !== dragState.targetIndex) {
           const sourceList = dragState.sourceList!;
           const startIndex = dragState.dragStartIndex!;
+          // Main-list drags carry the whole tier (group of tied items) with
+          // them. No-preference items never have tiers so tierSize is 1.
+          const tierStart = dragState.tierStart ?? startIndex;
+          const tierSize = dragState.tierSize;
+          const tierEnd = tierStart + tierSize - 1;
 
           // Update main list positions
           setMainList(prev => {
@@ -374,22 +416,34 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               item.top = index * totalItemHeight;
             });
 
-            // If dragging from main list and targeting main list
-            if (sourceList === 'main' && newTargetList === 'main' && startIndex !== newTargetIndex && newTargetIndex !== null) {
-              if (startIndex < newTargetIndex) {
-                for (let i = startIndex + 1; i <= newTargetIndex; i++) {
-                  updatedList[i].top = (i - 1) * totalItemHeight;
+            // If dragging from main list and targeting main list.
+            // The entire tier moves as one unit — shift intervening items
+            // by tierSize positions so the tier can slot in.
+            if (sourceList === 'main' && newTargetList === 'main' && newTargetIndex !== null) {
+              // Clamp target to exclude slots inside the tier's current range
+              // (those are no-ops) — anything in [tierStart+1..tierEnd] is
+              // effectively a no-move.
+              if (newTargetIndex > tierEnd) {
+                // Tier moves DOWN. Items between tierEnd+1 and newTargetIndex
+                // shift UP by tierSize.
+                for (let i = tierEnd + 1; i <= newTargetIndex; i++) {
+                  if (i < updatedList.length) {
+                    updatedList[i].top = (i - tierSize) * totalItemHeight;
+                  }
                 }
-              } else {
-                for (let i = newTargetIndex; i < startIndex; i++) {
-                  updatedList[i].top = (i + 1) * totalItemHeight;
+              } else if (newTargetIndex < tierStart) {
+                // Tier moves UP. Items in [newTargetIndex..tierStart-1]
+                // shift DOWN by tierSize.
+                for (let i = newTargetIndex; i < tierStart; i++) {
+                  updatedList[i].top = (i + tierSize) * totalItemHeight;
                 }
               }
             }
-            // If dragging from main to no preference, shift items up to fill gap
+            // If dragging from main to no preference, the whole tier leaves
+            // the main list — shift items after the tier up by tierSize.
             else if (sourceList === 'main' && newTargetList === 'noPreference') {
-              for (let i = startIndex + 1; i < updatedList.length; i++) {
-                updatedList[i].top = (i - 1) * totalItemHeight;
+              for (let i = tierEnd + 1; i < updatedList.length; i++) {
+                updatedList[i].top = (i - tierSize) * totalItemHeight;
               }
             }
             // If dragging from no preference to main, shift items down to make space
@@ -409,7 +463,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               item.top = index * totalItemHeight;
             });
 
-            // If dragging within no preference list
+            // If dragging within no preference list (never tiered, so tierSize=1)
             if (sourceList === 'noPreference' && newTargetList === 'noPreference' && startIndex !== newTargetIndex && newTargetIndex !== null) {
               if (startIndex < newTargetIndex) {
                 for (let i = startIndex + 1; i <= newTargetIndex; i++) {
@@ -427,10 +481,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 updatedList[i].top = (i - 1) * totalItemHeight;
               }
             }
-            // If dragging from main to no preference, shift items down to make space
+            // If dragging from main to no preference, shift items down to
+            // make space for the full tier (all tied items move together).
             else if (sourceList === 'main' && newTargetList === 'noPreference' && newTargetIndex !== null) {
               for (let i = newTargetIndex; i < updatedList.length; i++) {
-                updatedList[i].top = (i + 1) * totalItemHeight;
+                updatedList[i].top = (i + tierSize) * totalItemHeight;
               }
             }
 
@@ -445,35 +500,49 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const finishDrag = useCallback(() => {
     if (!dragState.isDragging) return;
 
-    const { draggedId, dragStartIndex, targetIndex, sourceList, targetList } = dragState;
+    const { draggedId, dragStartIndex, tierStart, tierSize, targetIndex, sourceList, targetList } = dragState;
 
     if (draggedId && dragStartIndex !== null && targetIndex !== null && sourceList && targetList) {
       // Find the dragged item
       const sourceListRef = sourceList === 'main' ? mainList : noPreferenceList;
       const draggedItem = sourceListRef.find(item => item.id === draggedId);
-      
+
       if (draggedItem) {
+        // Tier range (for main-list drags). For noPreference, always single.
+        const effectiveTierStart = sourceList === 'main' && tierStart !== null ? tierStart : dragStartIndex;
+        const effectiveTierSize = sourceList === 'main' ? tierSize : 1;
+        const tierEnd = effectiveTierStart + effectiveTierSize - 1;
+
+        // For intra-main drags, a target within (or just after) the tier
+        // is a no-op (the tier stays put).
+        const isNoOp =
+          sourceList === targetList &&
+          sourceList === 'main' &&
+          targetIndex >= effectiveTierStart &&
+          targetIndex <= tierEnd + 1;
+
         // Handle cross-list movement or reordering within the same list
-        if (sourceList !== targetList || dragStartIndex !== targetIndex) {
+        if (!isNoOp && (sourceList !== targetList || dragStartIndex !== targetIndex)) {
           // Handle cross-list movement with atomic state updates
           if (sourceList !== targetList) {
             // Moving between lists - update both lists atomically
             if (sourceList === 'main' && targetList === 'noPreference') {
-              // Remove from main list
+              // Move the whole tier out of main into noPreference. The
+              // tier's internal linked pairs are dropped since noPreference
+              // items don't have tiers.
+              const tierItems = mainList.slice(effectiveTierStart, effectiveTierStart + effectiveTierSize);
               setMainList(prev => {
                 const newList = [...prev];
-                newList.splice(dragStartIndex, 1);
+                newList.splice(effectiveTierStart, effectiveTierSize);
                 return updateItemPositions(newList);
               });
-              // Add to no preference list
               setNoPreferenceList(prev => {
                 const newList = [...prev];
-                newList.splice(targetIndex, 0, draggedItem);
+                newList.splice(targetIndex, 0, ...tierItems);
                 return updateItemPositions(newList);
               });
-              // Item left the ranked list entirely — drop any tied-rank
-              // groupings that involved it.
-              dropLinkedPairsFor(draggedItem.id);
+              // Drop linked-pair entries for every tier member
+              tierItems.forEach(it => dropLinkedPairsFor(it.id));
             } else if (sourceList === 'noPreference' && targetList === 'main') {
               // Remove from no preference list
               setNoPreferenceList(prev => {
@@ -491,15 +560,22 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           } else {
             // Reordering within the same list
             if (sourceList === 'main') {
+              // Move the whole tier as one unit. Adjust target index to
+              // account for the items being spliced out.
+              const adjustedTarget =
+                targetIndex <= effectiveTierStart
+                  ? targetIndex
+                  : targetIndex - effectiveTierSize;
               setMainList(prev => {
                 const newList = [...prev];
-                const [movedItem] = newList.splice(dragStartIndex, 1);
-                newList.splice(targetIndex, 0, movedItem);
+                const tierItems = newList.splice(effectiveTierStart, effectiveTierSize);
+                newList.splice(adjustedTarget, 0, ...tierItems);
                 return updateItemPositions(newList);
               });
-              // Drop tied-rank links touching the moved item so its new
-              // neighbors aren't implicitly grouped with it.
-              clearLinksTouchingItem(draggedItem.id);
+              // The tier's internal links are preserved (the items remain
+              // adjacent after the splice). Links touching the tier from
+              // *outside* (there should be none by definition of a tier,
+              // but belt-and-suspenders) are not affected.
             } else {
               setNoPreferenceList(prev => {
                 const newList = [...prev];
@@ -524,13 +600,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       isDragging: false,
       draggedId: null,
       dragStartIndex: null,
+      tierStart: null,
+      tierSize: 1,
       targetIndex: null,
       sourceList: null,
       targetList: null,
       mouseOffset: { x: 0, y: 0 },
       mousePosition: { x: 0, y: 0 }
     });
-  }, [dragState, mainList, noPreferenceList, updateItemPositions, dropLinkedPairsFor, clearLinksTouchingItem]);
+  }, [dragState, mainList, noPreferenceList, updateItemPositions, dropLinkedPairsFor]);
 
   // Set up event listeners
   useEffect(() => {
@@ -761,50 +839,69 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     return noPreferenceList.find(option => option.id === dragState.draggedId) || null;
   };
 
-  // Get style for the dragged item
-  const getDraggedItemStyle = () => {
-    const { mousePosition, mouseOffset } = dragState;
-
-    const x = mousePosition.x - mouseOffset.x;
-    const y = mousePosition.y - mouseOffset.y;
-    const width = mainContainerRef.current ? mainContainerRef.current.offsetWidth : 300;
-
-    return {
-      position: 'fixed' as const,
-      left: `${x}px`,
-      top: `${y}px`,
-      width: `${width}px`,
-      height: `${itemHeight}px`,
-      zIndex: 1000,
-      pointerEvents: 'none' as const,
-      transform: 'scale(1.02)',
-      boxShadow: '0 8px 25px rgba(0,0,0,0.3)'
-    };
+  // Get the list of items currently being dragged. Includes all tier members
+  // (for main-list drags of tied items) so they visually move together.
+  const getDraggedItems = (): RankableOption[] => {
+    if (!dragState.draggedId) return [];
+    if (dragState.sourceList === 'main' && dragState.tierStart !== null && dragState.tierSize > 1) {
+      return mainList.slice(dragState.tierStart, dragState.tierStart + dragState.tierSize);
+    }
+    const single = getDraggedOption();
+    return single ? [single] : [];
   };
 
-  // Render dragged item
+  // Render dragged item(s) — for tied tiers, stack all members together so
+  // the whole group drags as a unit under the cursor.
   const renderDraggedItem = () => {
-    const draggedOption = getDraggedOption();
-    if (!draggedOption) return null;
+    const items = getDraggedItems();
+    if (items.length === 0) return null;
+
+    const { mousePosition, mouseOffset } = dragState;
+    const x = mousePosition.x - mouseOffset.x;
+    // Offset the stack so the grabbed item sits where the cursor is. The
+    // grabbed item may not be the first tier member, so shift the stack up
+    // by grabbedOffset rows.
+    const grabbedIndex = items.findIndex(it => it.id === dragState.draggedId);
+    const y = mousePosition.y - mouseOffset.y - Math.max(0, grabbedIndex) * totalItemHeight;
+    const width = mainContainerRef.current ? mainContainerRef.current.offsetWidth : 300;
 
     return (
       <div
-        className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md p-3 select-none"
-        style={getDraggedItemStyle()}
+        style={{
+          position: 'fixed',
+          left: `${x}px`,
+          top: `${y}px`,
+          width: `${width}px`,
+          zIndex: 1000,
+          pointerEvents: 'none',
+          transform: 'scale(1.02)',
+          filter: 'drop-shadow(0 8px 25px rgba(0,0,0,0.3))',
+        }}
       >
-        <div className="flex items-center justify-between h-full">
-          <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
-            {renderOption ? renderOption(draggedOption.text) : <OptionLabel text={draggedOption.text} metadata={optionsMetadata?.[draggedOption.text]} className="min-w-0 overflow-hidden" />}
+        {items.map((item, i) => (
+          <div
+            key={item.id}
+            className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md p-3 select-none"
+            style={{
+              height: `${itemHeight}px`,
+              marginTop: i === 0 ? 0 : `${gapSize}px`,
+            }}
+          >
+            <div className="flex items-center justify-between h-full">
+              <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
+                {renderOption ? renderOption(item.text) : <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />}
+              </div>
+              <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col items-center justify-center ml-2 text-gray-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-        </div>
+        ))}
       </div>
     );
   };
@@ -826,16 +923,18 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       };
     }
 
-    // Only apply height changes when dragging between different lists
+    // Only apply height changes when dragging between different lists.
+    // For main→noPreference drags of a tied tier, `dragState.tierSize`
+    // tells us how many items are moving together.
     if (dragState.targetList && dragState.sourceList !== dragState.targetList) {
-      // Cross-list drag: asymmetric behavior for better UX
+      const tierSize = dragState.sourceList === 'main' ? dragState.tierSize : 1;
       let newMainHeight = baseMainHeight;
       let newNoPreferenceHeight = baseNoPreferenceHeight;
 
       if (dragState.sourceList === 'main' && dragState.targetList === 'noPreference') {
         // Dragging from main to no preference - DON'T shrink main (keep stable), but grow no preference
         newMainHeight = baseMainHeight; // Keep main list at original size during preview
-        newNoPreferenceHeight = Math.max((noPreferenceList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
+        newNoPreferenceHeight = Math.max((noPreferenceList.length + tierSize) * totalItemHeight - gapSize, totalItemHeight);
       } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
         // Dragging from no preference to main - grow main, shrink no preference (real-time feedback)
         newMainHeight = Math.max((mainList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
@@ -1261,9 +1360,18 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
             {/* Render all items in this list */}
             {listItems.map((option, index) => {
-              // Skip rendering the item in its original position if it's being dragged
-              if (dragState.isDragging && option.id === dragState.draggedId) {
-                return null;
+              // Skip rendering items that are currently being dragged. For
+              // main-list drags, this includes *every* tier member so the
+              // whole tied group visually moves together.
+              if (dragState.isDragging && listType === dragState.sourceList) {
+                if (listType === 'main' && dragState.tierStart !== null) {
+                  const inTier =
+                    index >= dragState.tierStart &&
+                    index < dragState.tierStart + dragState.tierSize;
+                  if (inTier) return null;
+                } else if (option.id === dragState.draggedId) {
+                  return null;
+                }
               }
 
               return (
