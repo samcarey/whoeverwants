@@ -103,22 +103,24 @@ function LinkCircle({
         e.stopPropagation();
         onToggle(idA, idB);
       }}
-      className={`absolute rounded-full flex items-center justify-center border bg-white dark:bg-gray-900 shadow-sm transition-colors ${
+      className={`absolute flex items-center justify-center transition-colors ${
         disabled
-          ? 'cursor-not-allowed border-gray-200 text-gray-400 dark:border-gray-700 dark:text-gray-600'
+          ? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
           : linked
-            ? 'cursor-pointer border-gray-300 text-blue-600 hover:border-blue-400 dark:border-gray-600 dark:text-blue-400 dark:hover:border-blue-500'
-            : 'cursor-pointer border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 dark:border-gray-600 dark:text-gray-500 dark:hover:border-blue-500 dark:hover:text-blue-400'
+            ? 'cursor-pointer text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300'
+            : 'cursor-pointer text-gray-400 hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400'
       }`}
       style={{
-        // Horizontally center on the cards container (which is the same as
-        // centering on the option cards since cards span the full width).
         left: '50%',
         top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
         width: `${LINK_CIRCLE_SIZE}px`,
         height: `${LINK_CIRCLE_SIZE}px`,
         zIndex: 3,
         transform: `translateX(-50%)${translateY ? ` translateY(${translateY}px)` : ''}`,
+        // Background-colored contour around the icon for contrast against
+        // the card surface it overlaps. Stacked drop-shadows thicken the
+        // halo because a single pass is too faint.
+        filter: 'drop-shadow(0 0 2px var(--background)) drop-shadow(0 0 2px var(--background))',
       }}
       aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
       title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
@@ -1001,13 +1003,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           return (
             <div
               key={`preview-link-${item.id}`}
-              className="absolute flex items-center justify-center rounded-full border border-gray-300 bg-white text-blue-600 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-blue-400"
+              className="absolute flex items-center justify-center text-blue-600 dark:text-blue-400"
               style={{
                 left: '50%',
                 top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
                 width: `${LINK_CIRCLE_SIZE}px`,
                 height: `${LINK_CIRCLE_SIZE}px`,
                 transform: 'translateX(-50%)',
+                filter: 'drop-shadow(0 0 2px var(--background)) drop-shadow(0 0 2px var(--background))',
               }}
             >
               <svg
