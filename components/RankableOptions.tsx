@@ -176,6 +176,7 @@ function TierCardRows({
                   top: `${rowTop + rowHeight + innerGap / 2}px`,
                   left: '12px',
                   right: '12px',
+                  transform: 'translateY(-0.5px)',
                 }}
               />
             )}
