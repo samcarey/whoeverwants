@@ -591,13 +591,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             // The entire tier moves as one unit — shift intervening items
             // by tierSize positions so the tier can slot in.
             if (sourceList === 'main' && newTargetList === 'main' && newTargetIndex !== null) {
-              // Clamp target to exclude slots inside the tier's current range
-              // (those are no-ops) — anything in [tierStart+1..tierEnd] is
-              // effectively a no-move.
-              if (newTargetIndex > tierEnd) {
-                // Tier moves DOWN. Items between tierEnd+1 and newTargetIndex
-                // shift UP by tierSize.
-                for (let i = tierEnd + 1; i <= newTargetIndex; i++) {
+              // Targets inside [tierStart..tierEnd+1] are no-ops (the tier
+              // would land back in its current position). Only shift items
+              // for targets strictly outside that range.
+              if (newTargetIndex > tierEnd + 1) {
+                // Tier moves DOWN. Items at indices tierEnd+1 through
+                // newTargetIndex-1 shift UP by tierSize (they get "passed
+                // over" by the tier). The item AT newTargetIndex stays put.
+                for (let i = tierEnd + 1; i < newTargetIndex; i++) {
                   if (i < updatedList.length) {
                     updatedList[i].top = (i - tierSize) * totalItemHeight;
                   }
