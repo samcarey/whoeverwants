@@ -1059,7 +1059,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               </div>
             )}
           />
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">
+          <div className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-500">
             <DragHandleVisual />
           </div>
         </div>
@@ -1670,7 +1670,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                         }}
                         title=""
                       >
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                        <div className="absolute right-6 top-1/2 -translate-y-1/2">
                           <DragHandleVisual dimUp={tierIndices[0] === 0} variant={listType === 'main' ? 'main' : 'noPreference'} />
                         </div>
                       </div>
