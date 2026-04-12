@@ -1455,6 +1455,26 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     });
   }, [updateItemPositions, animateWithFLIP, mainList.length]);
 
+  /**
+   * Move a single main-list item from `fromIndex` to `toIndex`, preserving
+   * all linked pairs (unlike moveItemInList which clears them). Used by
+   * the tap-to-reorder handler so singletons can jump over groups without
+   * breaking those groups.
+   */
+  const moveItemToIndex = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    animateWithFLIP(() => {
+      setMainList(prev => {
+        const newList = [...prev];
+        const [item] = newList.splice(fromIndex, 1);
+        // Adjust target for the removal
+        const adjusted = toIndex > fromIndex ? toIndex - 1 : toIndex;
+        newList.splice(adjusted, 0, item);
+        return updateItemPositions(newList);
+      });
+    });
+  }, [updateItemPositions, animateWithFLIP]);
+
   // Helper function to move items between lists (with FLIP animation)
   const moveItemBetweenLists = useCallback((
     itemId: string,
@@ -1802,7 +1822,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                                 if (isGrouped) {
                                   moveTierInList(tierIndices[0], size, 'up');
                                 } else {
-                                  moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
+                                  // Jump over the adjacent group/item above
+                                  const [adjStart] = getTierRange(listItems, linkedPairs, tierIndices[0] - 1);
+                                  moveItemToIndex(tierIndices[0], adjStart);
                                 }
                               }
                             } else {
@@ -1811,7 +1833,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                                 if (isGrouped) {
                                   moveTierInList(tierIndices[0], size, 'down');
                                 } else {
-                                  moveItemInList(listType, lastIdx, lastIdx + 1);
+                                  // Jump over the adjacent group/item below
+                                  const [adjStart, adjSize] = getTierRange(listItems, linkedPairs, lastIdx + 1);
+                                  moveItemToIndex(tierIndices[0], adjStart + adjSize);
                                 }
                               } else {
                                 moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
