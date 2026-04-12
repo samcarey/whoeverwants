@@ -1429,6 +1429,32 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [updateItemPositions, animateWithFLIP, mainList, noPreferenceList, clearLinksTouchingItem]);
 
+  /**
+   * Move an entire tier (contiguous group of linked items) up or down by one
+   * position in the main list. The tier's internal linked pairs are preserved;
+   * the single item it swaps with stays ungrouped.
+   */
+  const moveTierInList = useCallback((tierStart: number, tierSize: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && tierStart <= 0) return;
+    if (direction === 'down' && tierStart + tierSize >= mainList.length) return;
+
+    animateWithFLIP(() => {
+      setMainList(prev => {
+        const newList = [...prev];
+        if (direction === 'up') {
+          // Swap the item above the tier with the tier's first member
+          const [above] = newList.splice(tierStart - 1, 1);
+          newList.splice(tierStart + tierSize - 1, 0, above);
+        } else {
+          // Swap the item below the tier with the tier's last member
+          const [below] = newList.splice(tierStart + tierSize, 1);
+          newList.splice(tierStart, 0, below);
+        }
+        return updateItemPositions(newList);
+      });
+    });
+  }, [updateItemPositions, animateWithFLIP, mainList.length]);
+
   // Helper function to move items between lists (with FLIP animation)
   const moveItemBetweenLists = useCallback((
     itemId: string,
@@ -1772,11 +1798,24 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             if (listType === 'noPreference') {
                               moveItemBetweenLists(firstItem.id, 'noPreference', tierIndices[0], 'main', mainList.length);
                             } else if (relativeY < half) {
-                              if (tierIndices[0] > 0) moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
+                              if (tierIndices[0] > 0) {
+                                if (isGrouped) {
+                                  moveTierInList(tierIndices[0], size, 'up');
+                                } else {
+                                  moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
+                                }
+                              }
                             } else {
                               const lastIdx = tierIndices[tierIndices.length - 1];
-                              if (lastIdx < listItems.length - 1) moveItemInList(listType, lastIdx, lastIdx + 1);
-                              else moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
+                              if (lastIdx < listItems.length - 1) {
+                                if (isGrouped) {
+                                  moveTierInList(tierIndices[0], size, 'down');
+                                } else {
+                                  moveItemInList(listType, lastIdx, lastIdx + 1);
+                                }
+                              } else {
+                                moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
+                              }
                             }
                           }
                         }}
