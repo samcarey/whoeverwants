@@ -425,14 +425,14 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
 
-        // When dragging a multi-item tier within the main list, compute the
-        // target by checking cursor position against the ORIGINAL midpoints
-        // of non-dragged items (not their shifted visual positions). Using
-        // original positions means the cursor needs to travel roughly one
-        // item height past the tier's edge to trigger a reorder — matching
-        // the standard single-item drag feel. Shifted positions would
-        // trigger almost immediately because the first non-dragged item
-        // slides up to where the cursor already is.
+        // When dragging a multi-item tier within the main list, find which
+        // "slot" the tier is closest to by computing the tier's visual top
+        // from the cursor position and grab offset, then rounding to the
+        // nearest totalItemHeight grid position. This gives a natural
+        // "least overlap" trigger: the reorder fires when the tier is
+        // closer to the swapped position than to its current one — roughly
+        // half a slot height (~32px) of dragging regardless of tier size
+        // or which item within the tier was grabbed.
         if (
           dragState.sourceList === 'main' &&
           dragState.tierStart !== null &&
@@ -440,34 +440,27 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         ) {
           const tStart = dragState.tierStart;
           const tSize = dragState.tierSize;
-          const tEnd = tStart + tSize - 1;
 
-          // Build ORIGINAL (pre-shift) midpoints of non-dragged items.
-          const slots: { origIdx: number; midY: number }[] = [];
-          for (let i = 0; i < mainList.length; i++) {
-            if (i >= tStart && i <= tEnd) continue;
-            slots.push({ origIdx: i, midY: i * totalItemHeight + itemHeight / 2 });
-          }
+          // Cursor offset from the tier's visual top edge:
+          //   (grabbed row within tier) * groupedStepSize + mouseOffsetY
+          const grabRow = (dragState.dragStartIndex ?? tStart) - tStart;
+          const cursorOffsetFromTierTop = grabRow * groupedStepSize + dragState.mouseOffset.y;
 
-          if (slots.length === 0) {
-            return { list: 'main' as const, index: tStart };
-          }
+          // Tier's visual top in container coordinates
+          const tierVisualTop = relativeY - cursorOffsetFromTierTop;
 
-          // Cursor above the first non-dragged item → insert before it
-          if (relativeY < slots[0].midY) {
-            return { list: 'main' as const, index: slots[0].origIdx };
-          }
+          // Nearest slot (each slot = totalItemHeight)
+          const slot = Math.round(tierVisualTop / totalItemHeight);
+          const maxSlot = mainList.length - tSize;
+          const clampedSlot = Math.max(0, Math.min(maxSlot, slot));
 
-          // Walk through gaps between non-dragged items
-          for (let g = 0; g < slots.length - 1; g++) {
-            const gapMid = (slots[g].midY + slots[g + 1].midY) / 2;
-            if (relativeY < gapMid) {
-              return { list: 'main' as const, index: slots[g].origIdx + 1 };
-            }
-          }
+          // Convert slot to original list index. Slots below the tier's
+          // current start need to account for the tier's own indices.
+          const targetIdx = clampedSlot < tStart
+            ? clampedSlot           // moving up: slot IS the target index
+            : clampedSlot + tSize;  // moving down: shift past tier's indices
 
-          // Past the last non-dragged item → insert after it
-          return { list: 'main' as const, index: slots[slots.length - 1].origIdx + 1 };
+          return { list: 'main' as const, index: targetIdx };
         }
 
         // Standard uniform-grid index for single-item drags
