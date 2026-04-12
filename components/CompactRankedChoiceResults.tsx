@@ -135,6 +135,9 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
           // Get user's preference for this round (before any eliminations in this round)
           const userPreference = getUserPreferenceForRound(roundNum, eliminatedSoFar);
           
+          // Total votes in this round (can exceed ballot count with equal rankings)
+          const roundTotalVotes = currentRoundData.reduce((sum, r) => sum + r.vote_count, 0);
+
           // Check for ties in the final round
           const isFinalRound = roundNum === totalRounds;
           
@@ -184,7 +187,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
               return {
                 name: round.option_name,
                 votes: round.vote_count,
-                percentage: results.total_votes > 0 ? Math.round((round.vote_count / results.total_votes) * 100) : 0,
+                percentage: roundTotalVotes > 0 ? Math.round((round.vote_count / roundTotalVotes) * 100) : 0,
                 previousVotes: roundNum > 1 ? previousVotes : undefined,
                 donatedVotes: donatedVotes > 0 ? donatedVotes : undefined,
                 isEliminated: isEliminated,
