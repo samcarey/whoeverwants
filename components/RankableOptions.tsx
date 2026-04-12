@@ -426,10 +426,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         const relativeY = screenY - mainRect.top;
 
         // When dragging a multi-item tier within the main list, compute the
-        // target by checking cursor position against the visual midpoints of
-        // non-dragged items (which have shifted to fill the tier's gap).
-        // This avoids the uniform-grid assumption that creates a dead zone
-        // as wide as the tier itself.
+        // target by checking cursor position against the ORIGINAL midpoints
+        // of non-dragged items (not their shifted visual positions). Using
+        // original positions means the cursor needs to travel roughly one
+        // item height past the tier's edge to trigger a reorder — matching
+        // the standard single-item drag feel. Shifted positions would
+        // trigger almost immediately because the first non-dragged item
+        // slides up to where the cursor already is.
         if (
           dragState.sourceList === 'main' &&
           dragState.tierStart !== null &&
@@ -439,15 +442,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           const tSize = dragState.tierSize;
           const tEnd = tStart + tSize - 1;
 
-          // Build visual positions of non-dragged items. Items before the
-          // tier stay at natural positions; items after shift up by tierSize.
+          // Build ORIGINAL (pre-shift) midpoints of non-dragged items.
           const slots: { origIdx: number; midY: number }[] = [];
           for (let i = 0; i < mainList.length; i++) {
             if (i >= tStart && i <= tEnd) continue;
-            const visualTop = i < tStart
-              ? i * totalItemHeight
-              : (i - tSize) * totalItemHeight;
-            slots.push({ origIdx: i, midY: visualTop + itemHeight / 2 });
+            slots.push({ origIdx: i, midY: i * totalItemHeight + itemHeight / 2 });
           }
 
           if (slots.length === 0) {
