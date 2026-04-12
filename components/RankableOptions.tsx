@@ -120,7 +120,7 @@ function LinkCircle({
         // Background-colored contour around the icon for contrast against
         // the card surface it overlaps. Stacked drop-shadows thicken the
         // halo because a single pass is too faint.
-        filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
+        filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
       }}
       aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
       title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
@@ -1010,7 +1010,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 width: `${LINK_CIRCLE_SIZE}px`,
                 height: `${LINK_CIRCLE_SIZE}px`,
                 transform: 'translateX(-50%)',
-                filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
+                filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
               }}
             >
               <svg
