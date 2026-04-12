@@ -81,10 +81,6 @@ export function tiersFromList(
  */
 const LINK_CIRCLE_SIZE = 24; // diameter in px (15% smaller than previous 28)
 const LINK_ICON_SIZE = 15;   // chain glyph in px (15% smaller than previous 18)
-// Horizontal offset of the circle's left edge from the cards container's
-// left edge. A small positive offset keeps the circle fully inside the
-// cards, just to the right of their left edge.
-const LINK_CIRCLE_LEFT_OFFSET = 1;
 
 function LinkCircle({
   entry,
@@ -115,12 +111,14 @@ function LinkCircle({
             : 'cursor-pointer border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 dark:border-gray-600 dark:text-gray-500 dark:hover:border-blue-500 dark:hover:text-blue-400'
       }`}
       style={{
-        left: `${LINK_CIRCLE_LEFT_OFFSET}px`,
+        // Horizontally center on the cards container (which is the same as
+        // centering on the option cards since cards span the full width).
+        left: '50%',
         top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
         width: `${LINK_CIRCLE_SIZE}px`,
         height: `${LINK_CIRCLE_SIZE}px`,
         zIndex: 3,
-        transform: translateY ? `translateY(${translateY}px)` : undefined,
+        transform: `translateX(-50%)${translateY ? ` translateY(${translateY}px)` : ''}`,
       }}
       aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
       title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
@@ -985,10 +983,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               key={`preview-link-${item.id}`}
               className="absolute flex items-center justify-center rounded-full border border-gray-300 bg-white text-blue-600 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-blue-400"
               style={{
-                left: `${LINK_CIRCLE_LEFT_OFFSET}px`,
+                left: '50%',
                 top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
                 width: `${LINK_CIRCLE_SIZE}px`,
                 height: `${LINK_CIRCLE_SIZE}px`,
+                transform: 'translateX(-50%)',
               }}
             >
               <svg
