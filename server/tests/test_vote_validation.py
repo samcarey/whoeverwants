@@ -119,6 +119,89 @@ class TestRankedChoiceValidation:
         )
 
 
+class TestRankedChoiceTiersValidation:
+    def test_valid_tiers(self):
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            ranked_choice_tiers=[["a"], ["b", "c"], ["d"]],
+        )
+
+    def test_valid_tiers_alongside_flat(self):
+        """Tiers and flat list can coexist (tiers takes precedence server-side)."""
+        validate_vote(
+            "ranked_choice", "ranked_choice",
+            ranked_choices=["a", "b", "c", "d"],
+            ranked_choice_tiers=[["a"], ["b", "c"], ["d"]],
+        )
+
+    def test_tiers_not_a_list(self):
+        with pytest.raises(VoteValidationError, match="must be a list of tiers"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers="not a list",  # type: ignore[arg-type]
+            )
+
+    def test_tier_not_a_list(self):
+        with pytest.raises(VoteValidationError, match="non-empty list"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=["not-a-list"],  # type: ignore[list-item]
+            )
+
+    def test_empty_tier(self):
+        with pytest.raises(VoteValidationError, match="non-empty list"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=[[]],
+            )
+
+    def test_duplicate_option_across_tiers(self):
+        with pytest.raises(VoteValidationError, match="appears in multiple tiers"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=[["a"], ["a", "b"]],
+            )
+
+    def test_duplicate_option_within_tier(self):
+        with pytest.raises(VoteValidationError, match="appears in multiple tiers"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=[["a", "a"]],
+            )
+
+    def test_empty_string_in_tier(self):
+        with pytest.raises(VoteValidationError, match="non-empty strings"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=[[""]],
+            )
+
+    def test_tiers_forbidden_for_yes_no(self):
+        with pytest.raises(VoteValidationError, match="ranked_choice_tiers not allowed"):
+            validate_vote(
+                "yes_no", "yes_no",
+                yes_no_choice="yes",
+                ranked_choice_tiers=[["a"]],
+            )
+
+    def test_tiers_forbidden_for_time(self):
+        with pytest.raises(VoteValidationError, match="ranked_choice_tiers not allowed"):
+            validate_vote(
+                "time", "time",
+                ranked_choice_tiers=[["a"]],
+            )
+
+    def test_tiers_forbidden_with_ranking_abstain(self):
+        with pytest.raises(VoteValidationError, match="ranked_choices not allowed"):
+            validate_vote(
+                "ranked_choice", "ranked_choice",
+                ranked_choice_tiers=[["a"]],
+                suggestions=["a"],
+                is_ranking_abstain=True,
+                has_suggestion_phase=True,
+            )
+
+
 class TestUnknownPollType:
     def test_unknown_poll_type(self):
         with pytest.raises(VoteValidationError, match="Unknown poll type"):

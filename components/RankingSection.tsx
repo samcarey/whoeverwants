@@ -14,7 +14,7 @@ interface RankingSectionProps {
   pollId: string;
   pollOptions: string[];
   rankedChoices: string[];
-  handleRankingChange: (choices: string[]) => void;
+  handleRankingChange: (choices: string[], tiers: string[][]) => void;
   isAbstaining: boolean;
   setIsAbstaining: (val: boolean) => void;
   handleAbstain: () => void;
@@ -191,7 +191,9 @@ export default function RankingSection({
                       key={option}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                        handleRankingChange([option]);
+                        // Two-option polls: a single tap picks one. Pass
+                        // the flat list and a singleton tier (no ties).
+                        handleRankingChange([option], [[option]]);
                         setIsAbstaining(false);
                       }}
                       disabled={isSubmitting || isAbstaining}
@@ -219,6 +221,7 @@ export default function RankingSection({
                     disabled={isSubmitting || isAbstaining}
                     storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                     initialRanking={isEditingRanking && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
+                    initialTiers={isEditingRanking && userVoteData?.ranked_choice_tiers ? userVoteData.ranked_choice_tiers : undefined}
                     optionsMetadata={optionsMetadata}
                   />
                 )}

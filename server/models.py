@@ -74,6 +74,11 @@ class SubmitVoteRequest(BaseModel):
     vote_type: str
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
+    # Tiered ballot for equal/tied rankings: list of tiers, each a list of
+    # equally-ranked options. E.g. [["A"], ["B", "C"]] means A is 1st and
+    # B and C are tied for 2nd. Optional — when absent, ranked_choices is
+    # used as a flat ordering.
+    ranked_choice_tiers: list[list[str]] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
     is_ranking_abstain: bool = False
@@ -92,6 +97,7 @@ class SubmitVoteRequest(BaseModel):
 class EditVoteRequest(BaseModel):
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
+    ranked_choice_tiers: list[list[str]] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
     is_ranking_abstain: bool = False
@@ -195,6 +201,7 @@ class VoteResponse(BaseModel):
     vote_type: str
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
+    ranked_choice_tiers: list[list[str]] | None = None
     suggestions: list[str] | None = None
     is_abstain: bool = False
     is_ranking_abstain: bool = False

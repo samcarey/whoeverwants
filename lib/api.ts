@@ -39,6 +39,7 @@ export interface ApiVote {
   vote_type: string;
   yes_no_choice: string | null;
   ranked_choices: string[] | null;
+  ranked_choice_tiers: string[][] | null;
   suggestions: string[] | null;
   is_abstain: boolean;
   is_ranking_abstain: boolean;
@@ -263,6 +264,7 @@ export async function apiSubmitVote(pollId: string, params: {
   vote_type: string;
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
+  ranked_choice_tiers?: string[][] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
@@ -288,6 +290,7 @@ export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
 export async function apiEditVote(pollId: string, voteId: string, params: {
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
+  ranked_choice_tiers?: string[][] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;

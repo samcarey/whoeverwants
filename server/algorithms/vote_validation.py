@@ -23,6 +23,7 @@ def validate_vote(
     vote_type: str,
     yes_no_choice: str | None = None,
     ranked_choices: list[str] | None = None,
+    ranked_choice_tiers: list[list[str]] | None = None,
     suggestions: list[str] | None = None,
     is_abstain: bool = False,
     is_ranking_abstain: bool = False,
@@ -45,13 +46,17 @@ def validate_vote(
             )
 
     if poll_type == "yes_no" or poll_type == "participation":
+        if ranked_choice_tiers:
+            raise VoteValidationError("ranked_choice_tiers not allowed for yes/no or participation polls")
         _validate_yes_no_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     elif poll_type == "ranked_choice":
         _validate_ranked_choice_vote(
-            yes_no_choice, ranked_choices, suggestions, is_abstain,
-            is_ranking_abstain, has_suggestion_phase,
+            yes_no_choice, ranked_choices, ranked_choice_tiers, suggestions,
+            is_abstain, is_ranking_abstain, has_suggestion_phase,
         )
     elif poll_type == "time":
+        if ranked_choice_tiers:
+            raise VoteValidationError("ranked_choice_tiers not allowed for time polls")
         _validate_time_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     else:
         raise VoteValidationError(f"Unknown poll type: {poll_type}")
@@ -83,6 +88,7 @@ def _validate_yes_no_vote(
 def _validate_ranked_choice_vote(
     yes_no_choice: str | None,
     ranked_choices: list[str] | None,
+    ranked_choice_tiers: list[list[str]] | None,
     suggestions: list[str] | None,
     is_abstain: bool,
     is_ranking_abstain: bool = False,
@@ -99,6 +105,22 @@ def _validate_ranked_choice_vote(
     if is_ranking_abstain and not has_suggestion_phase:
         raise VoteValidationError("is_ranking_abstain not allowed for ranked choice polls without a suggestion phase")
 
+    # ranked_choice_tiers structural check: must be a list of non-empty lists
+    # of strings when present.
+    if ranked_choice_tiers is not None:
+        if not isinstance(ranked_choice_tiers, list):
+            raise VoteValidationError("ranked_choice_tiers must be a list of tiers")
+        seen: set[str] = set()
+        for tier in ranked_choice_tiers:
+            if not isinstance(tier, list) or not tier:
+                raise VoteValidationError("each tier in ranked_choice_tiers must be a non-empty list")
+            for opt in tier:
+                if not isinstance(opt, str) or not opt:
+                    raise VoteValidationError("ranked_choice_tiers options must be non-empty strings")
+                if opt in seen:
+                    raise VoteValidationError(f"option '{opt}' appears in multiple tiers")
+                seen.add(opt)
+
     if is_abstain:
         return
 
@@ -109,14 +131,16 @@ def _validate_ranked_choice_vote(
             raise VoteValidationError(
                 "is_ranking_abstain requires suggestions (use is_abstain for full abstain)"
             )
-        if ranked_choices:
+        if ranked_choices or ranked_choice_tiers:
             raise VoteValidationError(
                 "ranked_choices not allowed when is_ranking_abstain is true"
             )
         return
 
     # Must have at least one of ranked_choices or suggestions
-    has_rankings = ranked_choices and len(ranked_choices) > 0
+    has_rankings = (ranked_choices and len(ranked_choices) > 0) or (
+        ranked_choice_tiers and len(ranked_choice_tiers) > 0
+    )
     has_suggestions = suggestions and len(suggestions) > 0
 
     if not has_rankings and not has_suggestions:

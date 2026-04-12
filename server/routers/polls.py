@@ -234,6 +234,7 @@ def _row_to_vote(row: dict) -> VoteResponse:
         vote_type=row["vote_type"],
         yes_no_choice=row.get("yes_no_choice"),
         ranked_choices=row.get("ranked_choices"),
+        ranked_choice_tiers=row.get("ranked_choice_tiers"),
         suggestions=row.get("suggestions"),
         is_abstain=row.get("is_abstain", False),
         is_ranking_abstain=row.get("is_ranking_abstain", False),
@@ -702,6 +703,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 vote_type=req.vote_type,
                 yes_no_choice=req.yes_no_choice,
                 ranked_choices=req.ranked_choices,
+                ranked_choice_tiers=req.ranked_choice_tiers,
                 suggestions=req.suggestions,
                 is_abstain=req.is_abstain,
                 is_ranking_abstain=req.is_ranking_abstain,
@@ -714,12 +716,14 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
         row = conn.execute(
             """
             INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
+                               ranked_choice_tiers,
                                suggestions, is_abstain, is_ranking_abstain, voter_name,
                                min_participants, max_participants,
                                voter_day_time_windows, voter_duration,
                                liked_slots, disliked_slots,
                                created_at, updated_at)
             VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
+                    %(ranked_choice_tiers)s::jsonb,
                     %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
                     %(min_participants)s, %(max_participants)s,
                     %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
@@ -732,6 +736,7 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
                 "vote_type": req.vote_type,
                 "yes_no_choice": req.yes_no_choice,
                 "ranked_choices": req.ranked_choices,
+                "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
                 "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
                 "is_ranking_abstain": req.is_ranking_abstain,
@@ -854,6 +859,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             UPDATE votes
             SET yes_no_choice = %(yes_no_choice)s,
                 ranked_choices = %(ranked_choices)s,
+                ranked_choice_tiers = %(ranked_choice_tiers)s::jsonb,
                 suggestions = COALESCE(%(suggestions)s, suggestions),
                 is_abstain = %(is_abstain)s,
                 is_ranking_abstain = %(is_ranking_abstain)s,
@@ -871,6 +877,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
             {
                 "yes_no_choice": req.yes_no_choice,
                 "ranked_choices": req.ranked_choices,
+                "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
                 "suggestions": req.suggestions,
                 "is_abstain": req.is_abstain,
                 "is_ranking_abstain": req.is_ranking_abstain,
@@ -1028,10 +1035,15 @@ def _compute_results(poll, votes) -> PollResultsResponse:
                 suggestion_counts=suggestion_counts_data,
             )
 
-        # Only compute ranked choice results if there are options to rank
+        # Only compute ranked choice results if there are options to rank.
+        # A vote counts as having rankings if it has either a flat list or a
+        # tiered ballot.
         rc_rounds = []
         rc_winner = None
-        ranking_votes = [v for v in votes if v.get("ranked_choices")]
+        ranking_votes = [
+            v for v in votes
+            if v.get("ranked_choices") or v.get("ranked_choice_tiers")
+        ]
         if poll_options and len(poll_options) >= 2 and ranking_votes:
             result = calculate_ranked_choice_winner(ranking_votes, poll_options)
             rc_winner = result.winner
