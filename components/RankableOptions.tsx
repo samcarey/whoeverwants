@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { ClientOnlyDragDrop } from './ClientOnly';
 import type { OptionsMetadata } from '@/lib/types';
@@ -1498,6 +1498,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
   }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP, dropLinkedPairsFor]);
 
+  // Memoize the tier structure so it's computed once per render, not once
+  // per section (rank numbers, link circles, tier cards all use it).
+  const mainTiers = useMemo(
+    () => computeTierIndices(mainList, linkedPairs),
+    [mainList, linkedPairs],
+  );
+
   // Render a single list container (main or no preference)
   const renderListContainer = (
     listItems: RankableOption[],
@@ -1539,7 +1546,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               overlap the left edge of the cards. */}
           {listType === 'main' && numberSlotCount > 0 && (() => {
             const effectiveMainList = mainList;
-            const tiers = computeTierIndices(effectiveMainList, linkedPairs);
+            const tiers = [...mainTiers]; // mutable copy for placeholder slot
             // Add the extra slot as its own singleton tier if needed
             if (numberSlotCount > effectiveMainList.length) {
               tiers.push([effectiveMainList.length]);
@@ -1623,11 +1630,8 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               }[] = [];
               const dragTierStart = dragState.tierStart;
               const dragTierEnd = dragTierStart !== null ? dragTierStart + dragState.tierSize - 1 : -1;
-              // Pre-compute tiers so we can position intra-tier link circles
-              // using the compressed grouped layout.
-              const tiers = computeTierIndices(mainList, linkedPairs);
               const itemToTierStart = new Map<number, number>();
-              for (const tier of tiers) {
+              for (const tier of mainTiers) {
                 for (const idx of tier) {
                   itemToTierStart.set(idx, tier[0]);
                 }
@@ -1695,7 +1699,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 every item is its own singleton tier (same visual as before). */}
             {(() => {
               const displayTiers: number[][] = listType === 'main'
-                ? computeTierIndices(listItems, linkedPairs)
+                ? mainTiers
                 : listItems.map((_, i) => [i]);
 
               return displayTiers.map((tierIndices, tierIdx) => {
