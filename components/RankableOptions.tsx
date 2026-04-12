@@ -1356,18 +1356,18 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           // Move from no preference to main
           const noPreferenceIndex = noPreferenceList.findIndex(item => item.id === id);
           if (noPreferenceIndex !== -1) {
-            moveItemBetweenLists(id, 'noPreference', noPreferenceIndex, 'main', mainList.length);
+            moveTierBetweenLists('noPreference', noPreferenceIndex, 1, 'main', mainList.length);
           }
         }
         break;
-        
+
       case 'ArrowRight':
         e.preventDefault();
         if (keyboardMode && focusedItemId === id) {
           // Move from main to no preference
           const mainIndex = mainList.findIndex(item => item.id === id);
           if (mainIndex !== -1) {
-            moveItemBetweenLists(id, 'main', mainIndex, 'noPreference', noPreferenceList.length);
+            moveTierBetweenLists('main', mainIndex, 1, 'noPreference', noPreferenceList.length);
           }
         }
         break;
@@ -1463,41 +1463,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   }, [updateItemPositions, animateWithFLIP, mainList, linkedPairs]);
 
   // Helper function to move items between lists (with FLIP animation)
-  const moveItemBetweenLists = useCallback((
-    itemId: string,
-    sourceList: 'main' | 'noPreference',
-    sourceIndex: number,
-    targetList: 'main' | 'noPreference',
-    targetIndex: number
-  ) => {
-    const sourceListRef = sourceList === 'main' ? mainList : noPreferenceList;
-    const item = sourceListRef[sourceIndex];
-
-    if (!item) return;
-
-    const sourceSetter = sourceList === 'main' ? setMainList : setNoPreferenceList;
-    const targetSetter = targetList === 'main' ? setMainList : setNoPreferenceList;
-
-    animateWithFLIP(() => {
-      sourceSetter(prev => {
-        const newList = [...prev];
-        newList.splice(sourceIndex, 1);
-        return updateItemPositions(newList);
-      });
-      targetSetter(prev => {
-        const newList = [...prev];
-        newList.splice(targetIndex, 0, item);
-        return updateItemPositions(newList);
-      });
-    });
-    // If the item left the main list entirely, drop any tied-rank entries
-    // that involved it. If it's being moved INTO main from noPreference,
-    // there are no pre-existing links to worry about.
-    if (sourceList === 'main' && targetList !== 'main') {
-      dropLinkedPairsFor(item.id);
-    }
-  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP, dropLinkedPairsFor]);
-
   /** Move a contiguous tier (one or more grouped items) between lists. */
   const moveTierBetweenLists = useCallback((
     sourceList: 'main' | 'noPreference',
@@ -1525,13 +1490,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         return updateItemPositions(newList);
       });
     });
-    // Drop linked pairs for all moved items leaving main
     if (sourceList === 'main' && targetList !== 'main') {
-      for (const item of items) {
-        dropLinkedPairsFor(item.id);
-      }
+      const ids = new Set(items.map(item => item.id));
+      setLinkedPairs(prev => {
+        const next = new Set<string>();
+        let changed = false;
+        for (const key of prev) {
+          const [a, b] = key.split('|');
+          if (ids.has(a) || ids.has(b)) { changed = true; continue; }
+          next.add(key);
+        }
+        return changed ? next : prev;
+      });
     }
-  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP, dropLinkedPairsFor]);
+  }, [mainList, noPreferenceList, updateItemPositions, animateWithFLIP]);
 
   // Memoize the tier structure so it's computed once per render, not once
   // per section (rank numbers, link circles, tier cards all use it).
