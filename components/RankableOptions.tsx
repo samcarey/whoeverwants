@@ -142,6 +142,7 @@ function TierCardRows({
   gapSize: innerGap,
   itemHeight: rowHeight,
   dividerClassName,
+  dividerInset = { left: '12px', right: '12px' },
   renderContent,
   rowProps,
 }: {
@@ -150,6 +151,7 @@ function TierCardRows({
   gapSize: number;
   itemHeight: number;
   dividerClassName: string;
+  dividerInset?: { left: string; right: string };
   renderContent: (item: { id: string; text: string }, index: number) => React.ReactNode;
   rowProps?: (item: { id: string; text: string }, rowIdx: number) => Record<string, unknown>;
 }) {
@@ -174,8 +176,8 @@ function TierCardRows({
                 className={`absolute pointer-events-none border-t ${dividerClassName}`}
                 style={{
                   top: `${rowTop + rowHeight + innerGap / 2}px`,
-                  left: '12px',
-                  right: '12px',
+                  left: dividerInset.left,
+                  right: dividerInset.right,
                   transform: 'translateY(-0.5px)',
                 }}
               />
@@ -1607,6 +1609,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       gapSize={isGrouped ? groupedGapSize : gapSize}
                       itemHeight={itemHeight}
                       dividerClassName="border-gray-200 dark:border-gray-700"
+                      dividerInset={{ left: '12px', right: '38px' }}
                       renderContent={(item) => (
                         <div className={`flex-1 flex items-center pr-12 min-w-0 ${
                           disabled ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'
