@@ -1609,7 +1609,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       gapSize={isGrouped ? groupedGapSize : gapSize}
                       itemHeight={itemHeight}
                       dividerClassName="border-gray-200 dark:border-gray-700"
-                      dividerInset={{ left: '38px', right: '38px' }}
+                      dividerInset={{ left: '19px', right: '38px' }}
                       renderContent={(item) => (
                         <div className={`flex-1 flex items-center pr-12 min-w-0 ${
                           disabled ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'
