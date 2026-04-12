@@ -79,8 +79,12 @@ export function tiersFromList(
  * Centered on the left edge of the cards column so the circle overlaps the
  * corners of the two items it sits between.
  */
-const LINK_CIRCLE_SIZE = 28; // diameter in px
-const LINK_ICON_SIZE = 18;   // chain glyph in px (25% bigger than original 14px)
+const LINK_CIRCLE_SIZE = 24; // diameter in px (15% smaller than previous 28)
+const LINK_ICON_SIZE = 15;   // chain glyph in px (15% smaller than previous 18)
+// Horizontal offset of the circle's left edge from the cards container's
+// left edge. A small positive offset keeps the circle fully inside the
+// cards, just to the right of their left edge.
+const LINK_CIRCLE_LEFT_OFFSET = 1;
 
 function LinkCircle({
   entry,
@@ -103,17 +107,15 @@ function LinkCircle({
         e.stopPropagation();
         onToggle(idA, idB);
       }}
-      className={`absolute rounded-full flex items-center justify-center border-2 shadow-sm transition-colors ${
+      className={`absolute rounded-full flex items-center justify-center border bg-white dark:bg-gray-900 shadow-sm transition-colors ${
         disabled
-          ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600'
+          ? 'cursor-not-allowed border-gray-200 text-gray-400 dark:border-gray-700 dark:text-gray-600'
           : linked
-            ? 'cursor-pointer border-blue-600 bg-blue-600 text-white hover:bg-blue-700 dark:border-blue-500 dark:bg-blue-500 dark:hover:bg-blue-400'
-            : 'cursor-pointer border-gray-300 bg-white text-gray-400 hover:border-blue-400 hover:text-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-500 dark:hover:border-blue-500 dark:hover:text-blue-400'
+            ? 'cursor-pointer border-gray-300 text-blue-600 hover:border-blue-400 dark:border-gray-600 dark:text-blue-400 dark:hover:border-blue-500'
+            : 'cursor-pointer border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 dark:border-gray-600 dark:text-gray-500 dark:hover:border-blue-500 dark:hover:text-blue-400'
       }`}
       style={{
-        // Center the circle on the left edge of the cards container
-        // (x = 0 within the container, circle horizontal center = 0).
-        left: `-${LINK_CIRCLE_SIZE / 2}px`,
+        left: `${LINK_CIRCLE_LEFT_OFFSET}px`,
         top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
         width: `${LINK_CIRCLE_SIZE}px`,
         height: `${LINK_CIRCLE_SIZE}px`,
@@ -981,9 +983,9 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           return (
             <div
               key={`preview-link-${item.id}`}
-              className="absolute flex items-center justify-center rounded-full border-2 border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-500 dark:bg-blue-500"
+              className="absolute flex items-center justify-center rounded-full border border-gray-300 bg-white text-blue-600 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-blue-400"
               style={{
-                left: `-${LINK_CIRCLE_SIZE / 2}px`,
+                left: `${LINK_CIRCLE_LEFT_OFFSET}px`,
                 top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
                 width: `${LINK_CIRCLE_SIZE}px`,
                 height: `${LINK_CIRCLE_SIZE}px`,
