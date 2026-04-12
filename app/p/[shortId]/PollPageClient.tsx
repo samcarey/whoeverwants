@@ -25,6 +25,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 import RankableOptions from "@/components/RankableOptions";
+import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -2193,42 +2194,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
-                        ) : (() => {
-                          // Render the user's ranking using the same tier-card
-                          // style as the drag-and-drop ballot (without handles).
-                          const tiersToRender: string[][] =
-                            rankedChoiceTiers && rankedChoiceTiers.length > 0
-                              ? rankedChoiceTiers
-                              : rankedChoices.map(c => [c]);
-                          let posSoFar = 0;
-                          return tiersToRender.map((tier, tierIdx) => {
-                            const rank = posSoFar + 1;
-                            posSoFar += tier.length;
-                            return (
-                              <div key={tierIdx} className="flex items-center gap-2">
-                                <div className="flex-shrink-0 flex items-center justify-center" style={{ width: '32px' }}>
-                                  <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                    {rank}
-                                  </span>
-                                </div>
-                                <div className="flex-1 rounded-md shadow-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-500 min-w-0">
-                                  {tier.map((choice, innerIdx) => (
-                                    <div key={`${tierIdx}-${innerIdx}`}>
-                                      {innerIdx > 0 && (
-                                        <div className="border-t border-gray-200 dark:border-gray-700 mx-3" />
-                                      )}
-                                      <div className="p-3 flex items-center min-w-0">
-                                        <div className="min-w-0 overflow-hidden text-gray-900 dark:text-white">
-                                          <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
+                        ) : (
+                          <ReadOnlyTierCards
+                            tiers={rankedChoiceTiers && rankedChoiceTiers.length > 0 ? rankedChoiceTiers : rankedChoices.map(c => [c])}
+                            optionsMetadata={optionsMetadataLocal}
+                          />
+                        )}
                       </div>
                     ) : null}
                   </div>
