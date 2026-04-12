@@ -274,6 +274,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   const itemHeight = hasLocationOptions ? 72 : 56;
   const gapSize = 8;
   const totalItemHeight = itemHeight + gapSize;
+  // Inside grouped (multi-item) tier cards rows abut directly with no gap,
+  // just a divider line between them. This keeps tied options looking tightly
+  // coupled compared to the normal inter-card gap.
+  const groupedGapSize = 0;
+  const groupedStepSize = itemHeight + groupedGapSize; // = itemHeight when gap is 0
 
   // DOM Refs
   const mainContainerRef = useRef<HTMLDivElement>(null);
@@ -934,7 +939,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     // grabbed item may not be the first tier member, so shift the stack up
     // by grabbedOffset rows.
     const grabbedIndex = items.findIndex(it => it.id === dragState.draggedId);
-    const y = mousePosition.y - mouseOffset.y - Math.max(0, grabbedIndex) * totalItemHeight;
+    const y = mousePosition.y - mouseOffset.y - Math.max(0, grabbedIndex) * groupedStepSize;
     const width = mainContainerRef.current ? mainContainerRef.current.offsetWidth : 300;
     const showInternalLinks = items.length > 1 && dragState.sourceList === 'main';
 
@@ -956,7 +961,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         <div
           className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md select-none relative"
           style={{
-            height: `${items.length * itemHeight + (items.length - 1) * gapSize}px`,
+            height: `${items.length > 1 ? items.length * itemHeight + (items.length - 1) * groupedGapSize : itemHeight}px`,
           }}
         >
           {items.map((item, i) => (
@@ -964,7 +969,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               <div
                 className="absolute left-0 right-0 p-3"
                 style={{
-                  top: `${i * totalItemHeight}px`,
+                  top: `${i * groupedStepSize}px`,
                   height: `${itemHeight}px`,
                 }}
               >
@@ -978,7 +983,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 <div
                   className="absolute pointer-events-none border-t border-blue-300 dark:border-blue-600"
                   style={{
-                    top: `${i * totalItemHeight + itemHeight + gapSize / 2}px`,
+                    top: `${i * groupedStepSize + itemHeight + groupedGapSize / 2}px`,
                     left: '12px',
                     right: '12px',
                   }}
@@ -987,7 +992,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             </React.Fragment>
           ))}
           {/* Single drag handle for the group, vertically centered */}
-          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0 text-gray-500">
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0 text-gray-500">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="18 15 12 9 6 15" />
             </svg>
@@ -999,7 +1004,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         {/* Internal tier links between the stacked items — same styling as
             the stationary link circles, positioned at the gap midpoints. */}
         {showInternalLinks && items.slice(0, -1).map((item, i) => {
-          const topCenter = (i + 1) * totalItemHeight - gapSize / 2;
+          const topCenter = (i + 1) * groupedStepSize - groupedGapSize / 2;
           return (
             <div
               key={`preview-link-${item.id}`}
@@ -1357,7 +1362,10 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
               const size = tier.length;
               const rank = positionsSoFar + 1;
               const top = startIdx * totalItemHeight;
-              const height = size * itemHeight + (size - 1) * gapSize;
+              const isGrouped = size > 1;
+              const height = isGrouped
+                ? size * itemHeight + (size - 1) * groupedGapSize
+                : itemHeight;
               rankEntries.push({
                 rank,
                 top,
@@ -1423,20 +1431,41 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 key: string;
                 inDraggedTier: boolean;
               }[] = [];
-              const tierStart = dragState.tierStart;
-              const tierEnd = tierStart !== null ? tierStart + dragState.tierSize - 1 : -1;
+              const dragTierStart = dragState.tierStart;
+              const dragTierEnd = dragTierStart !== null ? dragTierStart + dragState.tierSize - 1 : -1;
+              // Pre-compute tiers so we can position intra-tier link circles
+              // using the compressed grouped layout.
+              const tiers = computeTierIndices(mainList, linkedPairs);
+              const itemToTierStart = new Map<number, number>();
+              for (const tier of tiers) {
+                for (const idx of tier) {
+                  itemToTierStart.set(idx, tier[0]);
+                }
+              }
               for (let i = 0; i < mainList.length - 1; i++) {
                 const a = mainList[i];
                 const b = mainList[i + 1];
+                const isLinked = linkedPairs.has(pairKey(a.id, b.id));
                 const inDraggedTier =
                   dragState.isDragging &&
                   dragState.sourceList === 'main' &&
-                  tierStart !== null &&
-                  i >= tierStart &&
-                  i < tierEnd;
+                  dragTierStart !== null &&
+                  i >= dragTierStart &&
+                  i < dragTierEnd;
+                // For intra-tier links, use compressed spacing so the circle
+                // sits at the divider line inside the merged card.
+                let topCenter: number;
+                if (isLinked) {
+                  const tStart = itemToTierStart.get(i) ?? i;
+                  const rowIdx = i - tStart; // 0-based row within the tier
+                  const cardTop = mainList[tStart].top;
+                  topCenter = cardTop + (rowIdx + 1) * groupedStepSize + groupedGapSize / 2;
+                } else {
+                  topCenter = (i + 1) * totalItemHeight - gapSize / 2;
+                }
                 entries.push({
-                  topCenter: (i + 1) * totalItemHeight - gapSize / 2,
-                  linked: linkedPairs.has(pairKey(a.id, b.id)),
+                  topCenter,
+                  linked: isLinked,
                   idA: a.id,
                   idB: b.id,
                   key: `link-${a.id}-${b.id}`,
@@ -1502,8 +1531,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
                 const firstItem = listItems[tierIndices[0]];
                 const size = tierIndices.length;
+                const isGrouped = size > 1;
                 const cardTop = firstItem.top;
-                const cardHeight = size * itemHeight + (size - 1) * gapSize;
+                const cardHeight = isGrouped
+                  ? size * itemHeight + (size - 1) * groupedGapSize
+                  : itemHeight;
 
                 return (
                   <div
@@ -1524,7 +1556,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                   >
                     {tierIndices.map((itemIdx, rowIdx) => {
                       const option = listItems[itemIdx];
-                      const rowTop = rowIdx * totalItemHeight;
+                      const rowTop = rowIdx * (isGrouped ? groupedStepSize : totalItemHeight);
                       const isLastRow = rowIdx === size - 1;
                       return (
                         <React.Fragment key={option.id}>
@@ -1585,7 +1617,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             <div
                               className="absolute border-t border-gray-200 dark:border-gray-700 pointer-events-none"
                               style={{
-                                top: `${rowTop + itemHeight + gapSize / 2}px`,
+                                top: `${rowTop + itemHeight + groupedGapSize / 2}px`,
                                 left: '12px',
                                 right: '12px',
                               }}
