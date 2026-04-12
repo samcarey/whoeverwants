@@ -2194,10 +2194,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
                         ) : (() => {
-                          // Render the user's ranking, collapsing tied ranks
-                          // into visually-grouped blocks with a shared rank
-                          // number. Falls back to singleton tiers when no
-                          // tiered data is present.
+                          // Render the user's ranking using the same tier-card
+                          // style as the drag-and-drop ballot (without handles).
                           const tiersToRender: string[][] =
                             rankedChoiceTiers && rankedChoiceTiers.length > 0
                               ? rankedChoiceTiers
@@ -2207,21 +2205,23 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             const rank = posSoFar + 1;
                             posSoFar += tier.length;
                             return (
-                              <div key={tierIdx} className="flex items-start gap-2">
-                                <div className="flex-shrink-0 flex items-center" style={{ width: '32px', minHeight: '2.5rem' }}>
+                              <div key={tierIdx} className="flex items-center gap-2">
+                                <div className="flex-shrink-0 flex items-center justify-center" style={{ width: '32px' }}>
                                   <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
                                     {rank}
                                   </span>
                                 </div>
-                                <div className="flex-1 flex flex-col gap-1 min-w-0">
+                                <div className="flex-1 rounded-md shadow-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-500 min-w-0">
                                   {tier.map((choice, innerIdx) => (
-                                    <div key={`${tierIdx}-${innerIdx}`} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                                      <div className="min-w-0 overflow-hidden">
-                                        <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
-                                      </div>
-                                      {tier.length > 1 && innerIdx === 0 && (
-                                        <span className="ml-auto flex-shrink-0 text-xs text-blue-600 dark:text-blue-400 italic">tied</span>
+                                    <div key={`${tierIdx}-${innerIdx}`}>
+                                      {innerIdx > 0 && (
+                                        <div className="border-t border-gray-200 dark:border-gray-700 mx-3" />
                                       )}
+                                      <div className="p-3 flex items-center min-w-0">
+                                        <div className="min-w-0 overflow-hidden text-gray-900 dark:text-white">
+                                          <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
+                                        </div>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

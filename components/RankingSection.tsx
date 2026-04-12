@@ -141,30 +141,50 @@ export default function RankingSection({
       )}
 
       <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
-        {showSummary && hasSubmittedRankings && (
-          <>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-base font-medium text-gray-900 dark:text-white">Your ranking:</h4>
-              {editButton}
-            </div>
-            <div className="space-y-2">
-              {userVoteData.ranked_choices.map((choice: string, index: number) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div className="flex-shrink-0" style={{ width: '32px' }}>
-                    <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                      {index + 1}
-                    </span>
-                  </div>
-                  <div className="flex-1 flex items-center p-2 bg-white dark:bg-gray-900 rounded min-w-0">
-                    <div className="min-w-0 overflow-hidden">
-                      <OptionLabel text={choice} metadata={optionsMetadata?.[choice]} />
+        {showSummary && hasSubmittedRankings && (() => {
+          const tiersToRender: string[][] =
+            userVoteData.ranked_choice_tiers && userVoteData.ranked_choice_tiers.length > 0
+              ? userVoteData.ranked_choice_tiers
+              : userVoteData.ranked_choices.map((c: string) => [c]);
+          let posSoFar = 0;
+          return (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-base font-medium text-gray-900 dark:text-white">Your ranking:</h4>
+                {editButton}
+              </div>
+              <div className="space-y-2">
+                {tiersToRender.map((tier: string[], tierIdx: number) => {
+                  const rank = posSoFar + 1;
+                  posSoFar += tier.length;
+                  return (
+                    <div key={tierIdx} className="flex items-center gap-2">
+                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: '32px' }}>
+                        <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                          {rank}
+                        </span>
+                      </div>
+                      <div className="flex-1 rounded-md shadow-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-500 min-w-0">
+                        {tier.map((choice: string, innerIdx: number) => (
+                          <div key={`${tierIdx}-${innerIdx}`}>
+                            {innerIdx > 0 && (
+                              <div className="border-t border-gray-200 dark:border-gray-700 mx-3" />
+                            )}
+                            <div className="p-3 flex items-center min-w-0">
+                              <div className="min-w-0 overflow-hidden text-gray-900 dark:text-white">
+                                <OptionLabel text={choice} metadata={optionsMetadata?.[choice]} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
 
         {showSummary && abstainedNoRanking && !hasSubmittedRankings && (
           <div className="flex items-center justify-between">
