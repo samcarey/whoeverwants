@@ -79,8 +79,112 @@ export function tiersFromList(
  * Centered on the left edge of the cards column so the circle overlaps the
  * corners of the two items it sits between.
  */
-const LINK_CIRCLE_SIZE = 24; // diameter in px (15% smaller than previous 28)
-const LINK_ICON_SIZE = 15;   // chain glyph in px (15% smaller than previous 18)
+const LINK_CIRCLE_SIZE = 24;
+const LINK_ICON_SIZE = 15;
+const LINK_CONTOUR_FILTER = 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))';
+
+/** The chain-link SVG glyph reused in link circles and drag preview links. */
+function LinkIcon({ size = LINK_ICON_SIZE }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
+/** The up/down arrows + grip lines used in both live and preview drag handles. */
+function DragHandleVisual({ dimUp = false, variant = 'main' }: { dimUp?: boolean; variant?: 'main' | 'noPreference' }) {
+  if (variant === 'noPreference') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500 dark:text-green-400">
+          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+        <GripLines />
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500 dark:text-green-400">
+          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-0">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={dimUp ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}>
+        <polyline points="18 15 12 9 6 15" />
+      </svg>
+      <GripLines />
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400 dark:text-gray-500">
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </div>
+  );
+}
+
+function GripLines() {
+  return (
+    <div className="flex flex-col items-center justify-center my-0.5">
+      <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5" />
+      <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5" />
+      <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600" />
+    </div>
+  );
+}
+
+/**
+ * Renders the interior of a tier card: rows of option content with divider
+ * lines between them. Used by both the live ballot and the floating drag
+ * preview so the visual structure stays in sync.
+ */
+function TierCardRows({
+  items,
+  stepSize,
+  gapSize: innerGap,
+  itemHeight: rowHeight,
+  dividerClassName,
+  renderContent,
+  rowProps,
+}: {
+  items: { id: string; text: string }[];
+  stepSize: number;
+  gapSize: number;
+  itemHeight: number;
+  dividerClassName: string;
+  renderContent: (item: { id: string; text: string }, index: number) => React.ReactNode;
+  rowProps?: (item: { id: string; text: string }, rowIdx: number) => Record<string, unknown>;
+}) {
+  return (
+    <>
+      {items.map((item, rowIdx) => {
+        const rowTop = rowIdx * stepSize;
+        const extra = rowProps?.(item, rowIdx) ?? {};
+        return (
+          <React.Fragment key={item.id}>
+            <div
+              className="absolute left-0 right-0 p-3"
+              style={{ top: `${rowTop}px`, height: `${rowHeight}px` }}
+              {...extra}
+            >
+              <div className="flex items-center justify-between h-full">
+                {renderContent(item, rowIdx)}
+              </div>
+            </div>
+            {rowIdx < items.length - 1 && (
+              <div
+                className={`absolute pointer-events-none border-t ${dividerClassName}`}
+                style={{
+                  top: `${rowTop + rowHeight + innerGap / 2}px`,
+                  left: '12px',
+                  right: '12px',
+                }}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  );
+}
 
 function LinkCircle({
   entry,
@@ -120,24 +224,12 @@ function LinkCircle({
         // Background-colored contour around the icon for contrast against
         // the card surface it overlaps. Stacked drop-shadows thicken the
         // halo because a single pass is too faint.
-        filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
+        filter: LINK_CONTOUR_FILTER,
       }}
       aria-label={linked ? 'Break tied ranking' : 'Tie these rankings together'}
       title={linked ? 'Break tied ranking' : 'Tie these rankings together'}
     >
-      <svg
-        width={LINK_ICON_SIZE}
-        height={LINK_ICON_SIZE}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-      </svg>
+      <LinkIcon />
     </button>
   );
 }
@@ -935,102 +1027,56 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
     const { mousePosition, mouseOffset } = dragState;
     const x = mousePosition.x - mouseOffset.x;
-    // Offset the stack so the grabbed item sits where the cursor is. The
-    // grabbed item may not be the first tier member, so shift the stack up
-    // by grabbedOffset rows.
     const grabbedIndex = items.findIndex(it => it.id === dragState.draggedId);
     const y = mousePosition.y - mouseOffset.y - Math.max(0, grabbedIndex) * groupedStepSize;
     const width = mainContainerRef.current ? mainContainerRef.current.offsetWidth : 300;
-    const showInternalLinks = items.length > 1 && dragState.sourceList === 'main';
+    const isGrouped = items.length > 1;
+    const cardH = isGrouped
+      ? items.length * itemHeight + (items.length - 1) * groupedGapSize
+      : itemHeight;
 
     return (
       <div
         style={{
-          position: 'fixed',
-          left: `${x}px`,
-          top: `${y}px`,
-          width: `${width}px`,
-          zIndex: 1000,
-          pointerEvents: 'none',
-          transform: 'scale(1.02)',
-          filter: 'drop-shadow(0 8px 25px rgba(0,0,0,0.3))',
-          overflow: 'visible',
+          position: 'fixed', left: `${x}px`, top: `${y}px`, width: `${width}px`,
+          zIndex: 1000, pointerEvents: 'none', transform: 'scale(1.02)',
+          filter: 'drop-shadow(0 8px 25px rgba(0,0,0,0.3))', overflow: 'visible',
         }}
       >
-        {/* Merged card wrapper for dragged tier */}
         <div
           className="bg-blue-100 dark:bg-blue-900 border border-blue-300 dark:border-blue-600 rounded-md select-none relative"
-          style={{
-            height: `${items.length > 1 ? items.length * itemHeight + (items.length - 1) * groupedGapSize : itemHeight}px`,
-          }}
+          style={{ height: `${cardH}px` }}
         >
-          {items.map((item, i) => (
-            <React.Fragment key={item.id}>
-              <div
-                className="absolute left-0 right-0 p-3"
-                style={{
-                  top: `${i * groupedStepSize}px`,
-                  height: `${itemHeight}px`,
-                }}
-              >
-                <div className="flex items-center justify-between h-full">
-                  <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
-                    {renderOption ? renderOption(item.text) : <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />}
-                  </div>
-                </div>
+          <TierCardRows
+            items={items}
+            stepSize={groupedStepSize}
+            gapSize={groupedGapSize}
+            itemHeight={itemHeight}
+            dividerClassName="border-blue-300 dark:border-blue-600"
+            renderContent={(item) => (
+              <div className="flex items-center min-w-0 flex-1 text-gray-900 dark:text-white">
+                {renderOption ? renderOption(item.text) : <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />}
               </div>
-              {i < items.length - 1 && (
-                <div
-                  className="absolute pointer-events-none border-t border-blue-300 dark:border-blue-600"
-                  style={{
-                    top: `${i * groupedStepSize + itemHeight + groupedGapSize / 2}px`,
-                    left: '12px',
-                    right: '12px',
-                  }}
-                />
-              )}
-            </React.Fragment>
-          ))}
-          {/* Single drag handle for the group, vertically centered */}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0 text-gray-500">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            )}
+          />
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">
+            <DragHandleVisual />
           </div>
         </div>
-        {/* Internal tier links between the stacked items — same styling as
-            the stationary link circles, positioned at the gap midpoints. */}
-        {showInternalLinks && items.slice(0, -1).map((item, i) => {
+        {/* Internal tier links */}
+        {isGrouped && dragState.sourceList === 'main' && items.slice(0, -1).map((item, i) => {
           const topCenter = (i + 1) * groupedStepSize - groupedGapSize / 2;
           return (
             <div
               key={`preview-link-${item.id}`}
               className="absolute flex items-center justify-center text-blue-600 dark:text-blue-400"
               style={{
-                left: '50%',
-                top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
-                width: `${LINK_CIRCLE_SIZE}px`,
-                height: `${LINK_CIRCLE_SIZE}px`,
-                transform: 'translateX(-50%)',
-                filter: 'drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background)) drop-shadow(0 0 3px var(--background))',
+                left: '50%', top: `${topCenter - LINK_CIRCLE_SIZE / 2}px`,
+                width: `${LINK_CIRCLE_SIZE}px`, height: `${LINK_CIRCLE_SIZE}px`,
+                transform: 'translateX(-50%)', filter: LINK_CONTOUR_FILTER,
               }}
             >
-              <svg
-                width={LINK_ICON_SIZE}
-                height={LINK_ICON_SIZE}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.25"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-              </svg>
+              <LinkIcon />
             </div>
           );
         })}
@@ -1554,100 +1600,56 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                       zIndex: 1,
                     }}
                   >
-                    {tierIndices.map((itemIdx, rowIdx) => {
-                      const option = listItems[itemIdx];
-                      const rowTop = rowIdx * (isGrouped ? groupedStepSize : totalItemHeight);
-                      const isLastRow = rowIdx === size - 1;
-                      return (
-                        <React.Fragment key={option.id}>
-                          <div
-                            ref={el => {
-                              elementRefs.current[option.id] = el;
-                            }}
-                            className={`absolute left-0 right-0 p-3 ${
-                              disabled
-                                ? 'cursor-not-allowed'
-                                : 'cursor-grab active:cursor-grabbing'
-                            } ${
-                              keyboardMode && focusedItemId === option.id
-                                ? 'ring-2 ring-blue-500 ring-offset-2 rounded-md'
-                                : ''
-                            }`}
-                            style={{
-                              top: `${rowTop}px`,
-                              height: `${itemHeight}px`,
-                            }}
-                            onKeyDown={!disabled ? (e) => handleKeyDown(e, option.id) : undefined}
-                            onContextMenu={(e) => e.preventDefault()}
-                            tabIndex={disabled ? -1 : 0}
-                            role="option"
-                            aria-selected={keyboardMode && focusedItemId === option.id}
-                            aria-label={`${option.text}, ${listType === 'main' ? `ranked ${itemIdx + 1}` : 'no preference'}`}
-                            aria-describedby={`${option.id}-instructions`}
-                          >
-                            <div className="flex items-center justify-between h-full relative">
-                              {/* Content area - not draggable, allows normal scrolling */}
-                              <div
-                                className={`flex-1 flex items-center pr-12 min-w-0 ${
-                                  disabled
-                                    ? 'text-gray-500 dark:text-gray-400'
-                                    : 'text-gray-900 dark:text-white'
-                                }`}
-                              >
-                                {renderOption
-                                  ? renderOption(option.text)
-                                  : (
-                                    <OptionLabel
-                                      text={option.text}
-                                      metadata={optionsMetadata?.[option.text]}
-                                      className="min-w-0 overflow-hidden"
-                                    />
-                                  )}
-                              </div>
-
-                              {/* Per-row drag handle is hidden for multi-item
-                                  tiers — those get ONE shared handle on the
-                                  tier card instead (see below). For singleton
-                                  tiers and noPreference items, the per-row
-                                  handle is still used. */}
-                            </div>
-                          </div>
-                          {/* Divider between tied rows inside a merged card */}
-                          {!isLastRow && (
-                            <div
-                              className="absolute border-t border-gray-200 dark:border-gray-700 pointer-events-none"
-                              style={{
-                                top: `${rowTop + itemHeight + groupedGapSize / 2}px`,
-                                left: '12px',
-                                right: '12px',
-                              }}
-                            />
+                    <TierCardRows
+                      items={tierIndices.map(i => listItems[i])}
+                      stepSize={isGrouped ? groupedStepSize : totalItemHeight}
+                      gapSize={isGrouped ? groupedGapSize : gapSize}
+                      itemHeight={itemHeight}
+                      dividerClassName="border-gray-200 dark:border-gray-700"
+                      renderContent={(item) => (
+                        <div className={`flex-1 flex items-center pr-12 min-w-0 ${
+                          disabled ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'
+                        }`}>
+                          {renderOption ? renderOption(item.text) : (
+                            <OptionLabel text={item.text} metadata={optionsMetadata?.[item.text]} className="min-w-0 overflow-hidden" />
                           )}
-                          <div id={`${option.id}-instructions`} className="absolute -left-[10000px] w-1 h-1 overflow-hidden">
-                            {keyboardMode && focusedItemId === option.id
-                              ? `Selected for moving. Use arrow keys to move within list, left arrow to move to main list, right arrow to move to no preference, escape to cancel.`
-                              : `Press Enter or Space to select for moving. Use arrow keys to navigate between options.`
-                            }
-                          </div>
-                        </React.Fragment>
+                        </div>
+                      )}
+                      rowProps={(item, rowIdx) => {
+                        const itemIdx = tierIndices[rowIdx];
+                        return {
+                          ref: (el: HTMLDivElement | null) => { elementRefs.current[item.id] = el; },
+                          className: `absolute left-0 right-0 p-3 ${
+                            disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'
+                          } ${keyboardMode && focusedItemId === item.id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-md' : ''}`,
+                          onKeyDown: !disabled ? (e: React.KeyboardEvent) => handleKeyDown(e, item.id) : undefined,
+                          onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+                          tabIndex: disabled ? -1 : 0,
+                          role: 'option',
+                          'aria-selected': keyboardMode && focusedItemId === item.id,
+                          'aria-label': `${item.text}, ${listType === 'main' ? `ranked ${itemIdx + 1}` : 'no preference'}`,
+                          'aria-describedby': `${item.id}-instructions`,
+                        };
+                      }}
+                    />
+                    {/* Accessibility instructions (screen-reader only) */}
+                    {tierIndices.map(itemIdx => {
+                      const option = listItems[itemIdx];
+                      return (
+                        <div key={`instr-${option.id}`} id={`${option.id}-instructions`} className="absolute -left-[10000px] w-1 h-1 overflow-hidden">
+                          {keyboardMode && focusedItemId === option.id
+                            ? 'Selected for moving. Use arrow keys to move within list, left arrow to move to main list, right arrow to move to no preference, escape to cancel.'
+                            : 'Press Enter or Space to select for moving. Use arrow keys to navigate between options.'
+                          }
+                        </div>
                       );
                     })}
-                    {/* Single drag handle for the entire tier card —
-                        vertically centered on the card. On tap (no drag),
-                        move the entire tier up/down. */}
+                    {/* Single drag handle for the entire tier card */}
                     {!disabled && (
                       <div
                         className="absolute -right-3 cursor-grab active:cursor-grabbing"
-                        style={{
-                          width: 'calc(14% + 0.525rem)',
-                          top: 0,
-                          bottom: 0,
-                          touchAction: 'none',
-                          zIndex: 2,
-                        }}
-                        onPointerDown={(e) => {
-                          handlePointerStart(e, firstItem.id);
-                        }}
+                        style={{ width: 'calc(14% + 0.525rem)', top: 0, bottom: 0, touchAction: 'none', zIndex: 2 }}
+                        onPointerDown={(e) => handlePointerStart(e, firstItem.id)}
                         onPointerUp={(e) => {
                           const pending = pendingDragRef.current;
                           if (pending && !pending.started && pending.id === firstItem.id) {
@@ -1658,61 +1660,18 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                             if (listType === 'noPreference') {
                               moveItemBetweenLists(firstItem.id, 'noPreference', tierIndices[0], 'main', mainList.length);
                             } else if (relativeY < half) {
-                              if (tierIndices[0] > 0) {
-                                moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
-                              }
+                              if (tierIndices[0] > 0) moveItemInList(listType, tierIndices[0], tierIndices[0] - 1);
                             } else {
                               const lastIdx = tierIndices[tierIndices.length - 1];
-                              if (lastIdx < listItems.length - 1) {
-                                moveItemInList(listType, lastIdx, lastIdx + 1);
-                              } else {
-                                moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
-                              }
+                              if (lastIdx < listItems.length - 1) moveItemInList(listType, lastIdx, lastIdx + 1);
+                              else moveItemBetweenLists(firstItem.id, 'main', tierIndices[0], 'noPreference', noPreferenceList.length);
                             }
                           }
                         }}
                         title=""
                       >
-                        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0">
-                          {listType === 'main' ? (
-                            <>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className={tierIndices[0] === 0 ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400 dark:text-gray-500'}
-                              >
-                                <polyline points="18 15 12 9 6 15" />
-                              </svg>
-                              <div className="flex flex-col items-center justify-center my-0.5">
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
-                              </div>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className="text-gray-400 dark:text-gray-500"
-                              >
-                                <polyline points="6 9 12 15 18 9" />
-                              </svg>
-                            </>
-                          ) : (
-                            <>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className="text-green-500 dark:text-green-400"
-                              >
-                                <line x1="12" y1="5" x2="12" y2="19" />
-                                <line x1="5" y1="12" x2="19" y2="12" />
-                              </svg>
-                              <div className="flex flex-col items-center justify-center my-0.5">
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600 mb-0.5"></div>
-                                <div className="w-3.5 h-0.5 bg-gray-300 dark:bg-gray-600"></div>
-                              </div>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                                className="text-green-500 dark:text-green-400"
-                              >
-                                <line x1="12" y1="5" x2="12" y2="19" />
-                                <line x1="5" y1="12" x2="19" y2="12" />
-                              </svg>
-                            </>
-                          )}
+                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                          <DragHandleVisual dimUp={tierIndices[0] === 0} variant={listType === 'main' ? 'main' : 'noPreference'} />
                         </div>
                       </div>
                     )}
