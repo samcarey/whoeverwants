@@ -420,11 +420,58 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       const mainRect = mainContainer.getBoundingClientRect();
       // Extend main list drop zone downward (toward divider) when dragging from no preference
       const extendedBottom = dragState.sourceList === 'noPreference' ? mainRect.bottom + dropZoneBuffer : mainRect.bottom;
-      
-      if (screenX >= mainRect.left && screenX <= mainRect.right && 
+
+      if (screenX >= mainRect.left && screenX <= mainRect.right &&
           screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
-        // Allow appending to main list when dragging from noPreference list
+
+        // When dragging a multi-item tier within the main list, compute the
+        // target by checking cursor position against the visual midpoints of
+        // non-dragged items (which have shifted to fill the tier's gap).
+        // This avoids the uniform-grid assumption that creates a dead zone
+        // as wide as the tier itself.
+        if (
+          dragState.sourceList === 'main' &&
+          dragState.tierStart !== null &&
+          dragState.tierSize > 1
+        ) {
+          const tStart = dragState.tierStart;
+          const tSize = dragState.tierSize;
+          const tEnd = tStart + tSize - 1;
+
+          // Build visual positions of non-dragged items. Items before the
+          // tier stay at natural positions; items after shift up by tierSize.
+          const slots: { origIdx: number; midY: number }[] = [];
+          for (let i = 0; i < mainList.length; i++) {
+            if (i >= tStart && i <= tEnd) continue;
+            const visualTop = i < tStart
+              ? i * totalItemHeight
+              : (i - tSize) * totalItemHeight;
+            slots.push({ origIdx: i, midY: visualTop + itemHeight / 2 });
+          }
+
+          if (slots.length === 0) {
+            return { list: 'main' as const, index: tStart };
+          }
+
+          // Cursor above the first non-dragged item → insert before it
+          if (relativeY < slots[0].midY) {
+            return { list: 'main' as const, index: slots[0].origIdx };
+          }
+
+          // Walk through gaps between non-dragged items
+          for (let g = 0; g < slots.length - 1; g++) {
+            const gapMid = (slots[g].midY + slots[g + 1].midY) / 2;
+            if (relativeY < gapMid) {
+              return { list: 'main' as const, index: slots[g].origIdx + 1 };
+            }
+          }
+
+          // Past the last non-dragged item → insert after it
+          return { list: 'main' as const, index: slots[slots.length - 1].origIdx + 1 };
+        }
+
+        // Standard uniform-grid index for single-item drags
         const allowAppend = dragState.sourceList === 'noPreference';
         const index = getIndexFromY(relativeY, mainList.length, allowAppend);
         return { list: 'main' as const, index };
@@ -447,7 +494,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, mainList, totalItemHeight, itemHeight]);
 
   /**
    * Toggle the "linked" (equal-rank) state between two adjacent main-list items.
