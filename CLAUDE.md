@@ -225,6 +225,7 @@ whoeverwants/
 │   ├── SuggestionVotingInterface.tsx # Suggestion poll voting
 │   ├── SuggestionsList.tsx         # Display suggestions with vote counts
 │   ├── CompactRankedChoiceResults.tsx # Ranked choice round display
+│   ├── ReadOnlyTierCards.tsx       # Read-only tier-card ranking display (shared)
 │   ├── MinMaxCounter.tsx           # Participation min/max selectors
 │   ├── ParticipationConditions.tsx # Voter condition UI
 │   ├── OptionsInput.tsx            # Poll options/suggestions input

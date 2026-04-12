@@ -25,6 +25,7 @@ import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
 import RankableOptions from "@/components/RankableOptions";
+import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
@@ -2193,42 +2194,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                             </span>
                             <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
                           </div>
-                        ) : (() => {
-                          // Render the user's ranking, collapsing tied ranks
-                          // into visually-grouped blocks with a shared rank
-                          // number. Falls back to singleton tiers when no
-                          // tiered data is present.
-                          const tiersToRender: string[][] =
-                            rankedChoiceTiers && rankedChoiceTiers.length > 0
-                              ? rankedChoiceTiers
-                              : rankedChoices.map(c => [c]);
-                          let posSoFar = 0;
-                          return tiersToRender.map((tier, tierIdx) => {
-                            const rank = posSoFar + 1;
-                            posSoFar += tier.length;
-                            return (
-                              <div key={tierIdx} className="flex items-start gap-2">
-                                <div className="flex-shrink-0 flex items-center" style={{ width: '32px', minHeight: '2.5rem' }}>
-                                  <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                                    {rank}
-                                  </span>
-                                </div>
-                                <div className="flex-1 flex flex-col gap-1 min-w-0">
-                                  {tier.map((choice, innerIdx) => (
-                                    <div key={`${tierIdx}-${innerIdx}`} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded min-w-0">
-                                      <div className="min-w-0 overflow-hidden">
-                                        <OptionLabel text={choice} metadata={optionsMetadataLocal?.[choice]} />
-                                      </div>
-                                      {tier.length > 1 && innerIdx === 0 && (
-                                        <span className="ml-auto flex-shrink-0 text-xs text-blue-600 dark:text-blue-400 italic">tied</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
+                        ) : (
+                          <ReadOnlyTierCards
+                            tiers={rankedChoiceTiers && rankedChoiceTiers.length > 0 ? rankedChoiceTiers : rankedChoices.map(c => [c])}
+                            optionsMetadata={optionsMetadataLocal}
+                          />
+                        )}
                       </div>
                     ) : null}
                   </div>
