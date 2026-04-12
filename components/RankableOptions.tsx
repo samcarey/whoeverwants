@@ -425,19 +425,13 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           screenY >= mainRect.top && screenY <= extendedBottom) {
         const relativeY = screenY - mainRect.top;
 
-        // When dragging a multi-item tier within the main list, find which
-        // "slot" the tier is closest to by computing the tier's visual top
-        // from the cursor position and grab offset, then rounding to the
-        // nearest totalItemHeight grid position. This gives a natural
-        // "least overlap" trigger: the reorder fires when the tier is
-        // closer to the swapped position than to its current one — roughly
-        // half a slot height (~32px) of dragging regardless of tier size
-        // or which item within the tier was grabbed.
-        if (
-          dragState.sourceList === 'main' &&
-          dragState.tierStart !== null &&
-          dragState.tierSize > 1
-        ) {
+        // Compute the drop target using the "nearest slot" approach for ALL
+        // main-list drags (singletons and tiers alike). This reconstructs the
+        // tier's visual top from the cursor position and grab offset, then
+        // rounds to the nearest totalItemHeight grid position. The reorder
+        // fires at the midpoint between adjacent slots (~32px of dragging),
+        // giving symmetric thresholds in both directions.
+        if (dragState.sourceList === 'main' && dragState.tierStart !== null) {
           const tStart = dragState.tierStart;
           const tSize = dragState.tierSize;
 
@@ -463,32 +457,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           return { list: 'main' as const, index: targetIdx };
         }
 
-        // Standard uniform-grid index for single-item drags
+        // Fallback: uniform-grid index for drags originating from
+        // noPreference into main (the nearest-slot path above handles
+        // all main→main drags).
         const allowAppend = dragState.sourceList === 'noPreference';
-        let index = getIndexFromY(relativeY, mainList.length, allowAppend);
-
-        // Snap the target out of any non-dragged group. The uniform grid
-        // can land between two members of a linked tier — dropping there
-        // would split the group. Snap to whichever edge (before / after
-        // the group) the cursor is closer to.
-        if (dragState.sourceList === 'main') {
-          const tiers = computeTierIndices(mainList, linkedPairs);
-          const dragStart = dragState.dragStartIndex ?? -1;
-          for (const tier of tiers) {
-            if (tier.length <= 1) continue;
-            const tFirst = tier[0];
-            const tLast = tier[tier.length - 1];
-            // Skip the dragged item's own tier
-            if (dragStart >= tFirst && dragStart <= tLast) continue;
-            // If index lands strictly inside this tier (not at its edges)
-            if (index > tFirst && index <= tLast) {
-              const tierMidY = ((tFirst + tLast) / 2) * totalItemHeight + itemHeight / 2;
-              index = relativeY < tierMidY ? tFirst : tLast + 1;
-              break;
-            }
-          }
-        }
-
+        const index = getIndexFromY(relativeY, mainList.length, allowAppend);
         return { list: 'main' as const, index };
       }
     }
