@@ -465,7 +465,30 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
         // Standard uniform-grid index for single-item drags
         const allowAppend = dragState.sourceList === 'noPreference';
-        const index = getIndexFromY(relativeY, mainList.length, allowAppend);
+        let index = getIndexFromY(relativeY, mainList.length, allowAppend);
+
+        // Snap the target out of any non-dragged group. The uniform grid
+        // can land between two members of a linked tier — dropping there
+        // would split the group. Snap to whichever edge (before / after
+        // the group) the cursor is closer to.
+        if (dragState.sourceList === 'main') {
+          const tiers = computeTierIndices(mainList, linkedPairs);
+          const dragStart = dragState.dragStartIndex ?? -1;
+          for (const tier of tiers) {
+            if (tier.length <= 1) continue;
+            const tFirst = tier[0];
+            const tLast = tier[tier.length - 1];
+            // Skip the dragged item's own tier
+            if (dragStart >= tFirst && dragStart <= tLast) continue;
+            // If index lands strictly inside this tier (not at its edges)
+            if (index > tFirst && index <= tLast) {
+              const tierMidY = ((tFirst + tLast) / 2) * totalItemHeight + itemHeight / 2;
+              index = relativeY < tierMidY ? tFirst : tLast + 1;
+              break;
+            }
+          }
+        }
+
         return { list: 'main' as const, index };
       }
     }
@@ -486,7 +509,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, mainList, totalItemHeight, itemHeight]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize]);
 
   /**
    * Toggle the "linked" (equal-rank) state between two adjacent main-list items.
