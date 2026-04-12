@@ -41,6 +41,8 @@ export default function CategoryForLine({
   const [showDropdown, setShowDropdown] = useState(false);
   const [fontSizePx, setFontSizePx] = useState(MAX_FONT_PX);
   const [visible, setVisible] = useState(initialDelay === 0);
+  // Tracks whether selectType/Enter already committed — prevents blur from re-committing
+  const committedRef = useRef(false);
 
   // Initial delay (wait for modal slide-up animation)
   useEffect(() => {
@@ -150,7 +152,12 @@ export default function CategoryForLine({
   const handleCategoryBlur = (e: React.FocusEvent) => {
     // Don't close if focus moves to the dropdown
     if (dropdownRef.current?.contains(e.relatedTarget as Node)) return;
-    commitCategory();
+    // If selectType or Enter already committed, skip re-commit
+    if (committedRef.current) {
+      committedRef.current = false;
+    } else {
+      commitCategory();
+    }
     setCategoryFocused(false);
     setShowDropdown(false);
   };
@@ -166,6 +173,7 @@ export default function CategoryForLine({
     setCategoryEditText("");
     setCategoryFocused(false);
     setShowDropdown(false);
+    committedRef.current = true;
   };
 
   const handleCategoryKeyDown = (e: React.KeyboardEvent) => {
@@ -185,6 +193,7 @@ export default function CategoryForLine({
         commitCategory();
         setCategoryFocused(false);
         setShowDropdown(false);
+        committedRef.current = true;
         contextInputRef.current?.focus();
       }
     } else if (e.key === "Escape") {
