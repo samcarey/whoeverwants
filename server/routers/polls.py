@@ -1420,16 +1420,28 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                     votes_by_poll[pid] = []
                 votes_by_poll[pid].append(v)
 
-        # Fetch unique voter names per poll for thread title generation
-        all_poll_ids = [str(r["id"]) for r in rows]
+        # Fetch unique voter names per poll for thread title generation.
+        # First, extract names from votes already loaded in memory.
         voter_names_by_poll: dict[str, list[str]] = {}
-        if all_poll_ids:
+        for pid, votes in votes_by_poll.items():
+            names = sorted({
+                v["voter_name"] for v in votes
+                if v.get("voter_name") and v["voter_name"] != ""
+            })
+            if names:
+                voter_names_by_poll[pid] = names
+
+        # Only query DB for polls whose votes weren't already fetched.
+        remaining_poll_ids = [
+            str(r["id"]) for r in rows if str(r["id"]) not in votes_by_poll
+        ]
+        if remaining_poll_ids:
             vn_rows = conn.execute(
                 """SELECT poll_id, array_agg(DISTINCT voter_name ORDER BY voter_name) as names
                    FROM votes
                    WHERE poll_id = ANY(%(poll_ids)s) AND voter_name IS NOT NULL AND voter_name != ''
                    GROUP BY poll_id""",
-                {"poll_ids": all_poll_ids},
+                {"poll_ids": remaining_poll_ids},
             ).fetchall()
             for vn in vn_rows:
                 voter_names_by_poll[str(vn["poll_id"])] = vn["names"]

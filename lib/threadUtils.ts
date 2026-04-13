@@ -20,6 +20,10 @@ export interface Thread {
   unvotedCount: number;
   /** Earliest deadline among unvoted open polls (undefined if none) */
   soonestUnvotedDeadline?: string;
+  /** Pre-computed ms timestamp of soonestUnvotedDeadline for sorting */
+  soonestUnvotedDeadlineMs?: number;
+  /** Pre-computed ms timestamp of latest poll created_at for sorting */
+  latestActivityMs: number;
   /** The latest poll in the thread (most recently created) */
   latestPoll: Poll;
 }
@@ -157,6 +161,8 @@ function buildThreadFromPolls(
     title,
     unvotedCount,
     soonestUnvotedDeadline,
+    soonestUnvotedDeadlineMs: soonestUnvotedDeadline ? new Date(soonestUnvotedDeadline).getTime() : undefined,
+    latestActivityMs: new Date(latestPoll.created_at).getTime(),
     latestPoll,
   };
 }
@@ -174,15 +180,13 @@ function sortThreads(threads: Thread[]): Thread[] {
 
     // Both have unvoted: sort by soonest deadline
     if (a.unvotedCount > 0 && b.unvotedCount > 0) {
-      const aDeadline = a.soonestUnvotedDeadline ? new Date(a.soonestUnvotedDeadline).getTime() : Infinity;
-      const bDeadline = b.soonestUnvotedDeadline ? new Date(b.soonestUnvotedDeadline).getTime() : Infinity;
+      const aDeadline = a.soonestUnvotedDeadlineMs ?? Infinity;
+      const bDeadline = b.soonestUnvotedDeadlineMs ?? Infinity;
       return aDeadline - bDeadline;
     }
 
     // Neither has unvoted: sort by most recent poll creation (newest first)
-    const aLatest = new Date(a.latestPoll.created_at).getTime();
-    const bLatest = new Date(b.latestPoll.created_at).getTime();
-    return bLatest - aLatest;
+    return b.latestActivityMs - a.latestActivityMs;
   });
 }
 

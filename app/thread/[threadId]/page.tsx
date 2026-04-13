@@ -1,64 +1,16 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, Suspense } from "react";
-import { useRouter, useParams, usePathname } from "next/navigation";
+import { useEffect, useState, useRef, Suspense } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreads, findThreadByPollId, Thread } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
-import { getUserName } from "@/lib/userProfile";
-import { buildPollSnapshot } from "@/lib/pollCreator";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
-import ModalPortal from "@/components/ModalPortal";
-import { getBuiltInType } from "@/components/TypeFieldInput";
-
-const POLL_TYPE_SYMBOLS: Record<string, string> = {
-  yes_no: '👍',
-  ranked_choice: '🗳️',
-  participation: '🙋',
-};
-
-function getPollSymbol(pollType: string, isClosed: boolean): string {
-  if (pollType === 'yes_no' && isClosed) return '🏆';
-  return POLL_TYPE_SYMBOLS[pollType] || '☰';
-}
-
-function getCategoryIcon(poll: Poll): string {
-  const category = poll.category;
-  if (category && category !== 'custom') {
-    const builtIn = getBuiltInType(category);
-    if (builtIn?.icon) return builtIn.icon;
-  }
-  return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
-}
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${years}y ago`;
-}
-
-function isInSuggestionPhase(poll: Poll): boolean {
-  if (poll.poll_type !== 'ranked_choice') return false;
-  if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
-  if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
-  return false;
-}
 
 const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -89,116 +41,12 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
   return <>{label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span></>;
 };
 
-interface ResultBadge {
-  text: string;
-  emoji: string;
-  color: 'green' | 'red' | 'yellow' | 'gray';
-}
-
-const BADGE_COLORS = {
-  green: 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200',
-  red: 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200',
-  yellow: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200',
-  gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-};
-
-function getResultBadge(poll: Poll): ResultBadge {
-  const results = poll.results;
-  if (!results) return { text: 'No results', emoji: '🔇', color: 'gray' };
-  if (results.total_votes === 0) return { text: 'No voters', emoji: '🦗', color: 'gray' };
-
-  switch (poll.poll_type) {
-    case 'yes_no': {
-      if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
-      if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };
-      if (results.winner === 'tie') return { text: 'Tie', emoji: '🤝', color: 'yellow' };
-      return { text: 'No winner', emoji: '🤷', color: 'gray' };
-    }
-    case 'ranked_choice': {
-      if (results.winner) return { text: results.winner, emoji: '👑', color: 'green' };
-      return { text: 'No winner', emoji: '🤷', color: 'gray' };
-    }
-    case 'participation': {
-      const participatingCount = results.yes_count || 0;
-      let isHappening = participatingCount > 0;
-      if (results.min_participants != null && participatingCount < results.min_participants) isHappening = false;
-      if (results.max_participants != null && participatingCount > results.max_participants) isHappening = false;
-      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
-      return { text: 'Not happening', emoji: '✗', color: 'red' };
-    }
-    default:
-      return { text: 'Closed', emoji: '🔒', color: 'gray' };
-  }
-}
-
-/** Thread-aware modal: only Blank and Copy buttons */
-function ThreadFollowUpModal({ isOpen, poll, onClose }: { isOpen: boolean; poll: Poll; onClose: () => void }) {
-  const router = useRouter();
-  const pathname = usePathname();
-
-  if (!isOpen) return null;
-
-  const pollSnapshot = buildPollSnapshot(poll);
-
-  return (
-    <ModalPortal>
-      <div
-        className="fixed inset-0 bg-black/50 dark:bg-black/70 z-[100] animate-fade-in"
-        onClick={onClose}
-      />
-      <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
-        <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
-          <div className="flex gap-3 mb-4">
-            <button
-              onClick={() => {
-                router.push(`${pathname}?create=1&followUpTo=${poll.id}`);
-                onClose();
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10"/>
-              </svg>
-              Blank
-            </button>
-
-            <button
-              onClick={() => {
-                localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(pollSnapshot));
-                router.push(`${pathname}?create=1&duplicate=${poll.id}`);
-                onClose();
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-              </svg>
-              Copy
-            </button>
-          </div>
-
-          <div className="mt-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center justify-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              Follow up with the same recipients
-            </h3>
-          </div>
-        </div>
-      </div>
-    </ModalPortal>
-  );
-}
-
 function ThreadContent() {
   const router = useRouter();
   const params = useParams();
   const threadId = params.threadId as string;
 
   const [thread, setThread] = useState<Thread | null>(null);
-  const [allPolls, setAllPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
@@ -225,19 +73,9 @@ function ThreadContent() {
   // Load voted/abstained
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    try {
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      const voted = new Set<string>();
-      const abstained = new Set<string>();
-      Object.keys(votedPolls).forEach(id => {
-        if (votedPolls[id] === 'abstained') abstained.add(id);
-        else if (votedPolls[id] === true) voted.add(id);
-      });
-      setVotedPollIds(voted);
-      setAbstainedPollIds(abstained);
-    } catch (error) {
-      console.error('Error loading voted polls:', error);
-    }
+    const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
+    setVotedPollIds(voted);
+    setAbstainedPollIds(abstained);
   }, []);
 
   // Fetch polls and find the thread
@@ -252,7 +90,6 @@ function ThreadContent() {
 
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
-        setAllPolls(polls);
 
         // Resolve the threadId to a poll ID (could be short_id or UUID)
         let rootPollId: string | null = null;
@@ -280,13 +117,7 @@ function ThreadContent() {
         }
 
         // Build threads from all polls
-        const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-        const voted = new Set<string>();
-        const abstained = new Set<string>();
-        Object.keys(votedPolls).forEach(id => {
-          if (votedPolls[id] === 'abstained') abstained.add(id);
-          else if (votedPolls[id] === true) voted.add(id);
-        });
+        const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
 
         const threads = buildThreads(polls, voted, abstained);
         const foundThread = findThreadByPollId(threads, rootPollId);
@@ -515,12 +346,13 @@ function ThreadContent() {
           })}
       </div>
 
-      {/* Thread-aware follow-up modal (Blank + Copy only) */}
+      {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
       {modalPoll && (
-        <ThreadFollowUpModal
+        <FollowUpModal
           isOpen={showModal}
           poll={modalPoll}
           onClose={() => setShowModal(false)}
+          showForkButton={false}
         />
       )}
     </div>

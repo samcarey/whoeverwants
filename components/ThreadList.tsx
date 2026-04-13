@@ -1,30 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { getUserName } from "@/lib/userProfile";
 import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
+import { relativeTime } from "@/lib/pollListUtils";
+import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${years}y ago`;
-}
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -74,19 +56,9 @@ export default function ThreadList({ polls }: ThreadListProps) {
   // Load voted/abstained from localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    try {
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      const voted = new Set<string>();
-      const abstained = new Set<string>();
-      Object.keys(votedPolls).forEach(id => {
-        if (votedPolls[id] === 'abstained') abstained.add(id);
-        else if (votedPolls[id] === true) voted.add(id);
-      });
-      setVotedPollIds(voted);
-      setAbstainedPollIds(abstained);
-    } catch (error) {
-      console.error('Error loading voted polls:', error);
-    }
+    const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
+    setVotedPollIds(voted);
+    setAbstainedPollIds(abstained);
   }, []);
 
   const threads = useMemo(() => {
