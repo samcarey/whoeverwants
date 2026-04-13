@@ -4,15 +4,15 @@ import { getUserInitials } from '@/lib/userProfile';
 // Pre-computed circle packing layouts in SVG viewBox units (0-100)
 const LAYOUTS: { centers: [number, number][]; diameter: number }[] = [
   /* 0 */ { centers: [], diameter: 0 },
-  /* 1 */ { centers: [[50, 50]], diameter: 76 },
-  /* 2 */ { centers: [[28, 50], [72, 50]], diameter: 42 },
-  /* 3 */ { centers: [[50, 27], [28, 73], [72, 73]], diameter: 38 },
-  /* 4 */ { centers: [[27, 27], [73, 27], [27, 73], [73, 73]], diameter: 38 },
-  /* 5 */ { centers: [[23, 23], [77, 23], [50, 50], [23, 77], [77, 77]], diameter: 32 },
-  /* 6 */ { centers: [[19, 35], [50, 35], [81, 35], [19, 65], [50, 65], [81, 65]], diameter: 26 },
+  /* 1 */ { centers: [[50, 50]], diameter: 83 },
+  /* 2 */ { centers: [[27, 50], [73, 50]], diameter: 44 },
+  /* 3 */ { centers: [[50, 26], [27, 74], [73, 74]], diameter: 42 },
+  /* 4 */ { centers: [[26, 26], [74, 26], [26, 74], [74, 74]], diameter: 42 },
+  /* 5 */ { centers: [[22, 22], [78, 22], [50, 50], [22, 78], [78, 78]], diameter: 35 },
+  /* 6 */ { centers: [[18, 34], [50, 34], [82, 34], [18, 66], [50, 66], [82, 66]], diameter: 29 },
   /* 7 */ {
-    centers: [[33, 22], [67, 22], [17, 50], [50, 50], [83, 50], [33, 78], [67, 78]],
-    diameter: 24,
+    centers: [[32, 21], [68, 21], [16, 50], [50, 50], [84, 50], [32, 79], [68, 79]],
+    diameter: 26,
   },
 ];
 
@@ -64,7 +64,7 @@ export default function RespondentCircles({ names, anonymousCount }: RespondentC
         {circles.map((circle, i) => {
           const [cx, cy] = layout.centers[i];
           const r = layout.diameter / 2;
-          const fontSize = circle.label.length <= 2 ? r : r * 0.8;
+          const fontSize = circle.label.length <= 1 ? r * 1.25 : circle.label.length <= 2 ? r : r * 0.8;
           return (
             <g key={i}>
               <circle cx={cx} cy={cy} r={r} fill={circle.fill} />
