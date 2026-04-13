@@ -363,6 +363,7 @@ whoeverwants/
 - **Bottom bar "+" auto-follows-up** when on a thread page via `document.body.getAttribute('data-thread-latest-poll-id')` — the thread page sets this attribute on mount.
 - **Shared utilities**: `lib/pollListUtils.ts` (relativeTime, getCategoryIcon, badges), `lib/votedPollsStorage.ts` (loadVotedPolls). PollList keeps its own full-featured `getResultBadge` with user-specific participation messages.
 - **Backend**: `voter_names` field on accessible polls response — extracted from already-fetched votes when possible, DB query only for remaining open polls.
+- **Thread page layout requires `w-full` on flex-col wrappers in `template.tsx`.** The thread page uses `flex-col` layouts through `pwa-safe-top` and the `max-w-4xl mx-auto` content wrapper. In flex-column layout, `mx-auto` (margin-left/right: auto) overrides the default `align-items: stretch`, causing the element to shrink to intrinsic content width instead of filling the parent. Without `w-full`, the thread header bar and poll list widths become coupled to the longest content text. Always pair `mx-auto` with `w-full` in flex-col children.
 
 ### Data Flow
 
