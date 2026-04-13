@@ -276,20 +276,20 @@ export function CreatePollContent() {
     if (filled.length === 1) return filled[0];
     const limit = 40;
     const joinWithOr = (items: string[]) => {
-      if (items.length === 2) return `${items[0]} or ${items[1]}?`;
-      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
+      if (items.length === 2) return `${items[0]} or ${items[1]}`;
+      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
     };
     const included = [filled[0]];
     for (let i = 1; i < filled.length; i++) {
       const isLast = i === filled.length - 1;
       const candidate = isLast
         ? joinWithOr([...included, filled[i]])
-        : `${[...included, filled[i]].join(', ')}, or ...?`;
+        : `${[...included, filled[i]].join(', ')}, or ...`;
       if (candidate.length > limit && included.length >= 2) break;
       included.push(filled[i]);
     }
     if (included.length === filled.length) return joinWithOr(included);
-    return `${included.join(', ')}, or ...?`;
+    return `${included.join(', ')}, or ...`;
   }, [category, pollType, options]);
 
   // Handle category changes from CategoryForLine
