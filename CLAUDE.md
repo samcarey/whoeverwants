@@ -210,6 +210,7 @@ whoeverwants/
 │   ├── p/[shortId]/                # Dynamic poll page (UUID-based routing)
 │   │   ├── page.tsx                # Poll loader with access control
 │   │   └── PollPageClient.tsx      # Full poll view (voting, results, management)
+│   ├── thread/[threadId]/page.tsx   # Thread view (polls in follow-up chain)
 │   ├── poll/page.tsx               # Alternate poll endpoint
 │   ├── profile/page.tsx            # User profile (name management)
 │   └── api/                        # Server-side API routes
@@ -231,7 +232,8 @@ whoeverwants/
 │   ├── OptionsInput.tsx            # Poll options/suggestions input
 │   ├── Countdown.tsx               # Deadline countdown timer
 │   ├── ConfirmationModal.tsx       # Confirm destructive actions
-│   ├── FollowUpModal.tsx           # Create follow-up poll modal
+│   ├── ThreadList.tsx              # Home page thread list (messaging-style)
+│   ├── FollowUpModal.tsx           # Create follow-up poll modal (showForkButton prop)
 │   ├── FollowUpHeader.tsx          # Header showing parent poll link
 │   ├── ForkHeader.tsx              # Header showing forked-from link
 │   ├── FollowUpButton.tsx          # Create follow-up button
@@ -248,13 +250,16 @@ whoeverwants/
 │   ├── CommitInfo.tsx              # Commit info modal (GitHub API, relative time)
 │   └── CounterInput.tsx            # Numeric counter input
 │
-├── lib/                            # 16 utility modules
+├── lib/                            # 19 utility modules
 │   ├── api.ts                      # Python API client (fetch-based)
 │   ├── types.ts                    # Poll, Vote, PollResults type definitions
 │   ├── simplePollQueries.ts        # getAccessiblePolls, getPollWithAccess
 │   ├── pollCreator.ts              # Poll creation & creator secret management
 │   ├── browserPollAccess.ts        # localStorage-based poll access tracking
 │   ├── pollAccess.ts               # Database-backed poll access tracking
+│   ├── threadUtils.ts              # Thread grouping/sorting from follow_up_to chains
+│   ├── pollListUtils.ts            # Shared poll display utilities (relativeTime, badges, icons)
+│   ├── votedPollsStorage.ts        # localStorage voted/abstained poll parsing
 │   ├── pollDiscovery.ts            # Discover follow-up/fork relationships
 │   ├── userProfile.ts              # User name get/save (localStorage)
 │   ├── forgetPoll.ts               # Remove poll from browser's access list
@@ -348,6 +353,16 @@ whoeverwants/
 - Poll URLs grant access: visiting `/p/[id]` registers access
 - Creator authentication via `creator_secret` (stored in localStorage)
 - Database-level RLS (Row Level Security) policies on all tables
+
+### Threaded Messaging UI
+
+- **Main page shows threads**, not individual polls. A thread is a chain of polls linked by `follow_up_to`. `lib/threadUtils.ts` groups polls into threads client-side.
+- **Thread title** is an auto-generated, deduplicated list of participant names (`creator_name` + `voter_names` from the API).
+- **Thread sorting**: threads with unvoted open polls first (by soonest deadline), then threads with no unvoted polls (by most recent activity).
+- **Thread view** (`/thread/[threadId]`) shows polls oldest-first (messaging order). Long-press modal shows only Blank + Copy (no Fork), controlled by `FollowUpModal`'s `showForkButton` prop.
+- **Bottom bar "+" auto-follows-up** when on a thread page via `document.body.getAttribute('data-thread-latest-poll-id')` — the thread page sets this attribute on mount.
+- **Shared utilities**: `lib/pollListUtils.ts` (relativeTime, getCategoryIcon, badges), `lib/votedPollsStorage.ts` (loadVotedPolls). PollList keeps its own full-featured `getResultBadge` with user-specific participation messages.
+- **Backend**: `voter_names` field on accessible polls response — extracted from already-fetched votes when possible, DB query only for remaining open polls.
 
 ### Data Flow
 
