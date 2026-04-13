@@ -143,10 +143,10 @@ function buildThreadFromPolls(
   }
   const participantNames = Array.from(nameSet).sort();
 
-  // Build title from names
+  // Build title from participant names, or "New Thread" if none yet
   const title = participantNames.length > 0
     ? participantNames.join(', ')
-    : polls[0]?.title || 'Untitled';
+    : 'New Thread';
 
   // Count unvoted polls and find soonest unvoted deadline
   const now = new Date();
