@@ -911,7 +911,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       <HeaderPortal>
         {/* Back arrow in upper left — only shown when user has navigated within the app.
              The bottom bar Home button handles navigation to home. */}
-        {(isPollPage || isProfilePage || isThreadPage) && hasAppHistory && (
+        {(isPollPage || isProfilePage) && hasAppHistory && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => window.history.back()}

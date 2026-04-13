@@ -215,3 +215,60 @@ export function findThreadByPollId(threads: Thread[], pollId: string): Thread | 
 export function getThreadRouteId(thread: Thread): string {
   return thread.polls[0].short_id || thread.polls[0].id;
 }
+
+/**
+ * Build a thread starting from a specific poll and collecting all its descendants.
+ * Used by the thread page to show "this poll + its children" rather than the
+ * full ancestor chain.
+ */
+export function buildThreadFromPollDown(
+  anchorPollId: string,
+  allPolls: Poll[],
+  votedPollIds: Set<string>,
+  abstainedPollIds: Set<string>,
+): Thread | null {
+  const pollById = new Map<string, Poll>();
+  for (const poll of allPolls) {
+    pollById.set(poll.id, poll);
+  }
+
+  const anchor = pollById.get(anchorPollId);
+  if (!anchor) return null;
+
+  // Build parent→children map
+  const childrenOf = new Map<string, string[]>();
+  for (const poll of allPolls) {
+    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
+      const existing = childrenOf.get(poll.follow_up_to) || [];
+      existing.push(poll.id);
+      childrenOf.set(poll.follow_up_to, existing);
+    }
+  }
+
+  // BFS from anchor to collect all descendants
+  const threadPolls: Poll[] = [];
+  const visited = new Set<string>();
+  const queue = [anchorPollId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const poll = pollById.get(current);
+    if (poll) {
+      threadPolls.push(poll);
+      const children = childrenOf.get(current) || [];
+      for (const childId of children) {
+        if (!visited.has(childId)) {
+          queue.push(childId);
+        }
+      }
+    }
+  }
+
+  // Sort chronologically (oldest first)
+  threadPolls.sort((a, b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  return buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
+}
