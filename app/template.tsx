@@ -67,6 +67,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
+  const isThreadPageRef = useRef(false);
 
   // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
   // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
@@ -81,6 +82,11 @@ function TemplateInner({ children }: AppTemplateProps) {
     const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10) + 1;
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
     setHasAppHistory(count > 1);
+  }, [pathname]);
+
+  // Keep thread page ref in sync for the scroll handler (which runs in a [] effect).
+  useEffect(() => {
+    isThreadPageRef.current = pathname.startsWith('/thread/');
   }, [pathname]);
 
   // Detect PWA standalone mode once — these are device constants that never change mid-session.
@@ -174,6 +180,8 @@ function TemplateInner({ children }: AppTemplateProps) {
     // Track current visibility to avoid no-op setState calls during scroll
     let isVisible = true;
     const setVisible = (visible: boolean) => {
+      // Never hide bottom bar on thread pages
+      if (isThreadPageRef.current) visible = true;
       if (visible !== isVisible) {
         isVisible = visible;
         setShowBottomBar(visible);
@@ -695,13 +703,13 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto safari-scroll-container mb-14"
+        className={`flex-1 safari-scroll-container mb-14 ${isThreadPage ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}
         style={{
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className="pwa-safe-top relative">
+        <div className={`pwa-safe-top relative ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
@@ -752,7 +760,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || isThreadPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? '' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
             {children}
           </div>
         </div>
@@ -907,7 +915,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       <HeaderPortal>
         {/* Back arrow in upper left — only shown when user has navigated within the app.
              The bottom bar Home button handles navigation to home. */}
-        {(isPollPage || isProfilePage || isThreadPage) && hasAppHistory && (
+        {(isPollPage || isProfilePage) && hasAppHistory && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => window.history.back()}

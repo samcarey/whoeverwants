@@ -5,13 +5,16 @@ import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { buildThreads, findThreadByPollId, Thread } from "@/lib/threadUtils";
+import { buildThreadFromPollDown } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
+import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
+
+import type { Thread } from "@/lib/threadUtils";
 
 const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -79,49 +82,35 @@ function ThreadContent() {
     setAbstainedPollIds(abstained);
   }, []);
 
-  // Fetch polls and find the thread
+  // Fetch the referenced poll, register access, discover children, build thread
   useEffect(() => {
     async function fetchThread() {
       try {
         setLoading(true);
         setError(false);
 
-        // Discover related polls first
-        try { await discoverRelatedPolls(); } catch {}
+        // Step 1: Fetch the poll referenced in the URL and register access
+        let anchorPoll: Poll;
+        try {
+          if (threadId.length > 10 && threadId.includes('-')) {
+            anchorPoll = await apiGetPollById(threadId);
+          } else {
+            anchorPoll = await apiGetPollByShortId(threadId);
+          }
+          // Register access (like visiting /p/[id] does)
+          addAccessiblePollId(anchorPoll.id);
+        } catch {
+          setError(true);
+          return;
+        }
 
+        // Step 2: Discover children, then fetch all accessible polls
+        try { await discoverRelatedPolls(); } catch {}
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
 
-        // Resolve the threadId to a poll ID (could be short_id or UUID)
-        let rootPollId: string | null = null;
-
-        // First try to find directly in the polls we have
-        const directMatch = polls.find(p =>
-          p.short_id === threadId || p.id === threadId
-        );
-        if (directMatch) {
-          rootPollId = directMatch.id;
-        } else {
-          // Try fetching the poll to resolve the ID
-          try {
-            let resolved: Poll;
-            if (threadId.length > 10 && threadId.includes('-')) {
-              resolved = await apiGetPollById(threadId);
-            } else {
-              resolved = await apiGetPollByShortId(threadId);
-            }
-            rootPollId = resolved.id;
-          } catch {
-            setError(true);
-            return;
-          }
-        }
-
-        // Build threads from all polls
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
-
-        const threads = buildThreads(polls, voted, abstained);
-        const foundThread = findThreadByPollId(threads, rootPollId);
+        const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 
         if (!foundThread) {
           setError(true);
@@ -139,6 +128,16 @@ function ThreadContent() {
 
     fetchThread();
   }, [threadId]);
+
+  // Auto-scroll to the bottom on load so newest polls are visible
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (thread && !loading) {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      });
+    }
+  }, [thread, loading]);
 
   if (loading) {
     return (
@@ -171,13 +170,21 @@ function ThreadContent() {
     );
   }
 
-  // Polls are already sorted oldest-first in thread.polls
   const threadPolls = thread.polls;
 
   return (
-    <div>
-      {/* Thread header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 pl-6 pr-4 py-2 flex items-center gap-3">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Fixed thread header with back button — not scrollable */}
+      <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+        <button
+          onClick={() => window.history.back()}
+          className="w-10 h-10 flex items-center justify-center shrink-0"
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
         <RespondentCircles
           names={thread.participantNames}
           anonymousCount={thread.anonymousRespondentCount}
@@ -192,9 +199,10 @@ function ThreadContent() {
         </div>
       </div>
 
-      {/* Poll list (oldest first = messaging order) */}
-      <div className="py-2">
-        {threadPolls.map((poll, index) => {
+      {/* Scrollable poll list — bottom-aligned, vertical only */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain flex flex-col justify-end">
+        <div className="py-2">
+        {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const now = new Date();
             const isOpen = poll.response_deadline
@@ -339,6 +347,10 @@ function ThreadContent() {
               </div>
             );
           })}
+        </div>
+
+        {/* Scroll anchor for auto-scroll-to-bottom */}
+        <div ref={bottomRef} />
       </div>
 
       {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
