@@ -199,8 +199,8 @@ function ThreadContent() {
         </div>
       </div>
 
-      {/* Scrollable poll list — bottom-aligned, vertical only */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain flex flex-col justify-end">
+      {/* Scrollable poll list — auto-scrolls to bottom on load */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
         <div className="py-2">
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
