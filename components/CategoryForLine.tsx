@@ -44,9 +44,8 @@ export default function CategoryForLine({
   const [visible, setVisible] = useState(initialDelay === 0);
   // Tracks whether selectType/Enter already committed — prevents blur from re-committing
   const committedRef = useRef(false);
-  // True when pre-populated value hasn't been edited yet — first backspace clears it
+  // True when a built-in category hasn't been edited yet — first backspace clears it
   const categoryPristineRef = useRef(false);
-  const contextPristineRef = useRef(false);
 
   // Initial delay (wait for modal slide-up animation)
   useEffect(() => {
@@ -170,7 +169,8 @@ export default function CategoryForLine({
     if (categoryHasUserValue) {
       const label = builtIn?.label || category;
       setCategoryEditText(label);
-      categoryPristineRef.current = true;
+      // Only mark pristine for built-in categories (backspace clears the whole value)
+      categoryPristineRef.current = !!builtIn;
       // Put cursor at end
       requestAnimationFrame(() => {
         const input = categoryInputRef.current;
@@ -356,31 +356,14 @@ export default function CategoryForLine({
                   type="text"
                   value={forField}
                   placeholder={CONTEXT_PLACEHOLDER}
-                  onChange={(e) => {
-                    onForFieldChange(e.target.value);
-                    contextPristineRef.current = false;
-                  }}
+                  onChange={(e) => onForFieldChange(e.target.value)}
                   onFocus={() => {
                     setContextFocused(true);
-                    if (forField) {
-                      contextPristineRef.current = true;
-                      requestAnimationFrame(() => {
-                        const input = contextInputRef.current;
-                        if (input) input.setSelectionRange(forField.length, forField.length);
-                      });
-                    }
                   }}
                   onBlur={() => {
                     setContextFocused(false);
                     const trimmed = forField.trim();
                     if (trimmed !== forField) onForFieldChange(trimmed);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Backspace" && contextPristineRef.current) {
-                      e.preventDefault();
-                      onForFieldChange("");
-                      contextPristineRef.current = false;
-                    }
                   }}
                   disabled={disabled}
                   aria-label="Context"
