@@ -194,7 +194,6 @@ function ThreadFollowUpModal({ isOpen, poll, onClose }: { isOpen: boolean; poll:
 
 function ThreadContent() {
   const router = useRouter();
-  const pathname = usePathname();
   const params = useParams();
   const threadId = params.threadId as string;
 
@@ -342,10 +341,9 @@ function ThreadContent() {
 
   // Polls are already sorted oldest-first in thread.polls
   const threadPolls = thread.polls;
-  const latestPoll = thread.latestPoll;
 
   return (
-    <div className="flex flex-col h-full">
+    <div>
       {/* Thread header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="flex items-center gap-3">
@@ -369,9 +367,8 @@ function ThreadContent() {
       </div>
 
       {/* Poll list (oldest first = messaging order) */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="py-2">
-          {threadPolls.map((poll, index) => {
+      <div className="py-2">
+        {threadPolls.map((poll, index) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const now = new Date();
             const isOpen = poll.response_deadline
@@ -516,22 +513,6 @@ function ThreadContent() {
               </div>
             );
           })}
-        </div>
-
-        {/* New poll button at the bottom */}
-        <div className="px-4 py-4">
-          <button
-            onClick={() => {
-              router.push(`${pathname}?create=1&followUpTo=${latestPoll.id}`);
-            }}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New Poll in Thread
-          </button>
-        </div>
       </div>
 
       {/* Thread-aware follow-up modal (Blank + Copy only) */}
