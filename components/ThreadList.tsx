@@ -115,13 +115,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
           if (!isScrolling.current) {
             setNavigatingThreadId(thread.rootPollId);
             setPressedThreadId(null);
-            if (thread.polls.length === 1) {
-              // Single-poll thread: navigate directly to the poll
-              const poll = thread.polls[0];
-              router.push(`/p/${poll.short_id || poll.id}`);
-            } else {
-              router.push(`/thread/${routeId}`);
-            }
+            router.push(`/thread/${routeId}`);
           } else {
             setPressedThreadId(null);
           }
@@ -147,12 +141,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
             <div
               onClick={() => {
                 setNavigatingThreadId(thread.rootPollId);
-                if (thread.polls.length === 1) {
-                  const poll = thread.polls[0];
-                  router.push(`/p/${poll.short_id || poll.id}`);
-                } else {
-                  router.push(`/thread/${routeId}`);
-                }
+                router.push(`/thread/${routeId}`);
               }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
