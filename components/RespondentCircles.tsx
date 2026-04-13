@@ -72,7 +72,7 @@ export default function RespondentCircles({ names, anonymousCount }: RespondentC
   const layout = LAYOUTS[n];
 
   return (
-    <div className="self-stretch flex-shrink-0" style={{ aspectRatio: '1 / 1' }}>
+    <div className="w-16 aspect-square flex-shrink-0 self-center">
       <svg viewBox="0 0 100 100" className="w-full h-full" aria-hidden="true">
         {circles.map((circle, i) => {
           const [cx, cy] = layout.centers[i];
