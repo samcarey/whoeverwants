@@ -193,6 +193,7 @@ class PollResponse(BaseModel):
     response_count: int | None = None
     availability_threshold: int | None = None
     results: "PollResultsResponse | None" = None
+    voter_names: list[str] | None = None
 
 
 class VoteResponse(BaseModel):

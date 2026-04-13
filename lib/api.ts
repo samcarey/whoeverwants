@@ -137,6 +137,7 @@ function toPoll(data: any): Poll {
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
     availability_threshold: data.availability_threshold ?? undefined,
+    voter_names: data.voter_names ?? undefined,
   };
 }
 
