@@ -263,6 +263,7 @@ start_api() {
     set -a; source "$api_env_file"; set +a
   fi
 
+  DISABLE_RATE_LIMIT=1 \
   DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${db_name}" \
     "$UV_BIN" run uvicorn main:app --host 0.0.0.0 --port "$api_port" --workers 1 \
     >> "${dir}/api.log" 2>&1 200>&- &
