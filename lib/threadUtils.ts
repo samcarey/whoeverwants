@@ -26,6 +26,8 @@ export interface Thread {
   latestActivityMs: number;
   /** The latest poll in the thread (most recently created) */
   latestPoll: Poll;
+  /** Estimated count of anonymous respondents (max across any single poll) */
+  anonymousRespondentCount: number;
 }
 
 /**
@@ -154,6 +156,15 @@ function buildThreadFromPolls(
 
   const latestPoll = polls[polls.length - 1];
 
+  // Estimate anonymous respondent count (max across any single poll)
+  let anonymousRespondentCount = 0;
+  for (const poll of polls) {
+    const totalVotes = poll.response_count ?? 0;
+    const namedVoters = poll.voter_names?.length ?? 0;
+    const anonymous = Math.max(0, totalVotes - namedVoters);
+    anonymousRespondentCount = Math.max(anonymousRespondentCount, anonymous);
+  }
+
   return {
     rootPollId: polls[0].id,
     polls,
@@ -164,6 +175,7 @@ function buildThreadFromPolls(
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline ? new Date(soonestUnvotedDeadline).getTime() : undefined,
     latestActivityMs: new Date(latestPoll.created_at).getTime(),
     latestPoll,
+    anonymousRespondentCount,
   };
 }
 

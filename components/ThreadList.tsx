@@ -7,6 +7,7 @@ import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
 import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
+import RespondentCircles from "@/components/RespondentCircles";
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -118,10 +119,10 @@ export default function ThreadList({ polls }: ThreadListProps) {
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchMove}
-              className={`px-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+              className={`flex gap-3 px-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
             >
               {navigatingThreadId === thread.rootPollId && (
-                <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
+                <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-10">
                   <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -129,42 +130,51 @@ export default function ThreadList({ polls }: ThreadListProps) {
                 </div>
               )}
 
-              {/* Row 1: Thread title + unvoted badge */}
-              <div className="flex items-center justify-between gap-2">
-                <h3 className={`font-semibold text-base truncate flex-1 ${hasUnvoted ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
-                  {thread.title}
-                </h3>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {hasUnvoted && (
-                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                      {thread.unvotedCount}
-                    </span>
-                  )}
-                </div>
-              </div>
+              {/* Respondent circles */}
+              <RespondentCircles
+                names={thread.participantNames}
+                anonymousCount={thread.anonymousRespondentCount}
+              />
 
-              {/* Row 2: Latest poll title (preview) */}
-              <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
-                {latestPoll.title}
-              </p>
-
-              {/* Row 3: Metadata row */}
-              <div className="flex items-center justify-between mt-1">
-                <div className="text-xs text-gray-400 dark:text-gray-500">
-                  <ClientOnly fallback={null}>
-                    <>
-                      {thread.polls.length > 1 && <>{thread.polls.length} polls &middot; </>}
-                      {relativeTime(latestPoll.created_at)}
-                    </>
-                  </ClientOnly>
+              {/* Text content */}
+              <div className="flex-1 min-w-0">
+                {/* Row 1: Thread title + unvoted badge */}
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className={`font-semibold text-base truncate flex-1 ${hasUnvoted ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {thread.title}
+                  </h3>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {hasUnvoted && (
+                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
+                        {thread.unvotedCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {thread.soonestUnvotedDeadline && (
-                  <div className="text-xs">
+
+                {/* Row 2: Latest poll title (preview) */}
+                <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
+                  {latestPoll.title}
+                </p>
+
+                {/* Row 3: Metadata row */}
+                <div className="flex items-center justify-between mt-1">
+                  <div className="text-xs text-gray-400 dark:text-gray-500">
                     <ClientOnly fallback={null}>
-                      <SimpleCountdown deadline={thread.soonestUnvotedDeadline} />
+                      <>
+                        {thread.polls.length > 1 && <>{thread.polls.length} polls &middot; </>}
+                        {relativeTime(latestPoll.created_at)}
+                      </>
                     </ClientOnly>
                   </div>
-                )}
+                  {thread.soonestUnvotedDeadline && (
+                    <div className="text-xs">
+                      <ClientOnly fallback={null}>
+                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} />
+                      </ClientOnly>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
