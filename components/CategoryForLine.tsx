@@ -237,7 +237,7 @@ export default function CategoryForLine({
           }}
         >
           {/* Category input with mirror sizer */}
-          <span className="relative inline-block align-baseline">
+          <span className="relative inline-block align-baseline px-px">
             <span
               className="whitespace-pre"
               style={{
@@ -290,7 +290,7 @@ export default function CategoryForLine({
               </span>
 
               {/* Context input with mirror sizer */}
-              <span className="relative inline-block align-baseline">
+              <span className="relative inline-block align-baseline px-px">
                 <span
                   className="whitespace-pre"
                   style={{ visibility: "hidden" }}
