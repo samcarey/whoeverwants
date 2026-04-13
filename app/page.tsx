@@ -1,15 +1,12 @@
 "use client";
 
-import Link from "next/link";
-
-import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { apiGetAllPollIds } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import PollList from "@/components/PollList";
+import ThreadList from "@/components/ThreadList";
 
 // Fun activity phrases (max 25 chars)
 const activityPhrases = [
@@ -36,7 +33,6 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  const router = useRouter();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -231,7 +227,7 @@ export default function Home() {
       )}
 
       {!loading && !error && (
-        <PollList polls={polls} showSections={true} />
+        <ThreadList polls={polls} />
       )}
 
     </>

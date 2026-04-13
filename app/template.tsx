@@ -403,6 +403,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
+  const isThreadPage = pathname.startsWith('/thread/');
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
@@ -660,8 +661,8 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
-      {!isPollPage && !isProfilePage && pathname !== '/' && (
+      {/* Fixed Header - skip for poll, create poll, profile, thread, and home pages */}
+      {!isPollPage && !isThreadPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -856,6 +857,11 @@ function TemplateInner({ children }: AppTemplateProps) {
             onClick={() => {
               const params = new URLSearchParams(searchParams.toString());
               params.set('create', '1');
+              // When on a thread page, auto-set followUpTo for the latest poll
+              const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
+              if (threadLatestPollId) {
+                params.set('followUpTo', threadLatestPollId);
+              }
               router.push(`${pathname}?${params.toString()}`);
             }}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
@@ -902,7 +908,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         {/* Back/home button in upper left — PWA standalone mode only.
              In regular browser tabs, the browser's own back button handles navigation.
              Shows back arrow if user has navigated within the app, home icon otherwise. */}
-        {isStandalone && (isPollPage || isProfilePage) && (
+        {(isPollPage || isProfilePage || isThreadPage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {hasAppHistory ? (
               <button

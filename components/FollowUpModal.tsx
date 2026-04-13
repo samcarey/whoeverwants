@@ -10,9 +10,10 @@ interface FollowUpModalProps {
   poll: Poll;
   onClose: () => void;
   totalVotes?: number;
+  showForkButton?: boolean;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -63,23 +64,25 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes }: Fol
               Copy
             </button>
 
-            <button
-              onClick={() => {
-                localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(pollSnapshot));
-                router.push(`${pathname}?create=1&fork=${poll.id}`);
-                onClose();
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <circle cx="6" cy="6" r="2"/>
-                <circle cx="18" cy="6" r="2"/>
-                <circle cx="12" cy="18" r="2"/>
-                <path d="M18 8v2a2 2 0 01-2 2H8a2 2 0 01-2-2V8"/>
-                <path d="M12 16V12"/>
-              </svg>
-              Fork
-            </button>
+            {showForkButton && (
+              <button
+                onClick={() => {
+                  localStorage.setItem(`fork-data-${poll.id}`, JSON.stringify(pollSnapshot));
+                  router.push(`${pathname}?create=1&fork=${poll.id}`);
+                  onClose();
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <circle cx="6" cy="6" r="2"/>
+                  <circle cx="18" cy="6" r="2"/>
+                  <circle cx="12" cy="18" r="2"/>
+                  <path d="M18 8v2a2 2 0 01-2 2H8a2 2 0 01-2-2V8"/>
+                  <path d="M12 16V12"/>
+                </svg>
+                Fork
+              </button>
+            )}
           </div>
 
           <div className="mt-4">
