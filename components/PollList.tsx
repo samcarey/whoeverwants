@@ -105,7 +105,7 @@ function relativeTime(dateStr: string): string {
 }
 
 // Simple countdown component
-const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string }) => {
+const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isClient, setIsClient] = useState(false);
 
@@ -152,7 +152,7 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 
   return (
     <>
-      {label && `${label}: `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
+      {label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span>
     </>
   );
 };
@@ -492,7 +492,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                                 return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                               }
                               if (poll.response_deadline) {
-                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" />;
+                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
                               }
                               return null;
                             })()}
