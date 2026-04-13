@@ -699,13 +699,13 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto safari-scroll-container mb-14"
+        className={`flex-1 overflow-auto safari-scroll-container mb-14 ${isThreadPage ? 'flex flex-col' : ''}`}
         style={{
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className={`pwa-safe-top relative ${isThreadPage ? 'min-h-full' : ''}`}>
+        <div className={`pwa-safe-top relative ${isThreadPage ? 'flex-1 flex flex-col' : ''}`}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
@@ -756,7 +756,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || isThreadPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'min-h-full flex flex-col' : ''}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || isThreadPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'flex-1 flex flex-col' : ''}`}>
             {children}
           </div>
         </div>
