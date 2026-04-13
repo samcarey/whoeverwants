@@ -85,33 +85,51 @@ export default function CategoryForLine({
       )
     : BUILT_IN_TYPES;
 
-  // Font auto-sizing via binary search
+  // Font auto-sizing via binary search with smooth CSS transition
   const fitFont = useCallback(() => {
     const container = containerRef.current;
     const lineEl = lineRef.current;
     if (!container || !lineEl) return;
 
+    // Capture current visual size (may be mid-transition)
+    const currentVisual = parseFloat(getComputedStyle(lineEl).fontSize);
+
+    // Disable transitions during measurement
+    lineEl.style.transition = 'none';
+
     lineEl.style.fontSize = `${MAX_FONT_PX}px`;
     const containerWidth = container.clientWidth;
 
-    if (lineEl.scrollWidth <= containerWidth) {
-      setFontSizePx(MAX_FONT_PX);
+    let target = MAX_FONT_PX;
+    if (lineEl.scrollWidth > containerWidth) {
+      let lo = MIN_FONT_PX;
+      let hi = MAX_FONT_PX;
+      while (hi - lo > 0.5) {
+        const mid = (lo + hi) / 2;
+        lineEl.style.fontSize = `${mid}px`;
+        if (lineEl.scrollWidth > containerWidth) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      target = lo;
+    }
+
+    // Skip animation if already at target
+    if (Math.abs(target - currentVisual) < 0.5) {
+      lineEl.style.fontSize = `${target}px`;
+      lineEl.style.transition = 'font-size 150ms ease';
+      setFontSizePx(target);
       return;
     }
 
-    let lo = MIN_FONT_PX;
-    let hi = MAX_FONT_PX;
-    while (hi - lo > 0.5) {
-      const mid = (lo + hi) / 2;
-      lineEl.style.fontSize = `${mid}px`;
-      if (lineEl.scrollWidth > containerWidth) {
-        hi = mid;
-      } else {
-        lo = mid;
-      }
-    }
-    setFontSizePx(lo);
-    lineEl.style.fontSize = `${lo}px`;
+    // Animate: reset to current visual position, force reflow, then transition to target
+    lineEl.style.fontSize = `${currentVisual}px`;
+    void lineEl.offsetHeight; // Force reflow to establish starting point
+    lineEl.style.transition = 'font-size 150ms ease';
+    lineEl.style.fontSize = `${target}px`;
+    setFontSizePx(target);
   }, []);
 
   // Refit on content or visibility changes
@@ -234,6 +252,7 @@ export default function CategoryForLine({
           style={{
             fontSize: `${fontSizePx}px`,
             fontFamily: "'M PLUS 1 Code', monospace",
+            transition: 'font-size 150ms ease',
           }}
         >
           {/* Category input with mirror sizer */}
