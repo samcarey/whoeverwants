@@ -1,9 +1,11 @@
 """Search/autocomplete endpoints for poll categories."""
 
+import json
 import logging
 import math
 import os
 import re
+import tempfile
 from urllib.parse import urlparse
 
 import httpx
@@ -19,8 +21,45 @@ _http_client = httpx.AsyncClient(timeout=5.0)
 
 # LRU-style cache: normalized restaurant name -> favicon URL.
 # Bounded to 500 entries; oldest entries evicted when full.
+# Backed by a JSON file so the cache survives API restarts/rebuilds.
 _FAVICON_CACHE_MAX = 500
-_restaurant_favicon_cache: dict[str, str] = {}
+_FAVICON_CACHE_PATH = os.environ.get(
+    "FAVICON_CACHE_PATH",
+    os.path.expanduser("~/.cache/whoeverwants/favicon_cache.json"),
+)
+
+
+def _load_favicon_cache() -> dict[str, str]:
+    try:
+        with open(_FAVICON_CACHE_PATH) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            logger.info("Loaded %d favicon cache entries from %s", len(data), _FAVICON_CACHE_PATH)
+            return data
+        logger.warning("Favicon cache at %s contained unexpected type, ignoring", _FAVICON_CACHE_PATH)
+    except FileNotFoundError:
+        pass
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Could not load favicon cache from %s: %s", _FAVICON_CACHE_PATH, e)
+    return {}
+
+
+_FAVICON_CACHE_DIR = os.path.dirname(os.path.abspath(_FAVICON_CACHE_PATH))
+
+
+def _save_favicon_cache() -> None:
+    try:
+        payload = json.dumps(_restaurant_favicon_cache)
+        with tempfile.NamedTemporaryFile("w", dir=_FAVICON_CACHE_DIR, delete=False, suffix=".tmp") as f:
+            f.write(payload)
+            tmp_path = f.name
+        os.replace(tmp_path, _FAVICON_CACHE_PATH)
+    except OSError as e:
+        logger.warning("Failed to save favicon cache: %s", e)
+
+
+_restaurant_favicon_cache: dict[str, str] = _load_favicon_cache()
+os.makedirs(_FAVICON_CACHE_DIR, exist_ok=True)
 
 _NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 _NOMINATIM_HEADERS = {
@@ -355,9 +394,11 @@ def _cache_favicon(name: str, favicon: str | None) -> str | None:
     if not key:
         return favicon
     if favicon:
-        if len(_restaurant_favicon_cache) >= _FAVICON_CACHE_MAX:
-            _restaurant_favicon_cache.pop(next(iter(_restaurant_favicon_cache)))
-        _restaurant_favicon_cache[key] = favicon
+        if key not in _restaurant_favicon_cache:
+            if len(_restaurant_favicon_cache) >= _FAVICON_CACHE_MAX:
+                _restaurant_favicon_cache.pop(next(iter(_restaurant_favicon_cache)))
+            _restaurant_favicon_cache[key] = favicon
+            _save_favicon_cache()
         return favicon
     return _restaurant_favicon_cache.get(key)
 
