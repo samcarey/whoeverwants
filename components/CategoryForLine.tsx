@@ -46,6 +46,9 @@ export default function CategoryForLine({
   const committedRef = useRef(false);
   // True when a built-in category hasn't been edited yet — first backspace clears it
   const categoryPristineRef = useRef(false);
+  // Track whether field had a user value when focused — controls placeholder-as-minimum-width behavior
+  const categoryHadValueOnFocusRef = useRef(false);
+  const contextHadValueOnFocusRef = useRef(false);
 
   // Initial delay (wait for modal slide-up animation)
   useEffect(() => {
@@ -166,6 +169,7 @@ export default function CategoryForLine({
 
   const handleCategoryFocus = () => {
     setCategoryFocused(true);
+    categoryHadValueOnFocusRef.current = categoryHasUserValue;
     if (categoryHasUserValue) {
       const label = builtIn?.label || category;
       setCategoryEditText(label);
@@ -264,13 +268,14 @@ export default function CategoryForLine({
   }
 
   // While editing, keep field at least as wide as the placeholder so it doesn't
-  // shrink when the user starts typing a short value
+  // shrink when the user starts typing a short value — but only when the field
+  // was empty on focus. If the field already had custom text, fit to that text.
   const categoryMirrorText =
-    categoryFocused && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
+    categoryFocused && !categoryHadValueOnFocusRef.current && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
       ? CATEGORY_PLACEHOLDER
       : categoryDisplayValue || CATEGORY_PLACEHOLDER;
   const contextMirrorText =
-    contextFocused && forField.length < CONTEXT_PLACEHOLDER.length
+    contextFocused && !contextHadValueOnFocusRef.current && forField.length < CONTEXT_PLACEHOLDER.length
       ? CONTEXT_PLACEHOLDER
       : forField || CONTEXT_PLACEHOLDER;
 
@@ -359,6 +364,7 @@ export default function CategoryForLine({
                   onChange={(e) => onForFieldChange(e.target.value)}
                   onFocus={() => {
                     setContextFocused(true);
+                    contextHadValueOnFocusRef.current = !!forField.trim();
                   }}
                   onBlur={() => {
                     setContextFocused(false);
