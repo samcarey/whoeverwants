@@ -709,7 +709,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className={`pwa-safe-top relative ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
+        <div className={`pwa-safe-top relative ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
@@ -760,7 +760,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? '' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
+          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? '' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
             {children}
           </div>
         </div>
