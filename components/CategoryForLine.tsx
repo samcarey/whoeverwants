@@ -321,7 +321,6 @@ export default function CategoryForLine({
                 ${categoryDisplayValue ? "text-blue-600 dark:text-blue-400" : ""}
                 placeholder:text-gray-400 dark:placeholder:text-gray-500`}
               style={{
-                font: "inherit",
                 fontSize: "inherit",
                 fontFamily: "inherit",
                 fontWeight: "inherit",
@@ -385,7 +384,6 @@ export default function CategoryForLine({
                     ${forField ? "text-blue-600 dark:text-blue-400" : ""}
                     placeholder:text-gray-400 dark:placeholder:text-gray-500`}
                   style={{
-                    font: "inherit",
                     fontSize: "inherit",
                     fontFamily: "inherit",
                     fontWeight: "inherit",
