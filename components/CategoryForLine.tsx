@@ -267,22 +267,30 @@ export default function CategoryForLine({
     return <div style={{ minHeight: `${MAX_FONT_PX + 8}px` }} />;
   }
 
-  // While editing, keep field at least as wide as the placeholder so it doesn't
-  // shrink when the user starts typing a short value — but only when the field
-  // was empty on focus. If the field already had custom text, fit to that text
-  // (using a minimal non-breaking space fallback if backspaced empty).
-  const categoryMirrorText =
-    categoryFocused && categoryHadValueOnFocusRef.current
-      ? (categoryDisplayValue || "\u00A0")
-      : categoryFocused && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
-        ? CATEGORY_PLACEHOLDER
-        : categoryDisplayValue || CATEGORY_PLACEHOLDER;
-  const contextMirrorText =
-    contextFocused && contextHadValueOnFocusRef.current
-      ? (forField || "\u00A0")
-      : contextFocused && forField.length < CONTEXT_PLACEHOLDER.length
-        ? CONTEXT_PLACEHOLDER
-        : forField || CONTEXT_PLACEHOLDER;
+  // Mirror text controls the width of the inline-block sizer span.
+  // When the field was empty on focus, the placeholder width is the minimum.
+  // When the field had custom text on focus, width tracks the text exactly.
+  function mirrorText(
+    isFocused: boolean,
+    hadValueOnFocus: boolean,
+    displayValue: string,
+    placeholder: string,
+  ): string {
+    if (isFocused && hadValueOnFocus) return displayValue || "\u00A0";
+    if (isFocused && displayValue.length < placeholder.length) return placeholder;
+    return displayValue || placeholder;
+  }
+
+  const categoryMirrorText = mirrorText(
+    categoryFocused, categoryHadValueOnFocusRef.current, categoryDisplayValue, CATEGORY_PLACEHOLDER,
+  );
+  const contextMirrorText = mirrorText(
+    contextFocused, contextHadValueOnFocusRef.current, forField, CONTEXT_PLACEHOLDER,
+  );
+
+  // Suppress placeholder text while editing a field that started with content
+  const hideCategoryPlaceholder = categoryFocused && categoryHadValueOnFocusRef.current;
+  const hideContextPlaceholder = contextFocused && contextHadValueOnFocusRef.current;
 
   return (
     <div className="relative">
@@ -316,7 +324,7 @@ export default function CategoryForLine({
               ref={categoryInputRef}
               type="text"
               value={categoryDisplayValue}
-              placeholder={categoryFocused && categoryHadValueOnFocusRef.current ? "" : CATEGORY_PLACEHOLDER}
+              placeholder={hideCategoryPlaceholder ? "" : CATEGORY_PLACEHOLDER}
               onChange={handleCategoryInputChange}
               onFocus={handleCategoryFocus}
               onBlur={handleCategoryBlur}
@@ -365,7 +373,7 @@ export default function CategoryForLine({
                   ref={contextInputRef}
                   type="text"
                   value={forField}
-                  placeholder={contextFocused && contextHadValueOnFocusRef.current ? "" : CONTEXT_PLACEHOLDER}
+                  placeholder={hideContextPlaceholder ? "" : CONTEXT_PLACEHOLDER}
                   onChange={(e) => onForFieldChange(e.target.value)}
                   onFocus={() => {
                     setContextFocused(true);
