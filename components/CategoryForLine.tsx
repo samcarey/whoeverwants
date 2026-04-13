@@ -162,7 +162,13 @@ export default function CategoryForLine({
 
   const handleCategoryFocus = () => {
     setCategoryFocused(true);
-    setCategoryEditText(""); // Clear to show placeholder; auto-generated text disappears
+    if (categoryHasUserValue) {
+      // Pre-populate with current label so user can backspace/edit
+      setCategoryEditText(builtIn?.label || category);
+    } else {
+      // Auto-generated text disappears in favor of placeholder
+      setCategoryEditText("");
+    }
     setShowDropdown(true);
     setHighlightedIndex(-1);
   };
