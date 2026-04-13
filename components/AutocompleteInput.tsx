@@ -162,6 +162,10 @@ export default function AutocompleteInput({
         type="text"
         value={value}
         onChange={(e) => handleChange(e.target.value)}
+        onBlur={(e) => {
+          const trimmed = e.target.value.trim();
+          if (trimmed !== value) onChange(trimmed);
+        }}
         onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
         onKeyDown={handleKeyDown}
         disabled={disabled}

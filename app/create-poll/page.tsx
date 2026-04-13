@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
@@ -8,7 +8,7 @@ import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
-import TypeFieldInput, { getBuiltInType, isLocationLikeCategory, FOR_FIELD_PLACEHOLDERS } from "@/components/TypeFieldInput";
+import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -25,6 +25,7 @@ import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 export const dynamic = 'force-dynamic';
 
@@ -265,6 +266,42 @@ export function CreatePollContent() {
       }
     }
   }, [isAutoTitle, generateTitle]);
+
+  // Auto-generated category text from options (shown in CategoryForLine when no explicit category)
+  const generatedCategoryFromOptions = useMemo(() => {
+    if (category !== 'custom') return '';
+    if (pollType !== 'poll') return '';
+    const filled = options.filter(o => o.trim()).map(shortenOption);
+    if (filled.length === 0) return '';
+    if (filled.length === 1) return filled[0];
+    const limit = 40;
+    const joinWithOr = (items: string[]) => {
+      if (items.length === 2) return `${items[0]} or ${items[1]}`;
+      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
+    };
+    const included = [filled[0]];
+    for (let i = 1; i < filled.length; i++) {
+      const isLast = i === filled.length - 1;
+      const candidate = isLast
+        ? joinWithOr([...included, filled[i]])
+        : `${[...included, filled[i]].join(', ')}, or ...`;
+      if (candidate.length > limit && included.length >= 2) break;
+      included.push(filled[i]);
+    }
+    if (included.length === filled.length) return joinWithOr(included);
+    return `${included.join(', ')}, or ...`;
+  }, [category, pollType, options]);
+
+  // Handle category changes from CategoryForLine
+  const handleCategoryChange = useCallback((val: string) => {
+    setCategory(val);
+    if (val === 'yes_no') {
+      setIsAutoTitle(false);
+      setTitle('');
+    } else {
+      setIsAutoTitle(true);
+    }
+  }, []);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -1393,6 +1430,10 @@ export function CreatePollContent() {
               setTitle(e.target.value);
               setIsAutoTitle(false);
             }}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== title) setTitle(trimmed);
+            }}
             disabled={isLoading}
             maxLength={100}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1427,7 +1468,19 @@ export function CreatePollContent() {
       )}
 
       {titlePortal && createPortal(
-        <AnimatedTitle title={title} initialDelay={300} />,
+        pollType === 'poll' ? (
+          <CategoryForLine
+            category={category}
+            onCategoryChange={handleCategoryChange}
+            forField={forField}
+            onForFieldChange={setForField}
+            generatedCategoryText={generatedCategoryFromOptions}
+            disabled={isLoading}
+            initialDelay={300}
+          />
+        ) : (
+          <AnimatedTitle title={title} initialDelay={300} />
+        ),
         titlePortal
       )}
 
@@ -1455,43 +1508,7 @@ export function CreatePollContent() {
             </div>
           )}
 
-          {/* Category and For fields for suggestion and poll types */}
-          {pollType === 'poll' && (
-            <>
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium mb-1">
-                  Category <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <TypeFieldInput
-                  value={category}
-                  onChange={(val) => {
-                    setCategory(val);
-                    if (val === 'yes_no') {
-                      setIsAutoTitle(false);
-                      setTitle('');
-                    }
-                  }}
-                  disabled={isLoading}
-                />
-              </div>
-              {category !== 'yes_no' && (
-              <div>
-                <label htmlFor="forField" className="block text-sm font-medium mb-1">
-                  For <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="forField"
-                  type="text"
-                  value={forField}
-                  onChange={(e) => setForField(e.target.value)}
-                  disabled={isLoading}
-                  placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Birthday, Team outing, etc."}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
-              )}
-            </>
-          )}
+          {/* Category and For fields are now in the header via CategoryForLine */}
 
           {/* Reference location for location polls */}
           {(isLocationLikeCategory(category) || (pollType === 'participation' && locationMode !== 'none')) && (
@@ -1921,8 +1938,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title for participation polls - rendered below close after */}
-          {!isPreferencePoll && category !== 'yes_no' && titleField}
+          {/* Title for participation/time polls - rendered below close after */}
+          {pollType !== 'poll' && titleField}
 
           {/* Optional details field */}
           <div>
@@ -1944,9 +1961,12 @@ export function CreatePollContent() {
                     el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
                   }}
                   onBlur={() => {
-                    if (!details.trim()) {
+                    const trimmed = details.trim();
+                    if (!trimmed) {
                       setDetailsOpen(false);
                       setDetails('');
+                    } else if (trimmed !== details) {
+                      setDetails(trimmed);
                     }
                   }}
                   disabled={isLoading}

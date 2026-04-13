@@ -123,6 +123,7 @@ export default function ProfilePage() {
           id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onBlur={(e) => setName(e.target.value.trim())}
           placeholder="Enter your name..."
           maxLength={50}
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
@@ -157,6 +158,7 @@ export default function ProfilePage() {
             id="location"
             value={locationInput}
             onChange={(e) => setLocationInput(e.target.value)}
+            onBlur={(e) => setLocationInput(e.target.value.trim())}
             placeholder={savedLocation ? "Update location..." : "Zip code or city name..."}
             maxLength={200}
             className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"

@@ -8,7 +8,7 @@ export interface BuiltInType {
   icon: string;
 }
 
-const BUILT_IN_TYPES: BuiltInType[] = [
+export const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "yes_no", label: "Yes / No", icon: "👍" },
   { value: "time", label: "Time", icon: "📅" },
   { value: "restaurant", label: "Restaurant", icon: "🍽️" },
