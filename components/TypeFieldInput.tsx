@@ -8,8 +8,9 @@ export interface BuiltInType {
   icon: string;
 }
 
-const BUILT_IN_TYPES: BuiltInType[] = [
+export const BUILT_IN_TYPES: BuiltInType[] = [
   { value: "yes_no", label: "Yes / No", icon: "👍" },
+  { value: "time", label: "Time", icon: "📅" },
   { value: "restaurant", label: "Restaurant", icon: "🍽️" },
   { value: "location", label: "Place", icon: "📍" },
   { value: "movie", label: "Movie", icon: "🎬" },
@@ -33,9 +34,9 @@ export function isLocationLikeCategory(category: string): boolean {
   return category === 'location' || category === 'restaurant';
 }
 
-/** Categories that use autocomplete search (any built-in type except yes_no). */
+/** Categories that use autocomplete search (any built-in type except yes_no and time). */
 export function isAutocompleteCategory(category: string): boolean {
-  return category !== 'yes_no' && BUILT_IN_TYPES.some((t) => t.value === category);
+  return category !== 'yes_no' && category !== 'time' && BUILT_IN_TYPES.some((t) => t.value === category);
 }
 
 interface TypeFieldInputProps {

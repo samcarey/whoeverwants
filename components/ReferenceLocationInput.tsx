@@ -143,6 +143,7 @@ export default function ReferenceLocationInput({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onBlur={(e) => setInput(e.target.value.trim())}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleGeocode(); } }}
               placeholder="Zip code or city name..."
               maxLength={200}

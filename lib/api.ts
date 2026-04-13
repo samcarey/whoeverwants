@@ -39,6 +39,7 @@ export interface ApiVote {
   vote_type: string;
   yes_no_choice: string | null;
   ranked_choices: string[] | null;
+  ranked_choice_tiers: string[][] | null;
   suggestions: string[] | null;
   is_abstain: boolean;
   is_ranking_abstain: boolean;
@@ -47,6 +48,8 @@ export interface ApiVote {
   max_participants: number | null;
   voter_day_time_windows: any[] | null;
   voter_duration: any | null;
+  liked_slots: string[] | null;
+  disliked_slots: string[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -133,6 +136,8 @@ function toPoll(data: any): Poll {
     min_responses: data.min_responses ?? undefined,
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
+    availability_threshold: data.availability_threshold ?? undefined,
+    voter_names: data.voter_names ?? undefined,
   };
 }
 
@@ -160,6 +165,11 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     time_slot_rounds: data.time_slot_rounds ?? undefined,
     participating_vote_ids: data.participating_vote_ids ?? undefined,
     participating_voter_names: data.participating_voter_names ?? undefined,
+    availability_counts: data.availability_counts ?? undefined,
+    max_availability: data.max_availability ?? undefined,
+    included_slots: data.included_slots ?? undefined,
+    like_counts: data.like_counts ?? undefined,
+    dislike_counts: data.dislike_counts ?? undefined,
   };
 }
 
@@ -210,6 +220,9 @@ export async function apiCreatePoll(params: {
   reference_location_label?: string;
   min_responses?: number;
   show_preliminary_results?: boolean;
+  availability_threshold?: number;
+  suggestion_deadline_minutes?: number;
+  is_auto_title?: boolean;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -252,6 +265,7 @@ export async function apiSubmitVote(pollId: string, params: {
   vote_type: string;
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
+  ranked_choice_tiers?: string[][] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
@@ -261,6 +275,8 @@ export async function apiSubmitVote(pollId: string, params: {
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
   options_metadata?: OptionsMetadata | null;
+  liked_slots?: string[] | null;
+  disliked_slots?: string[] | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
     method: 'POST',
@@ -275,6 +291,7 @@ export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
 export async function apiEditVote(pollId: string, voteId: string, params: {
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
+  ranked_choice_tiers?: string[][] | null;
   suggestions?: string[] | null;
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
@@ -283,6 +300,8 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
   max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
+  liked_slots?: string[] | null;
+  disliked_slots?: string[] | null;
 }): Promise<ApiVote> {
   return apiFetch(`/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`, {
     method: 'PUT',
@@ -315,6 +334,14 @@ export async function apiClosePoll(pollId: string, creatorSecret: string, closeR
 
 export async function apiCutoffSuggestions(pollId: string, creatorSecret: string): Promise<Poll> {
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-suggestions`, {
+    method: 'POST',
+    body: JSON.stringify({ creator_secret: creatorSecret }),
+  });
+  return toPoll(data);
+}
+
+export async function apiCutoffAvailability(pollId: string, creatorSecret: string): Promise<Poll> {
+  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-availability`, {
     method: 'POST',
     body: JSON.stringify({ creator_secret: creatorSecret }),
   });

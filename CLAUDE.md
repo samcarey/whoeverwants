@@ -75,18 +75,17 @@ The droplet is hardened with:
 
 ### Development Workflow
 
-**Full-Stack Dev Servers** (auto-deployed per-branch on push):
+**Full-Stack Dev Servers** (auto-deployed per-user on push):
 1. **Write code** in this environment (Claude Code sandbox)
 2. **Commit and push** to GitHub
-3. GitHub webhook creates/updates a dev server for the branch on the droplet
-4. Dev site URL is derived from the branch name (e.g., `claude/my-feature` → `my-feature.dev.whoeverwants.com`)
+3. GitHub webhook creates/updates your full-stack dev server on the droplet
+4. Your dev site URL (based on `GIT_AUTHOR_EMAIL`) stays the same across all branches
 
 Each dev server gets its own:
-- **Next.js standalone build** on port 3001-3099 (~50MB RAM vs ~300MB for `next dev`)
-- **FastAPI backend** on port 8001-8099 (runs via `uv run uvicorn`, 1 worker)
-- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_my_feature`)
+- **Next.js frontend** on port 3001-3005
+- **FastAPI backend** on port 8001-8005 (runs via `uv run uvicorn`, 1 worker)
+- **PostgreSQL database** (separate DB in the shared PostgreSQL container, e.g., `dev_sam_at_samcarey_com`)
 - **All migrations from the branch** auto-applied on creation and update
-- **Idle suspension**: Servers idle for 30+ min are auto-suspended (processes stopped, build retained). Resumed on next push or manual `resume` command.
 
 **Production Frontend** (Vercel):
 - Vercel auto-deploys on push to `main` → `whoeverwants.com`
@@ -99,20 +98,17 @@ Each dev server gets its own:
 
 You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 
-**Per-Branch Dev Servers** (automatic on push):
-- Every push to GitHub auto-creates/updates a dev server for that branch via webhook
-- Frontend uses a **standalone build** (`npm run build` with `output: 'standalone'`), not `next dev`
+**Per-User Dev Servers** (automatic on push):
+- Every push to GitHub auto-updates your dev server via webhook (restarts both frontend and API)
+- Frontend uses `next dev` with `PYTHON_API_URL` pointing to the local API
 - API runs via `uv run uvicorn` with `DATABASE_URL` pointing to the dev database
 - Migrations from the branch are auto-applied to the dev database on each update
-- **After pushing, wait for the dev server to be ready.** Build takes ~2-3 min. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
-- URL is derived from branch name: `<branch-slug>.dev.whoeverwants.com`
-  - Example: `claude/fix-voting-bug` → `https://fix-voting-bug.dev.whoeverwants.com`
-- **Backward-compatible redirects**: Old email-based URLs (e.g., `sam-at-samcarey-com.dev.whoeverwants.com`) auto-redirect to the branch-based URL via 302. Redirects are created automatically from commit author emails on each push.
-  - The URL stays in the browser (reverse proxy, not redirect) — you can bookmark and refresh the email-based URL to always see whatever branch you last pushed.
+- **After pushing, wait for the dev server to be ready.** The server takes ~30-60 seconds. Poll with `bash scripts/remote.sh "curl -s -o /dev/null -w '%{http_code}' http://localhost:<port>"` until it returns 200.
+- URL is based on your `GIT_AUTHOR_EMAIL`: `<email-slug>.dev.whoeverwants.com`
+  - Example: `sam@example.com` → `https://sam-at-example-com.dev.whoeverwants.com`
+- URL stays the same regardless of branch — bookmark it
+- Claude/bot emails (`*@anthropic.com`) are ignored
 - Dev servers are fully isolated — each has its own API and database
-- **Post-build cleanup**: `node_modules` and `.next/cache` are deleted after build to save disk (~500MB per server)
-- **Idle suspension**: Servers idle >30 min auto-suspend (0 RAM). Resumed on next push.
-- **Capacity**: Up to 20 concurrent dev servers (up from 3) on the 1GB RAM droplet
 - Auto-cleaned after 7 days of inactivity
 
 ```bash
@@ -120,17 +116,10 @@ You do NOT need SSH — all server management goes through `scripts/remote.sh`.
 bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh list"
 
 # Manually trigger a dev server update
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert claude/my-branch" /root 600
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh upsert user@example.com claude/my-branch" /root 600
 
 # Destroy a dev server (also drops its database)
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy my-branch-slug"
-
-# Suspend/resume a dev server
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh suspend my-branch-slug"
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh resume my-branch-slug"
-
-# Suspend all idle servers (>30 min since last update)
-bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh suspend-idle 30"
+bash scripts/remote.sh "bash /root/whoeverwants/scripts/dev-server-manager.sh destroy user-at-example-com"
 
 # Check dev API health
 bash scripts/remote.sh "curl -s http://localhost:<api_port>/health"
@@ -221,6 +210,7 @@ whoeverwants/
 │   ├── p/[shortId]/                # Dynamic poll page (UUID-based routing)
 │   │   ├── page.tsx                # Poll loader with access control
 │   │   └── PollPageClient.tsx      # Full poll view (voting, results, management)
+│   ├── thread/[threadId]/page.tsx   # Thread view (polls in follow-up chain)
 │   ├── poll/page.tsx               # Alternate poll endpoint
 │   ├── profile/page.tsx            # User profile (name management)
 │   └── api/                        # Server-side API routes
@@ -236,12 +226,14 @@ whoeverwants/
 │   ├── SuggestionVotingInterface.tsx # Suggestion poll voting
 │   ├── SuggestionsList.tsx         # Display suggestions with vote counts
 │   ├── CompactRankedChoiceResults.tsx # Ranked choice round display
+│   ├── ReadOnlyTierCards.tsx       # Read-only tier-card ranking display (shared)
 │   ├── MinMaxCounter.tsx           # Participation min/max selectors
 │   ├── ParticipationConditions.tsx # Voter condition UI
 │   ├── OptionsInput.tsx            # Poll options/suggestions input
 │   ├── Countdown.tsx               # Deadline countdown timer
 │   ├── ConfirmationModal.tsx       # Confirm destructive actions
-│   ├── FollowUpModal.tsx           # Create follow-up poll modal
+│   ├── ThreadList.tsx              # Home page thread list (messaging-style)
+│   ├── FollowUpModal.tsx           # Create follow-up poll modal (showForkButton prop)
 │   ├── FollowUpHeader.tsx          # Header showing parent poll link
 │   ├── ForkHeader.tsx              # Header showing forked-from link
 │   ├── FollowUpButton.tsx          # Create follow-up button
@@ -258,13 +250,16 @@ whoeverwants/
 │   ├── CommitInfo.tsx              # Commit info modal (GitHub API, relative time)
 │   └── CounterInput.tsx            # Numeric counter input
 │
-├── lib/                            # 16 utility modules
+├── lib/                            # 19 utility modules
 │   ├── api.ts                      # Python API client (fetch-based)
 │   ├── types.ts                    # Poll, Vote, PollResults type definitions
 │   ├── simplePollQueries.ts        # getAccessiblePolls, getPollWithAccess
 │   ├── pollCreator.ts              # Poll creation & creator secret management
 │   ├── browserPollAccess.ts        # localStorage-based poll access tracking
 │   ├── pollAccess.ts               # Database-backed poll access tracking
+│   ├── threadUtils.ts              # Thread grouping/sorting from follow_up_to chains
+│   ├── pollListUtils.ts            # Shared poll display utilities (relativeTime, badges, icons)
+│   ├── votedPollsStorage.ts        # localStorage voted/abstained poll parsing
 │   ├── pollDiscovery.ts            # Discover follow-up/fork relationships
 │   ├── userProfile.ts              # User name get/save (localStorage)
 │   ├── forgetPoll.ts               # Remove poll from browser's access list
@@ -347,7 +342,7 @@ whoeverwants/
 | Type | Description | Vote Data |
 |------|-------------|-----------|
 | `yes_no` | Simple binary vote | `{ vote: "yes" \| "no" }` |
-| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak | `{ rankings: string[] }` |
+| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak; supports equal/tied rankings | `{ rankings: string[], ranked_choice_tiers?: string[][] }` |
 | `suggestion` | Suggest options, then vote on them | `{ suggestions: string[] }` |
 | `participation` | RSVP with min/max constraints & voter conditions | `{ participating: boolean, conditions: {...} }` |
 
@@ -358,6 +353,16 @@ whoeverwants/
 - Poll URLs grant access: visiting `/p/[id]` registers access
 - Creator authentication via `creator_secret` (stored in localStorage)
 - Database-level RLS (Row Level Security) policies on all tables
+
+### Threaded Messaging UI
+
+- **Main page shows threads**, not individual polls. A thread is a chain of polls linked by `follow_up_to`. `lib/threadUtils.ts` groups polls into threads client-side.
+- **Thread title** is an auto-generated, deduplicated list of participant names (`creator_name` + `voter_names` from the API).
+- **Thread sorting**: threads with unvoted open polls first (by soonest deadline), then threads with no unvoted polls (by most recent activity).
+- **Thread view** (`/thread/[threadId]`) shows polls oldest-first (messaging order). Long-press modal shows only Blank + Copy (no Fork), controlled by `FollowUpModal`'s `showForkButton` prop.
+- **Bottom bar "+" auto-follows-up** when on a thread page via `document.body.getAttribute('data-thread-latest-poll-id')` — the thread page sets this attribute on mount.
+- **Shared utilities**: `lib/pollListUtils.ts` (relativeTime, getCategoryIcon, badges), `lib/votedPollsStorage.ts` (loadVotedPolls). PollList keeps its own full-featured `getResultBadge` with user-specific participation messages.
+- **Backend**: `voter_names` field on accessible polls response — extracted from already-fetched votes when possible, DB query only for remaining open polls.
 
 ### Data Flow
 
@@ -415,6 +420,7 @@ uv lock                        # Regenerate lock file
 
 The sections below contain mandatory rules. Follow them exactly.
 
+- **NEVER push to `main` under any circumstances.** All changes must go through a feature branch + pull request. This applies to every form: `git push origin main`, `git push origin HEAD:main`, `git push origin HEAD:refs/heads/main`, and bare `git push` when checked out on main. If branch protection blocks a push or a force-push, **do NOT find a workaround** — stop and ask the user. There is no scenario (rollback, revert, hotfix, "the user said to move fast") where bypassing main's branch protection is acceptable. A local PreToolUse hook at `.claude/hooks/block-push-to-main.py` enforces this as a fast-fail check; GitHub branch protection enforces it server-side. If you hit either block, that's the system working correctly — open a PR instead.
 - For server logs, use `scripts/remote.sh` to read logs directly from the droplet.
 - Client-side console output is captured by the CommitInfo Logs tab (click page header to open).
 - **Keep droplet setup docs current**: When you change anything about the droplet infrastructure (Caddy config, Docker Compose, systemd services, provisioning steps, new services, port changes, etc.), update **both** `docs/droplet-setup.md` and `scripts/provision-droplet.sh` to reflect the change. These files must always describe how to reproduce the current droplet from scratch.
@@ -940,12 +946,28 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **ScrollWheel's `suppressScrollHandler` flag can get permanently stuck.** `recenterLoop()` sets the flag and schedules an rAF to clear it, but `correctPosition()` runs synchronously right after and bails out because the flag is still set. If a touch interaction then overwrites `scrollTimeout`, the clearing rAF/timeout is lost and the flag stays true forever — silencing all `onChange` calls. Fix: defer `correctPosition` via rAF when suppression is active, and add a safety timeout (500ms) that guarantees the flag gets cleared.
 - **Use refs (not render-scope variables) for state that multiple scroll events may read/write within a single React render cycle.** `handleHourChange` in `TimeCounterInput` captured `periodIndex` from the render scope. When two scroll events crossed the AM/PM boundary before React re-rendered, the second event used the stale value and emitted the wrong time. Track such state in a `useRef` and update it immediately in the handler.
 
+### Time Poll Type
+
+- **Two-phase flow**: availability phase (voters submit `voter_day_time_windows`) → preferences phase (voters submit `liked_slots`/`disliked_slots` after cutoff).
+- **Slot finalization at cutoff**: `_finalize_time_slots()` runs at availability cutoff, applies the threshold filter (`max_availability * (1 - threshold_pct)`), deduplicates via `_keep_longest_per_start_time()`, and writes the filtered slot list to `poll.options`. Everything downstream uses `poll.options` directly — no re-filtering at results time.
+- **`null` vs `[]` semantics for liked/disliked slots**: `null` = voter hasn't submitted preferences yet; `[]` = submitted with all bubbles neutral. The frontend uses this distinction to show an implicit edit prompt (hasNotReactedYet).
+- **Winner algorithm**: fewest dislikes → most likes → earliest slot key (chronological tiebreak). Implemented in `_pick_winner_from_reactions()` in `server/algorithms/time_poll.py`.
+- **Category "Time" in create form**: selecting it from the category dropdown keeps the standard form and injects `ParticipationConditions` + threshold slider + availability cutoff in place of options. Uses a single `{(pollType === 'time' || (pollType === 'poll' && category === 'time'))}` condition — do NOT add a separate duplicate block for each case.
+- **`formatDayLabel(dateStr)`** is the canonical day-label formatter in `lib/timeUtils.ts`. Use it in all time-related components instead of local copies.
+- **Shared time-slot helpers** in `lib/timeUtils.ts`: `parseSlotStart`, `parseSlotDate`, `groupSlotsByDay`, `getBubbleLabel` (predecessor-aware compact label like "1 PM" / "2" / ":15"), `formatStackedDayLabel` (stacked weekday / month+day for the bubble grid row label), and `formatTimeSlot` (full "Mon, Apr 28 • 10:00 AM – 10:30 AM (30m)" label). `TimeSlotBubbles.tsx` (voting ballot) and `PollResults.tsx` (results view) both use these — never re-implement slot formatting locally.
+- **Slot keys `"YYYY-MM-DD HH:MM-HH:MM"` arrive from the backend already in chronological order.** Consumers that just group by day (`groupSlotsByDay`) do NOT need to re-sort the list first; the old list view only sorted because it reordered by dislikes/likes.
+- **Cap-height text centering for bubble labels**: time-slot bubble labels are pure cap-height text (digits, uppercase letters, colons — no descenders like g/j/y). `flex items-center` on a `leading-none` line box positions the **line box** at the bubble center, but the visible glyphs sit in the UPPER half of that line box because the space below the baseline is reserved for descenders that never appear — so the text looks "too high". Fix: use the modern CSS properties `text-box-trim: trim-both` + `text-box-edge: cap alphabetic` to shrink the text box to exactly the cap-height range, so flex centering aligns the visible glyphs instead of the padded line box. The shared `.cap-height-text` utility class in `app/globals.css` encapsulates the rule; use it on any `<span>` wrapping single-line, descender-free labels inside a centered container. Supported in Chromium 133+ / Safari 18.2+.
+- **Availability cutoff requires `suggestion_deadline_minutes` to be set** on the poll — the endpoint enforces `suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL`. Polls created without this field will fail the cutoff endpoint with 400.
+- **`ChunkLoadError` after new builds**: the browser has stale cached chunks from the previous build. The lazy `CreatePollContent` import and the global `unhandledrejection` handler in `template.tsx` both auto-reload the page when this happens. The service worker uses network-first for JS chunks so new builds take effect immediately.
+- **Autotitle convention**: time polls use `"Time?"` as the autotitle (matching the `BUILT_IN_TYPES` label), not a bespoke prompt like "When works?". Every branch of `generateTitle()` in `app/create-poll/page.tsx` must call `appendFor(...)` on its return value so the "for X" suffix gets appended — the standalone `pollType === 'time'` fallback originally returned a raw string and silently dropped `forSuffix`.
+
 ### Service Worker Caching Strategy
 
 - **Never use `url.pathname.startsWith('/')` in service worker URL matching** — it matches ALL paths. Use exact equality (`===`) or more specific prefixes like `/create-poll`.
 - **Use network-first for HTML navigation, cache-first only for immutable assets.** Cache-first for navigation causes the PWA to serve stale HTML that references old JS bundles (also cached), making it impossible for users to get new code. Network-first ensures fresh HTML on every load; cache is only a fallback for offline.
 - **Skip API requests in the service worker** — let them go directly to the network. Caching API responses causes stale poll data with no visible error.
 - **Bump `CACHE_NAME` version when changing caching strategy** to force old caches to be deleted on activation. Without this, users keep stale cached content indefinitely.
+- **JS chunks need network-first too** — even with content-hash filenames, the old manifest chunk references old chunk names. After a new build, the manifest is cached with old chunk references; network-first for `/_next/static/chunks/` ensures the manifest is always fresh.
 
 ### iOS PWA Safe Area Positioning
 
@@ -971,14 +993,8 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### Dev Server Pitfalls
 
-- **Dev servers use standalone builds**, not `next dev`. There's no hot reload — each push triggers a full `npm run build`. The standalone server (`node .next/standalone/server.js`) uses ~50MB RAM vs ~300MB for `next dev`.
-- **`node_modules` is deleted after build** to save disk. If a build fails partway, the next upsert re-installs deps from scratch.
-- **Standalone server is a single `node` process** (not a process chain like `npm run dev`). PID management is simpler and more reliable.
-- **Dev server shows stale commit info** when the build/restart fails silently. Always check `dev-server-manager.sh list` for `DOWN` or `SUSPENDED` status after a push if the commit info doesn't update.
-- **Suspended servers use 0 RAM** but keep the build on disk (~200MB). Resume is instant (just restarts processes). A full upsert re-clones, rebuilds, and reinstalls.
-- **Two concurrent builds on the 1GB droplet will spike RAM** to ~850MB used + ~800MB swap (`npm ci` alone uses ~500MB). Builds are serialized via a global `flock` semaphore in `dev-server-manager.sh`; git fetch, migrations, and server startup still run concurrently.
-- **The `/root/whoeverwants` repo must stay on `main`**. If it drifts to a feature branch (e.g., someone ran git commands manually on the droplet), production deploys fail. `dev-webhook.py` uses `git checkout -B main origin/main` (not `git pull`) so it's robust regardless of current branch state.
-- **`systemctl restart dev-webhook` kills the calling process**. Any code after that call in `deploy_production()` is dead. Log completion *before* calling restart, not after.
+- **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
+- **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
 
 ### Nominatim / Location Search
 
@@ -997,6 +1013,11 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **The create-poll form is a modal overlay**, not a separate route. It's triggered by the `?create` query parameter on any page. The underlying page stays mounted behind the backdrop.
 - **`CreatePollContent` is exported** from `app/create-poll/page.tsx` and lazy-loaded via `React.lazy` in `template.tsx`. The `/create-poll` route redirects to `/?create`.
+- **Category and context are edited inline in the header** via `CategoryForLine.tsx`, replacing the old separate form fields. The header shows `‹category› for ‹context›` as editable placeholders. Category supports a built-in type dropdown (same types as `BUILT_IN_TYPES` in `TypeFieldInput.tsx`). When options are filled but no category is set, auto-generated text from options appears in the category slot in italic. The font auto-sizes via binary search to fit on one line, with a smooth 150ms CSS transition.
+- **`CategoryForLine` uses a mirror-sizer pattern** for auto-width inputs: a `visibility: hidden` span determines the `inline-block` container width, and the input is `absolute inset-0` filling it. The mirror text stays at least as wide as the placeholder during editing to prevent jarring shrinkage.
+- **`committedRef` prevents double-commit on blur** — when `selectType` or Enter commits the category, the subsequent blur handler skips re-committing. Without this, the blur sees empty `categoryEditText` and resets to "custom".
+- **`categoryPristineRef` enables first-backspace-clears** — only for built-in categories, the first backspace after focus clears the entire value instead of deleting one character.
+- **`fontSizePx` state is required** despite direct DOM manipulation in `fitFont` — React's style prop must stay in sync to prevent the font size from resetting to `MAX_FONT_PX` on re-renders triggered by other state changes.
 - **All buttons that open the create form** (FollowUp, Fork, Duplicate, VoteOnIt, bottom bar "+") append `?create=1` plus any action params to the current page URL via `router.push`. They do NOT navigate to `/create-poll`.
 - **Close removes `?create`** (and related params) from the URL via `router.replace`, keeping the user on their current page.
 - **Drag-to-dismiss** uses native touch listeners with refs for 60fps. Velocity-based dismissal (>500px/s flick) and 33% position threshold. Uses `requestAnimationFrame` coalescing. Force reflow (`offsetHeight`) is required between setting `transition` and the target `transform` after `transition: none` during drag.
@@ -1014,6 +1035,17 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Metadata rendering** is in `OptionLabel.tsx` — add detection function (like `isRestaurantEntry()`) and inline/stacked layout branches.
 - **Place detail modal**: Tapping a restaurant/location name opens `PlaceDetailModal` (map embed + metadata). Tapping the address opens an iOS-style action sheet (`AddressActionsModal`) with "Open in Maps" (Apple Maps), "Open in Google Maps", and "Copy Address". Don't use `geo:` URIs on iOS — they're unreliable (may open Google Earth or other random apps). Don't include the business name in maps queries — it triggers a search for multiple branches instead of navigating to the specific address.
 - **`line-clamp-2` breaks flex layouts**: Don't apply `line-clamp-*` to containers with flex children (like `OptionLabel`). The CSS treats flex items as flowing text and truncates unexpectedly. Use `overflow-hidden` instead and let inner components handle their own truncation.
+- **Voting Cutoff field is a shared component**: `components/VotingCutoffField.tsx` renders the inline colored-value dropdown + conditional custom date/time inputs used by every poll category in `app/create-poll/page.tsx`. Reuse it when adding new categories — don't copy-paste the JSX. The custom date/time inputs inside use ids `customDate` and `customTime`; the component assumes only one instance is rendered at a time (enforced by the mutually exclusive `category === 'time'` vs `category !== 'time'` branches).
+
+### Trim-on-Blur Policy (App-Wide)
+
+- **All text inputs trim leading/trailing whitespace on blur.** This is applied globally across the app: create-poll form fields (title, options, category, context, details), profile page (name, location), `CompactNameField`, `AutocompleteInput`, `LocationTimeFieldConfig`, and `ReferenceLocationInput`. When adding new text inputs, add `onBlur` trim handling.
+
+### Create-Poll Form UI Patterns
+
+- **Amber "needs attention" highlight for required form buttons**: The Tailwind class stack `bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60` is the codebase's idiom for drawing the user's eye to a button they need to tap to resolve a validation error. Used on the `+ Time` button in `DayTimeWindowsInput.tsx` when a day has zero time windows, and on the Select Days / Add/Remove Days button in `ParticipationConditions.tsx` when `dayTimeWindows` is empty. Match this style for any new "button that needs attention" states so the UI stays consistent.
+- **Derive validation highlights from source state, not error strings**: When a form element needs to highlight in response to a specific validation failure, derive the highlight boolean from the underlying state (e.g. `dayTimeWindows.length === 0`) rather than comparing `validationError === "some exact string"`. String comparison silently breaks on typos or rewording. The pattern in `ParticipationConditions.tsx: highlightDaysButton` passes a simple state-derived boolean from the parent.
+- **Compact tappable-value → modal pattern**: For form fields that don't need to be adjusted often (like Minimum Participation), use a single-line `<div>` with a `<button>` showing the current value in blue (`text-blue-600 dark:text-blue-400`). Tapping opens a modal with the full control (slider, picker, etc.). Don't wrap the whole thing in a `<label>` — there's no form control to associate with. Example: `MinimumParticipationModal.tsx` + the compact field in `app/create-poll/page.tsx` (time poll block).
 
 ### Social Test Report Bidirectional Linking
 
@@ -1048,6 +1080,17 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **`touch-action: none` must only be on the drag handle, not the container.** Putting it on the outer container blocks all scrolling. Only the right-side handle element needs it.
 - **`setPointerCapture` routes events to the captured element.** Use it on `pointerdown` to prevent iOS SFSafariViewController's sheet dismiss gesture from intercepting downward drags.
 - **Handle tap zones extend beyond item bounds** via negative `top`/`bottom` offsets that account for both the item's padding (12px from `p-3`) and half the gap between items.
+
+### Equal/Tied Rankings (RankableOptions)
+
+- **Tier data model**: `ranked_choice_tiers JSONB` column (migration 089) stores `[["A"], ["B","C"], ["D"]]`-style tiered ballots alongside the flat `ranked_choices TEXT[]` for backwards compatibility. The IRV algorithm prefers tiers when present; falls back to singleton tiers from the flat list.
+- **IRV "duplicate vote" method**: When a ballot's highest-ranked active tier contains multiple options, each gets a full vote. Total votes per round can exceed ballot count. Win requires strict majority AND unique leader; if multiple candidates tie at the top with majorities, IRV continues eliminating. Borda tiebreak uses standard competition ranking (1,2,2,4).
+- **Linked pairs state**: `linkedPairs: Set<string>` stores canonical `pairKey(idA, idB)` strings for adjacent items that are tied. The set is persisted to localStorage alongside the ranking. `computeTierIndices()` walks the list and groups consecutive linked items into tiers.
+- **Merged tier cards**: Consecutive linked items render as a single card with divider lines between rows (compressed `groupedGapSize=0` gap). Each card has one shared drag handle (arrows + grip). Dividers are inset from both edges (`dividerInset` prop on `TierCardRows`).
+- **`computeDropTarget()` is a pure, exported function** for drop-target computation. For each valid insertion point (between non-dragged units), it computes the tier's natural layout center and picks the closest match to the visual center. This gives symmetric thresholds and treats groups as atomic. Verified by 15 simulation tests (`drag-threshold-simulation.test.ts`).
+- **Tap-to-reorder uses `moveTierByOneUnit`** which finds the full adjacent unit via `getTierRange()` and swaps atomically. This prevents singletons from landing inside groups and groups from splitting each other.
+- **Drag operations clear links on the moved item** (`clearLinksTouchingItem` / `dropLinkedPairsFor`) to prevent stale adjacency. But `moveTierByOneUnit` and tier-drag `finishDrag` preserve internal tier links since the items remain adjacent.
+- **Link icon styling**: chain-link SVG with background-colored drop-shadow contour (`LINK_CONTOUR_FILTER`), blue when active, gray when inactive. No circle/border — just the icon with a halo for contrast. Centered horizontally on the card via `left: 50%; transform: translateX(-50%)`.
 
 ### Textarea Sizing & Inline-Block Gaps
 

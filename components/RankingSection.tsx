@@ -5,6 +5,7 @@ import RankableOptions from "@/components/RankableOptions";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
+import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import VoterList from "@/components/VoterList";
 import type { OptionsMetadata } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
@@ -14,7 +15,7 @@ interface RankingSectionProps {
   pollId: string;
   pollOptions: string[];
   rankedChoices: string[];
-  handleRankingChange: (choices: string[]) => void;
+  handleRankingChange: (choices: string[], tiers: string[][]) => void;
   isAbstaining: boolean;
   setIsAbstaining: (val: boolean) => void;
   handleAbstain: () => void;
@@ -148,20 +149,10 @@ export default function RankingSection({
               {editButton}
             </div>
             <div className="space-y-2">
-              {userVoteData.ranked_choices.map((choice: string, index: number) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div className="flex-shrink-0" style={{ width: '32px' }}>
-                    <span className="w-6 h-6 flex-shrink-0 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                      {index + 1}
-                    </span>
-                  </div>
-                  <div className="flex-1 flex items-center p-2 bg-white dark:bg-gray-900 rounded min-w-0">
-                    <div className="min-w-0 overflow-hidden">
-                      <OptionLabel text={choice} metadata={optionsMetadata?.[choice]} />
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <ReadOnlyTierCards
+                tiers={userVoteData.ranked_choice_tiers?.length > 0 ? userVoteData.ranked_choice_tiers : userVoteData.ranked_choices.map((c: string) => [c])}
+                optionsMetadata={optionsMetadata}
+              />
             </div>
           </>
         )}
@@ -191,7 +182,9 @@ export default function RankingSection({
                       key={option}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                        handleRankingChange([option]);
+                        // Two-option polls: a single tap picks one. Pass
+                        // the flat list and a singleton tier (no ties).
+                        handleRankingChange([option], [[option]]);
                         setIsAbstaining(false);
                       }}
                       disabled={isSubmitting || isAbstaining}
@@ -219,6 +212,7 @@ export default function RankingSection({
                     disabled={isSubmitting || isAbstaining}
                     storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
                     initialRanking={isEditingRanking && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
+                    initialTiers={isEditingRanking && userVoteData?.ranked_choice_tiers ? userVoteData.ranked_choice_tiers : undefined}
                     optionsMetadata={optionsMetadata}
                   />
                 )}

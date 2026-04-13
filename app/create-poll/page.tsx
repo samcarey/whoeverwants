@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
@@ -8,7 +8,7 @@ import Link from "next/link";
 import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
 import type { OptionsMetadata } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
-import TypeFieldInput, { getBuiltInType, isLocationLikeCategory, FOR_FIELD_PLACEHOLDERS } from "@/components/TypeFieldInput";
+import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -19,10 +19,13 @@ import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
 import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
+import VotingCutoffField from "@/components/VotingCutoffField";
+import MinimumParticipationModal from "@/components/MinimumParticipationModal";
 import MinMaxCounter from "@/components/MinMaxCounter";
 import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
 import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 export const dynamic = 'force-dynamic';
 
@@ -84,11 +87,13 @@ export function CreatePollContent() {
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const pollType = modeParam === 'participation' ? 'participation' : 'poll';
-  const setPollType = useCallback((type: 'poll' | 'participation') => {
+  const pollType = modeParam === 'participation' ? 'participation' : modeParam === 'time' ? 'time' : 'poll';
+  const setPollType = useCallback((type: 'poll' | 'participation' | 'time') => {
     const url = new URL(window.location.href);
     if (type === 'participation') {
       url.searchParams.set('mode', 'participation');
+    } else if (type === 'time') {
+      url.searchParams.set('mode', 'time');
     } else {
       url.searchParams.delete('mode');
     }
@@ -104,6 +109,8 @@ export function CreatePollContent() {
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(true);
   const [dayTimeWindows, setDayTimeWindows] = useState<DayTimeWindow[]>([]);
+  const [minimumParticipation, setMinimumParticipation] = useState<number>(95);
+  const [showMinParticipationModal, setShowMinParticipationModal] = useState(false);
   const [deadlineOption, setDeadlineOption] = useState("10min");
   const [customDate, setCustomDate] = useState('');
   const [customTime, setCustomTime] = useState('');
@@ -151,7 +158,7 @@ export function CreatePollContent() {
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
-  const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && hasNoOptions;
+  const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -200,6 +207,9 @@ export function CreatePollContent() {
       if (category === 'yes_no') {
         return '';
       }
+      if (category === 'time') {
+        return appendFor("Time?");
+      }
       const shorten = isLocationLikeCategory(category) ? shortenLocation : shortenOption;
       const filled = options.filter(o => o.trim()).map(shorten);
       if (filled.length === 0) {
@@ -215,14 +225,19 @@ export function CreatePollContent() {
     }
 
     // participation
-    if (locationMode === 'set' && locationValue.trim()) {
-      return `Who's going to ${shortenLocation(locationValue)}?`;
+    if (pollType === 'participation') {
+      if (locationMode === 'set' && locationValue.trim()) {
+        return `Who's going to ${shortenLocation(locationValue)}?`;
+      }
+      if (locationMode === 'preferences') {
+        const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
+        if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
+      }
+      return "Who's in?";
     }
-    if (locationMode === 'preferences') {
-      const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
-      if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
-    }
-    return "Who's in?";
+
+    // time
+    return appendFor("Time?");
   }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
 
   // Focus details textarea when opening
@@ -251,6 +266,42 @@ export function CreatePollContent() {
       }
     }
   }, [isAutoTitle, generateTitle]);
+
+  // Auto-generated category text from options (shown in CategoryForLine when no explicit category)
+  const generatedCategoryFromOptions = useMemo(() => {
+    if (category !== 'custom') return '';
+    if (pollType !== 'poll') return '';
+    const filled = options.filter(o => o.trim()).map(shortenOption);
+    if (filled.length === 0) return '';
+    if (filled.length === 1) return filled[0];
+    const limit = 40;
+    const joinWithOr = (items: string[]) => {
+      if (items.length === 2) return `${items[0]} or ${items[1]}`;
+      return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}`;
+    };
+    const included = [filled[0]];
+    for (let i = 1; i < filled.length; i++) {
+      const isLast = i === filled.length - 1;
+      const candidate = isLast
+        ? joinWithOr([...included, filled[i]])
+        : `${[...included, filled[i]].join(', ')}, or ...`;
+      if (candidate.length > limit && included.length >= 2) break;
+      included.push(filled[i]);
+    }
+    if (included.length === filled.length) return joinWithOr(included);
+    return `${included.join(', ')}, or ...`;
+  }, [category, pollType, options]);
+
+  // Handle category changes from CategoryForLine
+  const handleCategoryChange = useCallback((val: string) => {
+    setCategory(val);
+    if (val === 'yes_no') {
+      setIsAutoTitle(false);
+      setTitle('');
+    } else {
+      setIsAutoTitle(true);
+    }
+  }, []);
 
   // Helper to re-enable form elements
   const reEnableForm = useCallback((form: HTMLFormElement | null) => {
@@ -435,13 +486,10 @@ export function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' => {
-    if (pollType === 'participation') {
-      return 'participation';
-    }
-    if (category === 'yes_no') {
-      return 'yes_no';
-    }
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' | 'time' => {
+    if (pollType === 'participation') return 'participation';
+    if (pollType === 'time' || category === 'time') return 'time';
+    if (category === 'yes_no') return 'yes_no';
     return 'ranked_choice';
   };
 
@@ -525,6 +573,28 @@ export function CreatePollContent() {
         return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
       }
       // Check minimum duration on all time windows
+      if (durationMinEnabled && durationMinValue != null) {
+        const minDurMinutes = Math.round(durationMinValue * 60);
+        if (minDurMinutes > 0) {
+          const tooShort = dayTimeWindows.some(dtw =>
+            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
+          );
+          if (tooShort) {
+            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
+          }
+        }
+      }
+    }
+
+    // Time poll: same day/window requirements as participation
+    if (dbPollType === 'time') {
+      if (dayTimeWindows.length === 0) {
+        return "Please select at least one day.";
+      }
+      const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
+      if (emptyDays.length > 0) {
+        return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
+      }
       if (durationMinEnabled && durationMinValue != null) {
         const minDurMinutes = Math.round(durationMinValue * 60);
         if (minDurMinutes > 0) {
@@ -695,6 +765,10 @@ export function CreatePollContent() {
               setMaxEnabled(false);
               setMaxParticipants(null);
             }
+          } else if (forkData.poll_type === 'time') {
+            setPollType('time');
+            setOptions(['']);
+            if (forkData.availability_threshold != null) setMinimumParticipation(100 - forkData.availability_threshold);
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1199,6 +1273,25 @@ export function CreatePollContent() {
         }
       }
 
+      // Add time poll specific fields
+      if (dbPollType === 'time') {
+        if (dayTimeWindows.length > 0) {
+          pollData.day_time_windows = dayTimeWindows;
+        }
+        if (durationMinEnabled || durationMaxEnabled) {
+          pollData.duration_window = {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled
+          };
+        }
+        pollData.availability_threshold = 100 - minimumParticipation;
+        // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
+        const cutoffMinutes = getSuggestionCutoffMinutes();
+        pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
+      }
+
       // Add location field for participation polls
       if (dbPollType === 'participation') {
         const addFieldData = (
@@ -1337,6 +1430,10 @@ export function CreatePollContent() {
               setTitle(e.target.value);
               setIsAutoTitle(false);
             }}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== title) setTitle(trimmed);
+            }}
             disabled={isLoading}
             maxLength={100}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1371,7 +1468,19 @@ export function CreatePollContent() {
       )}
 
       {titlePortal && createPortal(
-        <AnimatedTitle title={title} initialDelay={300} />,
+        pollType === 'poll' ? (
+          <CategoryForLine
+            category={category}
+            onCategoryChange={handleCategoryChange}
+            forField={forField}
+            onForFieldChange={setForField}
+            generatedCategoryText={generatedCategoryFromOptions}
+            disabled={isLoading}
+            initialDelay={300}
+          />
+        ) : (
+          <AnimatedTitle title={title} initialDelay={300} />
+        ),
         titlePortal
       )}
 
@@ -1386,8 +1495,8 @@ export function CreatePollContent() {
           e.stopPropagation();
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
-          {/* Participation mode: show link back to preferences form */}
-          {pollType === 'participation' && (
+          {/* Non-default modes: show link back to preferences form */}
+          {(pollType === 'participation' || pollType === 'time') && (
             <div className="flex justify-center">
               <button
                 type="button"
@@ -1399,43 +1508,7 @@ export function CreatePollContent() {
             </div>
           )}
 
-          {/* Category and For fields for suggestion and poll types */}
-          {pollType !== 'participation' && (
-            <>
-              <div>
-                <label htmlFor="category" className="block text-sm font-medium mb-1">
-                  Category <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <TypeFieldInput
-                  value={category}
-                  onChange={(val) => {
-                    setCategory(val);
-                    if (val === 'yes_no') {
-                      setIsAutoTitle(false);
-                      setTitle('');
-                    }
-                  }}
-                  disabled={isLoading}
-                />
-              </div>
-              {category !== 'yes_no' && (
-              <div>
-                <label htmlFor="forField" className="block text-sm font-medium mb-1">
-                  For <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  id="forField"
-                  type="text"
-                  value={forField}
-                  onChange={(e) => setForField(e.target.value)}
-                  disabled={isLoading}
-                  placeholder={FOR_FIELD_PLACEHOLDERS[category] || "Birthday, Team outing, etc."}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
-              )}
-            </>
-          )}
+          {/* Category and For fields are now in the header via CategoryForLine */}
 
           {/* Reference location for location polls */}
           {(isLocationLikeCategory(category) || (pollType === 'participation' && locationMode !== 'none')) && (
@@ -1475,7 +1548,136 @@ export function CreatePollContent() {
               dayTimeWindows={dayTimeWindows}
               onDayTimeWindowsChange={setDayTimeWindows}
               isCreationForm={true}
+              highlightDaysButton={dayTimeWindows.length === 0}
             />
+          )}
+
+          {/* Time poll: Duration + DayTimeWindows + threshold + deadlines */}
+          {(pollType === 'time' || (pollType === 'poll' && category === 'time')) && (
+            <>
+              <ParticipationConditions
+                hideParticipantCounters={true}
+                disabled={isLoading}
+                durationMinValue={durationMinValue}
+                durationMaxValue={durationMaxValue}
+                durationMinEnabled={durationMinEnabled}
+                durationMaxEnabled={durationMaxEnabled}
+                onDurationMinChange={setDurationMinValue}
+                onDurationMaxChange={setDurationMaxValue}
+                onDurationMinEnabledChange={setDurationMinEnabled}
+                onDurationMaxEnabledChange={setDurationMaxEnabled}
+                dayTimeWindows={dayTimeWindows}
+                onDayTimeWindowsChange={setDayTimeWindows}
+                isCreationForm={true}
+                highlightDaysButton={dayTimeWindows.length === 0}
+              />
+
+              {/* Minimum Participation */}
+              <div className="text-sm font-medium">
+                Minimum Participation:{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowMinParticipationModal(true)}
+                  disabled={isLoading}
+                  className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                  aria-label="Adjust minimum participation percentage"
+                >
+                  {minimumParticipation}%
+                </button>
+              </div>
+
+              {/* Availability Phase Deadline */}
+              <div>
+                <label className="block text-sm font-medium cursor-pointer">
+                  <span>Availability Cutoff: </span>
+                  <span className="relative inline-flex">
+                    <span className="font-normal text-blue-600 dark:text-blue-400">
+                      {(() => {
+                        if (suggestionCutoff === 'custom') return 'Custom';
+                        const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                        if (frac) {
+                          const votingMin = getVotingDeadlineMinutes();
+                          if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
+                          return `${frac.fraction}x`;
+                        }
+                        const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                        if (!absOpt) return suggestionCutoff;
+                        return formatDeadlineLabel(absOpt.minutes, absOpt.label);
+                      })()}
+                    </span>
+                    <select
+                      value={suggestionCutoff}
+                      onChange={(e) => setSuggestionCutoff(e.target.value)}
+                      disabled={isLoading}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      aria-label="Availability cutoff duration"
+                    >
+                      {getVotingDeadlineMinutes() != null && (
+                        <optgroup label="Relative to Voting Cutoff">
+                          {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
+                            const votingMin = getVotingDeadlineMinutes()!;
+                            const mins = votingMin * opt.fraction;
+                            return (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.fraction}x ({formatMinutesLabel(mins)})
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      )}
+                      <optgroup label="Fixed Duration">
+                        {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {formatDeadlineLabel(opt.minutes, opt.label)}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </span>
+                </label>
+                {suggestionCutoff === 'custom' && (
+                  <div className="mt-2 flex justify-between gap-2">
+                    <div className="w-auto">
+                      <label htmlFor="customSuggestionDate2" className="block text-xs text-gray-500 mb-1">Date</label>
+                      <input
+                        type="date"
+                        id="customSuggestionDate2"
+                        value={customSuggestionDate}
+                        onChange={(e) => setCustomSuggestionDate(e.target.value)}
+                        disabled={isLoading}
+                        min={isClient ? getTodayDate() : ''}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                    <div className="w-auto">
+                      <label htmlFor="customSuggestionTime2" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
+                      <input
+                        type="time"
+                        id="customSuggestionTime2"
+                        value={customSuggestionTime}
+                        onChange={(e) => setCustomSuggestionTime(e.target.value)}
+                        disabled={isLoading}
+                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+                        style={{ fontSize: '14px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <VotingCutoffField
+                deadlineOption={deadlineOption}
+                setDeadlineOption={setDeadlineOption}
+                customDate={customDate}
+                setCustomDate={setCustomDate}
+                customTime={customTime}
+                setCustomTime={setCustomTime}
+                isLoading={isLoading}
+                isClient={isClient}
+              />
+            </>
           )}
 
           {/* Location field for participation polls */}
@@ -1500,7 +1702,7 @@ export function CreatePollContent() {
           )}
 
           {/* Options field for poll type (ranked choice / suggestions) */}
-          {pollType === 'poll' && category !== 'yes_no' && (
+          {pollType === 'poll' && category !== 'yes_no' && category !== 'time' && (
             <>
               <OptionsInput
                 options={options}
@@ -1517,79 +1719,23 @@ export function CreatePollContent() {
             </>
           )}
 
+
           {/* Title for yes/no polls - rendered above voting cutoff */}
           {category === 'yes_no' && titleField}
 
           {/* Voting cutoff (yes/no and preference polls), min responses, suggestion cutoff */}
-          {pollType === 'poll' && (
+          {pollType === 'poll' && category !== 'time' && (
             <>
-              <div>
-                <label className="block text-sm font-medium cursor-pointer">
-                  <span>Voting Cutoff: </span>
-                  <span className="relative inline-flex">
-                    <span className="font-normal text-blue-600 dark:text-blue-400">
-                      {(() => {
-                        if (deadlineOption === 'none') return 'None';
-                        if (deadlineOption === 'custom') {
-                          if (customDate && customTime) {
-                            const dt = new Date(`${customDate}T${customTime}`);
-                            return dt.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-                          }
-                          return 'Custom';
-                        }
-                        const opt = VOTING_CUTOFF_OPTIONS.find(o => o.value === deadlineOption);
-                        if (!opt) return deadlineOption;
-                        return formatDeadlineLabel(opt.minutes, opt.label);
-                      })()}
-                    </span>
-                    <select
-                      value={deadlineOption}
-                      onChange={(e) => setDeadlineOption(e.target.value)}
-                      disabled={isLoading}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="Voting cutoff duration"
-                    >
-                      <option value="none">None</option>
-                      {VOTING_CUTOFF_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {formatDeadlineLabel(opt.minutes, opt.label)}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
-                </label>
-                {deadlineOption === 'custom' && (
-                  <div className="mt-2 flex justify-between gap-2">
-                    <div className="w-auto">
-                      <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">Date</label>
-                      <input
-                        type="date"
-                        id="customDate"
-                        value={customDate}
-                        onChange={(e) => setCustomDate(e.target.value)}
-                        disabled={isLoading}
-                        min={isClient ? getTodayDate() : ''}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                        required
-                      />
-                    </div>
-                    <div className="w-auto">
-                      <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
-                      <input
-                        type="time"
-                        id="customTime"
-                        value={customTime}
-                        onChange={(e) => setCustomTime(e.target.value)}
-                        disabled={isLoading}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                        required
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              <VotingCutoffField
+                deadlineOption={deadlineOption}
+                setDeadlineOption={setDeadlineOption}
+                customDate={customDate}
+                setCustomDate={setCustomDate}
+                customTime={customTime}
+                setCustomTime={setCustomTime}
+                isLoading={isLoading}
+                isClient={isClient}
+              />
               {isPreferencePoll && (
               <CompactMinResponsesField
                 value={minResponses}
@@ -1792,8 +1938,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title for participation polls - rendered below close after */}
-          {!isPreferencePoll && category !== 'yes_no' && titleField}
+          {/* Title for participation/time polls - rendered below close after */}
+          {pollType !== 'poll' && titleField}
 
           {/* Optional details field */}
           <div>
@@ -1815,9 +1961,12 @@ export function CreatePollContent() {
                     el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
                   }}
                   onBlur={() => {
-                    if (!details.trim()) {
+                    const trimmed = details.trim();
+                    if (!trimmed) {
                       setDetailsOpen(false);
                       setDetails('');
+                    } else if (trimmed !== details) {
+                      setDetails(trimmed);
                     }
                   }}
                   disabled={isLoading}
@@ -1876,7 +2025,15 @@ export function CreatePollContent() {
             Private until you share the link
           </p>
         )}
-      
+
+        <MinimumParticipationModal
+          isOpen={showMinParticipationModal}
+          onClose={() => setShowMinParticipationModal(false)}
+          value={minimumParticipation}
+          onChange={setMinimumParticipation}
+          disabled={isLoading}
+        />
+
     </div>
   );
 }

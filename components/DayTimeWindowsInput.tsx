@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import TimeGridModal from './TimeGridModal';
-import { windowDurationMinutes } from '@/lib/timeUtils';
+import { windowDurationMinutes, formatDayLabel } from '@/lib/timeUtils';
 
 interface TimeWindow {
   min: string; // HH:MM format
@@ -31,14 +31,7 @@ function formatTime12Hour(time: string): { time: string; period: string } {
   };
 }
 
-// Format day display (e.g., "Mon, Jan 15")
-function formatDayDisplay(dateStr: string): string {
-  const date = new Date(dateStr + 'T00:00:00'); // Add time to avoid timezone issues
-  const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
-  const month = date.toLocaleDateString('en-US', { month: 'short' });
-  const day = date.getDate();
-  return `${weekday}, ${month} ${day}`;
-}
+
 
 function getRelativeDay(dateStr: string): string {
   const today = new Date();
@@ -120,7 +113,7 @@ export default function DayTimeWindowsInput({
       {/* Left: Day display */}
       <div className="min-w-[100px] self-start">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {formatDayDisplay(day)}
+          {formatDayLabel(day)}
         </div>
         <div className="text-xs text-blue-500 dark:text-blue-400">
           {getRelativeDay(day)}

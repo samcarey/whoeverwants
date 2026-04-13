@@ -199,6 +199,10 @@ export default function OptionsInput({
                   type="text"
                   value={option}
                   onChange={(e) => updateOption(index, e.target.value)}
+                  onBlur={(e) => {
+                    const trimmed = e.target.value.trim();
+                    if (trimmed !== option) updateOption(index, trimmed);
+                  }}
                   disabled={isLoading}
                   maxLength={35}
                   className={inputClassName(isDuplicate)}

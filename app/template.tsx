@@ -10,7 +10,15 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 
 const LazyCreatePollContent = React.lazy(() =>
-  import('@/app/create-poll/page').then(m => ({ default: m.CreatePollContent }))
+  import('@/app/create-poll/page')
+    .then(m => ({ default: m.CreatePollContent }))
+    .catch((err) => {
+      // Stale cached chunk after a new deploy — reload to get fresh assets.
+      if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
+        window.location.reload();
+      }
+      throw err;
+    })
 );
 
 interface AppTemplateProps {
@@ -85,6 +93,16 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     setIsMounted(true);
     installClientLogForwarder();
+
+    // Reload on ChunkLoadError — stale cached chunks after a new deploy.
+    const handleChunkError = (event: PromiseRejectionEvent) => {
+      const err = event.reason;
+      if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk')) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleChunkError);
+    return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
   
   // Determine initial state based on pathname to avoid layout shift
@@ -385,6 +403,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, [isIOSPWA]);
 
   const isPollPage = pathname.startsWith('/p/');
+  const isThreadPage = pathname.startsWith('/thread/');
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
@@ -580,21 +599,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
-    if (!isCreateModalOpen) {
-      // Safety net: if the modal is closed but body still has scroll-lock styles
-      // (e.g. from a navigation race or error), clean them up proactively.
-      if (document.body.style.position === 'fixed') {
-        const scrollY = Math.abs(parseInt(document.body.style.top || '0', 10));
-        document.documentElement.style.overscrollBehavior = '';
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.left = '';
-        document.body.style.right = '';
-        document.body.style.overflow = '';
-        window.scrollTo(0, scrollY);
-      }
-      return;
-    }
+    if (!isCreateModalOpen) return;
     // Reset stale close state from previous dismiss
     setModalClosing(false);
     dragState.current.isClosing = false;
@@ -656,8 +661,8 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Fixed Header - skip for poll, create poll, profile, and home pages */}
-      {!isPollPage && !isProfilePage && pathname !== '/' && (
+      {/* Fixed Header - skip for poll, create poll, profile, thread, and home pages */}
+      {!isPollPage && !isThreadPage && !isProfilePage && pathname !== '/' && (
         <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -852,6 +857,11 @@ function TemplateInner({ children }: AppTemplateProps) {
             onClick={() => {
               const params = new URLSearchParams(searchParams.toString());
               params.set('create', '1');
+              // When on a thread page, auto-set followUpTo for the latest poll
+              const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
+              if (threadLatestPollId) {
+                params.set('followUpTo', threadLatestPollId);
+              }
               router.push(`${pathname}?${params.toString()}`);
             }}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
@@ -898,7 +908,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         {/* Back/home button in upper left — PWA standalone mode only.
              In regular browser tabs, the browser's own back button handles navigation.
              Shows back arrow if user has navigated within the app, home icon otherwise. */}
-        {isStandalone && (isPollPage || isProfilePage) && (
+        {(isPollPage || isProfilePage || isThreadPage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {hasAppHistory ? (
               <button

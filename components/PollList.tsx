@@ -6,30 +6,8 @@ import { Poll, PollResults } from "@/lib/types";
 import { getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
-import { getBuiltInType } from "@/components/TypeFieldInput";
-
-const POLL_TYPE_SYMBOLS: Record<string, string> = {
-  yes_no: '👍',
-  ranked_choice: '🗳️',
-  participation: '🙋',
-};
-
-const CLOSED_YES_NO_SYMBOL = '🏆';
-
-function getPollSymbol(pollType: string, isClosed: boolean): string {
-  if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
-  return POLL_TYPE_SYMBOLS[pollType] || '☰';
-}
-
-function getCategoryIcon(poll: Poll): string {
-  const category = poll.category;
-  if (category && category !== 'custom') {
-    const builtIn = getBuiltInType(category);
-    if (builtIn?.icon) return builtIn.icon;
-  }
-  // Custom or no category — use poll type symbol
-  return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
-}
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
+import type { ResultBadge } from "@/lib/pollListUtils";
 
 /** Extract image URLs from poll options metadata (skip entries without images). */
 function getOptionIconUrls(poll: Poll): string[] {
@@ -85,27 +63,8 @@ function PollTitle({ poll, className }: { poll: Poll; className: string }) {
   );
 }
 
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diffMs = now - then;
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  const years = Math.floor(days / 365);
-  return `${years}y ago`;
-}
-
 // Simple countdown component
-const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string }) => {
+const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isClient, setIsClient] = useState(false);
 
@@ -152,36 +111,16 @@ const SimpleCountdown = ({ deadline, label }: { deadline: string; label: string 
 
   return (
     <>
-      {label && `${label}: `}<span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{timeLeft}</span>
+      {label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span>
     </>
   );
 };
-
-function isInSuggestionPhase(poll: Poll): boolean {
-  if (poll.poll_type !== 'ranked_choice') return false;
-  if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
-  if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
-  return false;
-}
 
 function getOptionDisplayName(optionKey: string, poll: Poll): string {
   const meta = poll.options_metadata?.[optionKey];
   if (meta?.name) return meta.name;
   return optionKey;
 }
-
-interface ResultBadge {
-  text: string;
-  emoji: string;
-  color: 'green' | 'red' | 'yellow' | 'gray';
-}
-
-const BADGE_COLORS = {
-  green: 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200',
-  red: 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200',
-  yellow: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200',
-  gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-};
 
 function getResultBadge(poll: Poll, results: PollResults | null | undefined, userVoteId?: string | null, userVoted?: boolean, userName?: string | null): ResultBadge {
   if (!results) {
@@ -456,7 +395,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
               return (
                 <React.Fragment key={poll.id}>
                   {isFirstVoted && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-y border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
                       Already Voted
                     </div>
                   )}
@@ -492,7 +431,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                                 return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                               }
                               if (poll.response_deadline) {
-                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" />;
+                                return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
                               }
                               return null;
                             })()}
@@ -524,7 +463,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       {/* Closed Polls Section */}
       {closedPolls.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-y border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30">
+          <div className={`text-xs text-gray-500 dark:text-gray-400 font-medium px-4 py-1.5 border-b ${openPolls.length === 0 ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5 bg-gray-50 dark:bg-gray-800/30`}>
             Closed
           </div>
           <div>

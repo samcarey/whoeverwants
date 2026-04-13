@@ -15,12 +15,13 @@ export interface DayTimeWindow {
 }
 
 interface ParticipationConditionsProps {
-  minValue: number | null;
-  maxValue: number | null;
-  maxEnabled: boolean;
-  onMinChange: (value: number | null) => void;
-  onMaxChange: (value: number | null) => void;
-  onMaxEnabledChange: (enabled: boolean) => void;
+  minValue?: number | null;
+  maxValue?: number | null;
+  maxEnabled?: boolean;
+  onMinChange?: (value: number | null) => void;
+  onMaxChange?: (value: number | null) => void;
+  onMaxEnabledChange?: (enabled: boolean) => void;
+  hideParticipantCounters?: boolean;
   disabled?: boolean;
   pollMinParticipants?: number | null;
   pollMaxParticipants?: number | null;
@@ -45,15 +46,17 @@ interface ParticipationConditionsProps {
     maxEnabled: boolean;
   };
   isCreationForm?: boolean;
+  highlightDaysButton?: boolean;
 }
 
 export default function ParticipationConditions({
-  minValue,
-  maxValue,
-  maxEnabled,
+  minValue = null,
+  maxValue = null,
+  maxEnabled = false,
   onMinChange,
   onMaxChange,
   onMaxEnabledChange,
+  hideParticipantCounters = false,
   disabled = false,
   pollMinParticipants = null,
   pollMaxParticipants = null,
@@ -70,6 +73,7 @@ export default function ParticipationConditions({
   pollDayTimeWindows,
   pollDurationWindow,
   isCreationForm = false,
+  highlightDaysButton = false,
 }: ParticipationConditionsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Cache windows for removed days so they can be restored on re-add
@@ -137,6 +141,7 @@ export default function ParticipationConditions({
   return (
     <div className="space-y-3" data-testid="participation-conditions">
       {/* Participants */}
+      {!hideParticipantCounters && (
       <div className="-mt-2 mb-1">
         <label className="block text-sm font-medium mb-1">
           Participants
@@ -146,9 +151,9 @@ export default function ParticipationConditions({
             minValue={minValue}
             maxValue={maxValue}
             maxEnabled={maxEnabled}
-            onMinChange={onMinChange}
-            onMaxChange={onMaxChange}
-            onMaxEnabledChange={onMaxEnabledChange}
+            onMinChange={onMinChange!}
+            onMaxChange={onMaxChange!}
+            onMaxEnabledChange={onMaxEnabledChange!}
             increment={1}
             minLimit={enforcedMinLimit}
             maxLimit={enforcedMaxLimit}
@@ -158,6 +163,7 @@ export default function ParticipationConditions({
           />
         </div>
       </div>
+      )}
 
       {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
@@ -197,7 +203,11 @@ export default function ParticipationConditions({
               type="button"
               onClick={() => setIsDaysPickerOpen(true)}
               disabled={disabled}
-              className="px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className={`px-3 py-1 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
+                highlightDaysButton
+                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-400 dark:border-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                  : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
             >
               {dayTimeWindows.length === 0 ? 'Select Days' : 'Add/Remove Days'}
             </button>

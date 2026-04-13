@@ -4,7 +4,7 @@ GitHub webhook handler for the WhoeverWants droplet.
 
 Handles two types of push events:
 1. Push to `main` → auto-deploy production backend (git pull + docker compose rebuild)
-2. Push to any other branch → update per-branch dev server (standalone build)
+2. Push to any branch → update per-user dev servers based on commit author email
 
 Runs as a systemd service on the droplet, listening on port 9091.
 Caddy proxies hooks.api.whoeverwants.com -> localhost:9091.
@@ -27,6 +27,13 @@ SECRET_FILE = "/etc/dev-webhook-secret"
 MANAGER_SCRIPT = "/root/whoeverwants/scripts/dev-server-manager.sh"
 REPO_DIR = "/root/whoeverwants"
 DEPLOY_LOCK = "/tmp/production-deploy.lock"
+
+# Claude/bot email patterns to ignore
+IGNORE_PATTERNS = [
+    "@anthropic.com",
+    "noreply@github.com",
+    "actions@github.com",
+]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,31 +68,34 @@ def verify_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
-# Email patterns to ignore for redirect mapping
-IGNORE_EMAIL_PATTERNS = [
-    "@anthropic.com",
-    "noreply@github.com",
-    "actions@github.com",
-]
-
-
 def is_ignored_email(email: str) -> bool:
-    """Check if an email should be ignored for redirect mapping."""
+    """Check if an email should be ignored."""
     email_lower = email.lower()
-    return any(pattern in email_lower for pattern in IGNORE_EMAIL_PATTERNS)
+    for pattern in IGNORE_PATTERNS:
+        if pattern in email_lower:
+            return True
+    return False
 
 
 def extract_author_emails(payload: dict) -> set[str]:
     """Extract unique non-bot author emails from a push event."""
     emails = set()
+
+    # Get author emails from all commits in the push
     for commit in payload.get("commits", []):
-        email = commit.get("author", {}).get("email", "")
+        author = commit.get("author", {})
+        email = author.get("email", "")
         if email and not is_ignored_email(email):
             emails.add(email)
-    head = payload.get("head_commit") or {}
-    email = head.get("author", {}).get("email", "")
-    if email and not is_ignored_email(email):
-        emails.add(email)
+
+    # Also check head_commit
+    head = payload.get("head_commit", {})
+    if head:
+        author = head.get("author", {})
+        email = author.get("email", "")
+        if email and not is_ignored_email(email):
+            emails.add(email)
+
     return emails
 
 
@@ -97,40 +107,24 @@ def get_branch(payload: dict) -> str | None:
     return None
 
 
-def trigger_upsert(branch: str, emails: set[str]):
-    """Run dev-server-manager.sh upsert for a branch, then set up email redirects."""
-    log.info(f"Triggering upsert: branch={branch}")
+def trigger_upsert(email: str, branch: str):
+    """Run dev-server-manager.sh upsert in background."""
+    log.info(f"Triggering upsert: email={email}, branch={branch}")
     try:
         result = subprocess.run(
-            ["bash", MANAGER_SCRIPT, "upsert", branch],
+            ["bash", MANAGER_SCRIPT, "upsert", email, branch],
             capture_output=True,
             text=True,
             timeout=600,  # 10 minute timeout for npm ci + build
         )
         if result.returncode == 0:
-            log.info(f"Upsert succeeded for {branch}: {result.stdout[-200:] if result.stdout else '(no output)'}")
+            log.info(f"Upsert succeeded for {email}: {result.stdout[-200:] if result.stdout else '(no output)'}")
         else:
-            log.error(f"Upsert failed for {branch}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
+            log.error(f"Upsert failed for {email}: {result.stderr[-500:] if result.stderr else '(no stderr)'}")
     except subprocess.TimeoutExpired:
-        log.error(f"Upsert timed out for {branch}")
-        return
+        log.error(f"Upsert timed out for {email}")
     except Exception as e:
-        log.error(f"Upsert error for {branch}: {e}")
-        return
-
-    # Set up email-slug -> branch-slug redirects for backward compatibility
-    for email in emails:
-        try:
-            result = subprocess.run(
-                ["bash", MANAGER_SCRIPT, "redirect", email, branch],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode != 0:
-                log.warning(f"Redirect setup failed for {email}: {result.stderr[-200:]}")
-        except Exception as e:
-            log.warning(f"Redirect error for {email}: {e}")
+        log.error(f"Upsert error for {email}: {e}")
 
 
 def deploy_production():
@@ -148,45 +142,24 @@ def deploy_production():
         return
 
     try:
-        # 1. Fetch and reset to origin/main (avoids diverged branch issues)
-        log.info("--- Fetching latest main ---")
+        # 1. Git pull
+        log.info("--- Pulling latest main ---")
         result = subprocess.run(
-            ["git", "fetch", "origin", "main"],
+            ["git", "pull", "origin", "main"],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode != 0:
-            log.error(f"Git fetch failed: {result.stderr}")
+            log.error(f"Git pull failed: {result.stderr}")
             return
+        log.info(f"Git pull: {result.stdout.strip()}")
 
-        # Check if there are new commits
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD", "origin/main"],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            log.error(f"Git rev-parse failed: {result.stderr}")
-            return
-        shas = result.stdout.strip().split("\n")
-        if len(shas) == 2 and shas[0] == shas[1]:
+        # If nothing changed, skip rebuild
+        if "Already up to date" in result.stdout:
             log.info("No changes, skipping rebuild")
             return
-
-        log.info("--- Resetting to origin/main ---")
-        result = subprocess.run(
-            ["git", "checkout", "-B", "main", "origin/main"],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            log.error(f"Git checkout failed: {result.stderr}")
-            return
-        log.info(f"Reset to: {result.stdout.strip()}")
 
         # 2. Check if server/ files changed (optimize: skip rebuild if only frontend changed)
         # Always rebuild to be safe — Docker layer caching makes no-op rebuilds fast
@@ -219,15 +192,16 @@ def deploy_production():
         else:
             log.info(f"Migrations: {result.stdout.strip()[-200:]}")
 
-        # 4. Restart webhook service to pick up any script changes.
-        # This kills the current process, so log completion before restarting.
-        log.info("=== Production deploy complete — restarting webhook service ===")
-        subprocess.run(
-            ["systemctl", "restart", "dev-webhook"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        # 4. Verify health
+        import urllib.request
+        try:
+            resp = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10)
+            if resp.status == 200:
+                log.info("=== Production deploy complete — health check OK ===")
+            else:
+                log.error(f"Health check returned {resp.status}")
+        except Exception as e:
+            log.error(f"Health check failed: {e}")
 
     except subprocess.TimeoutExpired as e:
         log.error(f"Production deploy timed out: {e}")
@@ -301,9 +275,16 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b'{"status": "branch deleted"}')
             return
 
-        # Extract author emails for redirect mapping
+        # Extract author emails
         emails = extract_author_emails(payload)
-        log.info(f"Push to {branch} by {emails or '(no authors)'}")
+        if not emails:
+            log.info(f"No non-bot author emails in push to {branch}")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"status": "no authors"}')
+            return
+
+        log.info(f"Push to {branch} by {emails}")
 
         # Respond immediately, process in background
         self.send_response(202)
@@ -327,10 +308,11 @@ class WebhookHandler(http.server.BaseHTTPRequestHandler):
             "authors": list(emails),
         }).encode())
 
-        # Trigger upsert + email redirects in background
-        t = threading.Thread(target=trigger_upsert, args=(branch, emails))
-        t.daemon = True
-        t.start()
+        # Trigger upsert for each author in background threads
+        for email in emails:
+            t = threading.Thread(target=trigger_upsert, args=(email, branch))
+            t.daemon = True
+            t.start()
 
     def do_GET(self):
         if self.path == "/health":
