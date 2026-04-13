@@ -1430,6 +1430,10 @@ export function CreatePollContent() {
               setTitle(e.target.value);
               setIsAutoTitle(false);
             }}
+            onBlur={(e) => {
+              const trimmed = e.target.value.trim();
+              if (trimmed !== title) setTitle(trimmed);
+            }}
             disabled={isLoading}
             maxLength={100}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1957,9 +1961,12 @@ export function CreatePollContent() {
                     el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
                   }}
                   onBlur={() => {
-                    if (!details.trim()) {
+                    const trimmed = details.trim();
+                    if (!trimmed) {
                       setDetailsOpen(false);
                       setDetails('');
+                    } else if (trimmed !== details) {
+                      setDetails(trimmed);
                     }
                   }}
                   disabled={isLoading}

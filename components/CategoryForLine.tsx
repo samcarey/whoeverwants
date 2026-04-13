@@ -370,7 +370,11 @@ export default function CategoryForLine({
                       });
                     }
                   }}
-                  onBlur={() => setContextFocused(false)}
+                  onBlur={() => {
+                    setContextFocused(false);
+                    const trimmed = forField.trim();
+                    if (trimmed !== forField) onForFieldChange(trimmed);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Backspace" && contextPristineRef.current) {
                       e.preventDefault();
