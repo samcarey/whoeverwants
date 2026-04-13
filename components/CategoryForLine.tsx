@@ -165,8 +165,9 @@ export default function CategoryForLine({
   const handleCategoryFocus = () => {
     setCategoryFocused(true);
     if (categoryHasUserValue) {
-      // Pre-populate with current label so user can backspace/edit
+      // Pre-populate with current label, select all so backspace clears it
       setCategoryEditText(builtIn?.label || category);
+      requestAnimationFrame(() => categoryInputRef.current?.select());
     } else {
       // Auto-generated text disappears in favor of placeholder
       setCategoryEditText("");
@@ -340,7 +341,10 @@ export default function CategoryForLine({
                   value={forField}
                   placeholder={CONTEXT_PLACEHOLDER}
                   onChange={(e) => onForFieldChange(e.target.value)}
-                  onFocus={() => setContextFocused(true)}
+                  onFocus={(e) => {
+                    setContextFocused(true);
+                    if (forField) requestAnimationFrame(() => e.target.select());
+                  }}
                   onBlur={() => setContextFocused(false)}
                   disabled={disabled}
                   aria-label="Context"
