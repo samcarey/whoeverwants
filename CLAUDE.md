@@ -997,6 +997,11 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **The create-poll form is a modal overlay**, not a separate route. It's triggered by the `?create` query parameter on any page. The underlying page stays mounted behind the backdrop.
 - **`CreatePollContent` is exported** from `app/create-poll/page.tsx` and lazy-loaded via `React.lazy` in `template.tsx`. The `/create-poll` route redirects to `/?create`.
+- **Category and context are edited inline in the header** via `CategoryForLine.tsx`, replacing the old separate form fields. The header shows `‹category› for ‹context›` as editable placeholders. Category supports a built-in type dropdown (same types as `BUILT_IN_TYPES` in `TypeFieldInput.tsx`). When options are filled but no category is set, auto-generated text from options appears in the category slot in italic. The font auto-sizes via binary search to fit on one line, with a smooth 150ms CSS transition.
+- **`CategoryForLine` uses a mirror-sizer pattern** for auto-width inputs: a `visibility: hidden` span determines the `inline-block` container width, and the input is `absolute inset-0` filling it. The mirror text stays at least as wide as the placeholder during editing to prevent jarring shrinkage.
+- **`committedRef` prevents double-commit on blur** — when `selectType` or Enter commits the category, the subsequent blur handler skips re-committing. Without this, the blur sees empty `categoryEditText` and resets to "custom".
+- **`categoryPristineRef` enables first-backspace-clears** — only for built-in categories, the first backspace after focus clears the entire value instead of deleting one character.
+- **`fontSizePx` state is required** despite direct DOM manipulation in `fitFont` — React's style prop must stay in sync to prevent the font size from resetting to `MAX_FONT_PX` on re-renders triggered by other state changes.
 - **All buttons that open the create form** (FollowUp, Fork, Duplicate, VoteOnIt, bottom bar "+") append `?create=1` plus any action params to the current page URL via `router.push`. They do NOT navigate to `/create-poll`.
 - **Close removes `?create`** (and related params) from the URL via `router.replace`, keeping the user on their current page.
 - **Drag-to-dismiss** uses native touch listeners with refs for 60fps. Velocity-based dismissal (>500px/s flick) and 33% position threshold. Uses `requestAnimationFrame` coalescing. Force reflow (`offsetHeight`) is required between setting `transition` and the target `transform` after `transition: none` during drag.
@@ -1015,6 +1020,10 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Place detail modal**: Tapping a restaurant/location name opens `PlaceDetailModal` (map embed + metadata). Tapping the address opens an iOS-style action sheet (`AddressActionsModal`) with "Open in Maps" (Apple Maps), "Open in Google Maps", and "Copy Address". Don't use `geo:` URIs on iOS — they're unreliable (may open Google Earth or other random apps). Don't include the business name in maps queries — it triggers a search for multiple branches instead of navigating to the specific address.
 - **`line-clamp-2` breaks flex layouts**: Don't apply `line-clamp-*` to containers with flex children (like `OptionLabel`). The CSS treats flex items as flowing text and truncates unexpectedly. Use `overflow-hidden` instead and let inner components handle their own truncation.
 - **Voting Cutoff field is a shared component**: `components/VotingCutoffField.tsx` renders the inline colored-value dropdown + conditional custom date/time inputs used by every poll category in `app/create-poll/page.tsx`. Reuse it when adding new categories — don't copy-paste the JSX. The custom date/time inputs inside use ids `customDate` and `customTime`; the component assumes only one instance is rendered at a time (enforced by the mutually exclusive `category === 'time'` vs `category !== 'time'` branches).
+
+### Trim-on-Blur Policy (App-Wide)
+
+- **All text inputs trim leading/trailing whitespace on blur.** This is applied globally across the app: create-poll form fields (title, options, category, context, details), profile page (name, location), `CompactNameField`, `AutocompleteInput`, `LocationTimeFieldConfig`, and `ReferenceLocationInput`. When adding new text inputs, add `onBlur` trim handling.
 
 ### Create-Poll Form UI Patterns
 
