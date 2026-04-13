@@ -175,9 +175,9 @@ function ThreadContent() {
   const threadPolls = thread.polls;
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col overflow-x-hidden">
       {/* Sticky thread header with back button */}
-      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2">
+      <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
         <button
           onClick={() => window.history.back()}
           className="w-10 h-10 flex items-center justify-center shrink-0"
