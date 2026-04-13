@@ -171,11 +171,22 @@ function ThreadContent() {
     );
   }
 
+  // Auto-scroll to the bottom on load so newest polls are visible
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (thread && !loading) {
+      // Wait a frame for the DOM to settle after render
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      });
+    }
+  }, [thread, loading]);
+
   // Polls are already sorted oldest-first in thread.polls
   const threadPolls = thread.polls;
 
   return (
-    <div>
+    <div className="mt-auto">
       {/* Thread header */}
       <div className="border-b border-gray-200 dark:border-gray-700 pl-6 pr-4 py-2 flex items-center gap-3">
         <RespondentCircles
@@ -340,6 +351,9 @@ function ThreadContent() {
             );
           })}
       </div>
+
+      {/* Scroll anchor for auto-scroll-to-bottom */}
+      <div ref={bottomRef} />
 
       {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
       {modalPoll && (

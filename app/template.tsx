@@ -67,6 +67,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
+  const isThreadPageRef = useRef(false);
 
   // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
   // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
@@ -174,6 +175,8 @@ function TemplateInner({ children }: AppTemplateProps) {
     // Track current visibility to avoid no-op setState calls during scroll
     let isVisible = true;
     const setVisible = (visible: boolean) => {
+      // Never hide bottom bar on thread pages
+      if (isThreadPageRef.current) visible = true;
       if (visible !== isVisible) {
         isVisible = visible;
         setShowBottomBar(visible);
@@ -404,6 +407,7 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
+  isThreadPageRef.current = isThreadPage;
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
@@ -701,7 +705,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
         }}>
-        <div className="pwa-safe-top relative">
+        <div className={`pwa-safe-top relative ${isThreadPage ? 'min-h-full' : ''}`}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
@@ -752,7 +756,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || isThreadPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+          <div className={`max-w-4xl mx-auto ${pathname === '/' ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${(isPollPage || isProfilePage || isThreadPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'min-h-full flex flex-col' : ''}`}>
             {children}
           </div>
         </div>
