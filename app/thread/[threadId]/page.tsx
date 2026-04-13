@@ -140,6 +140,17 @@ function ThreadContent() {
     fetchThread();
   }, [threadId]);
 
+  // Auto-scroll to the bottom on load so newest polls are visible
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (thread && !loading) {
+      // Wait a frame for the DOM to settle after render
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      });
+    }
+  }, [thread, loading]);
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -170,17 +181,6 @@ function ThreadContent() {
       </div>
     );
   }
-
-  // Auto-scroll to the bottom on load so newest polls are visible
-  const bottomRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (thread && !loading) {
-      // Wait a frame for the DOM to settle after render
-      requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
-      });
-    }
-  }, [thread, loading]);
 
   // Polls are already sorted oldest-first in thread.polls
   const threadPolls = thread.polls;
