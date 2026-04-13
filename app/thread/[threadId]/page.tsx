@@ -186,8 +186,8 @@ function ThreadContent() {
   const threadPolls = thread.polls;
 
   return (
-    <div className="mt-auto">
-      {/* Thread header */}
+    <div className="flex-1 flex flex-col">
+      {/* Thread header — stays at top */}
       <div className="border-b border-gray-200 dark:border-gray-700 pl-6 pr-4 py-2 flex items-center gap-3">
         <RespondentCircles
           names={thread.participantNames}
@@ -203,8 +203,9 @@ function ThreadContent() {
         </div>
       </div>
 
-      {/* Poll list (oldest first = messaging order) */}
-      <div className="py-2">
+      {/* Poll list — bottom-aligned within remaining space */}
+      <div className="flex-1 flex flex-col justify-end">
+        <div className="py-2">
         {threadPolls.map((poll, index) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const now = new Date();
@@ -350,10 +351,11 @@ function ThreadContent() {
               </div>
             );
           })}
-      </div>
+        </div>
 
-      {/* Scroll anchor for auto-scroll-to-bottom */}
-      <div ref={bottomRef} />
+        {/* Scroll anchor for auto-scroll-to-bottom */}
+        <div ref={bottomRef} />
+      </div>
 
       {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
       {modalPoll && (
