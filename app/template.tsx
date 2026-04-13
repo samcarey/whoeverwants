@@ -908,7 +908,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         {/* Back/home button in upper left — PWA standalone mode only.
              In regular browser tabs, the browser's own back button handles navigation.
              Shows back arrow if user has navigated within the app, home icon otherwise. */}
-        {isStandalone && (isPollPage || isProfilePage) && (
+        {isStandalone && (isPollPage || isProfilePage || isThreadPage) && (
           <div className="fixed left-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
             {hasAppHistory ? (
               <button

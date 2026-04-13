@@ -176,25 +176,13 @@ function ThreadContent() {
   return (
     <div>
       {/* Thread header */}
-      <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 -ml-1"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-              {thread.title}
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
-            </p>
-          </div>
-        </div>
+      <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+        <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+          {thread.title}
+        </h1>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
+        </p>
       </div>
 
       {/* Poll list (oldest first = messaging order) */}
