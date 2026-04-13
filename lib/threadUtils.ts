@@ -31,6 +31,59 @@ export interface Thread {
 }
 
 /**
+ * Build index maps and collect descendants via BFS from a set of start IDs.
+ * Shared by buildThreads (multiple roots) and buildThreadFromPollDown (single anchor).
+ */
+function collectDescendants(
+  startIds: string[],
+  pollById: Map<string, Poll>,
+  childrenOf: Map<string, string[]>,
+  visited: Set<string>,
+): Poll[] {
+  const collected: Poll[] = [];
+  const queue = [...startIds];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const poll = pollById.get(current);
+    if (poll) {
+      collected.push(poll);
+      const children = childrenOf.get(current) || [];
+      for (const childId of children) {
+        if (!visited.has(childId)) {
+          queue.push(childId);
+        }
+      }
+    }
+  }
+  collected.sort((a, b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  return collected;
+}
+
+/** Build pollById and childrenOf maps from a flat list of polls. */
+function buildPollMaps(polls: Poll[]): {
+  pollById: Map<string, Poll>;
+  childrenOf: Map<string, string[]>;
+} {
+  const pollById = new Map<string, Poll>();
+  for (const poll of polls) {
+    pollById.set(poll.id, poll);
+  }
+  const childrenOf = new Map<string, string[]>();
+  for (const poll of polls) {
+    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
+      const existing = childrenOf.get(poll.follow_up_to) || [];
+      existing.push(poll.id);
+      childrenOf.set(poll.follow_up_to, existing);
+    }
+  }
+  return { pollById, childrenOf };
+}
+
+/**
  * Build threads from a flat list of polls.
  *
  * Groups polls by follow_up_to chains. Only follow_up_to relationships form
@@ -41,20 +94,7 @@ export function buildThreads(
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread[] {
-  const pollById = new Map<string, Poll>();
-  for (const poll of polls) {
-    pollById.set(poll.id, poll);
-  }
-
-  // Build parent→children map (only follow_up_to, not fork_of)
-  const childrenOf = new Map<string, string[]>();
-  for (const poll of polls) {
-    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
-      const existing = childrenOf.get(poll.follow_up_to) || [];
-      existing.push(poll.id);
-      childrenOf.set(poll.follow_up_to, existing);
-    }
-  }
+  const { pollById, childrenOf } = buildPollMaps(polls);
 
   // Find root polls: polls whose follow_up_to is null or points to a poll
   // we don't have access to
@@ -67,41 +107,16 @@ export function buildThreads(
 
   const roots = polls.filter(p => !isChild.has(p.id));
 
-  // For each root, collect all descendants via BFS
   const visited = new Set<string>();
   const threads: Thread[] = [];
 
   for (const root of roots) {
     if (visited.has(root.id)) continue;
-
-    const threadPolls: Poll[] = [];
-    const queue = [root.id];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-      const poll = pollById.get(current);
-      if (poll) {
-        threadPolls.push(poll);
-        const children = childrenOf.get(current) || [];
-        for (const childId of children) {
-          if (!visited.has(childId)) {
-            queue.push(childId);
-          }
-        }
-      }
-    }
-
-    // Sort chronologically (oldest first)
-    threadPolls.sort((a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-
-    const thread = buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
-    threads.push(thread);
+    const threadPolls = collectDescendants([root.id], pollById, childrenOf, visited);
+    threads.push(buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds));
   }
 
-  // Also handle any orphaned polls not visited (shouldn't happen, but safety net)
+  // Safety net for orphaned polls
   for (const poll of polls) {
     if (!visited.has(poll.id)) {
       threads.push(buildThreadFromPolls([poll], votedPollIds, abstainedPollIds));
@@ -227,48 +242,9 @@ export function buildThreadFromPollDown(
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread | null {
-  const pollById = new Map<string, Poll>();
-  for (const poll of allPolls) {
-    pollById.set(poll.id, poll);
-  }
+  const { pollById, childrenOf } = buildPollMaps(allPolls);
+  if (!pollById.has(anchorPollId)) return null;
 
-  const anchor = pollById.get(anchorPollId);
-  if (!anchor) return null;
-
-  // Build parent→children map
-  const childrenOf = new Map<string, string[]>();
-  for (const poll of allPolls) {
-    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
-      const existing = childrenOf.get(poll.follow_up_to) || [];
-      existing.push(poll.id);
-      childrenOf.set(poll.follow_up_to, existing);
-    }
-  }
-
-  // BFS from anchor to collect all descendants
-  const threadPolls: Poll[] = [];
-  const visited = new Set<string>();
-  const queue = [anchorPollId];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    if (visited.has(current)) continue;
-    visited.add(current);
-    const poll = pollById.get(current);
-    if (poll) {
-      threadPolls.push(poll);
-      const children = childrenOf.get(current) || [];
-      for (const childId of children) {
-        if (!visited.has(childId)) {
-          queue.push(childId);
-        }
-      }
-    }
-  }
-
-  // Sort chronologically (oldest first)
-  threadPolls.sort((a, b) =>
-    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
-
+  const threadPolls = collectDescendants([anchorPollId], pollById, childrenOf, new Set());
   return buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
 }

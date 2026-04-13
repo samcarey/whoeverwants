@@ -104,10 +104,8 @@ function ThreadContent() {
           return;
         }
 
-        // Step 2: Discover related polls (children via follow_up_to chain)
+        // Step 2: Discover children, then fetch all accessible polls
         try { await discoverRelatedPolls(); } catch {}
-
-        // Step 3: Fetch all accessible polls and build thread from anchor down
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
 

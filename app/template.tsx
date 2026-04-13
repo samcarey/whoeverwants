@@ -756,7 +756,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? 'pt-0 pb-0' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
+          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? '' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
             {children}
           </div>
         </div>
