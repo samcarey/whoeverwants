@@ -158,7 +158,7 @@ function ThreadContent() {
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Thread Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This thread may not exist or you don't have access.</p>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">This thread may not exist or you don&apos;t have access.</p>
           <button
             onClick={() => router.push('/')}
             className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
