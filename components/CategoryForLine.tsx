@@ -47,8 +47,8 @@ export default function CategoryForLine({
   // True when a built-in category hasn't been edited yet — first backspace clears it
   const categoryPristineRef = useRef(false);
   // Track whether field had a user value when focused — controls placeholder-as-minimum-width behavior
-  const categoryHadValueOnFocusRef = useRef(false);
-  const contextHadValueOnFocusRef = useRef(false);
+  const [categoryHadValueOnFocus, setCategoryHadValueOnFocus] = useState(false);
+  const [contextHadValueOnFocus, setContextHadValueOnFocus] = useState(false);
 
   // Initial delay (wait for modal slide-up animation)
   useEffect(() => {
@@ -169,7 +169,7 @@ export default function CategoryForLine({
 
   const handleCategoryFocus = () => {
     setCategoryFocused(true);
-    categoryHadValueOnFocusRef.current = categoryHasUserValue;
+    setCategoryHadValueOnFocus(categoryHasUserValue);
     if (categoryHasUserValue) {
       const label = builtIn?.label || category;
       setCategoryEditText(label);
@@ -282,15 +282,15 @@ export default function CategoryForLine({
   }
 
   const categoryMirrorText = mirrorText(
-    categoryFocused, categoryHadValueOnFocusRef.current, categoryDisplayValue, CATEGORY_PLACEHOLDER,
+    categoryFocused, categoryHadValueOnFocus, categoryDisplayValue, CATEGORY_PLACEHOLDER,
   );
   const contextMirrorText = mirrorText(
-    contextFocused, contextHadValueOnFocusRef.current, forField, CONTEXT_PLACEHOLDER,
+    contextFocused, contextHadValueOnFocus, forField, CONTEXT_PLACEHOLDER,
   );
 
   // Suppress placeholder text while editing a field that started with content
-  const hideCategoryPlaceholder = categoryFocused && categoryHadValueOnFocusRef.current;
-  const hideContextPlaceholder = contextFocused && contextHadValueOnFocusRef.current;
+  const hideCategoryPlaceholder = categoryFocused && categoryHadValueOnFocus;
+  const hideContextPlaceholder = contextFocused && contextHadValueOnFocus;
 
   return (
     <div className="relative">
@@ -377,7 +377,7 @@ export default function CategoryForLine({
                   onChange={(e) => onForFieldChange(e.target.value)}
                   onFocus={() => {
                     setContextFocused(true);
-                    contextHadValueOnFocusRef.current = !!forField.trim();
+                    setContextHadValueOnFocus(!!forField.trim());
                   }}
                   onBlur={() => {
                     setContextFocused(false);
