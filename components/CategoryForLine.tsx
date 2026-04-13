@@ -44,6 +44,9 @@ export default function CategoryForLine({
   const [visible, setVisible] = useState(initialDelay === 0);
   // Tracks whether selectType/Enter already committed — prevents blur from re-committing
   const committedRef = useRef(false);
+  // True when pre-populated value hasn't been edited yet — first backspace clears it
+  const categoryPristineRef = useRef(false);
+  const contextPristineRef = useRef(false);
 
   // Initial delay (wait for modal slide-up animation)
   useEffect(() => {
@@ -165,12 +168,18 @@ export default function CategoryForLine({
   const handleCategoryFocus = () => {
     setCategoryFocused(true);
     if (categoryHasUserValue) {
-      // Pre-populate with current label, select all so backspace clears it
-      setCategoryEditText(builtIn?.label || category);
-      requestAnimationFrame(() => categoryInputRef.current?.select());
+      const label = builtIn?.label || category;
+      setCategoryEditText(label);
+      categoryPristineRef.current = true;
+      // Put cursor at end
+      requestAnimationFrame(() => {
+        const input = categoryInputRef.current;
+        if (input) input.setSelectionRange(label.length, label.length);
+      });
     } else {
       // Auto-generated text disappears in favor of placeholder
       setCategoryEditText("");
+      categoryPristineRef.current = false;
     }
     setShowDropdown(true);
     setHighlightedIndex(-1);
@@ -191,6 +200,7 @@ export default function CategoryForLine({
 
   const handleCategoryInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCategoryEditText(e.target.value);
+    categoryPristineRef.current = false;
     setHighlightedIndex(-1);
     if (!showDropdown) setShowDropdown(true);
   };
@@ -205,6 +215,13 @@ export default function CategoryForLine({
   };
 
   const handleCategoryKeyDown = (e: React.KeyboardEvent) => {
+    // First backspace on a pristine pre-populated value clears the whole field
+    if (e.key === "Backspace" && categoryPristineRef.current) {
+      e.preventDefault();
+      setCategoryEditText("");
+      categoryPristineRef.current = false;
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setHighlightedIndex((prev) =>
@@ -340,12 +357,28 @@ export default function CategoryForLine({
                   type="text"
                   value={forField}
                   placeholder={CONTEXT_PLACEHOLDER}
-                  onChange={(e) => onForFieldChange(e.target.value)}
-                  onFocus={(e) => {
+                  onChange={(e) => {
+                    onForFieldChange(e.target.value);
+                    contextPristineRef.current = false;
+                  }}
+                  onFocus={() => {
                     setContextFocused(true);
-                    if (forField) requestAnimationFrame(() => e.target.select());
+                    if (forField) {
+                      contextPristineRef.current = true;
+                      requestAnimationFrame(() => {
+                        const input = contextInputRef.current;
+                        if (input) input.setSelectionRange(forField.length, forField.length);
+                      });
+                    }
                   }}
                   onBlur={() => setContextFocused(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace" && contextPristineRef.current) {
+                      e.preventDefault();
+                      onForFieldChange("");
+                      contextPristineRef.current = false;
+                    }
+                  }}
                   disabled={disabled}
                   aria-label="Context"
                   className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0
