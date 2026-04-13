@@ -181,7 +181,14 @@ function ThreadContent() {
       {/* Fixed thread header with back button — not scrollable */}
       <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
         <button
-          onClick={() => window.history.back()}
+          onClick={() => {
+            const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
+            if (navCount > 1) {
+              window.history.back();
+            } else {
+              router.push('/');
+            }
+          }}
           className="w-10 h-10 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
