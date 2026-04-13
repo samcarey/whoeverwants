@@ -119,7 +119,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchMove}
-              className={`flex gap-3 px-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+              className={`flex gap-3 pl-2 pr-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
             >
               {navigatingThreadId === thread.rootPollId && (
                 <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-10">

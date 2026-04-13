@@ -11,6 +11,7 @@ import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BAD
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import RespondentCircles from "@/components/RespondentCircles";
 
 const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -176,13 +177,19 @@ function ThreadContent() {
   return (
     <div>
       {/* Thread header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-          {thread.title}
-        </h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
-        </p>
+      <div className="border-b border-gray-200 dark:border-gray-700 pl-6 pr-4 py-2 flex items-center gap-3">
+        <RespondentCircles
+          names={thread.participantNames}
+          anonymousCount={thread.anonymousRespondentCount}
+        />
+        <div className="min-w-0">
+          <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+            {thread.title}
+          </h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
+          </p>
+        </div>
       </div>
 
       {/* Poll list (oldest first = messaging order) */}
