@@ -177,7 +177,7 @@ function ThreadContent() {
   return (
     <div>
       {/* Thread header */}
-      <div className="border-b border-gray-200 dark:border-gray-700 pl-10 pr-4 py-2 flex items-center gap-3">
+      <div className="border-b border-gray-200 dark:border-gray-700 pl-[64px] pr-4 py-2 flex items-center gap-3">
         <RespondentCircles
           names={thread.participantNames}
           anonymousCount={thread.anonymousRespondentCount}
