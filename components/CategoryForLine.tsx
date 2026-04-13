@@ -100,14 +100,15 @@ export default function CategoryForLine({
     lineEl.style.fontSize = `${MAX_FONT_PX}px`;
     const containerWidth = container.clientWidth;
 
+    // Use container.scrollWidth — lineEl is an inline span where scrollWidth is unreliable
     let target = MAX_FONT_PX;
-    if (lineEl.scrollWidth > containerWidth) {
+    if (container.scrollWidth > containerWidth) {
       let lo = MIN_FONT_PX;
       let hi = MAX_FONT_PX;
       while (hi - lo > 0.5) {
         const mid = (lo + hi) / 2;
         lineEl.style.fontSize = `${mid}px`;
-        if (lineEl.scrollWidth > containerWidth) {
+        if (container.scrollWidth > containerWidth) {
           hi = mid;
         } else {
           lo = mid;
@@ -287,7 +288,7 @@ export default function CategoryForLine({
               role="combobox"
               aria-expanded={showDropdown}
               aria-autocomplete="list"
-              className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0 text-center
+              className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0
                 ${categoryIsItalic ? "italic" : ""}
                 ${categoryDisplayValue ? "text-blue-600 dark:text-blue-400" : ""}
                 placeholder:text-gray-400 dark:placeholder:text-gray-500`}
@@ -331,7 +332,7 @@ export default function CategoryForLine({
                   onChange={(e) => onForFieldChange(e.target.value)}
                   disabled={disabled}
                   aria-label="Context"
-                  className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0 text-center
+                  className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0
                     ${forField ? "text-blue-600 dark:text-blue-400" : ""}
                     placeholder:text-gray-400 dark:placeholder:text-gray-500`}
                   style={{
