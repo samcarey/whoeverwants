@@ -143,18 +143,10 @@ function buildThreadFromPolls(
   }
   const participantNames = Array.from(nameSet).sort();
 
-  // Check if any poll in the thread has received votes
-  const hasAnyVotes = polls.some(poll =>
-    (poll.response_count != null && poll.response_count > 0) ||
-    (poll.voter_names != null && poll.voter_names.length > 0)
-  );
-
-  // Build title from names, or "New Thread" if no votes yet
-  const title = !hasAnyVotes
-    ? 'New Thread'
-    : participantNames.length > 0
-      ? participantNames.join(', ')
-      : polls[0]?.title || 'Untitled';
+  // Build title from participant names, or "New Thread" if none yet
+  const title = participantNames.length > 0
+    ? participantNames.join(', ')
+    : 'New Thread';
 
   // Count unvoted polls and find soonest unvoted deadline
   const now = new Date();
