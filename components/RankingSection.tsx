@@ -39,6 +39,7 @@ interface RankingSectionProps {
   justCancelledAbstain: boolean;
   twoOptionDisplayOrder: string[];
   isEditingSuggestions: boolean;
+  newOptions?: string[];
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -72,6 +73,7 @@ export default function RankingSection({
   justCancelledAbstain,
   twoOptionDisplayOrder,
   isEditingSuggestions,
+  newOptions,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion polls, is_abstain means "abstained from suggestions" not "abstained from ranking".
@@ -129,6 +131,8 @@ export default function RankingSection({
   // During suggestion phase, only show after user has submitted suggestions
   if (canSubmitSuggestions && !hasVoted) return null;
 
+  const hasNewOptions = !!(newOptions && newOptions.length > 0);
+
   return (
     <>
       {canSubmitSuggestions && !isEditingRanking && (
@@ -139,6 +143,17 @@ export default function RankingSection({
             Options may change until suggestions cutoff!
           </p>
         </>
+      )}
+
+      {hasNewOptions && (
+        <div className="mb-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-2">
+          <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <span className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+            New option{newOptions && newOptions.length > 1 ? 's' : ''} available since you last ranked
+          </span>
+        </div>
       )}
 
       <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
@@ -214,6 +229,7 @@ export default function RankingSection({
                     initialRanking={isEditingRanking && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                     initialTiers={isEditingRanking && userVoteData?.ranked_choice_tiers ? userVoteData.ranked_choice_tiers : undefined}
                     optionsMetadata={optionsMetadata}
+                    newOptions={newOptions}
                   />
                 )}
               </>

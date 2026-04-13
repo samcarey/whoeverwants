@@ -165,6 +165,33 @@ export function recordPollCreation(pollId: string, creatorSecret?: string): void
   }
 }
 
+const SEEN_OPTIONS_KEY_PREFIX = 'poll_seen_options_';
+
+// Store options that were available when the user last voted on a suggestion poll.
+// Used to detect new suggestions added after the user ranked.
+export function storeSeenPollOptions(pollId: string, options: string[]): void {
+  if (typeof window === 'undefined' || !pollId) return;
+  try {
+    localStorage.setItem(SEEN_OPTIONS_KEY_PREFIX + pollId, JSON.stringify(options));
+  } catch (e) {
+    // Silently fail — this is a UX enhancement, not critical
+  }
+}
+
+// Get the options that were available when the user last voted on a suggestion poll.
+// Returns [] if not stored (e.g., different device or cleared localStorage).
+export function getSeenPollOptions(pollId: string): string[] {
+  if (typeof window === 'undefined' || !pollId) return [];
+  try {
+    const stored = localStorage.getItem(SEEN_OPTIONS_KEY_PREFIX + pollId);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 // Debug function to log current accessible polls
 export function debugAccessiblePolls(): void {
   if (process.env.NODE_ENV !== 'development') {
