@@ -699,7 +699,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Scrollable Content Area - consistent across all pages */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-auto safari-scroll-container mb-14 ${isThreadPage ? 'flex flex-col' : ''}`}
+        className={`flex-1 safari-scroll-container mb-14 ${isThreadPage ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}
         style={{
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
