@@ -129,12 +129,16 @@ function ThreadContent() {
     fetchThread();
   }, [threadId]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible
-  const bottomRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll to the bottom on load so newest polls are visible.
+  // Uses direct scrollTop instead of scrollIntoView — scrollIntoView traverses
+  // all ancestors (including overflow-hidden parents like pwa-safe-top) and
+  // pushes the safe area padding above the viewport on iOS PWA.
+  const scrollListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (thread && !loading) {
       requestAnimationFrame(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+        const el = scrollListRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
       });
     }
   }, [thread, loading]);
@@ -200,7 +204,7 @@ function ThreadContent() {
       </div>
 
       {/* Scrollable poll list — auto-scrolls to bottom on load */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+      <div ref={scrollListRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
         <div className="py-2">
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
@@ -349,8 +353,6 @@ function ThreadContent() {
           })}
         </div>
 
-        {/* Scroll anchor for auto-scroll-to-bottom */}
-        <div ref={bottomRef} />
       </div>
 
       {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
