@@ -994,8 +994,14 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Don't use `document.referrer` or `window.history.length` for navigation decisions.** `document.referrer` is unreliable (privacy settings, cross-origin, browser variations). `history.length` is cumulative across the tab's lifetime, not app-specific. Use `sessionStorage` to track in-app navigation count instead (per-tab, auto-cleared on close).
 - **In PWA standalone mode**: show back arrow if user has navigated within the app (`sessionStorage` nav count > 1), home icon if this is the entry point (deep link / first page).
 
+### scrollIntoView Pitfalls
+
+- **Never use `scrollIntoView` in nested `overflow-hidden` layouts.** `scrollIntoView` traverses ALL scrollable ancestors — including `overflow-hidden` elements, which can be scrolled programmatically even though users can't scroll them manually. In the thread page, `scrollIntoView` on a bottom anchor pushed the `pwa-safe-top` container's `scrollTop` to a non-zero value, hiding the safe area padding behind the notch. Fix: use direct `scrollTop = scrollHeight` on the specific inner scroll container ref.
+- **Non-scrollable headers in iOS PWA need `touch-action: none`** to prevent elastic rubber-banding. Even with `overflow-hidden` on all parent containers, iOS WebKit allows bounce/elastic behavior from touch gestures. Adding `touch-none` (Tailwind) to fixed header bars prevents touches on them from initiating any scroll behavior. Taps (`onClick`) still work — `touch-action` only controls default browser behaviors.
+
 ### Dev Server Pitfalls
 
+- **Dev server rate limiting is disabled** via `DISABLE_RATE_LIMIT=1` in `dev-server-manager.sh`. Dev servers are single-user, so production rate limits (120 GET/30 POST per minute) just cause friction during development.
 - **`npm run dev` spawns a process chain** (`npm` -> `next` -> `node`). Killing the parent PID doesn't reliably kill child processes holding the TCP port. After PID-based kill, always `fuser -k <port>/tcp` to clean up orphaned children — otherwise the next start gets `EADDRINUSE`.
 - **Dev server shows stale commit info** when the restart fails silently. The old process keeps serving pages. Always check `dev-server-manager.sh list` for `[STOPPED]` status after a push if the commit info doesn't update.
 
