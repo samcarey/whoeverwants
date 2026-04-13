@@ -269,15 +269,20 @@ export default function CategoryForLine({
 
   // While editing, keep field at least as wide as the placeholder so it doesn't
   // shrink when the user starts typing a short value — but only when the field
-  // was empty on focus. If the field already had custom text, fit to that text.
+  // was empty on focus. If the field already had custom text, fit to that text
+  // (using a minimal non-breaking space fallback if backspaced empty).
   const categoryMirrorText =
-    categoryFocused && !categoryHadValueOnFocusRef.current && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
-      ? CATEGORY_PLACEHOLDER
-      : categoryDisplayValue || CATEGORY_PLACEHOLDER;
+    categoryFocused && categoryHadValueOnFocusRef.current
+      ? (categoryDisplayValue || "\u00A0")
+      : categoryFocused && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
+        ? CATEGORY_PLACEHOLDER
+        : categoryDisplayValue || CATEGORY_PLACEHOLDER;
   const contextMirrorText =
-    contextFocused && !contextHadValueOnFocusRef.current && forField.length < CONTEXT_PLACEHOLDER.length
-      ? CONTEXT_PLACEHOLDER
-      : forField || CONTEXT_PLACEHOLDER;
+    contextFocused && contextHadValueOnFocusRef.current
+      ? (forField || "\u00A0")
+      : contextFocused && forField.length < CONTEXT_PLACEHOLDER.length
+        ? CONTEXT_PLACEHOLDER
+        : forField || CONTEXT_PLACEHOLDER;
 
   return (
     <div className="relative">
@@ -311,7 +316,7 @@ export default function CategoryForLine({
               ref={categoryInputRef}
               type="text"
               value={categoryDisplayValue}
-              placeholder={CATEGORY_PLACEHOLDER}
+              placeholder={categoryFocused && categoryHadValueOnFocusRef.current ? "" : CATEGORY_PLACEHOLDER}
               onChange={handleCategoryInputChange}
               onFocus={handleCategoryFocus}
               onBlur={handleCategoryBlur}
@@ -360,7 +365,7 @@ export default function CategoryForLine({
                   ref={contextInputRef}
                   type="text"
                   value={forField}
-                  placeholder={CONTEXT_PLACEHOLDER}
+                  placeholder={contextFocused && contextHadValueOnFocusRef.current ? "" : CONTEXT_PLACEHOLDER}
                   onChange={(e) => onForFieldChange(e.target.value)}
                   onFocus={() => {
                     setContextFocused(true);
