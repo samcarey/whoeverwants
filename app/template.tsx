@@ -84,6 +84,11 @@ function TemplateInner({ children }: AppTemplateProps) {
     setHasAppHistory(count > 1);
   }, [pathname]);
 
+  // Keep thread page ref in sync for the scroll handler (which runs in a [] effect).
+  useEffect(() => {
+    isThreadPageRef.current = pathname.startsWith('/thread/');
+  }, [pathname]);
+
   // Detect PWA standalone mode once — these are device constants that never change mid-session.
   useEffect(() => {
     setIsStandalone(isStandalonePWA());
@@ -407,7 +412,6 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
-  isThreadPageRef.current = isThreadPage;
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
