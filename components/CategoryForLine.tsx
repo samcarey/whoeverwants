@@ -36,6 +36,7 @@ export default function CategoryForLine({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [categoryFocused, setCategoryFocused] = useState(false);
+  const [contextFocused, setContextFocused] = useState(false);
   const [categoryEditText, setCategoryEditText] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -199,6 +200,7 @@ export default function CategoryForLine({
     setCategoryFocused(false);
     setShowDropdown(false);
     committedRef.current = true;
+    categoryInputRef.current?.blur();
   };
 
   const handleCategoryKeyDown = (e: React.KeyboardEvent) => {
@@ -243,8 +245,16 @@ export default function CategoryForLine({
     return <div style={{ minHeight: `${MAX_FONT_PX + 8}px` }} />;
   }
 
-  const categoryMirrorText = categoryDisplayValue || CATEGORY_PLACEHOLDER;
-  const contextMirrorText = forField || CONTEXT_PLACEHOLDER;
+  // While editing, keep field at least as wide as the placeholder so it doesn't
+  // shrink when the user starts typing a short value
+  const categoryMirrorText =
+    categoryFocused && categoryDisplayValue.length < CATEGORY_PLACEHOLDER.length
+      ? CATEGORY_PLACEHOLDER
+      : categoryDisplayValue || CATEGORY_PLACEHOLDER;
+  const contextMirrorText =
+    contextFocused && forField.length < CONTEXT_PLACEHOLDER.length
+      ? CONTEXT_PLACEHOLDER
+      : forField || CONTEXT_PLACEHOLDER;
 
   return (
     <div className="relative">
@@ -330,6 +340,8 @@ export default function CategoryForLine({
                   value={forField}
                   placeholder={CONTEXT_PLACEHOLDER}
                   onChange={(e) => onForFieldChange(e.target.value)}
+                  onFocus={() => setContextFocused(true)}
+                  onBlur={() => setContextFocused(false)}
                   disabled={disabled}
                   aria-label="Context"
                   className={`absolute inset-0 w-full bg-transparent border-none outline-none p-0 m-0
