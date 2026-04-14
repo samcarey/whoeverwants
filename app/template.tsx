@@ -9,7 +9,7 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
-import { navigateBackWithTransition } from '@/lib/viewTransitions';
+import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -858,7 +858,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         <div className="flex items-center justify-evenly py-1.5">
           {/* Home button */}
           <button
-            onClick={pathname === '/' ? undefined : () => window.location.href = '/'}
+            onClick={pathname === '/' ? undefined : () => navigateWithTransition(router, '/', 'back')}
             {...prefetchOnHover('/')}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
             aria-label="Go to home"
@@ -906,7 +906,7 @@ function TemplateInner({ children }: AppTemplateProps) {
 
           {/* Profile button */}
           <button
-            onClick={isProfilePage ? undefined : () => router.push('/profile')}
+            onClick={isProfilePage ? undefined : () => navigateWithTransition(router, '/profile', 'forward')}
             {...prefetchOnHover('/profile')}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
             aria-label="Profile"

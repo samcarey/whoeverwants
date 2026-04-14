@@ -208,18 +208,18 @@ body {
 
 /* Forward navigation (default behavior). */
 html[data-nav-direction="forward"]::view-transition-old(root) {
-  animation: 280ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-left;
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-left;
 }
 html[data-nav-direction="forward"]::view-transition-new(root) {
-  animation: 280ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-right;
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-right;
 }
 
 /* Back navigation. */
 html[data-nav-direction="back"]::view-transition-old(root) {
-  animation: 280ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-right;
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-right;
 }
 html[data-nav-direction="back"]::view-transition-new(root) {
-  animation: 280ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
 }
 
 /* Bottom bar: no animation — it stays fixed across navigations. */
@@ -233,7 +233,7 @@ html[data-nav-direction="back"]::view-transition-new(root) {
    between the list item's title and the destination page's header.
    Matches the container slide duration. */
 ::view-transition-group(hero-title) {
-  animation-duration: 280ms;
+  animation-duration: 500ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
