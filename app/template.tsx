@@ -8,17 +8,20 @@ import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
+import { usePrefetch } from '@/lib/prefetch';
+
+// Extract the import so it can be triggered independently for preloading.
+// When called a second time, the module cache returns the already-resolved module instantly.
+const importCreatePoll = () =>
+  import('@/app/create-poll/page').catch((err) => {
+    if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
+      window.location.reload();
+    }
+    throw err;
+  });
 
 const LazyCreatePollContent = React.lazy(() =>
-  import('@/app/create-poll/page')
-    .then(m => ({ default: m.CreatePollContent }))
-    .catch((err) => {
-      // Stale cached chunk after a new deploy — reload to get fresh assets.
-      if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
-        window.location.reload();
-      }
-      throw err;
-    })
+  importCreatePoll().then(m => ({ default: m.CreatePollContent }))
 );
 
 interface AppTemplateProps {
@@ -57,6 +60,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { prefetchOnHover } = usePrefetch();
   const [isStandalone, setIsStandalone] = useState(false);
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
@@ -109,6 +113,17 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
     window.addEventListener('unhandledrejection', handleChunkError);
     return () => window.removeEventListener('unhandledrejection', handleChunkError);
+  }, []);
+
+  // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
+  useEffect(() => {
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(() => importCreatePoll(), { timeout: 3000 });
+      return () => cancelIdleCallback(id);
+    } else {
+      const t = setTimeout(() => importCreatePoll(), 1500);
+      return () => clearTimeout(t);
+    }
   }, []);
   
   // Determine initial state based on pathname to avoid layout shift
@@ -842,6 +857,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           {/* Home button */}
           <button
             onClick={pathname === '/' ? undefined : () => window.location.href = '/'}
+            {...prefetchOnHover('/')}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
             aria-label="Go to home"
             disabled={pathname === '/'}
@@ -889,6 +905,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           {/* Profile button */}
           <button
             onClick={isProfilePage ? undefined : () => router.push('/profile')}
+            {...prefetchOnHover('/profile')}
             className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
             aria-label="Profile"
             disabled={isProfilePage}

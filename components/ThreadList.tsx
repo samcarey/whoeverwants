@@ -8,6 +8,7 @@ import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
+import { usePrefetch } from "@/lib/prefetch";
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -47,6 +48,7 @@ interface ThreadListProps {
 
 export default function ThreadList({ polls }: ThreadListProps) {
   const router = useRouter();
+  const { prefetchBatch } = usePrefetch();
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
   const [pressedThreadId, setPressedThreadId] = useState<string | null>(null);
@@ -65,6 +67,13 @@ export default function ThreadList({ polls }: ThreadListProps) {
   const threads = useMemo(() => {
     return buildThreads(polls, votedPollIds, abstainedPollIds);
   }, [polls, votedPollIds, abstainedPollIds]);
+
+  // Prefetch thread page routes for all visible threads on mount
+  useEffect(() => {
+    if (threads.length === 0) return;
+    const hrefs = threads.map(t => `/thread/${getThreadRouteId(t)}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [threads, prefetchBatch]);
 
   if (threads.length === 0) return null;
 

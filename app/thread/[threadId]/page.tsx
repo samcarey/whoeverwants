@@ -10,6 +10,7 @@ import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
+import { usePrefetch } from "@/lib/prefetch";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
@@ -48,6 +49,7 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
 function ThreadContent() {
   const router = useRouter();
   const params = useParams();
+  const { prefetchBatch } = usePrefetch();
   const threadId = params.threadId as string;
 
   const [thread, setThread] = useState<Thread | null>(null);
@@ -63,6 +65,13 @@ function ThreadContent() {
     }
     return () => { document.body.removeAttribute('data-thread-latest-poll-id'); };
   }, [thread]);
+
+  // Prefetch poll page routes for all polls in this thread
+  useEffect(() => {
+    if (!thread) return;
+    const hrefs = thread.polls.map(p => `/p/${p.short_id || p.id}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [thread, prefetchBatch]);
 
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);

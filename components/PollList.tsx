@@ -9,6 +9,7 @@ import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
 import type { ResultBadge } from "@/lib/pollListUtils";
+import { usePrefetch } from "@/lib/prefetch";
 
 /** Extract image URLs from poll options metadata (skip entries without images). */
 function getOptionIconUrls(poll: Poll): string[] {
@@ -183,6 +184,7 @@ interface PollListProps {
 
 export default function PollList({ polls, showSections = true, sectionTitles = { open: "Open Polls", closed: "Closed Polls" } }: PollListProps) {
   const router = useRouter();
+  const { prefetchBatch, prefetchOnHover } = usePrefetch();
   const [openPolls, setOpenPolls] = useState<Poll[]>([]);
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
@@ -201,6 +203,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     if (typeof window === 'undefined') return null;
     return getUserName();
   }, []);
+
+  // Prefetch poll page routes for all visible polls on mount
+  useEffect(() => {
+    if (polls.length === 0) return;
+    const hrefs = polls.map(p => `/p/${p.short_id || p.id}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [polls, prefetchBatch]);
 
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
