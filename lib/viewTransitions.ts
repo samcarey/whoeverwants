@@ -29,10 +29,15 @@ export function supportsViewTransitions(): boolean {
  * DOM to settle (two animation frames). Used by the view transition
  * callback so the browser doesn't capture the "after" snapshot before
  * the new page has rendered.
+ *
+ * Normalizes trailing slashes — the app uses `trailingSlash: true` so
+ * `/thread/xyz` may become `/thread/xyz/` after navigation.
  */
-async function waitForNavigation(targetPath: string, timeoutMs = 2000): Promise<void> {
+async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
+  const normalize = (p: string) => p.replace(/\/$/, '') || '/';
+  const target = normalize(targetPath);
   const start = Date.now();
-  while (window.location.pathname !== targetPath && Date.now() - start < timeoutMs) {
+  while (normalize(window.location.pathname) !== target && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 10));
   }
   // Let React commit + browser paint
@@ -72,11 +77,17 @@ export function navigateWithTransition(
   console.log(`[viewTransitions] starting ${direction} transition to ${href}, hero=${heroElement ? 'yes' : 'no'}`);
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', direction);
-  if (heroElement) heroElement.style.viewTransitionName = 'hero-title';
+
+  // Only dynamically tag the heroElement if no other element already owns
+  // hero-title (e.g., a page header with a static style). Two elements with
+  // the same view-transition-name throws InvalidStateError.
+  const alreadyHasHero = !!document.querySelector('[style*="hero-title"]');
+  const tagHero = heroElement && !alreadyHasHero;
+  if (tagHero) heroElement!.style.viewTransitionName = 'hero-title';
 
   const cleanup = () => {
     root.removeAttribute('data-nav-direction');
-    if (heroElement) heroElement.style.viewTransitionName = '';
+    if (tagHero) heroElement!.style.viewTransitionName = '';
   };
 
   const targetPath = new URL(href, window.location.origin).pathname;
@@ -107,11 +118,14 @@ export function navigateBackWithTransition(heroElement?: HTMLElement | null): vo
 
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', 'back');
-  if (heroElement) heroElement.style.viewTransitionName = 'hero-title';
+
+  const alreadyHasHero = !!document.querySelector('[style*="hero-title"]');
+  const tagHero = heroElement && !alreadyHasHero;
+  if (tagHero) heroElement!.style.viewTransitionName = 'hero-title';
 
   const cleanup = () => {
     root.removeAttribute('data-nav-direction');
-    if (heroElement) heroElement.style.viewTransitionName = '';
+    if (tagHero) heroElement!.style.viewTransitionName = '';
   };
 
   try {
