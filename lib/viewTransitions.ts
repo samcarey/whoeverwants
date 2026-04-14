@@ -25,6 +25,30 @@ export function supportsViewTransitions(): boolean {
 }
 
 /**
+ * Wait for the browser URL pathname to match `targetPath`, then for the
+ * DOM to settle (two animation frames). Used by the view transition
+ * callback so the browser doesn't capture the "after" snapshot before
+ * the new page has rendered.
+ */
+async function waitForNavigation(targetPath: string, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (window.location.pathname !== targetPath && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  // Let React commit + browser paint
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+}
+
+type ViewTransition = { finished: Promise<void> };
+type StartViewTransition = (cb: () => unknown) => ViewTransition;
+
+function getStart(): StartViewTransition | null {
+  if (!supportsViewTransitions()) return null;
+  return (document as unknown as { startViewTransition: StartViewTransition }).startViewTransition;
+}
+
+/**
  * Navigate to `href` with a view transition. Sets the `data-nav-direction`
  * attribute on the root element so CSS animations can pick the right
  * direction. Calls `router.push()` inside the transition callback.
@@ -38,32 +62,34 @@ export function navigateWithTransition(
   direction: NavDirection = 'forward',
   heroElement?: HTMLElement | null
 ): void {
-  if (!supportsViewTransitions()) {
+  const start = getStart();
+  if (!start) {
+    console.log('[viewTransitions] API not supported; falling back to router.push');
     router.push(href);
     return;
   }
 
+  console.log(`[viewTransitions] starting ${direction} transition to ${href}, hero=${heroElement ? 'yes' : 'no'}`);
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', direction);
-
-  if (heroElement) {
-    heroElement.style.viewTransitionName = 'hero-title';
-  }
+  if (heroElement) heroElement.style.viewTransitionName = 'hero-title';
 
   const cleanup = () => {
     root.removeAttribute('data-nav-direction');
-    if (heroElement) {
-      heroElement.style.viewTransitionName = '';
-    }
+    if (heroElement) heroElement.style.viewTransitionName = '';
   };
 
+  const targetPath = new URL(href, window.location.origin).pathname;
   try {
-    const transition = (document as unknown as { startViewTransition: (cb: () => void) => { finished: Promise<void> } })
-      .startViewTransition(() => {
-        router.push(href);
-      });
+    const transition = start.call(document, async () => {
+      router.push(href);
+      await waitForNavigation(targetPath);
+      console.log('[viewTransitions] navigation completed, rendering snapshot');
+    });
+    transition.finished.then(() => console.log('[viewTransitions] transition finished'));
     transition.finished.finally(cleanup);
-  } catch {
+  } catch (err) {
+    console.log('[viewTransitions] error:', err);
     cleanup();
     router.push(href);
   }
@@ -73,30 +99,33 @@ export function navigateWithTransition(
  * Navigate backward (history.back()) with a reverse-direction transition.
  */
 export function navigateBackWithTransition(heroElement?: HTMLElement | null): void {
-  if (!supportsViewTransitions()) {
+  const start = getStart();
+  if (!start) {
     window.history.back();
     return;
   }
 
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', 'back');
-
-  if (heroElement) {
-    heroElement.style.viewTransitionName = 'hero-title';
-  }
+  if (heroElement) heroElement.style.viewTransitionName = 'hero-title';
 
   const cleanup = () => {
     root.removeAttribute('data-nav-direction');
-    if (heroElement) {
-      heroElement.style.viewTransitionName = '';
-    }
+    if (heroElement) heroElement.style.viewTransitionName = '';
   };
 
   try {
-    const transition = (document as unknown as { startViewTransition: (cb: () => void) => { finished: Promise<void> } })
-      .startViewTransition(() => {
-        window.history.back();
-      });
+    const previousPath = window.location.pathname;
+    const transition = start.call(document, async () => {
+      window.history.back();
+      // Wait for popstate → URL change, then paint frames
+      const started = Date.now();
+      while (window.location.pathname === previousPath && Date.now() - started < 2000) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    });
     transition.finished.finally(cleanup);
   } catch {
     cleanup();
