@@ -174,15 +174,14 @@ function ThreadContent() {
     );
   }
 
-  // Sort: voted/abstained/closed polls first (chronological), then unvoted open polls at the bottom
+  const now = new Date();
+  const isPollOpen = (poll: Poll) =>
+    poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
+
+  // Unvoted open polls sort to bottom so they're visible on auto-scroll
   const threadPolls = [...thread.polls].sort((a, b) => {
-    const now = new Date();
-    const aIsOpen = a.response_deadline ? new Date(a.response_deadline) > now && !a.is_closed : !a.is_closed;
-    const bIsOpen = b.response_deadline ? new Date(b.response_deadline) > now && !b.is_closed : !b.is_closed;
-    const aVoted = votedPollIds.has(a.id) || abstainedPollIds.has(a.id);
-    const bVoted = votedPollIds.has(b.id) || abstainedPollIds.has(b.id);
-    const aNeedsAction = aIsOpen && !aVoted;
-    const bNeedsAction = bIsOpen && !bVoted;
+    const aNeedsAction = isPollOpen(a) && !votedPollIds.has(a.id) && !abstainedPollIds.has(a.id);
+    const bNeedsAction = isPollOpen(b) && !votedPollIds.has(b.id) && !abstainedPollIds.has(b.id);
     if (aNeedsAction !== bNeedsAction) return aNeedsAction ? 1 : -1;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
@@ -226,10 +225,7 @@ function ThreadContent() {
         <div className="py-2">
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
-            const now = new Date();
-            const isOpen = poll.response_deadline
-              ? new Date(poll.response_deadline) > now && !poll.is_closed
-              : !poll.is_closed;
+            const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
 
             const handleTouchStart = (e: React.TouchEvent) => {
