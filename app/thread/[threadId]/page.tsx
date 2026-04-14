@@ -189,7 +189,7 @@ function ThreadContent() {
               router.push('/');
             }
           }}
-          className="w-10 h-10 flex items-center justify-center shrink-0"
+          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
           <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
