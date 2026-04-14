@@ -10,12 +10,24 @@
  * (vote, close, reopen) should call invalidatePoll() to remove stale entries.
  */
 
-import type { Poll } from './types';
+import type { Poll, PollResults } from './types';
+import type { ApiVote } from './api';
 
 const CACHE_TTL_MS = 60_000;
+const RESULTS_TTL_MS = 15_000; // Results change more often — shorter TTL.
 
 interface CacheEntry {
   poll: Poll;
+  storedAt: number;
+}
+
+interface ResultsEntry {
+  results: PollResults & { ranked_choice_rounds?: unknown; ranked_choice_winner?: string };
+  storedAt: number;
+}
+
+interface VotesEntry {
+  votes: ApiVote[];
   storedAt: number;
 }
 
@@ -26,8 +38,13 @@ const cacheByShortId = new Map<string, CacheEntry>();
 // Cached result of getAccessiblePolls
 let accessiblePollsCache: { polls: Poll[]; storedAt: number } | null = null;
 
-function isValid(entry: { storedAt: number }): boolean {
-  return Date.now() - entry.storedAt < CACHE_TTL_MS;
+// Per-poll results, votes, participants caches
+const resultsCache = new Map<string, ResultsEntry>();
+const votesCache = new Map<string, VotesEntry>();
+const participantsCache = new Map<string, { participants: unknown[]; storedAt: number }>();
+
+function isValid(entry: { storedAt: number }, ttl = CACHE_TTL_MS): boolean {
+  return Date.now() - entry.storedAt < ttl;
 }
 
 /** Store a single poll in the cache. */
@@ -74,6 +91,42 @@ export function getCachedAccessiblePolls(): Poll[] | null {
   return null;
 }
 
+/** Cache poll results. */
+export function cachePollResults(pollId: string, results: ResultsEntry['results']): void {
+  resultsCache.set(pollId, { results, storedAt: Date.now() });
+}
+
+/** Get cached poll results if fresh. */
+export function getCachedPollResults(pollId: string): ResultsEntry['results'] | null {
+  const entry = resultsCache.get(pollId);
+  if (entry && isValid(entry, RESULTS_TTL_MS)) return entry.results;
+  return null;
+}
+
+/** Cache votes for a poll. */
+export function cacheVotes(pollId: string, votes: ApiVote[]): void {
+  votesCache.set(pollId, { votes, storedAt: Date.now() });
+}
+
+/** Get cached votes if fresh. */
+export function getCachedVotes(pollId: string): ApiVote[] | null {
+  const entry = votesCache.get(pollId);
+  if (entry && isValid(entry, RESULTS_TTL_MS)) return entry.votes;
+  return null;
+}
+
+/** Cache participants for a poll. */
+export function cacheParticipants(pollId: string, participants: unknown[]): void {
+  participantsCache.set(pollId, { participants, storedAt: Date.now() });
+}
+
+/** Get cached participants if fresh. */
+export function getCachedParticipants(pollId: string): unknown[] | null {
+  const entry = participantsCache.get(pollId);
+  if (entry && isValid(entry, RESULTS_TTL_MS)) return entry.participants;
+  return null;
+}
+
 /** Invalidate a single poll (call after mutations). */
 export function invalidatePoll(id: string): void {
   const entry = cacheById.get(id);
@@ -83,6 +136,9 @@ export function invalidatePoll(id: string): void {
       cacheByShortId.delete(entry.poll.short_id);
     }
   }
+  resultsCache.delete(id);
+  votesCache.delete(id);
+  participantsCache.delete(id);
   // Also invalidate the accessible polls list since it may contain stale data
   accessiblePollsCache = null;
 }

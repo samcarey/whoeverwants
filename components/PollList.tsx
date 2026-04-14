@@ -10,6 +10,7 @@ import FollowUpModal from "@/components/FollowUpModal";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
 import type { ResultBadge } from "@/lib/pollListUtils";
 import { usePrefetch } from "@/lib/prefetch";
+import { apiGetPollResults, apiGetVotes } from "@/lib/api";
 
 /** Extract image URLs from poll options metadata (skip entries without images). */
 function getOptionIconUrls(poll: Poll): string[] {
@@ -210,6 +211,33 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
     const hrefs = polls.map(p => `/p/${p.short_id || p.id}`);
     prefetchBatch(hrefs, { priority: "low" });
   }, [polls, prefetchBatch]);
+
+  // Prefetch poll results + votes in the background so destination pages render instantly.
+  // Staggered via requestIdleCallback to avoid blocking the main thread.
+  useEffect(() => {
+    if (polls.length === 0 || typeof window === 'undefined') return;
+    const ric = (cb: () => void, delay: number) => {
+      if ('requestIdleCallback' in window) {
+        return requestIdleCallback(cb, { timeout: delay + 1000 });
+      }
+      return setTimeout(cb, delay);
+    };
+    const ids: number[] = [];
+    polls.forEach((poll, i) => {
+      // Stagger by 100ms per poll to avoid overwhelming the API
+      const id = ric(() => {
+        apiGetPollResults(poll.id).catch(() => {});
+        apiGetVotes(poll.id).catch(() => {});
+      }, 500 + i * 100) as unknown as number;
+      ids.push(id);
+    });
+    return () => {
+      ids.forEach(id => {
+        if ('cancelIdleCallback' in window) cancelIdleCallback(id);
+        else clearTimeout(id);
+      });
+    };
+  }, [polls]);
 
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
