@@ -6,6 +6,9 @@ import { apiGetAccessiblePolls, apiGetPollById } from '@/lib/api';
 import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
 import { cacheAccessiblePolls, getCachedAccessiblePolls, cachePoll } from '@/lib/pollCache';
 
+// Coalesce concurrent getAccessiblePolls calls (e.g., StrictMode double-mount)
+let inFlight: Promise<Poll[]> | null = null;
+
 // Get polls this browser has access to
 export async function getAccessiblePolls(): Promise<Poll[]> {
   try {
@@ -24,9 +27,20 @@ export async function getAccessiblePolls(): Promise<Poll[]> {
       if (allPresent) return cached;
     }
 
-    const polls = await apiGetAccessiblePolls(accessibleIds);
-    cacheAccessiblePolls(polls);
-    return polls;
+    // Coalesce concurrent calls — React StrictMode double-mounts in dev
+    if (inFlight) return inFlight;
+
+    inFlight = (async () => {
+      try {
+        const polls = await apiGetAccessiblePolls(accessibleIds);
+        cacheAccessiblePolls(polls);
+        return polls;
+      } finally {
+        inFlight = null;
+      }
+    })();
+
+    return inFlight;
   } catch (error) {
     console.error('Error in getAccessiblePolls:', error);
     return [];

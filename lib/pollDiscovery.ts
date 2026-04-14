@@ -9,70 +9,89 @@ export interface DiscoveryResult {
   originalCount: number;
 }
 
+// Avoid redundant discovery calls across page navigations within the session.
+// Discovery is only useful when new polls might exist; running it once per
+// minute is plenty. Keyed by the sorted ID list so a changed list triggers
+// a fresh discovery.
+const DISCOVERY_TTL_MS = 60_000;
+let lastDiscovery: { idsKey: string; at: number; result: DiscoveryResult } | null = null;
+let inFlight: Promise<DiscoveryResult> | null = null;
+
 /**
  * Discovers all related polls (follow-ups) for the current user's accessible polls
  * Returns any new poll IDs that weren't previously known
  */
 export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
-  try {
-    // Get currently accessible poll IDs from localStorage
-    const currentPollIds = getAccessiblePollIds();
+  const currentPollIds = getAccessiblePollIds();
 
-    if (currentPollIds.length === 0) {
-      return {
-        newPollIds: [],
-        totalDiscovered: 0,
-        originalCount: 0
+  if (currentPollIds.length === 0) {
+    return {
+      newPollIds: [],
+      totalDiscovered: 0,
+      originalCount: 0
+    };
+  }
+
+  const idsKey = [...currentPollIds].sort().join(',');
+
+  // Return cached result if fresh and the ID list hasn't changed
+  if (lastDiscovery && lastDiscovery.idsKey === idsKey && Date.now() - lastDiscovery.at < DISCOVERY_TTL_MS) {
+    return lastDiscovery.result;
+  }
+
+  // Coalesce concurrent calls (e.g., StrictMode double-mount) into one API call
+  if (inFlight) return inFlight;
+
+  inFlight = (async () => {
+    try {
+      console.log(`🔍 Starting poll discovery for ${currentPollIds.length} accessible polls`);
+
+      const result = await apiGetRelatedPolls(currentPollIds);
+      const { allRelatedIds, originalCount, discoveredCount } = result;
+
+      if (!Array.isArray(allRelatedIds)) {
+        console.warn('Poll discovery returned invalid data:', result);
+        return {
+          newPollIds: [],
+          totalDiscovered: currentPollIds.length,
+          originalCount: currentPollIds.length
+        };
+      }
+
+      const newPollIds = allRelatedIds.filter((id: string) => !currentPollIds.includes(id));
+
+      newPollIds.forEach((pollId: string) => {
+        addAccessiblePollId(pollId);
+      });
+
+      if (newPollIds.length > 0) {
+        invalidateAccessiblePolls();
+        console.log(`🔗 Discovered ${newPollIds.length} new related polls`);
+      } else {
+        console.log('📋 No new related polls found');
+      }
+
+      const discoveryResult: DiscoveryResult = {
+        newPollIds,
+        totalDiscovered: discoveredCount || allRelatedIds.length,
+        originalCount: originalCount || currentPollIds.length
       };
-    }
 
-    console.log(`🔍 Starting poll discovery for ${currentPollIds.length} accessible polls`);
-
-    // Call the Python API directly
-    const result = await apiGetRelatedPolls(currentPollIds);
-    const { allRelatedIds, originalCount, discoveredCount } = result;
-
-    if (!Array.isArray(allRelatedIds)) {
-      console.warn('Poll discovery returned invalid data:', result);
+      lastDiscovery = { idsKey, at: Date.now(), result: discoveryResult };
+      return discoveryResult;
+    } catch (error) {
+      console.warn('Poll discovery encountered an error but continuing gracefully:', error);
       return {
         newPollIds: [],
         totalDiscovered: currentPollIds.length,
         originalCount: currentPollIds.length
       };
+    } finally {
+      inFlight = null;
     }
+  })();
 
-    // Find new poll IDs that weren't previously accessible
-    const newPollIds = allRelatedIds.filter((id: string) => !currentPollIds.includes(id));
-
-    // Add new poll IDs to browser storage
-    newPollIds.forEach((pollId: string) => {
-      addAccessiblePollId(pollId);
-    });
-
-    if (newPollIds.length > 0) {
-      invalidateAccessiblePolls();
-      console.log(`🔗 Discovered ${newPollIds.length} new related polls`);
-    } else {
-      console.log('📋 No new related polls found');
-    }
-
-    return {
-      newPollIds,
-      totalDiscovered: discoveredCount || allRelatedIds.length,
-      originalCount: originalCount || currentPollIds.length
-    };
-
-  } catch (error) {
-    console.warn('Poll discovery encountered an error but continuing gracefully:', error);
-
-    // Always return a valid result even if discovery fails
-    const currentPollIds = getAccessiblePollIds();
-    return {
-      newPollIds: [],
-      totalDiscovered: currentPollIds.length,
-      originalCount: currentPollIds.length
-    };
-  }
+  return inFlight;
 }
 
 /**
