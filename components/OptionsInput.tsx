@@ -98,14 +98,17 @@ export default function OptionsInput({
     onMetadataChange({ ...optionsMetadata, [result.label]: entry });
   };
 
-  const removeOption = (index: number) => {
-    // Clean up metadata for the removed option
-    const removedOption = options[index];
-    if (removedOption && onMetadataChange && optionsMetadata?.[removedOption]) {
+  const clearMetadataForOption = (optionLabel: string) => {
+    if (onMetadataChange && optionsMetadata?.[optionLabel]) {
       const newMeta = { ...optionsMetadata };
-      delete newMeta[removedOption];
+      delete newMeta[optionLabel];
       onMetadataChange(newMeta);
     }
+  };
+
+  const removeOption = (index: number) => {
+    const removedOption = options[index];
+    if (removedOption) clearMetadataForOption(removedOption);
 
     const newOptions = options.filter((_, i) => i !== index);
 
@@ -179,6 +182,7 @@ export default function OptionsInput({
           const isDuplicate = isDuplicateOption(index);
           const isLastField = index === options.length - 1;
           const canDelete = filledCount >= 1;
+          const optionMeta = optionsMetadata?.[option];
 
           return (
             <div key={index} className="flex items-start gap-2">
@@ -197,15 +201,9 @@ export default function OptionsInput({
                     referenceLatitude={referenceLatitude}
                     referenceLongitude={referenceLongitude}
                     searchRadius={searchRadius}
-                    isRichSelection={!!option && !!optionsMetadata?.[option]}
-                    richImageUrl={optionsMetadata?.[option]?.imageUrl}
-                    onRichValueCleared={() => {
-                      if (onMetadataChange && optionsMetadata?.[option]) {
-                        const newMeta = { ...optionsMetadata };
-                        delete newMeta[option];
-                        onMetadataChange(newMeta);
-                      }
-                    }}
+                    isRichSelection={!!option && !!optionMeta}
+                    richImageUrl={optionMeta?.imageUrl}
+                    onRichValueCleared={() => clearMetadataForOption(option)}
                   />
                 </div>
               ) : (

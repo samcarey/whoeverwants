@@ -100,10 +100,8 @@ export default function AutocompleteInput({
   }, [category, referenceLatitude, referenceLongitude, searchRadius]);
 
   const handleChange = (newValue: string) => {
-    // If the user edits a rich selection, clear its metadata
-    if (isRichSelection) {
-      onRichValueCleared?.();
-    }
+    if (isRichSelection) onRichValueCleared?.();
+
     onChange(newValue);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => doSearch(newValue), 300);
@@ -202,12 +200,8 @@ export default function AutocompleteInput({
           onKeyDown={handleKeyDown}
           disabled={disabled}
           maxLength={maxLength}
-          className={className}
+          className={`${className}${showIcon ? ' pl-8' : ''}${isRichSelection ? ' underline decoration-blue-500/50 underline-offset-2' : ''}`}
           placeholder={placeholder}
-          style={{
-            ...(showIcon ? { paddingLeft: '2rem' } : {}),
-            ...(isRichSelection ? { textDecoration: 'underline', textDecorationColor: 'rgba(59, 130, 246, 0.5)', textUnderlineOffset: '2px' } : {}),
-          }}
         />
       </div>
       {showSuggestions && suggestions.length > 0 && (
