@@ -431,6 +431,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   <div key={poll.id} className={`border-b ${index === 0 && !isFirstVoted ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}>
                     <div
                       onClick={() => {
+                        console.log(`[PollList] navigating to /p/${poll.short_id || poll.id} at t=${performance.now().toFixed(0)}`);
                         setNavigatingPollId(poll.id);
                         router.push(`/p/${poll.short_id || poll.id}`);
                       }}

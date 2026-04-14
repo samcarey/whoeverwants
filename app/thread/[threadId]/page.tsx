@@ -48,6 +48,8 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
 };
 
 function ThreadContent() {
+  const mountTime = performance.now();
+  console.log('[ThreadPage] component mounted');
   const router = useRouter();
   const params = useParams();
   const { prefetchBatch } = usePrefetch();
@@ -101,6 +103,7 @@ function ThreadContent() {
 
         // Step 1: Fetch the poll referenced in the URL and register access.
         // Check the in-memory cache first — the home page already fetched all accessible polls.
+        const step1Start = performance.now();
         let anchorPoll: Poll;
         try {
           const isUuid = threadId.length > 10 && threadId.includes('-');
@@ -109,10 +112,15 @@ function ThreadContent() {
             : getCachedPollByShortId(threadId);
           if (cached) {
             anchorPoll = cached;
-          } else if (isUuid) {
-            anchorPoll = await apiGetPollById(threadId);
+            console.log(`[ThreadPage] anchor poll cache HIT (${(performance.now() - step1Start).toFixed(0)}ms)`);
           } else {
-            anchorPoll = await apiGetPollByShortId(threadId);
+            console.log(`[ThreadPage] anchor poll cache MISS — fetching from API`);
+            if (isUuid) {
+              anchorPoll = await apiGetPollById(threadId);
+            } else {
+              anchorPoll = await apiGetPollByShortId(threadId);
+            }
+            console.log(`[ThreadPage] anchor poll API fetch done (${(performance.now() - step1Start).toFixed(0)}ms)`);
           }
           addAccessiblePollId(anchorPoll.id);
         } catch {
@@ -121,8 +129,12 @@ function ThreadContent() {
         }
 
         // Step 2: Discover children, then fetch all accessible polls
+        const step2Start = performance.now();
         try { await discoverRelatedPolls(); } catch {}
+        console.log(`[ThreadPage] discoverRelatedPolls done (${(performance.now() - step2Start).toFixed(0)}ms)`);
+        const step3Start = performance.now();
         const polls = await getAccessiblePolls();
+        console.log(`[ThreadPage] getAccessiblePolls done (${(performance.now() - step3Start).toFixed(0)}ms, ${polls?.length ?? 0} polls, total since mount: ${(performance.now() - mountTime).toFixed(0)}ms)`);
         if (!polls) { setError(true); return; }
 
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();

@@ -122,6 +122,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
           >
             <div
               onClick={() => {
+                console.log(`[ThreadList] navigating to /thread/${routeId} at t=${performance.now().toFixed(0)}`);
                 setNavigatingThreadId(thread.rootPollId);
                 router.push(`/thread/${routeId}`);
               }}

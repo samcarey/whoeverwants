@@ -10,6 +10,8 @@ import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
 
 function PollContent() {
+  const mountTime = performance.now();
+  console.log('[PollPage] component mounted');
   const [poll, setPoll] = useState<Poll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -34,12 +36,16 @@ function PollContent() {
     async function fetchPoll() {
       try {
         // Check in-memory cache first — the home page / thread page already has this data.
+        const fetchStart = performance.now();
         const isUuid = pollId.length > 10 && pollId.includes('-');
         let pollData: Poll | null = isUuid
           ? getCachedPollById(pollId)
           : getCachedPollByShortId(pollId);
 
-        if (!pollData) {
+        if (pollData) {
+          console.log(`[PollPage] cache HIT for ${pollId.slice(0, 8)}… (${(performance.now() - fetchStart).toFixed(0)}ms since fetch start, ${(performance.now() - mountTime).toFixed(0)}ms since mount)`);
+        } else {
+          console.log(`[PollPage] cache MISS for ${pollId.slice(0, 8)}… — fetching from API`);
           try {
             if (isUuid) {
               pollData = await apiGetPollById(pollId);
@@ -55,6 +61,7 @@ function PollContent() {
               }
             }
           }
+          console.log(`[PollPage] API fetch done (${(performance.now() - fetchStart).toFixed(0)}ms)`);
         }
         // Grant access to this poll
         if (pollData) {
