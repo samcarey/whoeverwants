@@ -174,12 +174,22 @@ function ThreadContent() {
     );
   }
 
-  const threadPolls = thread.polls;
+  const now = new Date();
+  const isPollOpen = (poll: Poll) =>
+    poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
+
+  // Unvoted open polls sort to bottom so they're visible on auto-scroll
+  const threadPolls = [...thread.polls].sort((a, b) => {
+    const aNeedsAction = isPollOpen(a) && !votedPollIds.has(a.id) && !abstainedPollIds.has(a.id);
+    const bNeedsAction = isPollOpen(b) && !votedPollIds.has(b.id) && !abstainedPollIds.has(b.id);
+    if (aNeedsAction !== bNeedsAction) return aNeedsAction ? 1 : -1;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Fixed thread header with back button — not scrollable */}
-      <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
+      <div className="shrink-0 bg-background border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
         <button
           onClick={() => {
             const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
@@ -189,7 +199,7 @@ function ThreadContent() {
               router.push('/');
             }
           }}
-          className="w-10 h-10 flex items-center justify-center shrink-0"
+          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
           <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -215,10 +225,7 @@ function ThreadContent() {
         <div className="py-2">
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
-            const now = new Date();
-            const isOpen = poll.response_deadline
-              ? new Date(poll.response_deadline) > now && !poll.is_closed
-              : !poll.is_closed;
+            const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
 
             const handleTouchStart = (e: React.TouchEvent) => {
