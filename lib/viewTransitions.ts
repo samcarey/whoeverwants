@@ -25,24 +25,24 @@ export function supportsViewTransitions(): boolean {
 }
 
 /**
- * Wait for the browser URL pathname to match `targetPath`, then for the
- * DOM to settle (two animation frames). Used by the view transition
- * callback so the browser doesn't capture the "after" snapshot before
- * the new page has rendered.
+ * Wait for the browser URL pathname to match `targetPath`. Used by the view
+ * transition callback so the browser doesn't capture the "after" snapshot
+ * before the new page has rendered.
  *
  * Normalizes trailing slashes — the app uses `trailingSlash: true` so
  * `/thread/xyz` may become `/thread/xyz/` after navigation.
+ *
+ * Do NOT use requestAnimationFrame inside the view transition callback:
+ * the browser pauses rendering during the callback, so rAF never fires
+ * and the callback would hit the browser's 4s timeout.
  */
-async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
+async function waitForNavigation(targetPath: string, timeoutMs = 800): Promise<void> {
   const normalize = (p: string) => p.replace(/\/$/, '') || '/';
   const target = normalize(targetPath);
   const start = Date.now();
   while (normalize(window.location.pathname) !== target && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 10));
   }
-  // Let React commit + browser paint
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
 }
 
 type ViewTransition = { finished: Promise<void> };
@@ -132,13 +132,12 @@ export function navigateBackWithTransition(heroElement?: HTMLElement | null): vo
     const previousPath = window.location.pathname;
     const transition = start.call(document, async () => {
       window.history.back();
-      // Wait for popstate → URL change, then paint frames
+      // Wait for popstate → URL change. No rAF here — the browser pauses
+      // rendering during the view transition callback.
       const started = Date.now();
-      while (window.location.pathname === previousPath && Date.now() - started < 2000) {
+      while (window.location.pathname === previousPath && Date.now() - started < 800) {
         await new Promise((r) => setTimeout(r, 10));
       }
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
     });
     transition.finished.finally(cleanup);
   } catch {
