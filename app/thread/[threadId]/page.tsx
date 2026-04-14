@@ -12,6 +12,7 @@ import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
+import { navigateWithTransition, navigateBackWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
@@ -225,9 +226,9 @@ function ThreadContent() {
           onClick={() => {
             const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
             if (navCount > 1) {
-              window.history.back();
+              navigateBackWithTransition();
             } else {
-              router.push('/');
+              navigateWithTransition(router, '/', 'back');
             }
           }}
           className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
@@ -242,7 +243,10 @@ function ThreadContent() {
           anonymousCount={thread.anonymousRespondentCount}
         />
         <div className="min-w-0">
-          <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+          <h1
+            className="font-semibold text-lg text-gray-900 dark:text-white truncate"
+            style={{ viewTransitionName: 'hero-title' }}
+          >
             {thread.title}
           </h1>
           <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -280,15 +284,21 @@ function ThreadContent() {
               }, 500);
             };
 
+            const goToPoll = () => {
+              const href = `/p/${poll.short_id || poll.id}`;
+              const heroEl = document.querySelector<HTMLElement>(`[data-thread-poll-title-id="${poll.id}"]`);
+              setNavigatingPollId(poll.id);
+              navigateWithTransition(router, href, 'forward', heroEl);
+            };
+
             const handleTouchEnd = () => {
               if (longPressTimer.current) {
                 clearTimeout(longPressTimer.current);
                 longPressTimer.current = null;
               }
               if (!isScrolling.current && !isLongPress.current) {
-                setNavigatingPollId(poll.id);
                 setPressedPollId(null);
-                router.push(`/p/${poll.short_id || poll.id}`);
+                goToPoll();
               } else {
                 setPressedPollId(null);
               }
@@ -316,10 +326,7 @@ function ThreadContent() {
                 className="border-b border-gray-200 dark:border-gray-700 mx-1.5"
               >
                 <div
-                  onClick={() => {
-                    setNavigatingPollId(poll.id);
-                    router.push(`/p/${poll.short_id || poll.id}`);
-                  }}
+                  onClick={goToPoll}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
@@ -368,7 +375,10 @@ function ThreadContent() {
                   </div>
 
                   {/* Title */}
-                  <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                  <h3
+                    data-thread-poll-title-id={poll.id}
+                    className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white"
+                  >
                     {poll.title}
                   </h3>
 

@@ -9,6 +9,7 @@ import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
 import { usePrefetch } from "@/lib/prefetch";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -84,6 +85,13 @@ export default function ThreadList({ polls }: ThreadListProps) {
         const latestPoll = thread.latestPoll;
         const hasUnvoted = thread.unvotedCount > 0;
 
+        const goToThread = () => {
+          console.log(`[ThreadList] navigating to /thread/${routeId} at t=${performance.now().toFixed(0)}`);
+          const heroEl = document.querySelector<HTMLElement>(`[data-thread-title-id="${thread.rootPollId}"]`);
+          setNavigatingThreadId(thread.rootPollId);
+          navigateWithTransition(router, `/thread/${routeId}`, 'forward', heroEl);
+        };
+
         const handleTouchStart = (e: React.TouchEvent) => {
           isScrolling.current = false;
           setPressedThreadId(thread.rootPollId);
@@ -95,9 +103,8 @@ export default function ThreadList({ polls }: ThreadListProps) {
 
         const handleTouchEnd = () => {
           if (!isScrolling.current) {
-            setNavigatingThreadId(thread.rootPollId);
             setPressedThreadId(null);
-            router.push(`/thread/${routeId}`);
+            goToThread();
           } else {
             setPressedThreadId(null);
           }
@@ -121,11 +128,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
             className={`border-b ${index === 0 ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}
           >
             <div
-              onClick={() => {
-                console.log(`[ThreadList] navigating to /thread/${routeId} at t=${performance.now().toFixed(0)}`);
-                setNavigatingThreadId(thread.rootPollId);
-                router.push(`/thread/${routeId}`);
-              }}
+              onClick={goToThread}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchMove}
@@ -150,7 +153,10 @@ export default function ThreadList({ polls }: ThreadListProps) {
               <div className="flex-1 min-w-0">
                 {/* Row 1: Thread title + unvoted badge */}
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className={`font-semibold text-base truncate flex-1 ${hasUnvoted ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                  <h3
+                    data-thread-title-id={thread.rootPollId}
+                    className={`font-semibold text-base truncate flex-1 ${hasUnvoted ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}
+                  >
                     {thread.title}
                   </h3>
                   <div className="flex items-center gap-2 flex-shrink-0">

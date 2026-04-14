@@ -9,6 +9,7 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
+import { navigateBackWithTransition } from '@/lib/viewTransitions';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -739,6 +740,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words select-none"
+                    style={{ viewTransitionName: 'hero-title' }}
                     {...longPressProps}
                   >
                     {pollPageTitle}
@@ -935,7 +937,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         {(isPollPage || isProfilePage) && hasAppHistory && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
-              onClick={() => window.history.back()}
+              onClick={() => navigateBackWithTransition()}
               className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               aria-label="Go back"
             >

@@ -11,6 +11,7 @@ import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_
 import type { ResultBadge } from "@/lib/pollListUtils";
 import { usePrefetch } from "@/lib/prefetch";
 import { apiGetPollResults, apiGetVotes } from "@/lib/api";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 
 /** Extract image URLs from poll options metadata (skip entries without images). */
 function getOptionIconUrls(poll: Poll): string[] {
@@ -41,7 +42,7 @@ function PollTitle({ poll, className }: { poll: Poll; className: string }) {
 
   return (
     <div className="relative">
-      <h3 ref={ref} className={className}>
+      <h3 ref={ref} data-poll-title-id={poll.id} className={className}>
         {poll.title}
         {icons.length > 0 && (
           <>
@@ -410,6 +411,14 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 }, 500); // 500ms for long press
               };
 
+              const goToPoll = () => {
+                const href = `/p/${poll.short_id || poll.id}`;
+                console.log(`[PollList] navigating to ${href} at t=${performance.now().toFixed(0)}`);
+                const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
+                setNavigatingPollId(poll.id);
+                navigateWithTransition(router, href, 'forward', heroEl);
+              };
+
               const handleTouchEnd = (e: React.TouchEvent) => {
                 if (longPressTimer.current) {
                   clearTimeout(longPressTimer.current);
@@ -418,9 +427,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                 // Only navigate if not scrolling and not long press
                 if (!isScrolling.current && !isLongPress.current) {
-                  setNavigatingPollId(poll.id); // Show loading state
                   setPressedPollId(null); // Clear pressed state
-                  router.push(`/p/${poll.short_id || poll.id}`);
+                  goToPoll();
                 } else {
                   // Reset states if not navigating
                   setPressedPollId(null); // Clear pressed state
@@ -458,11 +466,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   )}
                   <div key={poll.id} className={`border-b ${index === 0 && !isFirstVoted ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}>
                     <div
-                      onClick={() => {
-                        console.log(`[PollList] navigating to /p/${poll.short_id || poll.id} at t=${performance.now().toFixed(0)}`);
-                        setNavigatingPollId(poll.id);
-                        router.push(`/p/${poll.short_id || poll.id}`);
-                      }}
+                      onClick={goToPoll}
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
@@ -563,6 +567,13 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   }, 500); // 500ms for long press
                 };
 
+                const goToPoll = () => {
+                  const href = `/p/${poll.short_id || poll.id}`;
+                  const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
+                  setNavigatingPollId(poll.id);
+                  navigateWithTransition(router, href, 'forward', heroEl);
+                };
+
                 const handleTouchEnd = (e: React.TouchEvent) => {
                   if (longPressTimer.current) {
                     clearTimeout(longPressTimer.current);
@@ -571,9 +582,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                   // Only navigate if not scrolling and not long press
                   if (!isScrolling.current && !isLongPress.current) {
-                    setNavigatingPollId(poll.id); // Show loading state
                     setPressedPollId(null); // Clear pressed state
-                    router.push(`/p/${poll.short_id || poll.id}`);
+                    goToPoll();
                   } else {
                     // Reset states if not navigating
                     setPressedPollId(null); // Clear pressed state
@@ -605,10 +615,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 return (
                   <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
                     <div
-                      onClick={() => {
-                        setNavigatingPollId(poll.id);
-                        router.push(`/p/${poll.short_id || poll.id}`);
-                      }}
+                      onClick={goToPoll}
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
