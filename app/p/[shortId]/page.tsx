@@ -3,6 +3,7 @@
 import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
@@ -32,22 +33,26 @@ function PollContent() {
 
     async function fetchPoll() {
       try {
-        // Try to fetch poll by UUID first, fall back to short_id
-        let pollData: Poll | null = null;
-        try {
-          // UUID format check (simple heuristic)
-          if (pollId.length > 10 && pollId.includes('-')) {
-            pollData = await apiGetPollById(pollId);
-          } else {
-            pollData = await apiGetPollByShortId(pollId);
-          }
-        } catch {
-          // If lookup fails, only try short_id fallback if it doesn't look like a UUID
-          if (!(pollId.length > 10 && pollId.includes('-'))) {
-            try {
+        // Check in-memory cache first — the home page / thread page already has this data.
+        const isUuid = pollId.length > 10 && pollId.includes('-');
+        let pollData: Poll | null = isUuid
+          ? getCachedPollById(pollId)
+          : getCachedPollByShortId(pollId);
+
+        if (!pollData) {
+          try {
+            if (isUuid) {
+              pollData = await apiGetPollById(pollId);
+            } else {
               pollData = await apiGetPollByShortId(pollId);
-            } catch {
-              pollData = null;
+            }
+          } catch {
+            if (!isUuid) {
+              try {
+                pollData = await apiGetPollByShortId(pollId);
+              } catch {
+                pollData = null;
+              }
             }
           }
         }

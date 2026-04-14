@@ -1,6 +1,7 @@
 // Poll discovery utilities for follow-up functionality
 import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
 import { apiGetRelatedPolls } from '@/lib/api';
+import { invalidateAccessiblePolls } from '@/lib/pollCache';
 
 export interface DiscoveryResult {
   newPollIds: string[];
@@ -49,6 +50,7 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
     });
 
     if (newPollIds.length > 0) {
+      invalidateAccessiblePolls();
       console.log(`🔗 Discovered ${newPollIds.length} new related polls`);
     } else {
       console.log('📋 No new related polls found');

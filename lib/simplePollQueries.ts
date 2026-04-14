@@ -4,6 +4,7 @@
 import { Poll } from '@/lib/types';
 import { apiGetAccessiblePolls, apiGetPollById } from '@/lib/api';
 import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
+import { cacheAccessiblePolls, getCachedAccessiblePolls, cachePoll } from '@/lib/pollCache';
 
 // Get polls this browser has access to
 export async function getAccessiblePolls(): Promise<Poll[]> {
@@ -14,7 +15,18 @@ export async function getAccessiblePolls(): Promise<Poll[]> {
       return [];
     }
 
-    return await apiGetAccessiblePolls(accessibleIds);
+    // Return cached result if fresh and the ID list hasn't changed.
+    // (A changed ID list means new polls were discovered and we need to re-fetch.)
+    const cached = getCachedAccessiblePolls();
+    if (cached) {
+      const cachedIds = new Set(cached.map(p => p.id));
+      const allPresent = accessibleIds.every(id => cachedIds.has(id));
+      if (allPresent) return cached;
+    }
+
+    const polls = await apiGetAccessiblePolls(accessibleIds);
+    cacheAccessiblePolls(polls);
+    return polls;
   } catch (error) {
     console.error('Error in getAccessiblePolls:', error);
     return [];
@@ -28,6 +40,7 @@ export async function getPollWithAccess(pollId: string): Promise<Poll | null> {
 
     // Grant access to this poll by adding to browser storage
     addAccessiblePollId(data.id);
+    cachePoll(data);
 
     return data;
   } catch (error) {

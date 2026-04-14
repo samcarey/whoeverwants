@@ -24,6 +24,7 @@ import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { invalidatePoll } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -899,6 +900,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
       const updatedPoll = await apiClosePoll(poll.id, secretToUse);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
@@ -933,6 +935,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setIsCuttingOffSuggestions(true);
     try {
       const updatedPoll = await apiCutoffSuggestions(poll.id, creatorSecret);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         // Update the suggestion deadline so the UI exits suggestion phase
         setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
@@ -970,6 +973,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setIsCuttingOffAvailability(true);
     try {
       const updatedPoll = await apiCutoffAvailability(poll.id, creatorSecret);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
         if (updatedPoll.options) {
@@ -1004,6 +1008,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
       const updatedPoll = await apiReopenPoll(poll.id, secretToUse);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setPollClosed(false);
         setManuallyReopened(true); // Set flag to override deadline expiration
@@ -1343,6 +1348,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         pollType: poll.poll_type
       });
 
+      invalidatePoll(poll.id);
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
 

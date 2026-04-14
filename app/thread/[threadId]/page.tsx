@@ -8,6 +8,7 @@ import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -98,15 +99,21 @@ function ThreadContent() {
         setLoading(true);
         setError(false);
 
-        // Step 1: Fetch the poll referenced in the URL and register access
+        // Step 1: Fetch the poll referenced in the URL and register access.
+        // Check the in-memory cache first — the home page already fetched all accessible polls.
         let anchorPoll: Poll;
         try {
-          if (threadId.length > 10 && threadId.includes('-')) {
+          const isUuid = threadId.length > 10 && threadId.includes('-');
+          const cached = isUuid
+            ? getCachedPollById(threadId)
+            : getCachedPollByShortId(threadId);
+          if (cached) {
+            anchorPoll = cached;
+          } else if (isUuid) {
             anchorPoll = await apiGetPollById(threadId);
           } else {
             anchorPoll = await apiGetPollByShortId(threadId);
           }
-          // Register access (like visiting /p/[id] does)
           addAccessiblePollId(anchorPoll.id);
         } catch {
           setError(true);
