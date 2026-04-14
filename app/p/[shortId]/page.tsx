@@ -4,14 +4,13 @@ import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
 
 function PollContent() {
-  const mountTime = performance.now();
-  console.log('[PollPage] component mounted');
+  const mountTime = useRef(performance.now());
   const [poll, setPoll] = useState<Poll | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -24,6 +23,10 @@ function PollContent() {
   useEffect(() => {
     router.prefetch('/');
   }, [router]);
+
+  useEffect(() => {
+    console.log('[PollPage] component mounted');
+  }, []);
 
   useEffect(() => {
     const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
@@ -43,7 +46,7 @@ function PollContent() {
           : getCachedPollByShortId(pollId);
 
         if (pollData) {
-          console.log(`[PollPage] cache HIT for ${pollId.slice(0, 8)}… (${(performance.now() - fetchStart).toFixed(0)}ms since fetch start, ${(performance.now() - mountTime).toFixed(0)}ms since mount)`);
+          console.log(`[PollPage] cache HIT for ${pollId.slice(0, 8)}… (${(performance.now() - fetchStart).toFixed(0)}ms since fetch start, ${(performance.now() - mountTime.current).toFixed(0)}ms since mount)`);
         } else {
           console.log(`[PollPage] cache MISS for ${pollId.slice(0, 8)}… — fetching from API`);
           try {

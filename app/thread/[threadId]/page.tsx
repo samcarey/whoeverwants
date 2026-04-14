@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -48,8 +48,7 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
 };
 
 function ThreadContent() {
-  const mountTime = performance.now();
-  console.log('[ThreadPage] component mounted');
+  const mountTime = useRef(performance.now());
   const router = useRouter();
   const params = useParams();
   const { prefetchBatch } = usePrefetch();
@@ -85,6 +84,10 @@ function ThreadContent() {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
   const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('[ThreadPage] component mounted');
+  }, []);
 
   // Load voted/abstained
   useEffect(() => {
@@ -134,7 +137,7 @@ function ThreadContent() {
         console.log(`[ThreadPage] discoverRelatedPolls done (${(performance.now() - step2Start).toFixed(0)}ms)`);
         const step3Start = performance.now();
         const polls = await getAccessiblePolls();
-        console.log(`[ThreadPage] getAccessiblePolls done (${(performance.now() - step3Start).toFixed(0)}ms, ${polls?.length ?? 0} polls, total since mount: ${(performance.now() - mountTime).toFixed(0)}ms)`);
+        console.log(`[ThreadPage] getAccessiblePolls done (${(performance.now() - step3Start).toFixed(0)}ms, ${polls?.length ?? 0} polls, total since mount: ${(performance.now() - mountTime.current).toFixed(0)}ms)`);
         if (!polls) { setError(true); return; }
 
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
