@@ -98,7 +98,18 @@ export default function OptionsInput({
     onMetadataChange({ ...optionsMetadata, [result.label]: entry });
   };
 
+  const clearMetadataForOption = (optionLabel: string) => {
+    if (onMetadataChange && optionsMetadata?.[optionLabel]) {
+      const newMeta = { ...optionsMetadata };
+      delete newMeta[optionLabel];
+      onMetadataChange(newMeta);
+    }
+  };
+
   const removeOption = (index: number) => {
+    const removedOption = options[index];
+    if (removedOption) clearMetadataForOption(removedOption);
+
     const newOptions = options.filter((_, i) => i !== index);
 
     // Ensure we always have at least 1 field
@@ -171,6 +182,7 @@ export default function OptionsInput({
           const isDuplicate = isDuplicateOption(index);
           const isLastField = index === options.length - 1;
           const canDelete = filledCount >= 1;
+          const optionMeta = optionsMetadata?.[option];
 
           return (
             <div key={index} className="flex items-start gap-2">
@@ -189,6 +201,9 @@ export default function OptionsInput({
                     referenceLatitude={referenceLatitude}
                     referenceLongitude={referenceLongitude}
                     searchRadius={searchRadius}
+                    isRichSelection={!!option && !!optionMeta}
+                    richImageUrl={optionMeta?.imageUrl}
+                    onRichValueCleared={() => clearMetadataForOption(option)}
                   />
                 </div>
               ) : (

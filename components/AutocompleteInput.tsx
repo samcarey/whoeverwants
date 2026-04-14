@@ -18,6 +18,12 @@ interface AutocompleteInputProps {
   referenceLatitude?: number;
   referenceLongitude?: number;
   searchRadius?: number;
+  /** When the current value has associated metadata from a search selection */
+  richImageUrl?: string;
+  /** Whether the current value was selected from autocomplete (has metadata) */
+  isRichSelection?: boolean;
+  /** Called when the user edits/clears a rich selection, so parent can clean up metadata */
+  onRichValueCleared?: () => void;
 }
 
 export default function AutocompleteInput({
@@ -33,6 +39,9 @@ export default function AutocompleteInput({
   referenceLatitude,
   referenceLongitude,
   searchRadius,
+  richImageUrl,
+  isRichSelection = false,
+  onRichValueCleared,
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -91,6 +100,8 @@ export default function AutocompleteInput({
   }, [category, referenceLatitude, referenceLongitude, searchRadius]);
 
   const handleChange = (newValue: string) => {
+    if (isRichSelection) onRichValueCleared?.();
+
     onChange(newValue);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => doSearch(newValue), 300);
@@ -101,6 +112,10 @@ export default function AutocompleteInput({
     onSelect?.(result);
     setSuggestions([]);
     setShowSuggestions(false);
+    // Select all text so backspace or any keystroke replaces the whole value
+    requestAnimationFrame(() => {
+      localInputRef.current?.select();
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -152,27 +167,43 @@ export default function AutocompleteInput({
     };
   }, [showSuggestions, suggestions.length]);
 
+  const showIcon = isRichSelection && !!richImageUrl;
+
   return (
     <div ref={containerRef} className="relative">
-      <input
-        ref={(el) => {
-          localInputRef.current = el;
-          if (inputRef) inputRef(el);
-        }}
-        type="text"
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        onBlur={(e) => {
-          const trimmed = e.target.value.trim();
-          if (trimmed !== value) onChange(trimmed);
-        }}
-        onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        maxLength={maxLength}
-        className={className}
-        placeholder={placeholder}
-      />
+      <div className="relative">
+        {showIcon && (
+          <img
+            src={richImageUrl}
+            alt=""
+            draggable={false}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded object-cover pointer-events-none z-10"
+          />
+        )}
+        <input
+          ref={(el) => {
+            localInputRef.current = el;
+            if (inputRef) inputRef(el);
+          }}
+          type="text"
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          onBlur={(e) => {
+            const trimmed = e.target.value.trim();
+            if (trimmed !== value) onChange(trimmed);
+          }}
+          onFocus={() => {
+            if (suggestions.length > 0) setShowSuggestions(true);
+            // Select all text on focus so backspace/typing replaces the whole chip
+            if (isRichSelection) localInputRef.current?.select();
+          }}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          maxLength={maxLength}
+          className={`${className}${showIcon ? ' pl-8' : ''}${isRichSelection ? ' underline decoration-blue-500/50 underline-offset-2' : ''}`}
+          placeholder={placeholder}
+        />
+      </div>
       {showSuggestions && suggestions.length > 0 && (
         <ul ref={dropdownRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {suggestions.map((result, index) => (

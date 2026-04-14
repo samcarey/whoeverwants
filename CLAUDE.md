@@ -1046,6 +1046,13 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **`line-clamp-2` breaks flex layouts**: Don't apply `line-clamp-*` to containers with flex children (like `OptionLabel`). The CSS treats flex items as flowing text and truncates unexpectedly. Use `overflow-hidden` instead and let inner components handle their own truncation.
 - **Voting Cutoff field is a shared component**: `components/VotingCutoffField.tsx` renders the inline colored-value dropdown + conditional custom date/time inputs used by every poll category in `app/create-poll/page.tsx`. Reuse it when adding new categories — don't copy-paste the JSX. The custom date/time inputs inside use ids `customDate` and `customTime`; the component assumes only one instance is rendered at a time (enforced by the mutually exclusive `category === 'time'` vs `category !== 'time'` branches).
 
+### Rich Selection Styling (Autocomplete Options)
+
+- **Options selected from autocomplete are styled as "chips"**: underlined text (Tailwind `underline decoration-blue-500/50 underline-offset-2`) and a favicon/image on the left edge (`pl-8` + absolutely positioned `<img>`). Plain-typed options have no special styling.
+- **Chip-like clear behavior**: on focus, all text is selected (`input.select()`), so backspace or any keystroke replaces the entire value. After `selectSuggestion`, `requestAnimationFrame(() => input.select())` auto-selects; on re-focus when `isRichSelection`, text is selected again.
+- **Metadata lifecycle**: `isRichSelection` is derived from `!!optionsMetadata?.[option]`. When the user edits a rich selection (any keystroke), `onRichValueCleared` fires and the parent calls `clearMetadataForOption()` to remove the metadata entry. The underline/icon disappear and the field reverts to plain text. Deleting an option via the trash button also cleans up its metadata.
+- **`clearMetadataForOption()`** in `OptionsInput.tsx` is the single helper for metadata cleanup — used by both `removeOption` and `onRichValueCleared`. Don't duplicate this pattern.
+
 ### Trim-on-Blur Policy (App-Wide)
 
 - **All text inputs trim leading/trailing whitespace on blur.** This is applied globally across the app: create-poll form fields (title, options, category, context, details), profile page (name, location), `CompactNameField`, `AutocompleteInput`, `LocationTimeFieldConfig`, and `ReferenceLocationInput`. When adding new text inputs, add `onBlur` trim handling.
