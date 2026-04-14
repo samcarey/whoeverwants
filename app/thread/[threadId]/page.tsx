@@ -174,7 +174,18 @@ function ThreadContent() {
     );
   }
 
-  const threadPolls = thread.polls;
+  // Sort: voted/abstained/closed polls first (chronological), then unvoted open polls at the bottom
+  const threadPolls = [...thread.polls].sort((a, b) => {
+    const now = new Date();
+    const aIsOpen = a.response_deadline ? new Date(a.response_deadline) > now && !a.is_closed : !a.is_closed;
+    const bIsOpen = b.response_deadline ? new Date(b.response_deadline) > now && !b.is_closed : !b.is_closed;
+    const aVoted = votedPollIds.has(a.id) || abstainedPollIds.has(a.id);
+    const bVoted = votedPollIds.has(b.id) || abstainedPollIds.has(b.id);
+    const aNeedsAction = aIsOpen && !aVoted;
+    const bNeedsAction = bIsOpen && !bVoted;
+    if (aNeedsAction !== bNeedsAction) return aNeedsAction ? 1 : -1;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
