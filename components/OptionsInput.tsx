@@ -99,6 +99,14 @@ export default function OptionsInput({
   };
 
   const removeOption = (index: number) => {
+    // Clean up metadata for the removed option
+    const removedOption = options[index];
+    if (removedOption && onMetadataChange && optionsMetadata?.[removedOption]) {
+      const newMeta = { ...optionsMetadata };
+      delete newMeta[removedOption];
+      onMetadataChange(newMeta);
+    }
+
     const newOptions = options.filter((_, i) => i !== index);
 
     // Ensure we always have at least 1 field
@@ -189,6 +197,15 @@ export default function OptionsInput({
                     referenceLatitude={referenceLatitude}
                     referenceLongitude={referenceLongitude}
                     searchRadius={searchRadius}
+                    isRichSelection={!!option && !!optionsMetadata?.[option]}
+                    richImageUrl={optionsMetadata?.[option]?.imageUrl}
+                    onRichValueCleared={() => {
+                      if (onMetadataChange && optionsMetadata?.[option]) {
+                        const newMeta = { ...optionsMetadata };
+                        delete newMeta[option];
+                        onMetadataChange(newMeta);
+                      }
+                    }}
                   />
                 </div>
               ) : (
