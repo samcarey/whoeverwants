@@ -179,7 +179,7 @@ function ThreadContent() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Fixed thread header with back button — not scrollable */}
-      <div className="shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
+      <div className="shrink-0 bg-background border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
         <button
           onClick={() => {
             const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
