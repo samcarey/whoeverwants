@@ -9,6 +9,9 @@ import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
 import type { ResultBadge } from "@/lib/pollListUtils";
+import { usePrefetch } from "@/lib/prefetch";
+import { apiGetPollResults, apiGetVotes } from "@/lib/api";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 
 /** Extract image URLs from poll options metadata (skip entries without images). */
 function getOptionIconUrls(poll: Poll): string[] {
@@ -183,6 +186,7 @@ interface PollListProps {
 
 export default function PollList({ polls, showSections = true, sectionTitles = { open: "Open Polls", closed: "Closed Polls" } }: PollListProps) {
   const router = useRouter();
+  const { prefetchBatch, prefetchOnHover } = usePrefetch();
   const [openPolls, setOpenPolls] = useState<Poll[]>([]);
   const [closedPolls, setClosedPolls] = useState<Poll[]>([]);
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
@@ -196,11 +200,45 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
-  const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
   const savedUserName = useMemo(() => {
     if (typeof window === 'undefined') return null;
     return getUserName();
   }, []);
+
+  // Prefetch poll page routes for all visible polls on mount
+  useEffect(() => {
+    if (polls.length === 0) return;
+    const hrefs = polls.map(p => `/p/${p.short_id || p.id}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [polls, prefetchBatch]);
+
+  // Prefetch poll results + votes in the background so destination pages render instantly.
+  // Limited to the top N polls to avoid hammering the API on users with many polls
+  // (and to stay under the per-IP rate limit). Staggered via requestIdleCallback.
+  useEffect(() => {
+    if (polls.length === 0 || typeof window === 'undefined') return;
+    const PREFETCH_LIMIT = 8;
+    const ric = (cb: () => void, delay: number) => {
+      if ('requestIdleCallback' in window) {
+        return requestIdleCallback(cb, { timeout: delay + 1000 });
+      }
+      return setTimeout(cb, delay);
+    };
+    const ids: number[] = [];
+    polls.slice(0, PREFETCH_LIMIT).forEach((poll, i) => {
+      const id = ric(() => {
+        apiGetPollResults(poll.id).catch(() => {});
+        apiGetVotes(poll.id).catch(() => {});
+      }, 500 + i * 100) as unknown as number;
+      ids.push(id);
+    });
+    return () => {
+      ids.forEach(id => {
+        if ('cancelIdleCallback' in window) cancelIdleCallback(id);
+        else clearTimeout(id);
+      });
+    };
+  }, [polls]);
 
   const resultBadges = useMemo(() => {
     const badges: Record<string, ResultBadge> = {};
@@ -373,6 +411,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 }, 500); // 500ms for long press
               };
 
+              const goToPoll = () => {
+                const href = `/p/${poll.short_id || poll.id}`;
+                navigateWithTransition(router, href, 'forward');
+              };
+
               const handleTouchEnd = (e: React.TouchEvent) => {
                 if (longPressTimer.current) {
                   clearTimeout(longPressTimer.current);
@@ -381,9 +424,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                 // Only navigate if not scrolling and not long press
                 if (!isScrolling.current && !isLongPress.current) {
-                  setNavigatingPollId(poll.id); // Show loading state
                   setPressedPollId(null); // Clear pressed state
-                  router.push(`/p/${poll.short_id || poll.id}`);
+                  goToPoll();
                 } else {
                   // Reset states if not navigating
                   setPressedPollId(null); // Clear pressed state
@@ -421,23 +463,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   )}
                   <div key={poll.id} className={`border-b ${index === 0 && !isFirstVoted ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}>
                     <div
-                      onClick={() => {
-                        setNavigatingPollId(poll.id);
-                        router.push(`/p/${poll.short_id || poll.id}`);
-                      }}
+                      onClick={goToPoll}
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-                      {navigatingPollId === poll.id && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">{getCategoryIcon(poll)}</span>
@@ -525,6 +556,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   }, 500); // 500ms for long press
                 };
 
+                const goToPoll = () => {
+                  const href = `/p/${poll.short_id || poll.id}`;
+                  navigateWithTransition(router, href, 'forward');
+                };
+
                 const handleTouchEnd = (e: React.TouchEvent) => {
                   if (longPressTimer.current) {
                     clearTimeout(longPressTimer.current);
@@ -533,9 +569,8 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                   // Only navigate if not scrolling and not long press
                   if (!isScrolling.current && !isLongPress.current) {
-                    setNavigatingPollId(poll.id); // Show loading state
                     setPressedPollId(null); // Clear pressed state
-                    router.push(`/p/${poll.short_id || poll.id}`);
+                    goToPoll();
                   } else {
                     // Reset states if not navigating
                     setPressedPollId(null); // Clear pressed state
@@ -567,23 +602,12 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 return (
                   <div key={poll.id} className="border-b border-gray-200 dark:border-gray-700 mx-1.5">
                     <div
-                      onClick={() => {
-                        setNavigatingPollId(poll.id);
-                        router.push(`/p/${poll.short_id || poll.id}`);
-                      }}
+                      onClick={goToPoll}
                       onTouchStart={handleTouchStart}
                       onTouchEnd={handleTouchEnd}
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-                      {navigatingPollId === poll.id && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
                         {(poll.response_deadline || poll.updated_at) && (

@@ -8,6 +8,8 @@ import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
+import { usePrefetch } from "@/lib/prefetch";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
   const [timeLeft, setTimeLeft] = useState<string>("");
@@ -47,10 +49,10 @@ interface ThreadListProps {
 
 export default function ThreadList({ polls }: ThreadListProps) {
   const router = useRouter();
+  const { prefetchBatch } = usePrefetch();
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
   const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
   const [pressedThreadId, setPressedThreadId] = useState<string | null>(null);
-  const [navigatingThreadId, setNavigatingThreadId] = useState<string | null>(null);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
 
@@ -66,6 +68,13 @@ export default function ThreadList({ polls }: ThreadListProps) {
     return buildThreads(polls, votedPollIds, abstainedPollIds);
   }, [polls, votedPollIds, abstainedPollIds]);
 
+  // Prefetch thread page routes for all visible threads on mount
+  useEffect(() => {
+    if (threads.length === 0) return;
+    const hrefs = threads.map(t => `/thread/${getThreadRouteId(t)}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [threads, prefetchBatch]);
+
   if (threads.length === 0) return null;
 
   return (
@@ -74,6 +83,10 @@ export default function ThreadList({ polls }: ThreadListProps) {
         const routeId = getThreadRouteId(thread);
         const latestPoll = thread.latestPoll;
         const hasUnvoted = thread.unvotedCount > 0;
+
+        const goToThread = () => {
+          navigateWithTransition(router, `/thread/${routeId}`, 'forward');
+        };
 
         const handleTouchStart = (e: React.TouchEvent) => {
           isScrolling.current = false;
@@ -86,9 +99,8 @@ export default function ThreadList({ polls }: ThreadListProps) {
 
         const handleTouchEnd = () => {
           if (!isScrolling.current) {
-            setNavigatingThreadId(thread.rootPollId);
             setPressedThreadId(null);
-            router.push(`/thread/${routeId}`);
+            goToThread();
           } else {
             setPressedThreadId(null);
           }
@@ -112,24 +124,12 @@ export default function ThreadList({ polls }: ThreadListProps) {
             className={`border-b ${index === 0 ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}
           >
             <div
-              onClick={() => {
-                setNavigatingThreadId(thread.rootPollId);
-                router.push(`/thread/${routeId}`);
-              }}
+              onClick={goToThread}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchMove}
               className={`flex gap-3 pl-2 pr-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
             >
-              {navigatingThreadId === thread.rootPollId && (
-                <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center z-10">
-                  <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                </div>
-              )}
-
               {/* Respondent circles */}
               <RespondentCircles
                 names={thread.participantNames}

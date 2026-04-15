@@ -24,6 +24,7 @@ import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { invalidatePoll, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -78,7 +79,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
-  const [pollResults, setPollResults] = useState<PollResults | null>(null);
+  const [pollResults, setPollResults] = useState<PollResults | null>(() => {
+    // Initialize from cache so the first render shows results immediately
+    // (no loading flicker during view transitions).
+    if (typeof window === 'undefined') return null;
+    return getCachedPollResults(poll.id) ?? null;
+  });
   const [loadingResults, setLoadingResults] = useState(false);
   const [isClosingPoll, setIsClosingPoll] = useState(false);
   const [isReopeningPoll, setIsReopeningPoll] = useState(false);
@@ -398,7 +404,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     if (fetchResultsInFlight.current || now - fetchResultsLastCall.current < 2000) return;
     fetchResultsInFlight.current = true;
     fetchResultsLastCall.current = now;
-    setLoadingResults(true);
+
+    // Skip the loading state if we already have cached data — the fetch will
+    // return the same cached value instantly, but the setLoadingResults(true)
+    // → setLoadingResults(false) cycle causes a mid-transition flicker.
+    const hasCached = !!getCachedPollResults(poll.id);
+    if (!hasCached) setLoadingResults(true);
     try {
       const results = await apiGetPollResults(poll.id);
       setPollResults(results);
@@ -411,7 +422,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     } catch (error) {
       console.error('Error fetching poll results:', error);
     } finally {
-      setLoadingResults(false);
+      if (!hasCached) setLoadingResults(false);
       fetchResultsInFlight.current = false;
     }
   }, [poll.id, poll.poll_type]);
@@ -564,7 +575,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       
       // Fetch vote data from database if we have a vote ID or for specific poll types
       if (voteId || hasSuggestionPhase || poll.poll_type === 'participation') {
-        setIsLoadingVoteData(true);
+        // Skip the loading state if we already have cached votes/participants —
+        // the fetch will return instantly but the loading→loaded re-render
+        // cycle causes a flicker during view transitions.
+        const hasCachedData = !!getCachedVotes(poll.id)
+          || (poll.poll_type === 'participation' && !!getCachedParticipants(poll.id));
+        if (!hasCachedData) setIsLoadingVoteData(true);
 
         // For participation polls without a stored vote ID, find the vote via participant name match
         const fetchParticipationVoteByName = async (pollId: string) => {
@@ -668,7 +684,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           }
         }).catch(err => {
         }).finally(() => {
-          setIsLoadingVoteData(false);
+          if (!hasCachedData) setIsLoadingVoteData(false);
         });
       }
     }
@@ -899,6 +915,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
       const updatedPoll = await apiClosePoll(poll.id, secretToUse);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
@@ -933,6 +950,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setIsCuttingOffSuggestions(true);
     try {
       const updatedPoll = await apiCutoffSuggestions(poll.id, creatorSecret);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         // Update the suggestion deadline so the UI exits suggestion phase
         setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
@@ -970,6 +988,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     setIsCuttingOffAvailability(true);
     try {
       const updatedPoll = await apiCutoffAvailability(poll.id, creatorSecret);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
         if (updatedPoll.options) {
@@ -1004,6 +1023,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       // In development mode, use empty string if no creator secret
       const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
       const updatedPoll = await apiReopenPoll(poll.id, secretToUse);
+      invalidatePoll(poll.id);
       if (updatedPoll) {
         setPollClosed(false);
         setManuallyReopened(true); // Set flag to override deadline expiration
@@ -1343,6 +1363,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         pollType: poll.poll_type
       });
 
+      invalidatePoll(poll.id);
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
 

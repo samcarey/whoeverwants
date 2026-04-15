@@ -176,7 +176,59 @@ body {
 /* Default bottom bar padding — overridden in standalone mode */
 .pwa-bottom-bar {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Keep the bottom bar fixed during view transitions — it gets its own
+     snapshot and is excluded from the root slide animation. */
+  view-transition-name: bottom-bar;
 }
+
+/* =========================================================================
+ * View Transitions — iOS-style slide animations
+ * Forward (list → detail): new page slides in from right, old slides left.
+ * Back (detail → list): new page slides in from left, old slides right.
+ * Bottom bar and hero title get their own transition groups so they
+ * either stay put (bottom bar) or morph between positions (hero title).
+ * ========================================================================= */
+
+@keyframes vt-slide-out-left {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(-25%); opacity: 0.5; }
+}
+@keyframes vt-slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes vt-slide-out-right {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(25%); opacity: 0.5; }
+}
+@keyframes vt-slide-in-left {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+/* Forward navigation (default behavior). */
+html[data-nav-direction="forward"]::view-transition-old(root) {
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-left;
+}
+html[data-nav-direction="forward"]::view-transition-new(root) {
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-right;
+}
+
+/* Back navigation. */
+html[data-nav-direction="back"]::view-transition-old(root) {
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-out-right;
+}
+html[data-nav-direction="back"]::view-transition-new(root) {
+  animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
+}
+
+/* Bottom bar: no animation — it stays fixed across navigations. */
+::view-transition-old(bottom-bar),
+::view-transition-new(bottom-bar) {
+  animation: none;
+  opacity: 1;
+}
+
 
 .responsive-scaling-container {
   transform-origin: top left;

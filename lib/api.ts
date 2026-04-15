@@ -5,6 +5,12 @@
 
 import type { Poll, PollResults, OptionsMetadata } from './types';
 import { branchToSlug } from './slug';
+import {
+  cachePoll,
+  cachePollResults, getCachedPollResults,
+  cacheVotes, getCachedVotes,
+  cacheParticipants, getCachedParticipants,
+} from './pollCache';
 
 // API URL resolution:
 // - NEXT_PUBLIC_API_URL overrides everything
@@ -236,14 +242,50 @@ export async function apiGetSubPolls(pollId: string): Promise<Poll[]> {
   return data.map(toPoll);
 }
 
+/**
+ * Deduplicate concurrent identical fetches using an in-flight Map.
+ * Returns the cached value if present, otherwise starts (or joins) a fetch
+ * and stores the result. Needed because React StrictMode double-mounts
+ * effects in dev, causing two simultaneous calls to the same endpoint.
+ */
+async function coalesced<T>(
+  map: Map<string, Promise<T>>,
+  key: string,
+  cached: T | null,
+  fetcher: () => Promise<T>,
+): Promise<T> {
+  if (cached !== null) return cached;
+  const existing = map.get(key);
+  if (existing) return existing;
+  const promise = (async () => {
+    try {
+      return await fetcher();
+    } finally {
+      map.delete(key);
+    }
+  })();
+  map.set(key, promise);
+  return promise;
+}
+
+const pollInFlight = new Map<string, Promise<Poll>>();
+
 export async function apiGetPollByShortId(shortId: string): Promise<Poll> {
-  const data = await apiFetch(`/by-short-id/${encodeURIComponent(shortId)}`);
-  return toPoll(data);
+  return coalesced(pollInFlight, `short:${shortId}`, null, async () => {
+    const data = await apiFetch(`/by-short-id/${encodeURIComponent(shortId)}`);
+    const poll = toPoll(data);
+    cachePoll(poll);
+    return poll;
+  });
 }
 
 export async function apiGetPollById(pollId: string): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}`);
-  return toPoll(data);
+  return coalesced(pollInFlight, `id:${pollId}`, null, async () => {
+    const data = await apiFetch(`/${encodeURIComponent(pollId)}`);
+    const poll = toPoll(data);
+    cachePoll(poll);
+    return poll;
+  });
 }
 
 export async function apiFindDuplicatePoll(title: string, followUpTo: string): Promise<Poll | null> {
@@ -284,8 +326,14 @@ export async function apiSubmitVote(pollId: string, params: {
   });
 }
 
+const votesInFlight = new Map<string, Promise<ApiVote[]>>();
+
 export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
-  return apiFetch(`/${encodeURIComponent(pollId)}/votes`);
+  return coalesced(votesInFlight, pollId, getCachedVotes(pollId), async () => {
+    const votes: ApiVote[] = await apiFetch(`/${encodeURIComponent(pollId)}/votes`);
+    cacheVotes(pollId, votes);
+    return votes;
+  });
 }
 
 export async function apiEditVote(pollId: string, voteId: string, params: {
@@ -311,15 +359,29 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
 
 // --- Results ---
 
-export async function apiGetPollResults(pollId: string): Promise<PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string }> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/results`);
-  return toPollResults(data);
+type Results = PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
+const resultsInFlight = new Map<string, Promise<Results>>();
+
+export async function apiGetPollResults(pollId: string): Promise<Results> {
+  return coalesced(resultsInFlight, pollId, getCachedPollResults(pollId), async () => {
+    const data = await apiFetch(`/${encodeURIComponent(pollId)}/results`);
+    const results = toPollResults(data);
+    cachePollResults(pollId, results);
+    return results;
+  });
 }
 
 // --- Participants ---
 
-export async function apiGetParticipants(pollId: string): Promise<{vote_id: string, voter_name: string | null}[]> {
-  return apiFetch(`/${encodeURIComponent(pollId)}/participants`);
+type Participant = { vote_id: string; voter_name: string | null };
+const participantsInFlight = new Map<string, Promise<Participant[]>>();
+
+export async function apiGetParticipants(pollId: string): Promise<Participant[]> {
+  return coalesced(participantsInFlight, pollId, getCachedParticipants(pollId), async () => {
+    const participants: Participant[] = await apiFetch(`/${encodeURIComponent(pollId)}/participants`);
+    cacheParticipants(pollId, participants);
+    return participants;
+  });
 }
 
 // --- Poll management ---

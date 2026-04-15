@@ -266,7 +266,9 @@ whoeverwants/
 │   ├── debugLogger.ts              # Console logging utility
 │   ├── base62.ts                   # Base62 encoding for short IDs
 │   ├── prefetch.ts                 # Next.js page prefetching
-│   ├── mobile-optimization.ts      # iOS viewport handling
+│   ├── pollCache.ts                # In-memory LRU cache for polls/results/votes/participants
+│   ├── pollId.ts                   # isUuidLike + normalizePath helpers
+│   ├── viewTransitions.ts          # iOS-style slide transitions via View Transitions API
 │   ├── instant-loading.ts          # Page load optimization
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
@@ -1184,3 +1186,38 @@ For pixel-precise verification, use `page.evaluate()` with `getBoundingClientRec
 - **Next.js static export + `"use client"`**: `generateStaticParams()` cannot coexist with `"use client"` in the same file. For dynamic routes in static export, delete the route and rely on SPA fallback.
 - **PR comment workflows** need explicit `permissions: pull-requests: write` in the workflow YAML.
 - **GitHub Pages environments** only allow deploys from the configured branch (usually `main`). Restrict deploy workflow triggers to `main` to avoid noisy failures on feature branches.
+
+### View Transitions API (iOS-style slide navigation)
+
+- **`router.prefetch()` is a no-op in `next dev`.** Next.js only activates prefetching in production builds. When diagnosing navigation speed on dev servers, expect the full compile-on-demand cost per route pattern — production behaves very differently.
+- **Production API rewrites ignore `PYTHON_API_URL`.** `next.config.ts: getApiRewriteDestination()` returns the external `api.whoeverwants.com` or branch-slug subdomain when `NODE_ENV === 'production'`. To test a production build on a dev droplet pointing at the local FastAPI, patch the function to check `PYTHON_API_URL` first before the prod branch.
+- **`document.startViewTransition` callback has no access to `requestAnimationFrame`.** The browser pauses rendering (including rAF) during the callback, so awaiting `requestAnimationFrame` creates a deadlock that fires the browser's 4-second view-transition timeout. Use `setTimeout`/`MutationObserver` instead.
+- **`router.push` is async in Next.js App Router — `flushSync` can't force it synchronous.** Wrapping `router.push` in `flushSync` inside a view transition callback looks plausible but doesn't actually commit the new route synchronously; the browser then captures "old" and "new" snapshots that are identical and optimizes the animation away. Don't do it.
+- **Destination pages must signal "ready" for the view transition to capture a full page.** The pattern: destination pages initialize state synchronously from an in-memory cache (so the first render has real content, not a loading spinner) AND set `data-page-ready` on `<html>` in a `useLayoutEffect`. The `navigateWithTransition` callback (`lib/viewTransitions.ts`) waits on `MutationObserver` for that attribute to match the expected pathname before resolving. Without this, the slide animates an empty snapshot and content pops in at the end.
+- **Trailing slashes require normalization.** The app uses `trailingSlash: true`, so `router.push('/thread/xyz')` navigates to `/thread/xyz/`. Any pathname comparison must strip the trailing slash; `lib/pollId.ts: normalizePath()` is the canonical helper.
+- **View transitions capture DOM snapshots — Playwright `.screenshot()` reads the live DOM, not the pseudo-elements.** During an animation, the underlying DOM is the destination page; Playwright shows that, not the sliding pseudo-elements. Verify animation visibility by checking CSS animation events (`transition.ready`, `transition.finished`) or by slowing `animation-duration` to capture mid-frames.
+- **`view-transition-name` on destination page headers makes them separate transition groups during EVERY navigation** — not just matching ones. If page A has `view-transition-name: hero` and page B doesn't, navigating A→B causes page A's hero to fade out independently while the root slides. If you want a hero-title morph, apply `view-transition-name` dynamically only during transitions where both source AND destination have the matching name; never set it statically on page headers.
+- **Shared-element hero morphs don't work well when destination title ≠ source title.** The browser animates the source element's content into the destination position, so users see `"Poll A"` sliding into where `"Thread A"` will be, then flashing to the correct text. For pages with conceptually different titles (poll → thread), skip the morph entirely and let the whole page slide as a single root snapshot.
+
+### In-memory data cache for navigation
+
+- **`lib/pollCache.ts` caches poll/results/votes/participants data** so destination pages render instantly from cache on navigation. 60s TTL for polls, 15s for results/votes (which change more often). All maps capped at 100 entries with LRU eviction to bound memory for long-lived PWA sessions.
+- **Mutations must invalidate the cache.** `invalidatePoll(id)` clears all per-poll caches AND the `accessiblePollsCache`. Call after every successful vote, close, reopen, and cutoff.
+- **`discoverRelatedPolls` must invalidate the accessible polls list when it adds new IDs.** Otherwise subsequent `getAccessiblePolls()` calls return a stale list missing the new polls.
+- **`getAccessiblePolls` returns cached data only if the accessible ID list hasn't changed.** Check the Set of cached poll IDs against `getAccessiblePollIds()` — if any ID is missing from the cache, re-fetch.
+- **Coalesce concurrent API calls** with `coalesced()` in `lib/api.ts`. React StrictMode double-mounts effects in dev, causing two simultaneous calls to the same endpoint. Same idiom for `discoverRelatedPolls` and `getAccessiblePolls` — both use an in-flight promise to dedupe.
+
+### Production build testing on dev droplet
+
+- To test with a real production bundle instead of `next dev` on the dev server:
+  ```bash
+  bash scripts/remote.sh "fuser -k 3001/tcp; cd /root/dev-servers/<slug> && rm -rf .next && PYTHON_API_URL='http://localhost:8001' npm run build && nohup npx next start -p 3001 > nextjs-prod.log 2>&1 &"
+  ```
+- **Patch `next.config.ts` first** — as mentioned above, production mode ignores `PYTHON_API_URL`. Add an early return at the top of `getApiRewriteDestination()`: `if (process.env.PYTHON_API_URL) return process.env.PYTHON_API_URL;`
+- **The next git push will clobber the build** — the webhook calls `dev-server-manager.sh upsert` which runs `git pull` (resetting `next.config.ts` patch) and starts `next dev` again. For extended testing, be prepared to re-apply the patch and rebuild after each push.
+
+### Client-side rendering from cache pattern
+
+- **Destination pages that are navigated to frequently should initialize state synchronously from `pollCache`.** Example (`app/p/[shortId]/page.tsx`, `app/thread/[threadId]/page.tsx`): the `useState` initializer reads `getCachedPollById` / `getCachedPollByShortId` and uses the result directly. No loading spinner if cache hit.
+- **Call `loadVotedPolls()` exactly once** for both `votedPollIds` and `abstainedPollIds` state init. It parses localStorage each call — easy to accidentally call twice in adjacent `useState` initializers.
+- **`usePageTitle` dispatches a `pageTitleChange` event** that the template listens for. On first render the template's `pollPageTitle` state is empty; if the page is the target of a view transition, the `<h1>` is missing from the initial snapshot. Fix: in `template.tsx`, initialize `pollPageTitle` synchronously by parsing the pathname and looking up the cached poll's title.

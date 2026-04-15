@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiGetPollById } from "@/lib/api";
+import { usePrefetch } from "@/lib/prefetch";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
 
@@ -13,6 +14,7 @@ interface ForkHeaderProps {
 
 export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) {
   const router = useRouter();
+  const { prefetch } = usePrefetch();
   const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
   const [originalPollShortId, setOriginalPollShortId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,10 @@ export default function ForkHeader({ forkOfPollId, onRemove }: ForkHeaderProps) 
       try {
         const data = await apiGetPollById(forkOfPollId);
         setOriginalPollTitle(data.title);
-        if (data.short_id) setOriginalPollShortId(data.short_id);
+        if (data.short_id) {
+          setOriginalPollShortId(data.short_id);
+          prefetch(`/p/${data.short_id}`, { priority: "low" });
+        }
       } catch (err) {
         console.error('Error fetching original poll:', err);
         setError(true);

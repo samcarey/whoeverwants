@@ -3,47 +3,77 @@
 import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { useEffect, useState, Suspense } from "react";
+import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
+import { isUuidLike, normalizePath } from "@/lib/pollId";
+import { useEffect, useLayoutEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
 
 function PollContent() {
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [pollId, setPollId] = useState<string | null>(null);
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
+
+  // Initialize poll synchronously from cache so the page renders its final
+  // content on the first paint — avoids a visible loading-spinner flash in
+  // the middle of the view transition slide animation.
+  const initialPoll: Poll | null = (() => {
+    if (typeof window === 'undefined') return null;
+    const raw = params.shortId as string;
+    if (!raw) return null;
+    return isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+  })();
+
+  const [poll, setPoll] = useState<Poll | null>(initialPoll);
+  const [loading, setLoading] = useState(!initialPoll);
+  const [error, setError] = useState(false);
+  const [pollId, setPollId] = useState<string | null>(initialPoll?.id ?? null);
 
   // Prefetch critical pages
   useEffect(() => {
     router.prefetch('/');
   }, [router]);
 
+  // Signal to the view transition helper that this page's content is rendered.
+  // useLayoutEffect fires before paint, so the attribute is set before the
+  // view transition callback captures the "new" snapshot.
+  useLayoutEffect(() => {
+    if (poll) {
+      const path = normalizePath(window.location.pathname);
+      document.documentElement.setAttribute('data-page-ready', path);
+      return () => {
+        if (document.documentElement.getAttribute('data-page-ready') === path) {
+          document.documentElement.removeAttribute('data-page-ready');
+        }
+      };
+    }
+  }, [poll]);
+
   useEffect(() => {
     const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
-    
+
     if (!pollId) {
       router.replace('/');
       return;
     }
 
+    // If we already have the poll from the synchronous cache lookup above,
+    // register access and skip the fetch effect (it would only produce the
+    // same result).
+    if (initialPoll) {
+      addAccessiblePollId(initialPoll.id);
+      return;
+    }
+
     async function fetchPoll() {
       try {
-        // Try to fetch poll by UUID first, fall back to short_id
+        const isUuid = isUuidLike(pollId);
         let pollData: Poll | null = null;
         try {
-          // UUID format check (simple heuristic)
-          if (pollId.length > 10 && pollId.includes('-')) {
-            pollData = await apiGetPollById(pollId);
-          } else {
-            pollData = await apiGetPollByShortId(pollId);
-          }
+          pollData = isUuid ? await apiGetPollById(pollId) : await apiGetPollByShortId(pollId);
         } catch {
-          // If lookup fails, only try short_id fallback if it doesn't look like a UUID
-          if (!(pollId.length > 10 && pollId.includes('-'))) {
+          if (!isUuid) {
             try {
               pollData = await apiGetPollByShortId(pollId);
             } catch {
@@ -51,6 +81,7 @@ function PollContent() {
             }
           }
         }
+
         // Grant access to this poll
         if (pollData) {
           addAccessiblePollId(pollData.id);

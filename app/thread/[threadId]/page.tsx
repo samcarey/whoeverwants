@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -8,8 +8,12 @@ import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
+import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
+import { usePrefetch } from "@/lib/prefetch";
+import { navigateWithTransition, navigateBackWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
@@ -45,16 +49,50 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
   return <>{label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span></>;
 };
 
+/** Attempt to build the thread synchronously from in-memory caches.
+ *  Returns null if any required data is missing — the normal async fetch path
+ *  will then run. Called during initial render so the page mounts with real
+ *  content (no loading spinner flash) when we came from home or another page
+ *  that already populated the cache. */
+function buildThreadSync(
+  threadId: string,
+  voted: Set<string>,
+  abstained: Set<string>
+): Thread | null {
+  if (typeof window === 'undefined') return null;
+  const anchor = isUuidLike(threadId) ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
+  if (!anchor) return null;
+  const polls = getCachedAccessiblePolls();
+  if (!polls) return null;
+  return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
+}
+
 function ThreadContent() {
   const router = useRouter();
   const params = useParams();
+  const { prefetchBatch } = usePrefetch();
   const threadId = params.threadId as string;
 
-  const [thread, setThread] = useState<Thread | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Initialize voted/abstained sets + thread synchronously from cached data
+  // on first render, so the page mounts with full content (no loading flash
+  // during view transition slide).
+  const [{ thread: initialThread, votedPollIds: initialVoted, abstainedPollIds: initialAbstained }] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { thread: null as Thread | null, votedPollIds: new Set<string>(), abstainedPollIds: new Set<string>() };
+    }
+    const voted = loadVotedPolls();
+    return {
+      thread: buildThreadSync(threadId, voted.votedPollIds, voted.abstainedPollIds),
+      votedPollIds: voted.votedPollIds,
+      abstainedPollIds: voted.abstainedPollIds,
+    };
+  });
+
+  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(initialVoted);
+  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(initialAbstained);
+  const [thread, setThread] = useState<Thread | null>(initialThread);
+  const [loading, setLoading] = useState(!initialThread);
   const [error, setError] = useState(false);
-  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
-  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
 
   // Set data attribute on body so the bottom bar "+" button can auto-follow-up
   useEffect(() => {
@@ -64,6 +102,28 @@ function ThreadContent() {
     return () => { document.body.removeAttribute('data-thread-latest-poll-id'); };
   }, [thread]);
 
+  // Signal to the view transition helper that this page's content is rendered.
+  // Uses useLayoutEffect so the attribute is set before paint (and before the
+  // view transition callback detects it and captures the "new" snapshot).
+  useLayoutEffect(() => {
+    if (thread && !loading) {
+      const path = normalizePath(window.location.pathname);
+      document.documentElement.setAttribute('data-page-ready', path);
+      return () => {
+        if (document.documentElement.getAttribute('data-page-ready') === path) {
+          document.documentElement.removeAttribute('data-page-ready');
+        }
+      };
+    }
+  }, [thread, loading]);
+
+  // Prefetch poll page routes for all polls in this thread
+  useEffect(() => {
+    if (!thread) return;
+    const hrefs = thread.polls.map(p => `/p/${p.short_id || p.id}`);
+    prefetchBatch(hrefs, { priority: "low" });
+  }, [thread, prefetchBatch]);
+
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -72,43 +132,43 @@ function ThreadContent() {
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
-  const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
 
-  // Load voted/abstained
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
-    setVotedPollIds(voted);
-    setAbstainedPollIds(abstained);
-  }, []);
-
-  // Fetch the referenced poll, register access, discover children, build thread
+  // Fetch the referenced poll, register access, discover children, build thread.
+  // If we already have a synchronous cache-built thread, this runs in the
+  // background to refresh with fresh data (discoverRelatedPolls, new votes, etc.)
+  // without showing a loading state.
   useEffect(() => {
     async function fetchThread() {
       try {
-        setLoading(true);
+        if (!initialThread) setLoading(true);
         setError(false);
 
-        // Step 1: Fetch the poll referenced in the URL and register access
+        // Step 1: Fetch the poll referenced in the URL and register access.
+        // Check the in-memory cache first — the home page already fetched all accessible polls.
         let anchorPoll: Poll;
         try {
-          if (threadId.length > 10 && threadId.includes('-')) {
+          const cached = isUuidLike(threadId)
+            ? getCachedPollById(threadId)
+            : getCachedPollByShortId(threadId);
+          if (cached) {
+            anchorPoll = cached;
+          } else if (isUuidLike(threadId)) {
             anchorPoll = await apiGetPollById(threadId);
           } else {
             anchorPoll = await apiGetPollByShortId(threadId);
           }
-          // Register access (like visiting /p/[id] does)
           addAccessiblePollId(anchorPoll.id);
         } catch {
           setError(true);
           return;
         }
 
-        // Step 2: Discover children, then fetch all accessible polls
+        // Discover children (may add new poll IDs), then fetch the updated set.
         try { await discoverRelatedPolls(); } catch {}
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
 
+        // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
         const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 
@@ -194,9 +254,9 @@ function ThreadContent() {
           onClick={() => {
             const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
             if (navCount > 1) {
-              window.history.back();
+              navigateBackWithTransition();
             } else {
-              router.push('/');
+              navigateWithTransition(router, '/', 'back');
             }
           }}
           className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
@@ -249,15 +309,19 @@ function ThreadContent() {
               }, 500);
             };
 
+            const goToPoll = () => {
+              const href = `/p/${poll.short_id || poll.id}`;
+              navigateWithTransition(router, href, 'forward');
+            };
+
             const handleTouchEnd = () => {
               if (longPressTimer.current) {
                 clearTimeout(longPressTimer.current);
                 longPressTimer.current = null;
               }
               if (!isScrolling.current && !isLongPress.current) {
-                setNavigatingPollId(poll.id);
                 setPressedPollId(null);
-                router.push(`/p/${poll.short_id || poll.id}`);
+                goToPoll();
               } else {
                 setPressedPollId(null);
               }
@@ -285,24 +349,12 @@ function ThreadContent() {
                 className="border-b border-gray-200 dark:border-gray-700 mx-1.5"
               >
                 <div
-                  onClick={() => {
-                    setNavigatingPollId(poll.id);
-                    router.push(`/p/${poll.short_id || poll.id}`);
-                  }}
+                  onClick={goToPoll}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
                   className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                 >
-                  {navigatingPollId === poll.id && (
-                    <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                      <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    </div>
-                  )}
-
                   {/* Status line */}
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{getCategoryIcon(poll)}</span>
