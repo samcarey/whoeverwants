@@ -41,19 +41,25 @@ html {
 }
 
 /* The scroll container wrapping every page — same rule so short-content pages
-   don't bounce either. */
+   don't bounce either. We also make it a flex column so the .pwa-safe-top child
+   below can grow to fill it via flex-grow (% heights won't resolve here because
+   the scroll container gets its height from `flex: 1`, not from an explicit
+   `height` property). */
 .safari-scroll-container {
   overscroll-behavior: none;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Keep the scrollable content at least as tall as the scroll container so
-   `scrollHeight === clientHeight` whenever the page content is shorter than
-   the viewport. Without this, iOS PWA still lets the user drag content up
-   behind the notch even when there's nothing below to reveal. When the page
-   content IS longer than the viewport, min-height: 100% is harmless — the
-   box grows beyond 100% to fit its content and scrolling works normally. */
+/* Grow the scroll container's inner wrapper to fill the viewport when page
+   content is short, so `scrollHeight === clientHeight` and the container is
+   physically non-scrollable. Without this, iOS PWA still lets the user drag
+   content up behind the notch even when there's nothing below to reveal.
+   When the page content IS longer than the viewport, flex-grow: 1 is harmless
+   — the box is already at content size and overflow-auto handles scrolling. */
 .pwa-safe-top {
-  min-height: 100%;
+  flex-grow: 1;
+  flex-shrink: 0;
 }
 
 /* Apply safe area padding only on iOS devices (more specific detection) */
