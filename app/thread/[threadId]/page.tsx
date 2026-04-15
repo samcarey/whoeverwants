@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -9,6 +9,7 @@ import { buildThreadFromPollDown } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
+import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -59,8 +60,7 @@ function buildThreadSync(
   abstained: Set<string>
 ): Thread | null {
   if (typeof window === 'undefined') return null;
-  const isUuid = threadId.length > 10 && threadId.includes('-');
-  const anchor = isUuid ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
+  const anchor = isUuidLike(threadId) ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
   if (!anchor) return null;
   const polls = getCachedAccessiblePolls();
   if (!polls) return null;
@@ -68,32 +68,28 @@ function buildThreadSync(
 }
 
 function ThreadContent() {
-  const mountTime = useRef(performance.now());
   const router = useRouter();
   const params = useParams();
   const { prefetchBatch } = usePrefetch();
   const threadId = params.threadId as string;
 
-  // Initialize voted/abstained sets synchronously from localStorage so
-  // the initial render has correct data.
-  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    return loadVotedPolls().votedPollIds;
-  });
-  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
-    return loadVotedPolls().abstainedPollIds;
+  // Initialize voted/abstained sets + thread synchronously from cached data
+  // on first render, so the page mounts with full content (no loading flash
+  // during view transition slide).
+  const [{ thread: initialThread, votedPollIds: initialVoted, abstainedPollIds: initialAbstained }] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { thread: null as Thread | null, votedPollIds: new Set<string>(), abstainedPollIds: new Set<string>() };
+    }
+    const voted = loadVotedPolls();
+    return {
+      thread: buildThreadSync(threadId, voted.votedPollIds, voted.abstainedPollIds),
+      votedPollIds: voted.votedPollIds,
+      abstainedPollIds: voted.abstainedPollIds,
+    };
   });
 
-  // Try to build the thread synchronously from cached data on first render.
-  // If successful, we skip the loading spinner entirely.
-  const initialThread = useMemo(
-    () => buildThreadSync(threadId, votedPollIds, abstainedPollIds),
-    // Only run on first render — subsequent builds happen in the useEffect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
-
+  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(initialVoted);
+  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(initialAbstained);
   const [thread, setThread] = useState<Thread | null>(initialThread);
   const [loading, setLoading] = useState(!initialThread);
   const [error, setError] = useState(false);
@@ -111,7 +107,7 @@ function ThreadContent() {
   // view transition callback detects it and captures the "new" snapshot).
   useLayoutEffect(() => {
     if (thread && !loading) {
-      const path = window.location.pathname.replace(/\/$/, '') || '/';
+      const path = normalizePath(window.location.pathname);
       document.documentElement.setAttribute('data-page-ready', path);
       return () => {
         if (document.documentElement.getAttribute('data-page-ready') === path) {
@@ -137,10 +133,6 @@ function ThreadContent() {
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('[ThreadPage] component mounted');
-  }, []);
-
   // Fetch the referenced poll, register access, discover children, build thread.
   // If we already have a synchronous cache-built thread, this runs in the
   // background to refresh with fresh data (discoverRelatedPolls, new votes, etc.)
@@ -148,30 +140,22 @@ function ThreadContent() {
   useEffect(() => {
     async function fetchThread() {
       try {
-        const hadInitialThread = !!initialThread;
-        if (!hadInitialThread) setLoading(true);
+        if (!initialThread) setLoading(true);
         setError(false);
 
         // Step 1: Fetch the poll referenced in the URL and register access.
         // Check the in-memory cache first — the home page already fetched all accessible polls.
-        const step1Start = performance.now();
         let anchorPoll: Poll;
         try {
-          const isUuid = threadId.length > 10 && threadId.includes('-');
-          const cached = isUuid
+          const cached = isUuidLike(threadId)
             ? getCachedPollById(threadId)
             : getCachedPollByShortId(threadId);
           if (cached) {
             anchorPoll = cached;
-            console.log(`[ThreadPage] anchor poll cache HIT (${(performance.now() - step1Start).toFixed(0)}ms)`);
+          } else if (isUuidLike(threadId)) {
+            anchorPoll = await apiGetPollById(threadId);
           } else {
-            console.log(`[ThreadPage] anchor poll cache MISS — fetching from API`);
-            if (isUuid) {
-              anchorPoll = await apiGetPollById(threadId);
-            } else {
-              anchorPoll = await apiGetPollByShortId(threadId);
-            }
-            console.log(`[ThreadPage] anchor poll API fetch done (${(performance.now() - step1Start).toFixed(0)}ms)`);
+            anchorPoll = await apiGetPollByShortId(threadId);
           }
           addAccessiblePollId(anchorPoll.id);
         } catch {
@@ -179,15 +163,12 @@ function ThreadContent() {
           return;
         }
 
-        // Step 2: Discover children, then fetch all accessible polls
-        const step2Start = performance.now();
+        // Discover children (may add new poll IDs), then fetch the updated set.
         try { await discoverRelatedPolls(); } catch {}
-        console.log(`[ThreadPage] discoverRelatedPolls done (${(performance.now() - step2Start).toFixed(0)}ms)`);
-        const step3Start = performance.now();
         const polls = await getAccessiblePolls();
-        console.log(`[ThreadPage] getAccessiblePolls done (${(performance.now() - step3Start).toFixed(0)}ms, ${polls?.length ?? 0} polls, total since mount: ${(performance.now() - mountTime.current).toFixed(0)}ms)`);
         if (!polls) { setError(true); return; }
 
+        // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
         const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
 

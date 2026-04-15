@@ -4,13 +4,13 @@ import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
-import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
+import { isUuidLike, normalizePath } from "@/lib/pollId";
+import { useEffect, useLayoutEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
 
 function PollContent() {
-  const mountTime = useRef(performance.now());
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -22,8 +22,7 @@ function PollContent() {
     if (typeof window === 'undefined') return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    const isUuid = raw.length > 10 && raw.includes('-');
-    return isUuid ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+    return isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
   })();
 
   const [poll, setPoll] = useState<Poll | null>(initialPoll);
@@ -36,16 +35,12 @@ function PollContent() {
     router.prefetch('/');
   }, [router]);
 
-  useEffect(() => {
-    console.log('[PollPage] component mounted');
-  }, []);
-
   // Signal to the view transition helper that this page's content is rendered.
   // useLayoutEffect fires before paint, so the attribute is set before the
   // view transition callback captures the "new" snapshot.
   useLayoutEffect(() => {
     if (poll) {
-      const path = window.location.pathname.replace(/\/$/, '') || '/';
+      const path = normalizePath(window.location.pathname);
       document.documentElement.setAttribute('data-page-ready', path);
       return () => {
         if (document.documentElement.getAttribute('data-page-ready') === path) {
@@ -73,16 +68,10 @@ function PollContent() {
 
     async function fetchPoll() {
       try {
-        const fetchStart = performance.now();
-        const isUuid = pollId.length > 10 && pollId.includes('-');
+        const isUuid = isUuidLike(pollId);
         let pollData: Poll | null = null;
-        console.log(`[PollPage] cache MISS for ${pollId.slice(0, 8)}… — fetching from API`);
         try {
-          if (isUuid) {
-            pollData = await apiGetPollById(pollId);
-          } else {
-            pollData = await apiGetPollByShortId(pollId);
-          }
+          pollData = isUuid ? await apiGetPollById(pollId) : await apiGetPollByShortId(pollId);
         } catch {
           if (!isUuid) {
             try {
@@ -92,7 +81,6 @@ function PollContent() {
             }
           }
         }
-        console.log(`[PollPage] API fetch done (${(performance.now() - fetchStart).toFixed(0)}ms)`);
 
         // Grant access to this poll
         if (pollData) {

@@ -213,9 +213,11 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   }, [polls, prefetchBatch]);
 
   // Prefetch poll results + votes in the background so destination pages render instantly.
-  // Staggered via requestIdleCallback to avoid blocking the main thread.
+  // Limited to the top N polls to avoid hammering the API on users with many polls
+  // (and to stay under the per-IP rate limit). Staggered via requestIdleCallback.
   useEffect(() => {
     if (polls.length === 0 || typeof window === 'undefined') return;
+    const PREFETCH_LIMIT = 8;
     const ric = (cb: () => void, delay: number) => {
       if ('requestIdleCallback' in window) {
         return requestIdleCallback(cb, { timeout: delay + 1000 });
@@ -223,8 +225,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
       return setTimeout(cb, delay);
     };
     const ids: number[] = [];
-    polls.forEach((poll, i) => {
-      // Stagger by 100ms per poll to avoid overwhelming the API
+    polls.slice(0, PREFETCH_LIMIT).forEach((poll, i) => {
       const id = ric(() => {
         apiGetPollResults(poll.id).catch(() => {});
         apiGetVotes(poll.id).catch(() => {});
@@ -468,7 +469,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-<div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">{getCategoryIcon(poll)}</span>
                           {pollsWithNewOptions.has(poll.id) && (
@@ -607,7 +608,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-<div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
                         {(poll.response_deadline || poll.updated_at) && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">

@@ -11,6 +11,7 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
+import { isUuidLike } from '@/lib/pollId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -149,8 +150,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     const match = pathname.match(/^\/p\/([^/]+)\/?$/);
     if (!match) return '';
     const id = match[1];
-    const isUuid = id.length > 10 && id.includes('-');
-    const poll = isUuid ? getCachedPollById(id) : getCachedPollByShortId(id);
+    const poll = isUuidLike(id) ? getCachedPollById(id) : getCachedPollByShortId(id);
     return poll?.title ?? '';
   });
 

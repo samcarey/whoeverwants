@@ -18,6 +18,8 @@
  * force it to commit synchronously).
  */
 
+import { normalizePath } from './pollId';
+
 export type NavDirection = 'forward' | 'back';
 
 interface RouterLike {
@@ -29,12 +31,11 @@ export function supportsViewTransitions(): boolean {
 }
 
 async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
-  const normalize = (p: string) => p.replace(/\/$/, '') || '/';
-  const target = normalize(targetPath);
+  const target = normalizePath(targetPath);
   const deadline = Date.now() + timeoutMs;
 
   // Phase 1: wait for the URL to change.
-  while (normalize(window.location.pathname) !== target && Date.now() < deadline) {
+  while (normalizePath(window.location.pathname) !== target && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10));
   }
 
