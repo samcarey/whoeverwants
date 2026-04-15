@@ -102,17 +102,24 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
   const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
-  // Find the portal target for the time badge (inside scroll container so it scrolls with content)
+  // Find the portal target for the time badge (inside scroll container so it scrolls with content).
+  // The portal div is rendered by template.tsx only after its isMounted state flips to true, which
+  // can happen after this effect runs. Use MutationObserver to reliably detect the portal's
+  // appearance rather than a single 100ms retry (which races with the template's mount timing
+  // and fails unpredictably on slower routes like /thread/...).
   useEffect(() => {
     if (!showTimeBadge) return;
     const el = document.getElementById('commit-badge-portal');
     if (el) { setBadgeTarget(el); return; }
-    // Fallback: template may not be mounted yet on first layout render
-    const timer = setTimeout(() => {
+    const observer = new MutationObserver(() => {
       const el = document.getElementById('commit-badge-portal');
-      if (el) setBadgeTarget(el);
-    }, 100);
-    return () => clearTimeout(timer);
+      if (el) {
+        setBadgeTarget(el);
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [showTimeBadge]);
 
   // In dev mode, fetch the current git SHA from the server on mount and on visibility change

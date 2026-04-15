@@ -203,6 +203,33 @@ function ThreadContent() {
     }
   }, [thread, loading]);
 
+  // Defensive: on iOS PWA, ancestor containers (`.pwa-safe-top`, `.safari-scroll-container`)
+  // can end up with a non-zero `scrollTop` even with `overflow: hidden` — this pushes the
+  // safe-area padding (and the thread header) behind the notch. Snap any stray scrollTop
+  // back to 0 on scroll so the thread header stays locked at the safe area boundary.
+  useEffect(() => {
+    const list = scrollListRef.current;
+    if (!list) return;
+    const ancestors: HTMLElement[] = [];
+    let el: HTMLElement | null = list.parentElement;
+    while (el && el !== document.body) {
+      if (el.classList.contains('pwa-safe-top') || el.classList.contains('safari-scroll-container')) {
+        ancestors.push(el);
+      }
+      el = el.parentElement;
+    }
+    if (ancestors.length === 0) return;
+    const reset = (target: HTMLElement) => () => {
+      if (target.scrollTop !== 0) target.scrollTop = 0;
+    };
+    const handlers = ancestors.map(a => {
+      const h = reset(a);
+      a.addEventListener('scroll', h, { passive: true });
+      return { el: a, h };
+    });
+    return () => handlers.forEach(({ el, h }) => el.removeEventListener('scroll', h));
+  }, [thread]);
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
