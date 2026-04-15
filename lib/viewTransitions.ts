@@ -103,6 +103,43 @@ export function navigateWithTransition(
   }
 }
 
+interface RouterReplace {
+  replace: (href: string) => void;
+}
+
+/** Like navigateWithTransition but uses router.replace — the current history
+ *  entry is replaced rather than a new one pushed. Used when the current URL
+ *  is a transient/synthetic one (e.g., a just-created poll page that should
+ *  yield to the thread URL in history). */
+export function navigateReplaceWithTransition(
+  router: RouterReplace,
+  href: string,
+  direction: NavDirection = 'back'
+): void {
+  const start = getStart();
+  if (!start) {
+    router.replace(href);
+    return;
+  }
+
+  const root = document.documentElement;
+  root.setAttribute('data-nav-direction', direction);
+
+  const cleanup = () => root.removeAttribute('data-nav-direction');
+
+  const targetPath = new URL(href, window.location.origin).pathname;
+  try {
+    const transition = start.call(document, async () => {
+      router.replace(href);
+      await waitForNavigation(targetPath);
+    });
+    transition.finished.finally(cleanup);
+  } catch {
+    cleanup();
+    router.replace(href);
+  }
+}
+
 export function navigateBackWithTransition(): void {
   const start = getStart();
   if (!start) {

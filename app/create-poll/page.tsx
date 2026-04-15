@@ -35,6 +35,20 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
+// Record a custom back-button destination for the newly-created poll page.
+// Consumed by the back button in `app/template.tsx`. Only set when the
+// desired thread URL differs from the page underneath the create modal —
+// otherwise `router.replace('/p/<id>')` alone leaves natural history back
+// pointing at that same thread, and an explicit replace would just add a
+// duplicate history entry requiring an extra back-click to escape.
+function setPollBackTarget(pollRouteId: string, threadRootRouteId: string): void {
+  if (typeof window === 'undefined') return;
+  const threadPath = `/thread/${threadRootRouteId}`;
+  const currentPath = window.location.pathname.replace(/\/$/, '');
+  if (currentPath === threadPath) return;
+  sessionStorage.setItem(`pollBackTarget:${pollRouteId}`, threadPath);
+}
+
 // Walk up the follow_up_to chain to find the thread root's URL slug
 // (short_id || id). Used after creating a poll so the user can "back out" to
 // the thread containing the new poll. For a standalone poll (no follow_up_to),
@@ -1356,10 +1370,9 @@ export function CreatePollContent() {
           if (existing) {
             const shortId = existing.short_id || existing.id;
             const threadRootId = findThreadRootRouteId(existing as Poll);
-            // Replace the `?create=1` URL with the thread URL (no re-render),
-            // then push the poll URL. Back button → thread containing this poll.
-            window.history.replaceState(null, '', `/thread/${threadRootId}/`);
-            router.push(`/p/${shortId}`);
+            setPollBackTarget(shortId, threadRootId);
+            // Replace the `?create=1` history entry with the poll URL.
+            router.replace(`/p/${shortId}`);
             return;
           }
         } catch {
@@ -1405,15 +1418,14 @@ export function CreatePollContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Navigate to the new poll, with the back button leading to the thread
-      // that contains it (oldest ancestor on top). We replace the `?create=1`
-      // history entry with the thread URL via `history.replaceState` — this
-      // updates the URL without triggering a Next.js re-render — then push the
-      // new poll URL. Back button on the poll page → `/thread/{rootId}`.
+      // Navigate to the new poll. The back button on the poll page should
+      // lead to the thread containing the poll (oldest ancestor on top) —
+      // for a standalone poll, that's the poll's own thread URL.
       const redirectId = createdPoll.short_id || createdPoll.id;
       const threadRootId = findThreadRootRouteId(createdPoll as Poll);
-      window.history.replaceState(null, '', `/thread/${threadRootId}/`);
-      router.push(`/p/${redirectId}`);
+      setPollBackTarget(redirectId, threadRootId);
+      // Use replace so the `?create=1` URL isn't left in history.
+      router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");

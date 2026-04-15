@@ -9,7 +9,7 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
-import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
+import { navigateWithTransition, navigateBackWithTransition, navigateReplaceWithTransition } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
 import { isUuidLike } from '@/lib/pollId';
 
@@ -948,7 +948,23 @@ function TemplateInner({ children }: AppTemplateProps) {
         {(isPollPage || isProfilePage) && hasAppHistory && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
-              onClick={() => navigateBackWithTransition()}
+              onClick={() => {
+                // Poll pages for just-created polls have a custom back target
+                // (the thread containing the poll) stored in sessionStorage by
+                // the create-poll flow. Replace the current entry with the
+                // thread URL so back from the thread goes past the poll, not
+                // back to it.
+                const match = pathname.match(/^\/p\/([^/]+)\/?$/);
+                const customBack = match
+                  ? sessionStorage.getItem(`pollBackTarget:${match[1]}`)
+                  : null;
+                if (customBack && match) {
+                  sessionStorage.removeItem(`pollBackTarget:${match[1]}`);
+                  navigateReplaceWithTransition(router, customBack, 'back');
+                  return;
+                }
+                navigateBackWithTransition();
+              }}
               className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               aria-label="Go back"
             >
