@@ -107,11 +107,7 @@ export default function AutocompleteInput({
 
     onChange(newValue);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (searchDisabled) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
+    if (searchDisabled) return;
     debounceRef.current = setTimeout(() => doSearch(newValue), 300);
   };
 
@@ -161,12 +157,13 @@ export default function AutocompleteInput({
     };
   }, []);
 
-  // When search becomes disabled, drop any pending debounce and visible results.
+  // When search becomes disabled, drop any pending debounce and cached/visible
+  // results so a previously-cached list can't resurface on focus.
   useEffect(() => {
     if (!searchDisabled) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    setSuggestions([]);
-    setShowSuggestions(false);
+    setSuggestions(prev => (prev.length === 0 ? prev : []));
+    setShowSuggestions(prev => (prev ? false : prev));
     lastSuccessfulQueryRef.current = "";
     lastResultsRef.current = [];
   }, [searchDisabled]);
