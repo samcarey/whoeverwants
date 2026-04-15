@@ -27,11 +27,33 @@ import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
+import { getCachedAccessiblePolls, getCachedPollById } from "@/lib/pollCache";
+import type { Poll } from "@/lib/types";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
+
+// Walk up the follow_up_to chain to find the thread root's URL slug
+// (short_id || id). Used after creating a poll so the user can "back out" to
+// the thread containing the new poll. For a standalone poll (no follow_up_to),
+// the poll itself is the thread root. Falls back gracefully when the cache
+// doesn't contain a full ancestor chain — the furthest cached ancestor is
+// returned as the thread anchor.
+function findThreadRootRouteId(poll: Poll): string {
+  const accessible = getCachedAccessiblePolls() || [];
+  const pollById = new Map(accessible.map(p => [p.id, p]));
+  let root: Poll = poll;
+  let parentId = poll.follow_up_to;
+  while (parentId) {
+    const parent = pollById.get(parentId) || getCachedPollById(parentId);
+    if (!parent) break;
+    root = parent;
+    parentId = parent.follow_up_to;
+  }
+  return root.short_id || root.id;
+}
 
 // Strip parenthesized suffixes and colon suffixes from option text for titles
 function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
@@ -1333,7 +1355,11 @@ export function CreatePollContent() {
           const existing = await apiFindDuplicatePoll(title, followUpTo);
           if (existing) {
             const shortId = existing.short_id || existing.id;
-            router.replace(`/p/${shortId}`);
+            const threadRootId = findThreadRootRouteId(existing as Poll);
+            // Replace the `?create=1` URL with the thread URL (no re-render),
+            // then push the poll URL. Back button → thread containing this poll.
+            window.history.replaceState(null, '', `/thread/${threadRootId}/`);
+            router.push(`/p/${shortId}`);
             return;
           }
         } catch {
@@ -1379,12 +1405,15 @@ export function CreatePollContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Use short_id if available, fall back to UUID.
-      // Use replace (not push) so the `?create=1` modal URL is removed from history —
-      // back button from the new poll page should return to the page the user was on
-      // when they opened the modal, not reopen the create form.
+      // Navigate to the new poll, with the back button leading to the thread
+      // that contains it (oldest ancestor on top). We replace the `?create=1`
+      // history entry with the thread URL via `history.replaceState` — this
+      // updates the URL without triggering a Next.js re-render — then push the
+      // new poll URL. Back button on the poll page → `/thread/{rootId}`.
       const redirectId = createdPoll.short_id || createdPoll.id;
-      router.replace(`/p/${redirectId}`);
+      const threadRootId = findThreadRootRouteId(createdPoll as Poll);
+      window.history.replaceState(null, '', `/thread/${threadRootId}/`);
+      router.push(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
