@@ -9,9 +9,10 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
-import { navigateWithTransition, navigateBackWithTransition, navigateReplaceWithTransition } from '@/lib/viewTransitions';
+import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
-import { isUuidLike } from '@/lib/pollId';
+import { isUuidLike, extractPollRouteId } from '@/lib/pollId';
+import * as pollBackTarget from '@/lib/pollBackTarget';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -949,18 +950,13 @@ function TemplateInner({ children }: AppTemplateProps) {
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => {
-                // Poll pages for just-created polls have a custom back target
-                // (the thread containing the poll) stored in sessionStorage by
-                // the create-poll flow. Replace the current entry with the
-                // thread URL so back from the thread goes past the poll, not
-                // back to it.
-                const match = pathname.match(/^\/p\/([^/]+)\/?$/);
-                const customBack = match
-                  ? sessionStorage.getItem(`pollBackTarget:${match[1]}`)
-                  : null;
-                if (customBack && match) {
-                  sessionStorage.removeItem(`pollBackTarget:${match[1]}`);
-                  navigateReplaceWithTransition(router, customBack, 'back');
+                // Newly-created poll pages have a custom back target (the
+                // thread containing the poll) — `replace` mode so `back` from
+                // the thread skips over the poll rather than returning to it.
+                const pollRouteId = extractPollRouteId(pathname);
+                const customBack = pollRouteId && pollBackTarget.consume(pollRouteId);
+                if (customBack) {
+                  navigateWithTransition(router, customBack, 'back', { mode: 'replace' });
                   return;
                 }
                 navigateBackWithTransition();

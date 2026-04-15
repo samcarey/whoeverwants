@@ -24,6 +24,7 @@ export type NavDirection = 'forward' | 'back';
 
 interface RouterLike {
   push: (href: string) => void;
+  replace: (href: string) => void;
 }
 
 export function supportsViewTransitions(): boolean {
@@ -77,11 +78,13 @@ function getStart(): StartViewTransition | null {
 export function navigateWithTransition(
   router: RouterLike,
   href: string,
-  direction: NavDirection = 'forward'
+  direction: NavDirection = 'forward',
+  { mode = 'push' }: { mode?: 'push' | 'replace' } = {},
 ): void {
+  const navigate = () => router[mode](href);
   const start = getStart();
   if (!start) {
-    router.push(href);
+    navigate();
     return;
   }
 
@@ -93,50 +96,13 @@ export function navigateWithTransition(
   const targetPath = new URL(href, window.location.origin).pathname;
   try {
     const transition = start.call(document, async () => {
-      router.push(href);
+      navigate();
       await waitForNavigation(targetPath);
     });
     transition.finished.finally(cleanup);
   } catch {
     cleanup();
-    router.push(href);
-  }
-}
-
-interface RouterReplace {
-  replace: (href: string) => void;
-}
-
-/** Like navigateWithTransition but uses router.replace — the current history
- *  entry is replaced rather than a new one pushed. Used when the current URL
- *  is a transient/synthetic one (e.g., a just-created poll page that should
- *  yield to the thread URL in history). */
-export function navigateReplaceWithTransition(
-  router: RouterReplace,
-  href: string,
-  direction: NavDirection = 'back'
-): void {
-  const start = getStart();
-  if (!start) {
-    router.replace(href);
-    return;
-  }
-
-  const root = document.documentElement;
-  root.setAttribute('data-nav-direction', direction);
-
-  const cleanup = () => root.removeAttribute('data-nav-direction');
-
-  const targetPath = new URL(href, window.location.origin).pathname;
-  try {
-    const transition = start.call(document, async () => {
-      router.replace(href);
-      await waitForNavigation(targetPath);
-    });
-    transition.finished.finally(cleanup);
-  } catch {
-    cleanup();
-    router.replace(href);
+    navigate();
   }
 }
 

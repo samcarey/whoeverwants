@@ -28,45 +28,22 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getCachedAccessiblePolls, getCachedPollById } from "@/lib/pollCache";
-import type { Poll } from "@/lib/types";
+import { findThreadRootRouteId } from "@/lib/threadUtils";
+import * as pollBackTarget from "@/lib/pollBackTarget";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-// Record a custom back-button destination for the newly-created poll page.
-// Consumed by the back button in `app/template.tsx`. Only set when the
-// desired thread URL differs from the page underneath the create modal —
-// otherwise `router.replace('/p/<id>')` alone leaves natural history back
-// pointing at that same thread, and an explicit replace would just add a
-// duplicate history entry requiring an extra back-click to escape.
-function setPollBackTarget(pollRouteId: string, threadRootRouteId: string): void {
-  if (typeof window === 'undefined') return;
-  const threadPath = `/thread/${threadRootRouteId}`;
-  const currentPath = window.location.pathname.replace(/\/$/, '');
-  if (currentPath === threadPath) return;
-  sessionStorage.setItem(`pollBackTarget:${pollRouteId}`, threadPath);
-}
-
-// Walk up the follow_up_to chain to find the thread root's URL slug
-// (short_id || id). Used after creating a poll so the user can "back out" to
-// the thread containing the new poll. For a standalone poll (no follow_up_to),
-// the poll itself is the thread root. Falls back gracefully when the cache
-// doesn't contain a full ancestor chain — the furthest cached ancestor is
-// returned as the thread anchor.
-function findThreadRootRouteId(poll: Poll): string {
-  const accessible = getCachedAccessiblePolls() || [];
-  const pollById = new Map(accessible.map(p => [p.id, p]));
-  let root: Poll = poll;
-  let parentId = poll.follow_up_to;
-  while (parentId) {
-    const parent = pollById.get(parentId) || getCachedPollById(parentId);
-    if (!parent) break;
-    root = parent;
-    parentId = parent.follow_up_to;
-  }
-  return root.short_id || root.id;
+// Look up polls by id for `findThreadRootRouteId`. Consults the accessible
+// list cache (pre-built into a Map for O(1) walks), then falls back to the
+// per-poll cache so ancestor chains can be walked even when the user arrives
+// at the create modal from a poll page without the full list cached.
+function pollChainLookup() {
+  const accessible = getCachedAccessiblePolls() ?? [];
+  const byId = new Map(accessible.map(p => [p.id, p]));
+  return (id: string) => byId.get(id) ?? getCachedPollById(id);
 }
 
 // Strip parenthesized suffixes and colon suffixes from option text for titles
@@ -1369,9 +1346,7 @@ export function CreatePollContent() {
           const existing = await apiFindDuplicatePoll(title, followUpTo);
           if (existing) {
             const shortId = existing.short_id || existing.id;
-            const threadRootId = findThreadRootRouteId(existing as Poll);
-            setPollBackTarget(shortId, threadRootId);
-            // Replace the `?create=1` history entry with the poll URL.
+            pollBackTarget.set(shortId, findThreadRootRouteId(existing, pollChainLookup()));
             router.replace(`/p/${shortId}`);
             return;
           }
@@ -1418,13 +1393,11 @@ export function CreatePollContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Navigate to the new poll. The back button on the poll page should
-      // lead to the thread containing the poll (oldest ancestor on top) —
-      // for a standalone poll, that's the poll's own thread URL.
+      // Navigate to the new poll. `pollBackTarget.set` records the thread
+      // URL so the poll page's back button leads to the thread containing
+      // it (oldest ancestor on top). `router.replace` drops `?create=1`.
       const redirectId = createdPoll.short_id || createdPoll.id;
-      const threadRootId = findThreadRootRouteId(createdPoll as Poll);
-      setPollBackTarget(redirectId, threadRootId);
-      // Use replace so the `?create=1` URL isn't left in history.
+      pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollChainLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
