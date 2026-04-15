@@ -10,6 +10,7 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
+import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -140,7 +141,18 @@ function TemplateInner({ children }: AppTemplateProps) {
   const [pageTitle, setPageTitle] = useState(getInitialPageTitle());
   const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
   const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
-  const [pollPageTitle, setPollPageTitle] = useState('');
+  // Initialize pollPageTitle synchronously from the poll cache on poll pages,
+  // so the header shows the title on the very first paint after navigation
+  // (avoids the h1 being empty during a view transition slide).
+  const [pollPageTitle, setPollPageTitle] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const match = pathname.match(/^\/p\/([^/]+)\/?$/);
+    if (!match) return '';
+    const id = match[1];
+    const isUuid = id.length > 10 && id.includes('-');
+    const poll = isUuid ? getCachedPollById(id) : getCachedPollByShortId(id);
+    return poll?.title ?? '';
+  });
 
   // Long-press detection for opening the debug modal (replaces simple tap)
   const { props: longPressProps } = useLongPress(() =>
