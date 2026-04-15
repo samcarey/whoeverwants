@@ -24,6 +24,8 @@ interface AutocompleteInputProps {
   isRichSelection?: boolean;
   /** Called when the user edits/clears a rich selection, so parent can clean up metadata */
   onRichValueCleared?: () => void;
+  /** When true, skip API search calls and keep the dropdown hidden. */
+  searchDisabled?: boolean;
 }
 
 export default function AutocompleteInput({
@@ -42,6 +44,7 @@ export default function AutocompleteInput({
   richImageUrl,
   isRichSelection = false,
   onRichValueCleared,
+  searchDisabled = false,
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -104,6 +107,11 @@ export default function AutocompleteInput({
 
     onChange(newValue);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (searchDisabled) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
     debounceRef.current = setTimeout(() => doSearch(newValue), 300);
   };
 
@@ -153,6 +161,16 @@ export default function AutocompleteInput({
     };
   }, []);
 
+  // When search becomes disabled, drop any pending debounce and visible results.
+  useEffect(() => {
+    if (!searchDisabled) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    lastSuccessfulQueryRef.current = "";
+    lastResultsRef.current = [];
+  }, [searchDisabled]);
+
   // Stop touch events on the dropdown from bubbling to the modal's
   // drag-to-dismiss handler, so scrolling inside the dropdown works.
   useEffect(() => {
@@ -193,7 +211,7 @@ export default function AutocompleteInput({
             if (trimmed !== value) onChange(trimmed);
           }}
           onFocus={() => {
-            if (suggestions.length > 0) setShowSuggestions(true);
+            if (!searchDisabled && suggestions.length > 0) setShowSuggestions(true);
             // Select all text on focus so backspace/typing replaces the whole chip
             if (isRichSelection) localInputRef.current?.select();
           }}
