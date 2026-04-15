@@ -4,7 +4,7 @@ import { useRef } from "react";
 import type { PollCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
-import { isAutocompleteCategory } from "@/components/TypeFieldInput";
+import { isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
 
 export type { OptionsMetadata };
 
@@ -159,6 +159,9 @@ export default function OptionsInput({
   };
 
   const useAutocomplete = isAutocompleteCategory(category);
+  const needsReferenceLocation =
+    isLocationLikeCategory(category) &&
+    (referenceLatitude === undefined || referenceLongitude === undefined);
   const inputClassName = (isDuplicate: boolean) =>
     `flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
       isDuplicate
@@ -172,6 +175,11 @@ export default function OptionsInput({
         <label className="block text-sm font-medium mb-1">
           {label}
         </label>
+      )}
+      {needsReferenceLocation && (
+        <p className="mb-2 text-sm text-orange-600 dark:text-orange-400">
+          Choose a reference location above to enable search.
+        </p>
       )}
       <div className="space-y-2">
         {(() => {
@@ -204,6 +212,7 @@ export default function OptionsInput({
                     isRichSelection={!!option && !!optionMeta}
                     richImageUrl={optionMeta?.imageUrl}
                     onRichValueCleared={() => clearMetadataForOption(option)}
+                    searchDisabled={needsReferenceLocation}
                   />
                 </div>
               ) : (
