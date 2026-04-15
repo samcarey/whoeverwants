@@ -1,19 +1,22 @@
 /**
  * View Transitions API helpers for iOS-style slide navigation.
  *
- * Wraps `router.push()` in `document.startViewTransition()` when supported,
- * with a direction attribute on the HTML element so CSS can apply the
- * right animation (forward = slide left, back = slide right).
+ * Wraps `router.push()` in `document.startViewTransition()` with a direction
+ * attribute on the HTML element so CSS applies the right animation.
  *
- * Uses `flushSync` inside the transition callback to force React to commit
- * the new route synchronously. This eliminates the tap-to-slide delay that
- * would otherwise be needed to wait for React's async scheduler to commit.
- * Combined with synchronous cache-based state initialization on destination
- * pages, the new page is fully rendered by the time the browser captures
- * its "after" snapshot.
+ * Waits for the destination page to signal `data-page-ready` on <html>
+ * before letting the callback resolve, so the browser's "after" snapshot
+ * contains a fully rendered page. Destination pages initialize their state
+ * synchronously from the in-memory cache and set `data-page-ready` in a
+ * `useLayoutEffect` as soon as they commit.
+ *
+ * Trade-off: a short pause (~100-300ms on mobile) between tap and slide
+ * start, during which the old page is frozen while React commits the new
+ * route. The alternative — starting the slide immediately — shows an
+ * empty/partial new page during the animation on slower devices because
+ * Next.js App Router's router.push is async internally (flushSync doesn't
+ * force it to commit synchronously).
  */
-
-import { flushSync } from 'react-dom';
 
 export type NavDirection = 'forward' | 'back';
 
@@ -25,6 +28,43 @@ export function supportsViewTransitions(): boolean {
   return typeof document !== 'undefined' && 'startViewTransition' in document;
 }
 
+async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
+  const normalize = (p: string) => p.replace(/\/$/, '') || '/';
+  const target = normalize(targetPath);
+  const deadline = Date.now() + timeoutMs;
+
+  // Phase 1: wait for the URL to change.
+  while (normalize(window.location.pathname) !== target && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+
+  // Phase 2: wait for the destination page to render. Uses MutationObserver
+  // on <html> attributes so we fire the instant `data-page-ready` is set.
+  const contentDeadline = Math.min(deadline, Date.now() + 1000);
+  const alreadyReady = document.documentElement.getAttribute('data-page-ready') === target;
+  if (!alreadyReady) {
+    await new Promise<void>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (document.documentElement.getAttribute('data-page-ready') === target) {
+          observer.disconnect();
+          resolve();
+        }
+      });
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
+      const timeoutId = setTimeout(() => {
+        observer.disconnect();
+        resolve();
+      }, Math.max(0, contentDeadline - Date.now()));
+      // In case attribute was set between our check and observer.observe
+      if (document.documentElement.getAttribute('data-page-ready') === target) {
+        clearTimeout(timeoutId);
+        observer.disconnect();
+        resolve();
+      }
+    });
+  }
+}
+
 type ViewTransition = { finished: Promise<void> };
 type StartViewTransition = (cb: () => unknown) => ViewTransition;
 
@@ -33,12 +73,6 @@ function getStart(): StartViewTransition | null {
   return (document as unknown as { startViewTransition: StartViewTransition }).startViewTransition;
 }
 
-/**
- * Navigate to `href` with a view transition. Sets the `data-nav-direction`
- * attribute on the root element so CSS animations pick the right direction.
- * The entire page is treated as a single root snapshot — titles, content,
- * and layout all slide together.
- */
 export function navigateWithTransition(
   router: RouterLike,
   href: string,
@@ -46,41 +80,28 @@ export function navigateWithTransition(
 ): void {
   const start = getStart();
   if (!start) {
-    console.log('[viewTransitions] API not supported; falling back to router.push');
     router.push(href);
     return;
   }
 
-  console.log(`[viewTransitions] starting ${direction} to ${href}`);
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', direction);
 
   const cleanup = () => root.removeAttribute('data-nav-direction');
 
+  const targetPath = new URL(href, window.location.origin).pathname;
   try {
-    const transition = start.call(document, () => {
-      // flushSync forces React to commit router.push's update synchronously
-      // inside this callback, so the destination page's DOM is in place
-      // before the browser captures the "after" snapshot. Destination pages
-      // initialize their state from the in-memory cache (so the first render
-      // has real content, not a loading spinner).
-      flushSync(() => {
-        router.push(href);
-      });
-      console.log('[viewTransitions] navigation flushed, snapshot ready');
+    const transition = start.call(document, async () => {
+      router.push(href);
+      await waitForNavigation(targetPath);
     });
-    transition.finished.then(() => console.log('[viewTransitions] transition finished'));
     transition.finished.finally(cleanup);
-  } catch (err) {
-    console.log('[viewTransitions] error:', err);
+  } catch {
     cleanup();
     router.push(href);
   }
 }
 
-/**
- * Navigate backward (history.back()) with a reverse-direction transition.
- */
 export function navigateBackWithTransition(): void {
   const start = getStart();
   if (!start) {
@@ -94,10 +115,14 @@ export function navigateBackWithTransition(): void {
   const cleanup = () => root.removeAttribute('data-nav-direction');
 
   try {
-    const transition = start.call(document, () => {
-      flushSync(() => {
-        window.history.back();
-      });
+    const previousPath = window.location.pathname;
+    const transition = start.call(document, async () => {
+      window.history.back();
+      const started = Date.now();
+      while (window.location.pathname === previousPath && Date.now() - started < 800) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      await new Promise((r) => setTimeout(r, 120));
     });
     transition.finished.finally(cleanup);
   } catch {
