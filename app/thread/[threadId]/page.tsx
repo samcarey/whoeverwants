@@ -189,10 +189,23 @@ function ThreadContent() {
     fetchThread();
   }, [threadId]);
 
+  // Measure the fixed thread header so we can apply matching padding-top on the scroll list
+  // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => setHeaderHeight(el.offsetHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [thread]);
+
   // Auto-scroll to the bottom on load so newest polls are visible.
-  // Uses direct scrollTop instead of scrollIntoView — scrollIntoView traverses
-  // all ancestors (including overflow-hidden parents like pwa-safe-top) and
-  // pushes the safe area padding above the viewport on iOS PWA.
+  // Depends on headerHeight because scrollHeight grows with paddingTop — without this we'd
+  // scroll to the pre-padding bottom and new content below would be clipped.
   const scrollListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (thread && !loading) {
@@ -201,34 +214,7 @@ function ThreadContent() {
         if (el) el.scrollTop = el.scrollHeight;
       });
     }
-  }, [thread, loading]);
-
-  // Defensive: on iOS PWA, ancestor containers (`.pwa-safe-top`, `.safari-scroll-container`)
-  // can end up with a non-zero `scrollTop` even with `overflow: hidden` — this pushes the
-  // safe-area padding (and the thread header) behind the notch. Snap any stray scrollTop
-  // back to 0 on scroll so the thread header stays locked at the safe area boundary.
-  useEffect(() => {
-    const list = scrollListRef.current;
-    if (!list) return;
-    const ancestors: HTMLElement[] = [];
-    let el: HTMLElement | null = list.parentElement;
-    while (el && el !== document.body) {
-      if (el.classList.contains('pwa-safe-top') || el.classList.contains('safari-scroll-container')) {
-        ancestors.push(el);
-      }
-      el = el.parentElement;
-    }
-    if (ancestors.length === 0) return;
-    const reset = (target: HTMLElement) => () => {
-      if (target.scrollTop !== 0) target.scrollTop = 0;
-    };
-    const handlers = ancestors.map(a => {
-      const h = reset(a);
-      a.addEventListener('scroll', h, { passive: true });
-      return { el: a, h };
-    });
-    return () => handlers.forEach(({ el, h }) => el.removeEventListener('scroll', h));
-  }, [thread]);
+  }, [thread, loading, headerHeight]);
 
   if (loading) {
     return (
@@ -275,40 +261,54 @@ function ThreadContent() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Fixed thread header with back button — not scrollable */}
-      <div className="shrink-0 bg-background border-b border-gray-200 dark:border-gray-700 pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden touch-none">
-        <button
-          onClick={() => {
-            const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
-            if (navCount > 1) {
-              navigateBackWithTransition();
-            } else {
-              navigateWithTransition(router, '/', 'back');
-            }
-          }}
-          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
-          aria-label="Go back"
-        >
-          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <RespondentCircles
-          names={thread.participantNames}
-          anonymousCount={thread.anonymousRespondentCount}
-        />
-        <div className="min-w-0">
-          <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-            {thread.title}
-          </h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
-          </p>
+      {/* Thread header — position:fixed so it stays locked to the safe area top even if
+          ancestor containers (.pwa-safe-top / .safari-scroll-container) end up with a stray
+          scrollTop on iOS PWA. Viewport-relative because .responsive-scaling-container has
+          no transform on mobile. */}
+      <div
+        ref={headerRef}
+        className="fixed left-0 right-0 z-20 bg-background border-b border-gray-200 dark:border-gray-700 touch-none"
+        style={{ top: 'env(safe-area-inset-top, 0px)' }}
+      >
+        <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+          <button
+            onClick={() => {
+              const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
+              if (navCount > 1) {
+                navigateBackWithTransition();
+              } else {
+                navigateWithTransition(router, '/', 'back');
+              }
+            }}
+            className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
+            aria-label="Go back"
+          >
+            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <RespondentCircles
+            names={thread.participantNames}
+            anonymousCount={thread.anonymousRespondentCount}
+          />
+          <div className="min-w-0">
+            <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+              {thread.title}
+            </h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Scrollable poll list — auto-scrolls to bottom on load */}
-      <div ref={scrollListRef} className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+      {/* Scrollable poll list — auto-scrolls to bottom on load.
+          paddingTop reserves space for the fixed header above. */}
+      <div
+        ref={scrollListRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+        style={{ paddingTop: `${headerHeight}px` }}
+      >
         <div className="py-2">
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);

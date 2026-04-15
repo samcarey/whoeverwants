@@ -104,20 +104,18 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
 
   // Find the portal target for the time badge (inside scroll container so it scrolls with content).
   // The portal div is rendered by template.tsx only after its isMounted state flips to true, which
-  // can happen after this effect runs. Use MutationObserver to reliably detect the portal's
-  // appearance rather than a single 100ms retry (which races with the template's mount timing
-  // and fails unpredictably on slower routes like /thread/...).
+  // can happen after this effect runs. Navigation can also cause React to replace the portal div,
+  // leaving our stored reference pointing at a detached DOM node — so the observer stays
+  // connected for the lifetime of the component and re-queries whenever the DOM changes. The
+  // state setter only writes when the node identity actually changes, so this doesn't spam renders.
   useEffect(() => {
     if (!showTimeBadge) return;
-    const el = document.getElementById('commit-badge-portal');
-    if (el) { setBadgeTarget(el); return; }
-    const observer = new MutationObserver(() => {
+    const check = () => {
       const el = document.getElementById('commit-badge-portal');
-      if (el) {
-        setBadgeTarget(el);
-        observer.disconnect();
-      }
-    });
+      setBadgeTarget(prev => (prev === el ? prev : el));
+    };
+    check();
+    const observer = new MutationObserver(check);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [showTimeBadge]);
