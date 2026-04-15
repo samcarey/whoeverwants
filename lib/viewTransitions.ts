@@ -25,24 +25,40 @@ export function supportsViewTransitions(): boolean {
 }
 
 /**
- * Wait for the browser URL pathname to match `targetPath`, plus a small
- * delay for React to commit the new route's DOM. Used by the view transition
- * callback so the browser doesn't capture the "after" snapshot before the
- * new page has rendered.
+ * Wait for the browser URL pathname to match `targetPath`, then for the
+ * destination page's content to actually render. Used by the view transition
+ * callback so the browser doesn't capture the "after" snapshot while the
+ * new page is still blank.
  *
  * Normalizes trailing slashes. Do NOT use requestAnimationFrame —
  * the browser pauses rendering during the view transition callback.
+ *
+ * React's commit after router.push can take 200-400ms on slower devices
+ * (especially mobile Safari). Rather than a fixed timeout, we poll for a
+ * `data-page-ready` attribute that destination pages set to indicate their
+ * content is rendered. Falls back to a max timeout to avoid hanging.
  */
-async function waitForNavigation(targetPath: string, timeoutMs = 800): Promise<void> {
+async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
   const normalize = (p: string) => p.replace(/\/$/, '') || '/';
   const target = normalize(targetPath);
-  const urlStart = Date.now();
-  while (normalize(window.location.pathname) !== target && Date.now() - urlStart < timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+
+  // Phase 1: wait for the URL to change.
+  while (normalize(window.location.pathname) !== target && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10));
   }
-  // URL has changed — now wait a short tick for React to commit the new DOM.
-  // setTimeout still fires inside the view transition callback (only rAF is paused).
-  await new Promise((r) => setTimeout(r, 120));
+
+  // Phase 2: wait for the destination page to render.
+  // Destination pages set `data-page-ready` on `<html>` when their content
+  // is in the DOM. React on mobile Safari can take 800+ms to commit after
+  // router.push, so we wait up to 1 second.
+  const contentDeadline = Math.min(deadline, Date.now() + 1000);
+  while (
+    document.documentElement.getAttribute('data-page-ready') !== target &&
+    Date.now() < contentDeadline
+  ) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
 }
 
 type ViewTransition = { finished: Promise<void> };

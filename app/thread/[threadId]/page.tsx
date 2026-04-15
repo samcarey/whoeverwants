@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -105,6 +105,21 @@ function ThreadContent() {
     }
     return () => { document.body.removeAttribute('data-thread-latest-poll-id'); };
   }, [thread]);
+
+  // Signal to the view transition helper that this page's content is rendered.
+  // Uses useLayoutEffect so the attribute is set before paint (and before the
+  // view transition callback detects it and captures the "new" snapshot).
+  useLayoutEffect(() => {
+    if (thread && !loading) {
+      const path = window.location.pathname.replace(/\/$/, '') || '/';
+      document.documentElement.setAttribute('data-page-ready', path);
+      return () => {
+        if (document.documentElement.getAttribute('data-page-ready') === path) {
+          document.documentElement.removeAttribute('data-page-ready');
+        }
+      };
+    }
+  }, [thread, loading]);
 
   // Prefetch poll page routes for all polls in this thread
   useEffect(() => {

@@ -4,7 +4,7 @@ import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import PollPageClient from "./PollPageClient";
@@ -39,6 +39,21 @@ function PollContent() {
   useEffect(() => {
     console.log('[PollPage] component mounted');
   }, []);
+
+  // Signal to the view transition helper that this page's content is rendered.
+  // useLayoutEffect fires before paint, so the attribute is set before the
+  // view transition callback captures the "new" snapshot.
+  useLayoutEffect(() => {
+    if (poll) {
+      const path = window.location.pathname.replace(/\/$/, '') || '/';
+      document.documentElement.setAttribute('data-page-ready', path);
+      return () => {
+        if (document.documentElement.getAttribute('data-page-ready') === path) {
+          document.documentElement.removeAttribute('data-page-ready');
+        }
+      };
+    }
+  }, [poll]);
 
   useEffect(() => {
     const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
