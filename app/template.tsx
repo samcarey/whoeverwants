@@ -740,7 +740,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                 <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
                   <h1
                     className="text-2xl font-bold text-center break-words select-none"
-                    style={{ viewTransitionName: 'hero-title' }}
+                    style={{ viewTransitionName: 'hero-poll' }}
                     {...longPressProps}
                   >
                     {pollPageTitle}

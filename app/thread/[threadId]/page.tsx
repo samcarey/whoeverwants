@@ -245,7 +245,7 @@ function ThreadContent() {
         <div className="min-w-0">
           <h1
             className="font-semibold text-lg text-gray-900 dark:text-white truncate"
-            style={{ viewTransitionName: 'hero-title' }}
+            style={{ viewTransitionName: 'hero-thread' }}
           >
             {thread.title}
           </h1>
@@ -288,7 +288,7 @@ function ThreadContent() {
               const href = `/p/${poll.short_id || poll.id}`;
               const heroEl = document.querySelector<HTMLElement>(`[data-thread-poll-title-id="${poll.id}"]`);
               setNavigatingPollId(poll.id);
-              navigateWithTransition(router, href, 'forward', heroEl);
+              navigateWithTransition(router, href, 'forward', heroEl, 'poll');
             };
 
             const handleTouchEnd = () => {

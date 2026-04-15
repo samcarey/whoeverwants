@@ -89,7 +89,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
           console.log(`[ThreadList] navigating to /thread/${routeId} at t=${performance.now().toFixed(0)}`);
           const heroEl = document.querySelector<HTMLElement>(`[data-thread-title-id="${thread.rootPollId}"]`);
           setNavigatingThreadId(thread.rootPollId);
-          navigateWithTransition(router, `/thread/${routeId}`, 'forward', heroEl);
+          navigateWithTransition(router, `/thread/${routeId}`, 'forward', heroEl, 'thread');
         };
 
         const handleTouchStart = (e: React.TouchEvent) => {

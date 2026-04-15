@@ -416,7 +416,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                 console.log(`[PollList] navigating to ${href} at t=${performance.now().toFixed(0)}`);
                 const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
                 setNavigatingPollId(poll.id);
-                navigateWithTransition(router, href, 'forward', heroEl);
+                navigateWithTransition(router, href, 'forward', heroEl, 'poll');
               };
 
               const handleTouchEnd = (e: React.TouchEvent) => {
@@ -571,7 +571,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                   const href = `/p/${poll.short_id || poll.id}`;
                   const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
                   setNavigatingPollId(poll.id);
-                  navigateWithTransition(router, href, 'forward', heroEl);
+                  navigateWithTransition(router, href, 'forward', heroEl, 'poll');
                 };
 
                 const handleTouchEnd = (e: React.TouchEvent) => {
