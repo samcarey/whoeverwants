@@ -229,15 +229,6 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   opacity: 1;
 }
 
-/* Hero title (shared element): browser auto-morphs position and size
-   between the list item's title and the destination page's header.
-   Uses distinct names per page type (hero-thread, hero-poll) so we don't
-   morph across conceptually different titles. */
-::view-transition-group(hero-thread),
-::view-transition-group(hero-poll) {
-  animation-duration: 500ms;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-}
 
 .responsive-scaling-container {
   transform-origin: top left;

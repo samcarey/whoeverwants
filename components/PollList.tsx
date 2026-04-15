@@ -42,7 +42,7 @@ function PollTitle({ poll, className }: { poll: Poll; className: string }) {
 
   return (
     <div className="relative">
-      <h3 ref={ref} data-poll-title-id={poll.id} className={className}>
+      <h3 ref={ref} className={className}>
         {poll.title}
         {icons.length > 0 && (
           <>
@@ -200,7 +200,6 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
-  const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
   const savedUserName = useMemo(() => {
     if (typeof window === 'undefined') return null;
     return getUserName();
@@ -413,10 +412,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
               const goToPoll = () => {
                 const href = `/p/${poll.short_id || poll.id}`;
-                console.log(`[PollList] navigating to ${href} at t=${performance.now().toFixed(0)}`);
-                const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
-                setNavigatingPollId(poll.id);
-                navigateWithTransition(router, href, 'forward', heroEl, 'poll');
+                navigateWithTransition(router, href, 'forward');
               };
 
               const handleTouchEnd = (e: React.TouchEvent) => {
@@ -472,15 +468,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-                      {navigatingPollId === poll.id && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
+<div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="text-sm">{getCategoryIcon(poll)}</span>
                           {pollsWithNewOptions.has(poll.id) && (
@@ -569,9 +557,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
 
                 const goToPoll = () => {
                   const href = `/p/${poll.short_id || poll.id}`;
-                  const heroEl = document.querySelector<HTMLElement>(`[data-poll-title-id="${poll.id}"]`);
-                  setNavigatingPollId(poll.id);
-                  navigateWithTransition(router, href, 'forward', heroEl, 'poll');
+                  navigateWithTransition(router, href, 'forward');
                 };
 
                 const handleTouchEnd = (e: React.TouchEvent) => {
@@ -621,15 +607,7 @@ export default function PollList({ polls, showSections = true, sectionTitles = {
                       onTouchMove={handleTouchMove}
                       className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                     >
-                      {navigatingPollId === poll.id && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                          <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
+<div className="flex items-center justify-between">
                         <span className="text-sm">{getCategoryIcon(poll)}</span>
                         {(poll.response_deadline || poll.updated_at) && (
                           <span className="text-xs text-gray-500 dark:text-gray-400">

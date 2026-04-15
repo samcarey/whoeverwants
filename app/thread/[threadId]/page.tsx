@@ -84,7 +84,6 @@ function ThreadContent() {
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
-  const [navigatingPollId, setNavigatingPollId] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('[ThreadPage] component mounted');
@@ -243,10 +242,7 @@ function ThreadContent() {
           anonymousCount={thread.anonymousRespondentCount}
         />
         <div className="min-w-0">
-          <h1
-            className="font-semibold text-lg text-gray-900 dark:text-white truncate"
-            style={{ viewTransitionName: 'hero-thread' }}
-          >
+          <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
             {thread.title}
           </h1>
           <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -286,9 +282,7 @@ function ThreadContent() {
 
             const goToPoll = () => {
               const href = `/p/${poll.short_id || poll.id}`;
-              const heroEl = document.querySelector<HTMLElement>(`[data-thread-poll-title-id="${poll.id}"]`);
-              setNavigatingPollId(poll.id);
-              navigateWithTransition(router, href, 'forward', heroEl, 'poll');
+              navigateWithTransition(router, href, 'forward');
             };
 
             const handleTouchEnd = () => {
@@ -332,15 +326,6 @@ function ThreadContent() {
                   onTouchMove={handleTouchMove}
                   className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
                 >
-                  {navigatingPollId === poll.id && (
-                    <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 flex items-center justify-center">
-                      <svg className="animate-spin h-6 w-6 text-blue-600 dark:text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    </div>
-                  )}
-
                   {/* Status line */}
                   <div className="flex items-center justify-between">
                     <span className="text-sm">{getCategoryIcon(poll)}</span>
@@ -375,10 +360,7 @@ function ThreadContent() {
                   </div>
 
                   {/* Title */}
-                  <h3
-                    data-thread-poll-title-id={poll.id}
-                    className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white"
-                  >
+                  <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                     {poll.title}
                   </h3>
 

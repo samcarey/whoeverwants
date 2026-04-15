@@ -16,10 +16,6 @@
 
 export type NavDirection = 'forward' | 'back';
 
-/** Named hero views — using distinct names prevents awkward content morphs
- *  between conceptually different titles (e.g., poll title → thread title). */
-export type HeroKind = 'thread' | 'poll';
-
 interface RouterLike {
   push: (href: string) => void;
 }
@@ -59,25 +55,16 @@ function getStart(): StartViewTransition | null {
 
 /**
  * Navigate to `href` with a view transition. Sets the `data-nav-direction`
- * attribute on the root element so CSS animations can pick the right
- * direction. Calls `router.push()` inside the transition callback.
- *
- * If `heroElement` and `heroKind` are provided, tags the element with
- * `view-transition-name: hero-<kind>` for the duration of the transition.
- * Pages that serve as destinations should statically tag their title element
- * with the matching name so the browser morphs the source into the
- * destination position.
- *
- * Using distinct names per page type ensures we don't morph, e.g., a poll
- * title into a thread header — those pages fall back to a clean slide with
- * no shared-element morph.
+ * attribute on the root element so CSS animations pick the right direction.
+ * The entire page is treated as a single root snapshot — titles, content,
+ * and layout all slide together. No shared-element hero morphs for now
+ * (destination pages have async data-load states that prevent the hero
+ * element from existing when the "new" snapshot is captured).
  */
 export function navigateWithTransition(
   router: RouterLike,
   href: string,
-  direction: NavDirection = 'forward',
-  heroElement?: HTMLElement | null,
-  heroKind?: HeroKind
+  direction: NavDirection = 'forward'
 ): void {
   const start = getStart();
   if (!start) {
@@ -86,24 +73,11 @@ export function navigateWithTransition(
     return;
   }
 
-  const heroName = heroKind ? `hero-${heroKind}` : null;
-  console.log(`[viewTransitions] starting ${direction} to ${href}, hero=${heroName ?? 'none'}`);
+  console.log(`[viewTransitions] starting ${direction} to ${href}`);
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', direction);
 
-  // Only dynamically tag the heroElement if no other element already owns
-  // this name on the page. Two elements with the same view-transition-name
-  // throws InvalidStateError.
-  const alreadyHas = heroName
-    ? !!document.querySelector(`[style*="${heroName}"]`)
-    : false;
-  const tagHero = heroElement && heroName && !alreadyHas;
-  if (tagHero) heroElement!.style.viewTransitionName = heroName!;
-
-  const cleanup = () => {
-    root.removeAttribute('data-nav-direction');
-    if (tagHero) heroElement!.style.viewTransitionName = '';
-  };
+  const cleanup = () => root.removeAttribute('data-nav-direction');
 
   const targetPath = new URL(href, window.location.origin).pathname;
   try {
@@ -123,11 +97,12 @@ export function navigateWithTransition(
 
 /**
  * Navigate backward (history.back()) with a reverse-direction transition.
+ *
+ * Back navigation doesn't attempt shared-element morphs — we don't know the
+ * destination's hero kind, and in most cases (poll → thread, thread → home)
+ * the page types differ anyway. The page slides as a single root snapshot.
  */
-export function navigateBackWithTransition(
-  heroElement?: HTMLElement | null,
-  heroKind?: HeroKind
-): void {
+export function navigateBackWithTransition(): void {
   const start = getStart();
   if (!start) {
     window.history.back();
@@ -137,17 +112,7 @@ export function navigateBackWithTransition(
   const root = document.documentElement;
   root.setAttribute('data-nav-direction', 'back');
 
-  const heroName = heroKind ? `hero-${heroKind}` : null;
-  const alreadyHas = heroName
-    ? !!document.querySelector(`[style*="${heroName}"]`)
-    : false;
-  const tagHero = heroElement && heroName && !alreadyHas;
-  if (tagHero) heroElement!.style.viewTransitionName = heroName!;
-
-  const cleanup = () => {
-    root.removeAttribute('data-nav-direction');
-    if (tagHero) heroElement!.style.viewTransitionName = '';
-  };
+  const cleanup = () => root.removeAttribute('data-nav-direction');
 
   try {
     const previousPath = window.location.pathname;
