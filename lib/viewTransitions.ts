@@ -43,22 +43,44 @@ async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<
   const target = normalize(targetPath);
   const deadline = Date.now() + timeoutMs;
 
+  const tStart = performance.now();
+
   // Phase 1: wait for the URL to change.
   while (normalize(window.location.pathname) !== target && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10));
   }
+  const tUrl = performance.now();
 
-  // Phase 2: wait for the destination page to render.
-  // Destination pages set `data-page-ready` on `<html>` when their content
-  // is in the DOM. React on mobile Safari can take 800+ms to commit after
-  // router.push, so we wait up to 1 second.
+  // Phase 2: wait for the destination page to render. Uses MutationObserver
+  // on <html> attributes so we fire the instant `data-page-ready` is set,
+  // rather than polling every 10ms.
   const contentDeadline = Math.min(deadline, Date.now() + 1000);
-  while (
-    document.documentElement.getAttribute('data-page-ready') !== target &&
-    Date.now() < contentDeadline
-  ) {
-    await new Promise((r) => setTimeout(r, 10));
+  const alreadyReady = document.documentElement.getAttribute('data-page-ready') === target;
+  if (!alreadyReady) {
+    await new Promise<void>((resolve) => {
+      const observer = new MutationObserver(() => {
+        if (document.documentElement.getAttribute('data-page-ready') === target) {
+          observer.disconnect();
+          resolve();
+        }
+      });
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
+      // Max wait timeout
+      const timeoutId = setTimeout(() => {
+        observer.disconnect();
+        resolve();
+      }, Math.max(0, contentDeadline - Date.now()));
+      // In case it was set between our check and observer.observe
+      if (document.documentElement.getAttribute('data-page-ready') === target) {
+        clearTimeout(timeoutId);
+        observer.disconnect();
+        resolve();
+      }
+    });
   }
+  const tReady = performance.now();
+
+  console.log(`[viewTransitions] wait breakdown: url=${(tUrl - tStart).toFixed(0)}ms, ready=${(tReady - tUrl).toFixed(0)}ms, total=${(tReady - tStart).toFixed(0)}ms`);
 }
 
 type ViewTransition = { finished: Promise<void> };
