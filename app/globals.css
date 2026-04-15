@@ -46,6 +46,16 @@ html {
   overscroll-behavior: none;
 }
 
+/* Keep the scrollable content at least as tall as the scroll container so
+   `scrollHeight === clientHeight` whenever the page content is shorter than
+   the viewport. Without this, iOS PWA still lets the user drag content up
+   behind the notch even when there's nothing below to reveal. When the page
+   content IS longer than the viewport, min-height: 100% is harmless — the
+   box grows beyond 100% to fit its content and scrolling works normally. */
+.pwa-safe-top {
+  min-height: 100%;
+}
+
 /* Apply safe area padding only on iOS devices (more specific detection) */
 @supports (-webkit-touch-callout: none) and (not (hover: hover)) {
   html {
