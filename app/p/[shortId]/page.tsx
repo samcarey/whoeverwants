@@ -11,13 +11,25 @@ import PollPageClient from "./PollPageClient";
 
 function PollContent() {
   const mountTime = useRef(performance.now());
-  const [poll, setPoll] = useState<Poll | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [pollId, setPollId] = useState<string | null>(null);
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
+
+  // Initialize poll synchronously from cache so the page renders its final
+  // content on the first paint — avoids a visible loading-spinner flash in
+  // the middle of the view transition slide animation.
+  const initialPoll: Poll | null = (() => {
+    if (typeof window === 'undefined') return null;
+    const raw = params.shortId as string;
+    if (!raw) return null;
+    const isUuid = raw.length > 10 && raw.includes('-');
+    return isUuid ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+  })();
+
+  const [poll, setPoll] = useState<Poll | null>(initialPoll);
+  const [loading, setLoading] = useState(!initialPoll);
+  const [error, setError] = useState(false);
+  const [pollId, setPollId] = useState<string | null>(initialPoll?.id ?? null);
 
   // Prefetch critical pages
   useEffect(() => {
@@ -30,42 +42,43 @@ function PollContent() {
 
   useEffect(() => {
     const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
-    
+
     if (!pollId) {
       router.replace('/');
       return;
     }
 
+    // If we already have the poll from the synchronous cache lookup above,
+    // register access and skip the fetch effect (it would only produce the
+    // same result).
+    if (initialPoll) {
+      addAccessiblePollId(initialPoll.id);
+      return;
+    }
+
     async function fetchPoll() {
       try {
-        // Check in-memory cache first — the home page / thread page already has this data.
         const fetchStart = performance.now();
         const isUuid = pollId.length > 10 && pollId.includes('-');
-        let pollData: Poll | null = isUuid
-          ? getCachedPollById(pollId)
-          : getCachedPollByShortId(pollId);
-
-        if (pollData) {
-          console.log(`[PollPage] cache HIT for ${pollId.slice(0, 8)}… (${(performance.now() - fetchStart).toFixed(0)}ms since fetch start, ${(performance.now() - mountTime.current).toFixed(0)}ms since mount)`);
-        } else {
-          console.log(`[PollPage] cache MISS for ${pollId.slice(0, 8)}… — fetching from API`);
-          try {
-            if (isUuid) {
-              pollData = await apiGetPollById(pollId);
-            } else {
+        let pollData: Poll | null = null;
+        console.log(`[PollPage] cache MISS for ${pollId.slice(0, 8)}… — fetching from API`);
+        try {
+          if (isUuid) {
+            pollData = await apiGetPollById(pollId);
+          } else {
+            pollData = await apiGetPollByShortId(pollId);
+          }
+        } catch {
+          if (!isUuid) {
+            try {
               pollData = await apiGetPollByShortId(pollId);
-            }
-          } catch {
-            if (!isUuid) {
-              try {
-                pollData = await apiGetPollByShortId(pollId);
-              } catch {
-                pollData = null;
-              }
+            } catch {
+              pollData = null;
             }
           }
-          console.log(`[PollPage] API fetch done (${(performance.now() - fetchStart).toFixed(0)}ms)`);
         }
+        console.log(`[PollPage] API fetch done (${(performance.now() - fetchStart).toFixed(0)}ms)`);
+
         // Grant access to this poll
         if (pollData) {
           addAccessiblePollId(pollData.id);

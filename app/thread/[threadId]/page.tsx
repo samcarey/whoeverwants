@@ -8,7 +8,7 @@ import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -48,6 +48,25 @@ const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:tex
   return <>{label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span></>;
 };
 
+/** Attempt to build the thread synchronously from in-memory caches.
+ *  Returns null if any required data is missing — the normal async fetch path
+ *  will then run. Called during initial render so the page mounts with real
+ *  content (no loading spinner flash) when we came from home or another page
+ *  that already populated the cache. */
+function buildThreadSync(
+  threadId: string,
+  voted: Set<string>,
+  abstained: Set<string>
+): Thread | null {
+  if (typeof window === 'undefined') return null;
+  const isUuid = threadId.length > 10 && threadId.includes('-');
+  const anchor = isUuid ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
+  if (!anchor) return null;
+  const polls = getCachedAccessiblePolls();
+  if (!polls) return null;
+  return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
+}
+
 function ThreadContent() {
   const mountTime = useRef(performance.now());
   const router = useRouter();
@@ -55,11 +74,29 @@ function ThreadContent() {
   const { prefetchBatch } = usePrefetch();
   const threadId = params.threadId as string;
 
-  const [thread, setThread] = useState<Thread | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Initialize voted/abstained sets synchronously from localStorage so
+  // the initial render has correct data.
+  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    return loadVotedPolls().votedPollIds;
+  });
+  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    return loadVotedPolls().abstainedPollIds;
+  });
+
+  // Try to build the thread synchronously from cached data on first render.
+  // If successful, we skip the loading spinner entirely.
+  const initialThread = useMemo(
+    () => buildThreadSync(threadId, votedPollIds, abstainedPollIds),
+    // Only run on first render — subsequent builds happen in the useEffect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  const [thread, setThread] = useState<Thread | null>(initialThread);
+  const [loading, setLoading] = useState(!initialThread);
   const [error, setError] = useState(false);
-  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
-  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
 
   // Set data attribute on body so the bottom bar "+" button can auto-follow-up
   useEffect(() => {
@@ -89,19 +126,15 @@ function ThreadContent() {
     console.log('[ThreadPage] component mounted');
   }, []);
 
-  // Load voted/abstained
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
-    setVotedPollIds(voted);
-    setAbstainedPollIds(abstained);
-  }, []);
-
-  // Fetch the referenced poll, register access, discover children, build thread
+  // Fetch the referenced poll, register access, discover children, build thread.
+  // If we already have a synchronous cache-built thread, this runs in the
+  // background to refresh with fresh data (discoverRelatedPolls, new votes, etc.)
+  // without showing a loading state.
   useEffect(() => {
     async function fetchThread() {
       try {
-        setLoading(true);
+        const hadInitialThread = !!initialThread;
+        if (!hadInitialThread) setLoading(true);
         setError(false);
 
         // Step 1: Fetch the poll referenced in the URL and register access.
