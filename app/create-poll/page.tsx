@@ -1333,7 +1333,7 @@ export function CreatePollContent() {
           const existing = await apiFindDuplicatePoll(title, followUpTo);
           if (existing) {
             const shortId = existing.short_id || existing.id;
-            router.push(`/p/${shortId}`);
+            router.replace(`/p/${shortId}`);
             return;
           }
         } catch {
@@ -1379,9 +1379,12 @@ export function CreatePollContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Use short_id if available, fall back to UUID
+      // Use short_id if available, fall back to UUID.
+      // Use replace (not push) so the `?create=1` modal URL is removed from history —
+      // back button from the new poll page should return to the page the user was on
+      // when they opened the modal, not reopen the create form.
       const redirectId = createdPoll.short_id || createdPoll.id;
-      router.push(`/p/${redirectId}`);
+      router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
@@ -1476,7 +1479,6 @@ export function CreatePollContent() {
             onForFieldChange={setForField}
             generatedCategoryText={generatedCategoryFromOptions}
             disabled={isLoading}
-            initialDelay={300}
           />
         ) : (
           <AnimatedTitle title={title} initialDelay={300} />
