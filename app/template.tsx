@@ -743,7 +743,8 @@ function TemplateInner({ children }: AppTemplateProps) {
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
                injects portal content here client-side. */}
-          {isMounted && <div id="commit-badge-portal" className="absolute left-0 right-0 z-10 pwa-badge-top"></div>}
+          {/* z-30 keeps the badge above the thread page's fixed header (z-20). */}
+          {isMounted && <div id="commit-badge-portal" className="absolute left-0 right-0 z-30 pwa-badge-top"></div>}
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isProfilePage || pathname === '/') && (
             <div className="relative">
