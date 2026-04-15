@@ -21,3 +21,10 @@ export function isUuidLike(id: string): boolean {
 export function normalizePath(path: string): string {
   return path.replace(/\/$/, '') || '/';
 }
+
+/** If `pathname` is a poll page (`/p/<id>` with optional trailing slash),
+ *  return the poll route ID (short_id or UUID). Otherwise null. */
+export function extractPollRouteId(pathname: string): string | null {
+  const match = pathname.match(/^\/p\/([^/]+)\/?$/);
+  return match ? match[1] : null;
+}

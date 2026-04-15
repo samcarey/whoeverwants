@@ -16,8 +16,6 @@ interface CategoryForLineProps {
   /** Auto-generated category text from options (when category is 'custom') */
   generatedCategoryText: string;
   disabled?: boolean;
-  /** Delay before initial appearance, matching modal animation */
-  initialDelay?: number;
 }
 
 export default function CategoryForLine({
@@ -27,7 +25,6 @@ export default function CategoryForLine({
   onForFieldChange,
   generatedCategoryText,
   disabled = false,
-  initialDelay = 0,
 }: CategoryForLineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLSpanElement>(null);
@@ -41,7 +38,6 @@ export default function CategoryForLine({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [showDropdown, setShowDropdown] = useState(false);
   const [fontSizePx, setFontSizePx] = useState(MAX_FONT_PX);
-  const [visible, setVisible] = useState(initialDelay === 0);
   // Tracks whether selectType/Enter already committed — prevents blur from re-committing
   const committedRef = useRef(false);
   // True when a built-in category hasn't been edited yet — first backspace clears it
@@ -49,14 +45,6 @@ export default function CategoryForLine({
   // Track whether field had a user value when focused — controls placeholder-as-minimum-width behavior
   const [categoryHadValueOnFocus, setCategoryHadValueOnFocus] = useState(false);
   const [contextHadValueOnFocus, setContextHadValueOnFocus] = useState(false);
-
-  // Initial delay (wait for modal slide-up animation)
-  useEffect(() => {
-    if (initialDelay > 0) {
-      const timer = setTimeout(() => setVisible(true), initialDelay);
-      return () => clearTimeout(timer);
-    }
-  }, [initialDelay]);
 
   // Category display logic
   const builtIn = getBuiltInType(category);
@@ -139,10 +127,10 @@ export default function CategoryForLine({
     setFontSizePx(target);
   }, []);
 
-  // Refit on content or visibility changes
+  // Refit on content changes
   useEffect(() => {
-    if (visible) fitFont();
-  }, [fitFont, visible, categoryDisplayValue, forField, generatedCategoryText, category]);
+    fitFont();
+  }, [fitFont, categoryDisplayValue, forField, generatedCategoryText, category]);
 
   // Refit on resize
   useEffect(() => {
@@ -262,10 +250,6 @@ export default function CategoryForLine({
       }
     }
   }, [highlightedIndex]);
-
-  if (!visible) {
-    return <div style={{ minHeight: `${MAX_FONT_PX + 8}px` }} />;
-  }
 
   // Mirror text controls the width of the inline-block sizer span.
   // When the field was empty on focus, the placeholder width is the minimum.

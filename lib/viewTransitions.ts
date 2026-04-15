@@ -24,6 +24,7 @@ export type NavDirection = 'forward' | 'back';
 
 interface RouterLike {
   push: (href: string) => void;
+  replace: (href: string) => void;
 }
 
 export function supportsViewTransitions(): boolean {
@@ -77,11 +78,13 @@ function getStart(): StartViewTransition | null {
 export function navigateWithTransition(
   router: RouterLike,
   href: string,
-  direction: NavDirection = 'forward'
+  direction: NavDirection = 'forward',
+  { mode = 'push' }: { mode?: 'push' | 'replace' } = {},
 ): void {
+  const navigate = () => router[mode](href);
   const start = getStart();
   if (!start) {
-    router.push(href);
+    navigate();
     return;
   }
 
@@ -93,13 +96,13 @@ export function navigateWithTransition(
   const targetPath = new URL(href, window.location.origin).pathname;
   try {
     const transition = start.call(document, async () => {
-      router.push(href);
+      navigate();
       await waitForNavigation(targetPath);
     });
     transition.finished.finally(cleanup);
   } catch {
     cleanup();
-    router.push(href);
+    navigate();
   }
 }
 

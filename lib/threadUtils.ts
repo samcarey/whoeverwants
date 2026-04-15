@@ -232,6 +232,27 @@ export function getThreadRouteId(thread: Thread): string {
 }
 
 /**
+ * Walk up the `follow_up_to` chain starting from `poll`, consulting `lookup`
+ * at each step, and return the route ID (short_id or id) of the furthest
+ * ancestor reachable. For a standalone poll — or when the cache doesn't
+ * have the full chain — the deepest resolvable ancestor is returned.
+ */
+export function findThreadRootRouteId(
+  poll: Poll,
+  lookup: (id: string) => Poll | null | undefined,
+): string {
+  let root: Poll = poll;
+  let parentId = poll.follow_up_to;
+  while (parentId) {
+    const parent = lookup(parentId);
+    if (!parent) break;
+    root = parent;
+    parentId = parent.follow_up_to;
+  }
+  return root.short_id || root.id;
+}
+
+/**
  * Build a thread starting from a specific poll and collecting all its descendants.
  * Used by the thread page to show "this poll + its children" rather than the
  * full ancestor chain.

@@ -11,7 +11,8 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
-import { isUuidLike } from '@/lib/pollId';
+import { isUuidLike, extractPollRouteId } from '@/lib/pollId';
+import * as pollBackTarget from '@/lib/pollBackTarget';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -948,7 +949,18 @@ function TemplateInner({ children }: AppTemplateProps) {
         {(isPollPage || isProfilePage) && hasAppHistory && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
-              onClick={() => navigateBackWithTransition()}
+              onClick={() => {
+                // Newly-created poll pages have a custom back target (the
+                // thread containing the poll) — `replace` mode so `back` from
+                // the thread skips over the poll rather than returning to it.
+                const pollRouteId = extractPollRouteId(pathname);
+                const customBack = pollRouteId && pollBackTarget.consume(pollRouteId);
+                if (customBack) {
+                  navigateWithTransition(router, customBack, 'back', { mode: 'replace' });
+                  return;
+                }
+                navigateBackWithTransition();
+              }}
               className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               aria-label="Go back"
             >
