@@ -68,7 +68,7 @@ export interface Poll {
   min_responses?: number | null;
   show_preliminary_results?: boolean;
   response_count?: number | null;
-  availability_threshold?: number | null;
+  min_availability_percent?: number | null;
   results?: PollResults | null;
   voter_names?: string[] | null;
 }

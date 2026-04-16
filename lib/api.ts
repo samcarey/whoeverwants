@@ -142,7 +142,7 @@ function toPoll(data: any): Poll {
     min_responses: data.min_responses ?? undefined,
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
-    availability_threshold: data.availability_threshold ?? undefined,
+    min_availability_percent: data.min_availability_percent ?? undefined,
     voter_names: data.voter_names ?? undefined,
   };
 }
@@ -226,7 +226,7 @@ export async function apiCreatePoll(params: {
   reference_location_label?: string;
   min_responses?: number;
   show_preliminary_results?: boolean;
-  availability_threshold?: number;
+  min_availability_percent?: number;
   suggestion_deadline_minutes?: number;
   is_auto_title?: boolean;
 }): Promise<Poll> {

@@ -133,6 +133,7 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
     from algorithms.time_poll import (
         generate_time_poll_slots,
         compute_slot_availability,
+        filter_slots_by_min_availability,
         _keep_longest_per_start_time,
     )
 
@@ -151,12 +152,12 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
 
     all_slots = generate_time_poll_slots(dict(poll), votes_list)
 
-    # Apply availability threshold filter
-    threshold_pct = (poll.get("availability_threshold") or 5) / 100.0
     availability_counts = compute_slot_availability(all_slots, votes_list)
-    max_avail = max(availability_counts.values(), default=0)
-    min_acceptable = max_avail * (1 - threshold_pct)
-    slots = [s for s in all_slots if availability_counts.get(s, 0) >= min_acceptable]
+    slots = filter_slots_by_min_availability(
+        all_slots,
+        availability_counts,
+        poll.get("min_availability_percent") or 95,
+    )
 
     # Keep only the longest-duration slot per start time
     slots = _keep_longest_per_start_time(slots)
@@ -222,7 +223,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         is_auto_title=row.get("is_auto_title", False),
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
-        availability_threshold=row.get("availability_threshold"),
+        min_availability_percent=row.get("min_availability_percent"),
     )
 
 
@@ -449,7 +450,7 @@ def create_poll(req: CreatePollRequest):
                                reference_location_label,
                                is_auto_title,
                                min_responses, show_preliminary_results,
-                               availability_threshold,
+                               min_availability_percent,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -470,7 +471,7 @@ def create_poll(req: CreatePollRequest):
                     %(reference_location_label)s,
                     %(is_auto_title)s,
                     %(min_responses)s, %(show_preliminary_results)s,
-                    %(availability_threshold)s,
+                    %(min_availability_percent)s,
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -513,7 +514,7 @@ def create_poll(req: CreatePollRequest):
                 "is_auto_title": req.is_auto_title,
                 "min_responses": req.min_responses,
                 "show_preliminary_results": req.show_preliminary_results,
-                "availability_threshold": req.availability_threshold if req.poll_type == PollType.time else None,
+                "min_availability_percent": req.min_availability_percent if req.poll_type == PollType.time else None,
                 "now": now,
             },
         ).fetchone()
