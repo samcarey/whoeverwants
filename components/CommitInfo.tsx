@@ -102,17 +102,21 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
   const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
-  // Find the portal target for the time badge (inside scroll container so it scrolls with content)
+  // Resolve the portal target rendered by template.tsx. The target appears only after the
+  // template's isMounted state flips (may be after this effect runs), and Next.js App Router
+  // re-mounts templates on navigation so the node identity can change. Observe document.body
+  // for the component's lifetime and re-query on each mutation; the identity-guarded setter
+  // avoids render spam. Only active in dev (showTimeBadge is gated on NODE_ENV === 'development').
   useEffect(() => {
     if (!showTimeBadge) return;
-    const el = document.getElementById('commit-badge-portal');
-    if (el) { setBadgeTarget(el); return; }
-    // Fallback: template may not be mounted yet on first layout render
-    const timer = setTimeout(() => {
+    const check = () => {
       const el = document.getElementById('commit-badge-portal');
-      if (el) setBadgeTarget(el);
-    }, 100);
-    return () => clearTimeout(timer);
+      setBadgeTarget(prev => (prev === el ? prev : el));
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [showTimeBadge]);
 
   // In dev mode, fetch the current git SHA from the server on mount and on visibility change

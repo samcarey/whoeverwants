@@ -106,6 +106,16 @@ export function navigateWithTransition(
   }
 }
 
+// Session-scoped in-app navigation counter (per-tab, cleared on tab close).
+// Incremented in template.tsx on each client-side navigation.
+export const NAV_COUNT_KEY = 'app_nav_count';
+
+export function hasAppHistory(): boolean {
+  if (typeof window === 'undefined') return false;
+  const count = parseInt(sessionStorage.getItem(NAV_COUNT_KEY) || '0', 10);
+  return count > 1;
+}
+
 export function navigateBackWithTransition(): void {
   const start = getStart();
   if (!start) {
