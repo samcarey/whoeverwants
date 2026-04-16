@@ -102,12 +102,11 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
   const [badgeTarget, setBadgeTarget] = useState<HTMLElement | null>(null);
   const { props: badgeLongPressProps } = useLongPress(() => setShowModal(true));
 
-  // Find the portal target for the time badge (inside scroll container so it scrolls with content).
-  // The portal div is rendered by template.tsx only after its isMounted state flips to true, which
-  // can happen after this effect runs. Navigation can also cause React to replace the portal div,
-  // leaving our stored reference pointing at a detached DOM node — so the observer stays
-  // connected for the lifetime of the component and re-queries whenever the DOM changes. The
-  // state setter only writes when the node identity actually changes, so this doesn't spam renders.
+  // Resolve the portal target rendered by template.tsx. The target appears only after the
+  // template's isMounted state flips (may be after this effect runs), and Next.js App Router
+  // re-mounts templates on navigation so the node identity can change. Observe document.body
+  // for the component's lifetime and re-query on each mutation; the identity-guarded setter
+  // avoids render spam. Only active in dev (showTimeBadge is gated on NODE_ENV === 'development').
   useEffect(() => {
     if (!showTimeBadge) return;
     const check = () => {

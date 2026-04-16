@@ -9,7 +9,7 @@ import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
-import { navigateWithTransition, navigateBackWithTransition } from '@/lib/viewTransitions';
+import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
 import { isUuidLike, extractPollRouteId } from '@/lib/pollId';
 import * as pollBackTarget from '@/lib/pollBackTarget';
@@ -40,9 +40,6 @@ const isStandalonePWA = () =>
 // navigator.standalone is iOS/iPadOS Safari-only; true = launched as standalone PWA.
 const isIOSSPWAStandalone = () =>
   (navigator as unknown as { standalone?: boolean }).standalone === true;
-
-// Session-scoped in-app navigation counter (per-tab, cleared on tab close).
-const NAV_COUNT_KEY = 'app_nav_count';
 
 // Bottom bar scroll behavior
 const SCROLL_TOP_SAFE_ZONE = 50; // Don't hide bottom bar when within this many px of top
@@ -743,9 +740,9 @@ function TemplateInner({ children }: AppTemplateProps) {
                Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
                Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
                injects portal content here client-side. */}
-          {/* position:fixed so the badge stays anchored to the safe-area boundary when the
-              page scrolls — previously absolute inside the scroll container, it drifted off-
-              screen with the content. z-30 keeps it above the thread page's fixed header (z-20). */}
+          {/* position:fixed anchors the badge to the safe-area boundary so ancestor scroll
+              drift on iOS PWA can't push it off-screen. z-30 keeps it above the thread page's
+              fixed header (z-20). */}
           {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
           {/* Spacer div for header elements that are now rendered in portal */}
           {(isPollPage || isProfilePage || pathname === '/') && (

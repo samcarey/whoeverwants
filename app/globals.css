@@ -24,39 +24,34 @@ html {
   background: var(--background);
 }
 
+/* Disable native rubber-band overscroll on iOS. Applied to html, body, and the scroll
+   container because iOS WebKit can bounce any of them depending on which got the touch.
+   The PTR implementation is touch-event driven and unaffected. */
+html,
+body,
+.safari-scroll-container {
+  overscroll-behavior: none;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
   overflow: hidden;
-  /* Disable the native rubber-band/bounce overscroll on iOS so the page doesn't
-     scroll/bounce down when the content already fits the viewport. The PTR
-     implementation is touch-event driven and unaffected by this. */
-  overscroll-behavior: none;
 }
 
-html {
-  overscroll-behavior: none;
-}
-
-/* The scroll container wrapping every page — same rule so short-content pages
-   don't bounce either. We also make it a flex column so the .pwa-safe-top child
-   below can grow to fill it via flex-grow (% heights won't resolve here because
-   the scroll container gets its height from `flex: 1`, not from an explicit
-   `height` property). */
+/* Flex column so .pwa-safe-top can grow to fill via flex-grow — % heights won't
+   resolve here because the container's own height comes from `flex: 1`, not a
+   fixed `height` property. */
 .safari-scroll-container {
-  overscroll-behavior: none;
   display: flex;
   flex-direction: column;
 }
 
-/* Grow the scroll container's inner wrapper to fill the viewport when page
-   content is short, so `scrollHeight === clientHeight` and the container is
-   physically non-scrollable. Without this, iOS PWA still lets the user drag
-   content up behind the notch even when there's nothing below to reveal.
-   When the page content IS longer than the viewport, flex-grow: 1 is harmless
-   — the box is already at content size and overflow-auto handles scrolling. */
+/* Fill the viewport when content is short so scrollHeight === clientHeight (otherwise
+   iOS PWA still lets the user drag content up behind the notch). When content is longer
+   than the viewport, flex-grow: 1 is a no-op — overflow-auto handles scrolling. */
 .pwa-safe-top {
   flex-grow: 1;
   flex-shrink: 0;

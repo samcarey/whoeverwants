@@ -13,7 +13,7 @@ import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
-import { navigateWithTransition, navigateBackWithTransition } from "@/lib/viewTransitions";
+import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
@@ -203,9 +203,10 @@ function ThreadContent() {
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible.
-  // Depends on headerHeight because scrollHeight grows with paddingTop — without this we'd
-  // scroll to the pre-padding bottom and new content below would be clipped.
+  // Auto-scroll to the bottom on load so newest polls are visible. Use direct scrollTop,
+  // not scrollIntoView — the latter traverses overflow-hidden ancestors and pushes safe-area
+  // padding off-screen on iOS PWA. headerHeight is a dep because scrollHeight grows with the
+  // list's paddingTop, so the target offset changes once the header is measured.
   const scrollListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (thread && !loading) {
@@ -273,8 +274,7 @@ function ThreadContent() {
         <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
           <button
             onClick={() => {
-              const navCount = parseInt(sessionStorage.getItem('app_nav_count') || '0', 10);
-              if (navCount > 1) {
+              if (hasAppHistory()) {
                 navigateBackWithTransition();
               } else {
                 navigateWithTransition(router, '/', 'back');
