@@ -148,6 +148,31 @@ jobs:
           echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
           echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
 
+      - name: Compute bundle identity (per-env, per-developer)
+        id: bundle
+        run: |
+          set -euo pipefail
+          # Prod uses the canonical bundle ID. Dev appends the GitHub user so
+          # each developer can install their own dev build alongside prod.
+          if [[ "$CAP_ENV" == "prod" ]]; then
+            BUNDLE_ID="com.whoeverwants.app"
+            DISPLAY_NAME="WhoeverWants"
+          else
+            # Lowercase, strip anything that isn't letters/digits (valid reverse-DNS)
+            USER_SUFFIX=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+            BUNDLE_ID="com.whoeverwants.app.dev.$USER_SUFFIX"
+            DISPLAY_NAME="WhoeverWants Dev"
+          fi
+          echo "bundle_id=$BUNDLE_ID"    >> "$GITHUB_OUTPUT"
+          echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
+          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME'"
+
+      - name: Stamp Info.plist display name
+        run: |
+          set -euo pipefail
+          plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/App/Info.plist
+          plutil -extract CFBundleDisplayName raw ios/App/App/Info.plist
+
       - name: Compute build number
         id: build_number
         run: |
@@ -180,6 +205,7 @@ jobs:
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           BUILD_NUMBER: ${{ steps.build_number.outputs.build_number }}
+          BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
         run: |
           set -euo pipefail
           mkdir -p build
@@ -195,6 +221,7 @@ jobs:
             -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             archive > build/xcodebuild-archive.log 2>&1 || {
               echo "::error::Archive failed — tail of log:"
               tail -100 build/xcodebuild-archive.log
