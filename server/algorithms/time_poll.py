@@ -147,6 +147,22 @@ def _keep_longest_per_start_time(slots: list[str]) -> list[str]:
     return [s for s in slots if s in best_set]
 
 
+def filter_slots_by_min_availability(
+    slots: list[str],
+    availability_counts: dict[str, int],
+    min_availability_percent: int,
+) -> list[str]:
+    """Keep slots whose availability is at least `min_availability_percent`% of the
+    most-available slot's count.
+
+    Basing the filter on the most-available slot (not total respondents) keeps
+    the poll robust when many voters say they're unavailable.
+    """
+    max_avail = max(availability_counts.values(), default=0)
+    min_acceptable = max_avail * (min_availability_percent / 100.0)
+    return [s for s in slots if availability_counts.get(s, 0) >= min_acceptable]
+
+
 def compute_slot_availability(options: list[str], votes: list[dict]) -> dict[str, int]:
     """Count how many availability voters cover each time slot.
 

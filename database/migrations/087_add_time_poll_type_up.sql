@@ -4,7 +4,8 @@
 --   2. Preferences: voters rank generated time slots (uses ranked_choices)
 -- Resolution uses IRV on preference ballots filtered by availability threshold.
 
--- Add availability_threshold: % below max availability still included (default 5%)
+-- Add availability_threshold: % below max availability still included (default 5%).
+-- Renamed/re-semanticised to min_availability_percent in migration 090.
 ALTER TABLE polls ADD COLUMN IF NOT EXISTS availability_threshold INTEGER DEFAULT 5;
 
 -- Update poll_type constraint to include 'time'

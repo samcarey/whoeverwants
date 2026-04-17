@@ -100,6 +100,36 @@ export function groupSlotsByDay(options: string[]): [string, string[]][] {
   return Array.from(map.entries());
 }
 
+/** Check whether a voter's day_time_windows fully cover the given slot.
+ *  Mirrors the backend `_voter_available_at` in `server/algorithms/time_slots.py`.
+ *  Handles cross-midnight windows where `w.max <= w.min`.
+ *  A day with an empty `windows` array means "all day available". */
+export function isVoterAvailableForSlot(
+  slot: string,
+  voterDayTimeWindows: Array<{ day: string; windows?: Array<{ min: string; max: string }> }>
+): boolean {
+  if (!voterDayTimeWindows || voterDayTimeWindows.length === 0) return false;
+  const [dateStr, timeRange] = slot.split(' ');
+  const [startStr, endStr] = timeRange.split('-');
+  const startMin = timeToMinutes(startStr);
+  const endMin = timeToMinutes(endStr);
+  // Reconstruct absolute end for cross-midnight slots.
+  const effectiveEnd = endMin > startMin ? endMin : endMin + 24 * 60;
+
+  for (const dtw of voterDayTimeWindows) {
+    if (dtw.day !== dateStr) continue;
+    const windows = dtw.windows || [];
+    if (windows.length === 0) return true;
+    for (const w of windows) {
+      const wStart = timeToMinutes(w.min);
+      const wEnd = timeToMinutes(w.max);
+      const wEffectiveEnd = wEnd <= wStart ? wEnd + 24 * 60 : wEnd;
+      if (startMin >= wStart && effectiveEnd <= wEffectiveEnd) return true;
+    }
+  }
+  return false;
+}
+
 /** Format a slot key "YYYY-MM-DD HH:MM-HH:MM" as a readable label like
  *  "Mon, Apr 28 • 10:00 AM – 10:30 AM (30m)". */
 export function formatTimeSlot(slot: string): string {

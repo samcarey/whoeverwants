@@ -38,7 +38,7 @@ import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
-import { windowDurationMinutes, formatDurationLabel, formatTimeSlot } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -819,6 +819,19 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     }
     return [];
   }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
+
+  // For the time-poll preferences phase, only present slots the voter said they're
+  // available for. A voter who hasn't submitted availability sees every slot.
+  const voterAvailability = userVoteData?.voter_day_time_windows;
+  const preferenceSlotsForVoter = useMemo(() => {
+    if (poll.poll_type !== 'time') return pollOptions as string[];
+    if (!voterAvailability || !Array.isArray(voterAvailability) || voterAvailability.length === 0) {
+      return pollOptions as string[];
+    }
+    return (pollOptions as string[]).filter(slot =>
+      isVoterAvailableForSlot(slot, voterAvailability)
+    );
+  }, [poll.poll_type, pollOptions, voterAvailability]);
 
   // Options added since the user last voted — shown as a "new options available" alert.
   // Only meaningful for users who have already submitted rankings (no-op for suggestion-only voters).
@@ -2114,7 +2127,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       <div className="mb-4">
                         <h3 className="text-lg font-semibold mb-3 text-center">Mark Your Preferences</h3>
                         <TimeSlotBubbles
-                          options={pollOptions}
+                          options={preferenceSlotsForVoter}
                           likedSlots={likedSlots ?? []}
                           dislikedSlots={dislikedSlots ?? []}
                           onToggle={(slot, nextState) => {

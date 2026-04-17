@@ -47,9 +47,9 @@ export default function MinimumParticipationModal({
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-sm w-full shadow-xl">
-          <h3 className="text-lg font-semibold mb-1">Minimum Participation</h3>
+          <h3 className="text-lg font-semibold mb-1">Minimum Availability</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            At least this percentage of respondents must be available.
+            Only include time slots that at least this percentage of the most-available slot&apos;s respondents can attend.
           </p>
 
           <div className="mb-4 text-center">

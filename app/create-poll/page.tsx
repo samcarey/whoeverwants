@@ -781,7 +781,7 @@ export function CreatePollContent() {
           } else if (forkData.poll_type === 'time') {
             setPollType('time');
             setOptions(['']);
-            if (forkData.availability_threshold != null) setMinimumParticipation(100 - forkData.availability_threshold);
+            if (forkData.min_availability_percent != null) setMinimumParticipation(forkData.min_availability_percent);
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1299,7 +1299,7 @@ export function CreatePollContent() {
             maxEnabled: durationMaxEnabled
           };
         }
-        pollData.availability_threshold = 100 - minimumParticipation;
+        pollData.min_availability_percent = minimumParticipation;
         // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
         const cutoffMinutes = getSuggestionCutoffMinutes();
         pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
@@ -1588,18 +1588,19 @@ export function CreatePollContent() {
                 highlightDaysButton={dayTimeWindows.length === 0}
               />
 
-              {/* Minimum Participation */}
+              {/* Minimum Availability: slots must have at least this % of the top slot's availability to pass */}
               <div className="text-sm font-medium">
-                Minimum Participation:{' '}
+                Minimum Availability:{' '}
                 <button
                   type="button"
                   onClick={() => setShowMinParticipationModal(true)}
                   disabled={isLoading}
                   className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                  aria-label="Adjust minimum participation percentage"
+                  aria-label="Adjust minimum availability percentage"
                 >
                   {minimumParticipation}%
-                </button>
+                </button>{' '}
+                of the top slot
               </div>
 
               {/* Availability Phase Deadline */}

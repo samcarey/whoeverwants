@@ -66,8 +66,9 @@ class CreatePollRequest(BaseModel):
     min_responses: int | None = None
     # Whether to show preliminary results once min_responses is met
     show_preliminary_results: bool = True
-    # Availability threshold % for time polls (slots within X% of max availability are included)
-    availability_threshold: int = 5
+    # For time polls: slot is included if its availability count >= max_slot_availability * (min_availability_percent / 100).
+    # Default 95 means slots within 5% of the most-available slot pass.
+    min_availability_percent: int = 95
 
 
 class SubmitVoteRequest(BaseModel):
@@ -191,7 +192,7 @@ class PollResponse(BaseModel):
     min_responses: int | None = None
     show_preliminary_results: bool = True
     response_count: int | None = None
-    availability_threshold: int | None = None
+    min_availability_percent: int | None = None
     results: "PollResultsResponse | None" = None
     voter_names: list[str] | None = None
 
