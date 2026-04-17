@@ -24,13 +24,14 @@ import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
-import { invalidatePoll, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
+import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
 import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
+import { findThreadRootRouteId } from "@/lib/threadUtils";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
@@ -2455,9 +2456,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       <ConfirmationModal
         isOpen={showForgetConfirmModal}
         onConfirm={() => {
+          // Root/standalone polls fall back to home — navigating to
+          // /thread/<forgottenPoll> would re-grant access via the anchor fetch.
+          const rootRouteId = poll.follow_up_to
+            ? findThreadRootRouteId(poll, getCachedPollById)
+            : null;
           forgetPoll(poll.id);
           setShowForgetConfirmModal(false);
-          router.push('/');
+          router.push(rootRouteId ? `/thread/${rootRouteId}` : '/');
         }}
         onCancel={() => setShowForgetConfirmModal(false)}
         title="Forget Poll"
