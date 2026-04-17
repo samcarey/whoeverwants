@@ -99,34 +99,40 @@ export default function PollCardModal({
       }
       backdrop.style.transition = 'none';
       backdrop.style.opacity = '0';
-      // Force reflow so the browser commits the above as the transition's "from" state.
-      // Without this, setting the "to" state below overwrites "from" before paint and
-      // the transition never runs.
-      void sheet.offsetHeight;
 
-      // Apply transition + final state. Browser now interpolates between the
-      // committed shrunken state and the natural state over FLIP_DURATION_MS.
-      sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
-      sheet.style.transform = '';
-      sheet.style.borderRadius = '';
-      backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-      backdrop.style.opacity = '';
-      if (content) {
-        // Fade content in once expand is mostly done to hide any residual content squish.
-        content.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
-        content.style.opacity = '1';
-      }
+      // Double rAF: the first rAF runs before paint, the browser paints the
+      // shrunken state, then the second rAF fires on the following frame and
+      // applies the target state. This guarantees the transition engine sees
+      // a real style change between two paints and starts the transition.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!sheetRef.current) return;
+          sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+          sheet.style.transform = '';
+          sheet.style.borderRadius = '';
+          backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          backdrop.style.opacity = '';
+          if (content) {
+            content.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
+            content.style.opacity = '1';
+          }
+        });
+      });
     } else {
       // No source rect (direct link): simple fade-in.
       sheet.style.transition = 'none';
       sheet.style.opacity = '0';
       backdrop.style.transition = 'none';
       backdrop.style.opacity = '0';
-      void sheet.offsetHeight;
-      sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-      sheet.style.opacity = '';
-      backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-      backdrop.style.opacity = '';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!sheetRef.current) return;
+          sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          sheet.style.opacity = '';
+          backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          backdrop.style.opacity = '';
+        });
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
