@@ -128,19 +128,21 @@ jobs:
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           mkdir -p "$KEY_DIR"
           KEY_FILE="$KEY_DIR/AuthKey_${API_KEY_ID}.p8"
-          printf '%s\n' "$API_KEY_P8" > "$KEY_FILE"
+          # Accept either raw PEM or base64-encoded PEM. Single-line base64
+          # is much harder to corrupt via copy-paste than multi-line PEM.
+          if [[ "$API_KEY_P8" == *"BEGIN PRIVATE KEY"* ]]; then
+            printf '%s\n' "$API_KEY_P8" > "$KEY_FILE"
+          else
+            printf '%s' "$API_KEY_P8" | base64 --decode > "$KEY_FILE"
+          fi
           chmod 600 "$KEY_FILE"
-          # Sanity-check the key looks like a PEM private key.
           head -1 "$KEY_FILE" | grep -q 'BEGIN PRIVATE KEY' || {
-            echo "::error::APP_STORE_CONNECT_API_KEY_P8 does not look like PEM"
+            echo "::error::APP_STORE_CONNECT_API_KEY_P8 decoded content is not PEM"
             exit 1
           }
           # Diagnostics (safe — only counts + hashes, never the content):
           echo "P8 bytes: $(wc -c < "$KEY_FILE")"
-          echo "P8 lines: $(wc -l < "$KEY_FILE")"
           echo "P8 sha256: $(shasum -a 256 "$KEY_FILE" | awk '{print $1}')"
-          echo "First line: $(head -1 "$KEY_FILE")"
-          echo "Last line:  $(tail -1 "$KEY_FILE")"
           echo "key_path=$KEY_FILE" >> "$GITHUB_OUTPUT"
           echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
           echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
