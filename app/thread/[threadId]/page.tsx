@@ -360,6 +360,8 @@ function ThreadContent() {
 
             const goToPoll = () => {
               const el = cardRefs.current.get(poll.id);
+              // eslint-disable-next-line no-console
+              console.log('[thread] goToPoll poll.id=', poll.id, 'el=', !!el, 'rect=', el?.getBoundingClientRect());
               if (el) {
                 setExpandedPoll({ poll, sourceRect: el.getBoundingClientRect() });
               } else {
