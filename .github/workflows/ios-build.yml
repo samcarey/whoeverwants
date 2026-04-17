@@ -1,0 +1,324 @@
+name: iOS Build & TestFlight
+
+# Runs on the Mac mini self-hosted runner to build the Capacitor iOS app
+# and upload it to TestFlight. Web assets load remotely via server.url in
+# capacitor.config.ts, so this workflow rarely needs to run — only when
+# native config changes (plugins, permissions, icons, etc.).
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/capacitor-**'
+      - 'ios/**'
+    paths:
+      - 'capacitor.config.ts'
+      - 'ios/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios-build.yml'
+      - 'scripts/ios/**'
+  workflow_dispatch:
+    inputs:
+      cap_env:
+        description: 'Capacitor environment (dev|prod)'
+        required: false
+        default: ''
+      cap_server_url:
+        description: 'Override the WebView URL (takes priority over cap_env)'
+        required: false
+        default: ''
+      skip_upload:
+        description: 'Build only, skip TestFlight upload'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # Needed so the workflow can push back the auto-scaffolded ios/ directory
+  # on the very first run.
+  contents: write
+
+jobs:
+  build:
+    runs-on: [self-hosted, macos-mini]
+    timeout-minutes: 45
+
+    env:
+      # Resolve CAP_ENV: manual dispatch input > branch-based default.
+      CAP_ENV: ${{ github.event.inputs.cap_env != '' && github.event.inputs.cap_env || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+      SCHEME: App
+      PROJECT: ios/App/App.xcodeproj
+      ARCHIVE_PATH: ${{ github.workspace }}/build/App.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/build/export
+      EXPORT_OPTIONS: ${{ github.workspace }}/scripts/ios/ExportOptions.plist
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so `git rev-list --count HEAD` produces a monotonic
+          # CFBundleVersion. Shallow fetch would always yield 1.
+          fetch-depth: 0
+
+      - name: Setup Homebrew PATH
+        run: |
+          # The self-hosted runner launches from a LaunchAgent which does
+          # not source ~/.zprofile, so Homebrew's PATH must be injected.
+          if [[ -x /opt/homebrew/bin/brew ]]; then
+            echo "/opt/homebrew/bin" >> "$GITHUB_PATH"
+            echo "/opt/homebrew/sbin" >> "$GITHUB_PATH"
+          elif [[ -x /usr/local/bin/brew ]]; then
+            echo "/usr/local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Show environment
+        run: |
+          echo "CAP_ENV=$CAP_ENV"
+          echo "ref=${{ github.ref }}"
+          sw_vers
+          echo "xcode-select path: $(xcode-select -p)"
+          if [[ "$(xcode-select -p)" == */CommandLineTools* ]]; then
+            echo "::error::xcode-select points at Command Line Tools. Run:"
+            echo "::error::  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+            exit 1
+          fi
+          xcodebuild -version
+          node --version
+          npm --version
+          pod --version || true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Scaffold iOS project (first run only)
+        id: scaffold
+        run: |
+          set -euo pipefail
+          if [[ ! -d ios/App/App.xcodeproj ]]; then
+            echo "iOS project missing — running 'npx cap add ios' to scaffold"
+            npx cap add ios
+            echo "scaffolded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scaffolded=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit scaffolded iOS project
+        if: steps.scaffold.outputs.scaffolded == 'true' && github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.email 'ios-ci@whoeverwants.app'
+          git config user.name 'iOS CI Bot'
+          git add ios/
+          git commit -m "chore(ios): auto-scaffold Capacitor iOS project"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Resolve CAP_SERVER_URL for this build
+        id: server_url
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ github.event.inputs.cap_server_url }}" ]]; then
+            URL="${{ github.event.inputs.cap_server_url }}"
+          elif [[ "$CAP_ENV" == "prod" ]]; then
+            URL=""  # capacitor.config.ts defaults to prod when unset
+          elif [[ -n "${{ github.event.head_commit.author.email }}" ]]; then
+            EMAIL="${{ github.event.head_commit.author.email }}"
+            SLUG=$(echo "$EMAIL" | tr '[:upper:]' '[:lower:]' | sed -e 's/@/-at-/g' -e 's/[^a-z0-9-]/-/g')
+            URL="https://$SLUG.dev.whoeverwants.com"
+          else
+            URL=""  # No push email (workflow_dispatch without override) → fall through to prod
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          [[ -n "$URL" ]] && echo "WebView URL: $URL" || echo "WebView URL: (prod default)"
+
+      - name: Sync Capacitor (copy web assets + plugins → iOS project)
+        env:
+          CAP_SERVER_URL: ${{ steps.server_url.outputs.url }}
+        run: npx cap sync ios
+
+      - name: Restore App Store Connect API key
+        id: apikey
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_KEY_ISSUER: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_FILE="$KEY_DIR/AuthKey_${API_KEY_ID}.p8"
+          # Accept either raw PEM or base64-encoded PEM. Single-line base64
+          # is much harder to corrupt via copy-paste than multi-line PEM.
+          if [[ "$API_KEY_P8" == *"BEGIN PRIVATE KEY"* ]]; then
+            printf '%s\n' "$API_KEY_P8" > "$KEY_FILE"
+          else
+            printf '%s' "$API_KEY_P8" | base64 --decode > "$KEY_FILE"
+          fi
+          chmod 600 "$KEY_FILE"
+          head -1 "$KEY_FILE" | grep -q 'BEGIN PRIVATE KEY' || {
+            echo "::error::APP_STORE_CONNECT_API_KEY_P8 decoded content is not PEM"
+            exit 1
+          }
+          # Diagnostics (safe — only counts + hashes, never the content):
+          echo "P8 bytes: $(wc -c < "$KEY_FILE")"
+          echo "P8 sha256: $(shasum -a 256 "$KEY_FILE" | awk '{print $1}')"
+          echo "key_path=$KEY_FILE" >> "$GITHUB_OUTPUT"
+          echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
+
+      - name: Compute bundle identity (per-env, per-developer)
+        id: bundle
+        run: |
+          set -euo pipefail
+          # Prod uses the canonical bundle ID. Dev appends the GitHub user so
+          # each developer can install their own dev build alongside prod.
+          if [[ "$CAP_ENV" == "prod" ]]; then
+            BUNDLE_ID="com.whoeverwants.app"
+            DISPLAY_NAME="WhoeverWants"
+          else
+            # Lowercase, strip anything that isn't letters/digits (valid reverse-DNS)
+            USER_SUFFIX=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+            BUNDLE_ID="com.whoeverwants.app.dev.$USER_SUFFIX"
+            DISPLAY_NAME="WhoeverWants Dev"
+          fi
+          echo "bundle_id=$BUNDLE_ID"    >> "$GITHUB_OUTPUT"
+          echo "display_name=$DISPLAY_NAME" >> "$GITHUB_OUTPUT"
+          echo "Building as $BUNDLE_ID / '$DISPLAY_NAME'"
+
+      - name: Stamp Info.plist display name
+        run: |
+          set -euo pipefail
+          plutil -replace CFBundleDisplayName -string "${{ steps.bundle.outputs.display_name }}" ios/App/App/Info.plist
+          plutil -extract CFBundleDisplayName raw ios/App/App/Info.plist
+
+      - name: Rewrite bundle ID in project.pbxproj
+        run: |
+          set -euo pipefail
+          BUNDLE_ID="${{ steps.bundle.outputs.bundle_id }}"
+          PBX="ios/App/App.xcodeproj/project.pbxproj"
+          # Automatic signing ignores command-line PRODUCT_BUNDLE_IDENTIFIER
+          # overrides, so we patch the project file directly. Every build
+          # starts from git state, so the patch doesn't persist.
+          BEFORE=$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app' "$PBX" || true)
+          sed -i.bak -E \
+            "s|PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app[^;]*;|PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};|g" \
+            "$PBX"
+          rm -f "$PBX.bak"
+          AFTER=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};" "$PBX" || true)
+          if [[ "$BEFORE" -lt 2 || "$AFTER" != "$BEFORE" ]]; then
+            echo "::error::pbxproj patch mismatch (expected $BEFORE matches pre-sed; got $AFTER post-sed)"
+            grep PRODUCT_BUNDLE_IDENTIFIER "$PBX"
+            exit 1
+          fi
+          echo "Patched $AFTER bundle ID occurrence(s) to $BUNDLE_ID"
+
+      - name: Compute build number
+        id: build_number
+        run: |
+          # Use the total number of commits on the current ref for a
+          # monotonically increasing build number. TestFlight rejects
+          # duplicates, so this must never go down.
+          BN=$(git rev-list --count HEAD)
+          echo "build_number=$BN" >> "$GITHUB_OUTPUT"
+          echo "Using CFBundleVersion=$BN"
+
+      - name: Unlock CI keychain
+        env:
+          CI_KEYCHAIN_PASSWORD: ${{ secrets.CI_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$HOME/Library/Keychains/ci.keychain-db"
+          if [[ ! -f "$KC" ]]; then
+            echo "::error::$KC not found — run scripts/ios/mac-bootstrap.sh or create it manually."
+            exit 1
+          fi
+          # Make sure the CI keychain is in the search list and default.
+          security list-keychains -d user -s "$KC" "$HOME/Library/Keychains/login.keychain-db"
+          security default-keychain -s "$KC"
+          security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$KC"
+          # Avoid mid-build re-lock. This occasionally errors under SSH,
+          # but is tolerant here — the default 5-min timeout is plenty.
+          security set-keychain-settings -t 3600 "$KC" || true
+
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.build_number }}
+          BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.key_path }}" \
+            -authenticationKeyID "${{ steps.apikey.outputs.key_id }}" \
+            -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            archive > build/xcodebuild-archive.log 2>&1 || {
+              echo "::error::Archive failed — tail of log:"
+              tail -100 build/xcodebuild-archive.log
+              exit 1
+            }
+          echo "Archive complete."
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.key_path }}" \
+            -authenticationKeyID "${{ steps.apikey.outputs.key_id }}" \
+            -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
+            > build/xcodebuild-export.log 2>&1 || {
+              echo "::error::Export failed — tail of log:"
+              tail -100 build/xcodebuild-export.log
+              exit 1
+            }
+          ls -la "$EXPORT_PATH"
+
+      - name: Upload to TestFlight
+        if: ${{ github.event.inputs.skip_upload != 'true' }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$EXPORT_PATH"/*.ipa | head -n1)
+          echo "Uploading $IPA to TestFlight..."
+          # altool prints errors but sometimes returns 0 when it shouldn't.
+          # Tee to a log and grep for UPLOAD FAILED as a belt-and-suspenders.
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "${{ steps.apikey.outputs.key_id }}" \
+            --apiIssuer "${{ steps.apikey.outputs.issuer_id }}" \
+            2>&1 | tee build/altool-upload.log
+          if grep -q "UPLOAD FAILED" build/altool-upload.log; then
+            echo "::error::altool reported UPLOAD FAILED (exit code was misleading)"
+            exit 1
+          fi
+          if ! grep -q -E "No errors uploading|successful upload" build/altool-upload.log; then
+            echo "::warning::altool output did not contain a success marker; proceeding cautiously"
+          fi
+
+      - name: Upload archive as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs-${{ github.run_id }}
+          path: build/*.log
+          retention-days: 7
