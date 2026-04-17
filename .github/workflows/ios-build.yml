@@ -1,5 +1,4 @@
 name: iOS Build & TestFlight
-# trigger rebuild
 
 # Runs on the Mac mini self-hosted runner to build the Capacitor iOS app
 # and upload it to TestFlight. Web assets load remotely via server.url in
