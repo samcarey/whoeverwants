@@ -1,175 +1,177 @@
 # iOS App Setup (Capacitor + TestFlight)
 
-This is a one-time setup guide for the Capacitor iOS app. Day-to-day,
-everything is automated — pushes to the branch trigger a GitHub Actions
-workflow on the Mac mini self-hosted runner, which builds, signs, and
-uploads to TestFlight.
+One-time setup for the Capacitor iOS app. Day-to-day, pushes to your branch
+trigger a workflow on the Mac mini self-hosted runner which builds, signs,
+and uploads to TestFlight automatically.
 
 ## Architecture
 
 - **WebView shell**: the iOS app is a thin Capacitor wrapper whose WebView
-  loads `https://whoeverwants.com` (prod) or the dev URL (branch builds)
-  via `capacitor.config.ts → server.url`.
-- **No web bundling**: web code is NOT bundled into the `.ipa`. Every
-  Vercel/dev-server deploy is instantly visible on device (pull-to-refresh).
-- **Native plugins still work**: Capacitor injects its JS bridge regardless
-  of where HTML is loaded from. `@capacitor/haptics` and native modules
-  like contacts work normally.
-- **Rebuilds only when native changes**: the `.ipa` only needs rebuilding
-  when plugins, permissions, icons, or native config change.
+  loads `https://whoeverwants.com` (prod) or your personal dev URL
+  (`<email-slug>.dev.whoeverwants.com`) at build time via `capacitor.config.ts`.
+- **No web bundling**: web code isn't baked into the `.ipa`. Vercel / dev
+  server deploys propagate to the device via pull-to-refresh.
+- **Per-developer dev app**: dev builds get a unique bundle ID
+  (`com.whoeverwants.app.dev.<github-username>`) and separate App Store
+  Connect record so they coexist with the prod app — and with each other if
+  multiple developers build dev.
+- **Rebuilds only when native changes**: plugins, permissions, icons, or
+  native config changes. Web-only changes never trigger a rebuild.
 
-## One-time setup (≈ 45 minutes total)
+## One-time setup (~45 min)
 
-You'll do 5 things, in order:
+Five things, in order:
 
-1. Register the app in Apple Developer + App Store Connect.
-2. Create an App Store Connect API key (for CI uploads).
-3. Add secrets to GitHub.
-4. Run the Mac mini bootstrap script.
-5. Trigger the first build (initializes the iOS project).
+1. Register the prod bundle ID in Apple Developer + create the App Store Connect record + TestFlight group.
+2. Register your personal dev bundle ID + App Store Connect record + TestFlight group.
+3. Create an App Store Connect API key with Admin role.
+4. Add 5 GitHub secrets.
+5. Run the Mac mini bootstrap + create the CI keychain.
 
-### 1. Register the app (≈ 10 min)
+### 1. Prod app (~15 min)
 
-All of this is done in a web browser — nothing on the Mac.
+1. https://developer.apple.com/account/resources/identifiers/list → + → App IDs → App →
+   - Description: `WhoeverWants`
+   - Bundle ID (Explicit): `com.whoeverwants.app`
+   - Register.
+2. https://appstoreconnect.apple.com/apps → + → New App → iOS →
+   - Name: `WhoeverWants`, Language: English (US), Bundle ID: select
+     `com.whoeverwants.app`, SKU: `whoeverwants`, Full Access → Create.
+3. In the new app → TestFlight tab → Internal Testing → + → name `Me` →
+   enable **Enable automatic distribution** → Create. Add yourself as a tester.
 
-1. Sign in to https://developer.apple.com/account with your paid Apple ID.
-2. **Certificates, IDs & Profiles → Identifiers → +** →
-   - Type: App IDs → App.
-   - Description: `WhoeverWants`.
-   - Bundle ID: `com.whoeverwants.app` (Explicit).
-   - Capabilities: leave defaults for now (we can add push, etc. later).
-   - Continue → Register.
-3. Sign in to https://appstoreconnect.apple.com → **Apps → + → New App**:
-   - Platform: iOS.
-   - Name: `WhoeverWants`.
-   - Primary language: English (US).
-   - Bundle ID: select `com.whoeverwants.app`.
-   - SKU: `whoeverwants` (any unique string).
-   - User access: Full Access → Create.
-4. In the new app → **TestFlight tab → Internal Testing → + New Group**
-   (call it "Me") and add your Apple ID as a tester. You'll receive an
-   invite email when the first build is processed; tap it on your iPhone
-   to install the TestFlight app (if you haven't already) and get access.
+### 2. Your personal dev app (~10 min)
 
-### 2. Create an App Store Connect API key (≈ 5 min)
+Same flow as step 1, with your GitHub username as the suffix:
 
-1. https://appstoreconnect.apple.com → **Users and Access → Integrations → App Store Connect API**.
-2. Click **Generate API Key** (first time) or **+** (subsequent).
-3. Name: `CI build signer`. Access: **App Manager**. Generate.
-4. **Download the `.p8` file NOW** — you can only download it once.
-5. Note down:
-   - **Key ID** (10-char string shown in the table).
-   - **Issuer ID** (UUID at the top of the page).
-6. You'll also need your **Team ID**: find it at
-   https://developer.apple.com/account → membership details (10-char string).
+1. Register bundle ID `com.whoeverwants.app.dev.<your-github-username>`.
+2. Create App Store Connect app: name `WhoeverWants Dev`, SKU
+   `whoeverwants-dev-<your-github-username>`, bundle ID from step 1.
+3. TestFlight → Internal Testing group → add yourself.
 
-### 3. Add GitHub secrets (≈ 3 min)
+### 3. App Store Connect API key (~5 min)
 
-Go to https://github.com/samcarey/whoeverwants/settings/secrets/actions
-and add the following four secrets:
+1. https://appstoreconnect.apple.com/access/integrations/api → Team Keys tab.
+2. Generate API Key → **Admin** role (App Manager is NOT sufficient — it
+   lacks cloud-signing permission for Distribution certs).
+3. Download the `.p8` file **immediately** (one-time download). Note the
+   **Key ID** (10-char) and **Issuer ID** (UUID at the top of the page).
+4. Also note your **Team ID**: https://developer.apple.com/account → Membership
+   details.
 
-| Secret name | Value |
+### 4. GitHub secrets (~3 min)
+
+Transfer the `.p8` to the Mac mini (AirDrop or iCloud → `~/Downloads/`), then
+on mini4:
+
+```
+base64 -i ~/Downloads/AuthKey_<KEY_ID>.p8 | tr -d '\n' && echo
+```
+
+Copy the single-line output (easier to paste without corruption than
+multi-line PEM). At
+https://github.com/samcarey/whoeverwants/settings/secrets/actions add:
+
+| Secret | Value |
 |---|---|
 | `APP_STORE_CONNECT_API_KEY_ID` | the 10-char Key ID |
 | `APP_STORE_CONNECT_API_KEY_ISSUER_ID` | the issuer UUID |
-| `APP_STORE_CONNECT_API_KEY_P8` | run `base64 -w0 AuthKey_XXXXXX.p8` and paste the output |
+| `APP_STORE_CONNECT_API_KEY_P8` | the base64 string from above |
 | `APPLE_TEAM_ID` | your 10-char team ID |
+| `CI_KEYCHAIN_PASSWORD` | any password you pick (used in step 5) |
 
-> **Tip**: on macOS, `base64` doesn't accept `-w0` — use
-> `base64 -i AuthKey_XXXXXX.p8 | pbcopy` instead.
+### 5. Mac mini runner + CI keychain (~15 min, mostly install waits)
 
-### 4. Run the Mac mini bootstrap (≈ 15 min, mostly waiting)
+Grab a runner token at
+https://github.com/samcarey/whoeverwants/settings/actions/runners/new (copy
+the long value after `--token` in the displayed command).
 
-SSH into the Mac mini. Make sure you're logged in as the user you want
-the runner to run as (probably your normal user account).
+SSH to mini4, then:
 
-```bash
-# On the Mac mini:
-# Get a runner registration token from:
-#   https://github.com/samcarey/whoeverwants/settings/actions/runners/new
-# It's the long token string shown in the displayed config.sh command.
-
+```
 cd /tmp
-curl -sSL https://raw.githubusercontent.com/samcarey/whoeverwants/claude/capacitor-ios-automation-ANoCK/scripts/ios/mac-bootstrap.sh -o mac-bootstrap.sh
+curl -sSL https://raw.githubusercontent.com/samcarey/whoeverwants/main/scripts/ios/mac-bootstrap.sh -o mac-bootstrap.sh
 chmod +x mac-bootstrap.sh
 ./mac-bootstrap.sh <RUNNER_TOKEN>
 ```
 
-The script installs Homebrew, Node, CocoaPods, xcpretty, Xcode CLI tools,
-downloads the GitHub Actions runner, registers it with the repo, and
-installs it as a LaunchAgent (survives reboot).
+The script installs Homebrew + Node + Xcode CLI tools, points `xcode-select`
+at Xcode.app, downloads the iOS platform SDK, registers the runner as a
+LaunchAgent, and accepts the Xcode license.
 
-Verify the runner appears (green dot = online) at
-https://github.com/samcarey/whoeverwants/settings/actions/runners.
+After it completes, create the CI keychain (using the password you put in
+`CI_KEYCHAIN_PASSWORD`):
 
-### 5. Trigger the first build (≈ 10 min, fully automated)
-
-Once the runner is online and secrets are set, dispatch the first build
-from the Claude environment:
-
-```bash
-bash scripts/ios/build.sh --env dev --skip-upload
+```
+CI_PWD='<same-password-you-saved-as-the-github-secret>'
+security create-keychain -p "$CI_PWD" ~/Library/Keychains/ci.keychain-db
+security list-keychains -d user -s ~/Library/Keychains/ci.keychain-db ~/Library/Keychains/login.keychain-db
+security default-keychain -s ~/Library/Keychains/ci.keychain-db
+security unlock-keychain -p "$CI_PWD" ~/Library/Keychains/ci.keychain-db
 ```
 
-The workflow:
-1. Detects there's no `ios/` directory yet and runs `npx cap add ios`.
-2. Commits the scaffolded `ios/` project back to the branch (subsequent
-   builds skip this step).
-3. Runs `npx cap sync ios`, `pod install`, and archives/exports a `.ipa`.
+(`security set-keychain-settings` fails over SSH with "User interaction is
+not allowed" — harmless; the workflow unlocks fresh before each run.)
 
-After this succeeds, re-run without `--skip-upload` to push to TestFlight:
+Verify the runner appears with a green dot (Idle) at
+https://github.com/samcarey/whoeverwants/settings/actions/runners.
 
-```bash
+## Trigger the first build
+
+From Claude environment (or any shell with `GITHUB_API_TOKEN`):
+
+```
 bash scripts/ios/build.sh --env dev
 ```
 
-You'll get a TestFlight email once Apple finishes processing (~5–10 min
-after the runner upload completes). Tap "Install" in the TestFlight app
-on your iPhone — done.
+The first run auto-scaffolds `ios/` via `npx cap add ios`, commits it back
+to the branch, then archives + signs + uploads to TestFlight for the dev
+bundle ID. ~10–15 min end-to-end.
 
-## Day-to-day workflow
+Answer "None of the algorithms mentioned above" if TestFlight prompts for
+encryption compliance (one-time per app record; the
+`ITSAppUsesNonExemptEncryption=false` flag in `Info.plist` avoids it
+afterward).
 
-- **Changing web code** (most changes): push to any branch. Vercel /
-  dev-server picks it up; refresh the app on your iPhone to see it. No
-  iOS build needed.
-- **Changing native config** (plugins, icons, permissions): push to a
-  branch matching `main`, `claude/capacitor-*`, or `ios/*`, OR change
-  `capacitor.config.ts` / `package.json`. The runner auto-builds and
-  uploads to TestFlight.
-- **Manual trigger**:
-  ```bash
-  bash scripts/ios/build.sh                     # current branch
-  bash scripts/ios/build.sh --env prod          # force prod URL
-  bash scripts/ios/build.sh --skip-upload       # build only
-  bash scripts/ios/logs.sh                      # latest run's logs
-  bash scripts/ios/logs.sh <run_id>             # specific run's logs
-  ```
+## Day-to-day
 
-## Feedback loop
-
-| Change type | Where | Delay |
+| Change | Where | Delay |
 |---|---|---|
-| Web code (TS/TSX, CSS) | Push → Vercel / dev server | ~30 s, pull-to-refresh |
-| Native config / plugins | Push → Mac mini runner → TestFlight | 8–20 min |
-| New app version (e.g. new icon) | Push to `main` | 10–20 min, TestFlight notifies |
+| Web code (TS/TSX, CSS) | push to your branch | ~30 s, pull-to-refresh |
+| Native config / plugins | push to `main`, `claude/capacitor-*`, or `ios/*` | 8–20 min |
+
+```
+# Manual trigger for current branch (dev URL by default)
+bash scripts/ios/build.sh
+
+# Force prod URL
+bash scripts/ios/build.sh --env prod
+
+# Build without uploading
+bash scripts/ios/build.sh --skip-upload
+
+# Tail latest CI logs
+bash scripts/ios/logs.sh
+
+# Tail only the failing job's logs for a specific run
+bash scripts/ios/logs.sh --failed-only 12345678
+```
 
 ## Troubleshooting
 
-- **Runner offline**: SSH in and run `cd ~/actions-runner && ./svc.sh status`.
-  Restart with `./svc.sh restart`.
-- **Code signing fails**: open Xcode on the Mac once, sign into your
-  Apple ID (Preferences → Accounts), and verify the team shows up.
-  Automatic provisioning via API key usually handles everything, but
-  Xcode needs to have been launched at least once.
-- **Build works locally but fails on CI**: check
-  `bash scripts/ios/logs.sh --failed-only` from the Claude environment.
+- **Runner offline**: `cd ~/actions-runner && ./svc.sh status` → `./svc.sh restart`.
+- **Build fails at "Unlock CI keychain"**: the `ci.keychain-db` doesn't exist or the `CI_KEYCHAIN_PASSWORD` secret doesn't match. Recreate per step 5.
+- **`xcode-select` error in workflow**: run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once on mini4.
+- **`Cloud signing permission error` during export**: API key lacks cert-management scope. Regenerate with Admin role (see step 3) and update the `APP_STORE_CONNECT_API_KEY_ID` + `APP_STORE_CONNECT_API_KEY_P8` secrets.
+- **`invalidPEMDocument`**: the P8 secret got corrupted. Re-copy via `base64 -i ... | tr -d '\n'` and paste the single-line string.
+- **`Missing required icon file`**: the 1024×1024 AppIcon PNG at `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png` isn't being committed. Check `.gitignore` — the `*.png` deny rule must be overridden by `!ios/App/App/Assets.xcassets/**/*.png`.
 
 ## File map
 
-- `capacitor.config.ts` — Capacitor config; selects remote URL by env.
-- `.github/workflows/ios-build.yml` — CI workflow.
-- `scripts/ios/ExportOptions.plist` — `.ipa` export settings.
-- `scripts/ios/build.sh` — trigger CI build + wait for completion.
-- `scripts/ios/logs.sh` — fetch CI logs.
+- `capacitor.config.ts` — Capacitor config; `server.url` from `CAP_SERVER_URL` or prod default.
+- `.github/workflows/ios-build.yml` — CI workflow (self-hosted Mac mini runner).
+- `scripts/ios/ExportOptions.plist` — `.ipa` export settings (app-store-connect, automatic signing).
+- `scripts/ios/build.sh` — dispatch + poll CI.
+- `scripts/ios/logs.sh` — fetch CI logs (full run or `--failed-only`).
 - `scripts/ios/mac-bootstrap.sh` — one-time Mac mini setup.
-- `ios/` — generated Xcode project (committed after first scaffold).
+- `ios/` — generated Xcode project (committed by CI on first run).

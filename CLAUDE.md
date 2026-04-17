@@ -724,77 +724,67 @@ bridge into the remote WebView.
 
 ### Architecture
 
-- `capacitor.config.ts` selects the URL at build time:
-  - `CAP_SERVER_URL=<url>` — explicit override
-  - `CAP_ENV=dev` — personal dev server (`sam-at-samcarey-com.dev.whoeverwants.com`)
-  - default → `https://whoeverwants.com`
-- Bundle ID: `com.whoeverwants.app`. Apple Developer account (paid) required.
-- Distribution: TestFlight (no USB cable ever after initial setup).
+- `capacitor.config.ts` resolves `server.url` at build time:
+  1. `CAP_SERVER_URL=<url>` — explicit override. Workflow sets this per-developer.
+  2. Otherwise → `https://whoeverwants.com` (prod default).
+- Bundle ID at build time: prod = `com.whoeverwants.app`; dev = `com.whoeverwants.app.dev.<github-username>`. Each developer registers their own dev bundle ID + App Store Connect record so they can install their own dev build alongside prod without collision.
+- Distribution: TestFlight only (no USB cable ever after initial setup). Paid Apple Developer account required.
 
 ### Build pipeline
 
 A GitHub Actions workflow (`.github/workflows/ios-build.yml`) runs on a
 self-hosted Mac mini runner (labels: `self-hosted, macos-mini`). The workflow:
 
-1. Runs `npm ci` → `npx cap sync ios` → `pod install`.
-2. On first run only: auto-scaffolds `ios/` via `npx cap add ios` and commits
-   it back to the branch.
-3. Archives + exports a signed `.ipa` using App Store Connect API key auth
-   (`-allowProvisioningUpdates -authenticationKey*` flags, no Xcode GUI login
-   required).
-4. Uploads to TestFlight via `xcrun altool`.
+1. Resolves `CAP_SERVER_URL` from the pusher's email (`<slug>.dev.whoeverwants.com`) or uses the prod default when `CAP_ENV=prod`.
+2. Computes bundle ID + display name based on `CAP_ENV` and `github.actor`.
+3. Patches `ios/App/App.xcodeproj/project.pbxproj` with the bundle ID (automatic signing ignores the xcodebuild command-line override). Fails loudly if the sed doesn't match the expected occurrence count.
+4. Runs `npm ci` → `npx cap sync ios` → archives with `xcodebuild` → exports signed `.ipa` → uploads with `xcrun altool`. All signing uses App Store Connect API key auth (`-allowProvisioningUpdates -authenticationKey*`) — no Xcode GUI login needed.
+5. On first run only: auto-scaffolds `ios/` via `npx cap add ios` and commits it back to the branch.
 
 Triggers:
-- Pushes to `main`, `claude/capacitor-**`, or `ios/**` that touch
-  `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the
-  workflow file, or `scripts/ios/**`.
-- Manual via `workflow_dispatch` (see helper script below).
+- Pushes to `main`, `claude/capacitor-**`, or `ios/**` that touch `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the workflow file, or `scripts/ios/**`.
+- Manual via `workflow_dispatch` — inputs: `cap_env` (dev|prod), `cap_server_url` (explicit URL override), `skip_upload` (bool).
 
 ### Helper scripts
 
-- `scripts/ios/build.sh [--env dev|prod] [--skip-upload] [--ref <branch>]` —
-  dispatches a workflow run and polls until completion. Prints the GitHub
-  Actions URL + final status.
-- `scripts/ios/logs.sh [<run_id>] [--failed-only]` — fetches and prints the
-  last 200 lines of each step's log for a run (current or specified).
-- `scripts/ios/mac-bootstrap.sh <runner_token>` — one-time Mac mini setup
-  (Homebrew, Node, CocoaPods, Xcode CLI tools, GitHub Actions runner as
-  LaunchAgent).
+- `scripts/ios/build.sh [--env dev|prod] [--skip-upload] [--ref <branch>]` — dispatches a workflow run and polls until completion. Requires a `GITHUB_API_TOKEN` with `actions:write`. On failure, calls `logs.sh --failed-only` automatically.
+- `scripts/ios/logs.sh [<run_id>] [--failed-only]` — fetches and prints CI logs. `--failed-only` hits the per-job logs endpoint (much smaller than the full-run zip).
+- `scripts/ios/mac-bootstrap.sh <runner_token>` — one-time Mac mini setup (Homebrew, Node, Xcode CLI tools, `xcodebuild -downloadPlatform iOS`, GitHub Actions runner as LaunchAgent).
 
 ### Feedback-loop cheat sheet
 
 | Change | Delay | Mechanism |
 |---|---|---|
-| Web code | ~30 s | Vercel or dev server; pull-to-refresh on device |
+| Web code | ~30 s | Vercel (prod) or dev server (dev); pull-to-refresh on device |
 | Native plugin / config | 8–20 min | Runner → TestFlight → tap "Update" in TestFlight app |
 
 ### Required GitHub repo secrets
 
 - `APP_STORE_CONNECT_API_KEY_ID` — Key ID from App Store Connect
 - `APP_STORE_CONNECT_API_KEY_ISSUER_ID` — Issuer UUID
-- `APP_STORE_CONNECT_API_KEY_P8` — base64 of the `.p8` file
+- `APP_STORE_CONNECT_API_KEY_P8` — base64 of the `.p8` file (single-line paste is less brittle via mobile browser than multi-line PEM)
 - `APPLE_TEAM_ID` — 10-char team ID
+- `CI_KEYCHAIN_PASSWORD` — password for the dedicated `ci.keychain-db` on the Mac mini
 
-See `docs/ios-setup.md` for the full one-time setup walkthrough (App Store
-Connect app registration, API key creation, secret bootstrapping, Mac mini
-runner install).
+See `docs/ios-setup.md` for the full one-time setup walkthrough.
 
-### Pitfalls to watch for
+### Pitfalls learned the hard way
 
-- **`server.url` + App Store review**: App Store review sometimes objects to
-  pure remote-URL apps. Phase 2 plan is to switch to bundled web assets
-  (requires static export or `next export` equivalent; Next.js 16 App Router
-  with `force-dynamic` and `next.config.ts` rewrites makes this non-trivial).
-  Fine for dev/TestFlight/sideload.
-- **`CFBundleVersion` monotonicity**: the workflow uses
-  `git rev-list --count HEAD` for build numbers. Never rewrite history in a
-  way that lowers this count, or TestFlight will reject the upload.
-- **First build commits `ios/` back to branch**: the workflow auto-commits
-  on the first run. Subsequent pulls should include `ios/`. Don't manually
-  `rm -rf ios/` without also rerunning the scaffold flow.
-- **Don't use the dev URL for production TestFlight**: branch builds bake
-  the dev URL into `capacitor.config.ts` via `CAP_ENV=dev`. Only `main`
-  defaults to prod. Manual dispatches accept `cap_env` input.
+- **API key needs cert-management scope.** The "App Manager" role alone triggers `Cloud signing permission error` + `No signing certificate "iOS Distribution" found` during export. Regenerate the key with **Admin** role (or explicitly enable "Access to Certificates, Identifiers and Profiles"). Apple added this as a separate permission in 2024.
+- **Automatic signing ignores command-line `PRODUCT_BUNDLE_IDENTIFIER` overrides.** xcodebuild honors the override for the archive's Info.plist, but the signing phase looks up the profile using the bundle ID baked into `project.pbxproj`. Result: a dev-URL build uploaded under the prod bundle ID. Fix: `sed`-patch `project.pbxproj` before archive and verify the expected number of replacements occurred.
+- **Capacitor 8 uses Swift Package Manager, not CocoaPods.** No `Podfile` or `.xcworkspace` — there's only `App.xcodeproj`. Don't run `pod install`. Use `-project` (not `-workspace`) with xcodebuild.
+- **`xcodebuild` needs a shared scheme.** Capacitor's scaffold doesn't create one; Xcode would on first GUI open, but CI never opens Xcode. Commit `ios/App/App.xcodeproj/xcshareddata/xcschemes/App.xcscheme` to the repo so headless builds find the scheme.
+- **Xcode 15+ ships with no platform SDKs.** Run `xcodebuild -downloadPlatform iOS` once on the Mac mini (the bootstrap script does this). Otherwise archives fail with `iOS N.N is not installed`.
+- **Self-hosted runner starts from a LaunchAgent.** LaunchAgents don't source `~/.zprofile`, so Homebrew's PATH must be injected explicitly (`echo /opt/homebrew/bin >> "$GITHUB_PATH"` as the first workflow step). Same applies to any brew-installed CLI.
+- **LaunchAgent can't access the login keychain reliably over SSH.** Create a dedicated `ci.keychain-db` with a known password (stored as `CI_KEYCHAIN_PASSWORD` secret). The workflow unlocks it at the start of each run. `security set-keychain-settings` fails with "User interaction is not allowed" from SSH sessions — run it in the workflow instead (or tolerate the failure; 5-min default timeout is enough for a single build).
+- **Mobile Safari corrupts multi-line PEM pastes into GitHub Secrets.** The line wrapping mangles the base64 body, which xcodebuild then rejects with `CryptoKit.CryptoKitASN1Error.invalidPEMDocument`. Paste a single-line base64 string instead (the workflow decodes either form).
+- **`altool` exits 0 even when it rejects the upload.** Diagnose by grepping the output for `UPLOAD FAILED`; don't trust the exit code alone.
+- **`fetch-depth: 0` is required for monotonic `CFBundleVersion`.** Default shallow fetch pins `git rev-list --count HEAD` at 1, which TestFlight rejects on the second upload to the same bundle ID as a duplicate.
+- **`ITSAppUsesNonExemptEncryption=false`** in `Info.plist` skips the TestFlight export-compliance prompt. WhoeverWants only uses standard HTTPS (exempt category).
+- **App icon must be 1024×1024 opaque PNG** in `ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`. Alpha channels cause `Missing required icon file` rejection. `.gitignore` excludes `*.png` except under `public/` and the AppIcon asset catalog — preserve both overrides.
+- **`CFBundleVersion` monotonicity**: the workflow uses `git rev-list --count HEAD`. Never rewrite history in a way that lowers this count, or TestFlight will reject future uploads.
+- **First build auto-scaffolds + commits `ios/`.** Subsequent pulls should include `ios/`. Don't manually `rm -rf ios/` without also rerunning the scaffold flow.
+- **`server.url` + App Store review**: App Store review sometimes objects to pure remote-URL apps. Phase 2 switches to bundled assets (requires static export — non-trivial with Next.js 16 App Router + `force-dynamic` + `next.config.ts` rewrites). Fine for TestFlight / sideload.
 
 ---
 

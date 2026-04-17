@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Fetch logs for an iOS build run. If no run ID given, fetches the latest.
+# Fetch logs for an iOS build run. With --failed-only, only the failing
+# job's logs are downloaded (via the per-job API endpoint) — much cheaper
+# than grabbing the whole run's zip.
 #
 # Usage:
 #   scripts/ios/logs.sh                  # latest run on ios-build.yml
 #   scripts/ios/logs.sh <run_id>         # specific run
-#   scripts/ios/logs.sh --failed-only    # only show failing step logs
+#   scripts/ios/logs.sh --failed-only    # only failing jobs
 set -euo pipefail
 
 REPO="samcarey/whoeverwants"
@@ -30,25 +32,36 @@ API="https://api.github.com/repos/$REPO"
 
 if [[ -z "$RUN_ID" ]]; then
   RUN_ID=$(curl -sS "${AUTH[@]}" "$API/actions/workflows/$WORKFLOW/runs?per_page=1" \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['workflow_runs'][0]['id'])")
+    | python3 -c "
+import json, sys
+runs = json.load(sys.stdin).get('workflow_runs', [])
+if not runs:
+    sys.exit('no runs found')
+print(runs[0]['id'])")
   echo "Latest run: $RUN_ID"
 fi
 
 if [[ "$FAILED_ONLY" == "true" ]]; then
-  # List failed jobs/steps and print logs for each failed step.
   JOBS=$(curl -sS "${AUTH[@]}" "$API/actions/runs/$RUN_ID/jobs")
-  echo "$JOBS" | python3 -c "
-import json, sys, subprocess, os
-d = json.load(sys.stdin)
-for j in d.get('jobs', []):
-    for s in j.get('steps', []):
-        if s.get('conclusion') == 'failure':
-            print(f\"\\n===== FAILED: {j['name']} / {s['name']} =====\")
-            print(f\"  (see full log: job_id={j['id']})\")
-"
+  FAILED_IDS=$(echo "$JOBS" | python3 -c "
+import json, sys
+for j in json.load(sys.stdin).get('jobs', []):
+    if j.get('conclusion') == 'failure':
+        print(j['id'], j['name'])")
+  if [[ -z "$FAILED_IDS" ]]; then
+    echo "No failed jobs in run $RUN_ID"
+    exit 0
+  fi
+  while IFS= read -r line; do
+    jid=$(echo "$line" | cut -d' ' -f1)
+    jname=$(echo "$line" | cut -d' ' -f2-)
+    echo ""
+    echo "===== FAILED JOB: $jname (id=$jid) ====="
+    curl -sSL "${AUTH[@]}" "$API/actions/jobs/$jid/logs" | tail -n 400
+  done <<< "$FAILED_IDS"
+  exit 0
 fi
 
-# Always fetch the zip of all logs for the run
 TMPZIP=$(mktemp -t ios-logs.XXXX).zip
 curl -sSL "${AUTH[@]}" -o "$TMPZIP" "$API/actions/runs/$RUN_ID/logs"
 
@@ -60,7 +73,6 @@ echo "===== Log files for run $RUN_ID ====="
 find "$TMPDIR" -name '*.txt' | sort | while read -r f; do
   echo ""
   echo "----- ${f#$TMPDIR/} -----"
-  # Print last 200 lines of each step's log (keeps output manageable)
   tail -n 200 "$f"
 done
 

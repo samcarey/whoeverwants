@@ -80,9 +80,11 @@ echo "URL: https://github.com/$REPO/actions/runs/$RUN_ID"
 
 echo "Polling status every 15s..."
 while true; do
-  STATUS_JSON=$(curl -sS "${AUTH[@]}" "$API/actions/runs/$RUN_ID")
-  STATUS=$(echo "$STATUS_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status','?'))")
-  CONCLUSION=$(echo "$STATUS_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('conclusion') or '')")
+  read -r STATUS CONCLUSION < <(
+    curl -sS "${AUTH[@]}" "$API/actions/runs/$RUN_ID" \
+      | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('status','?'), d.get('conclusion') or '-')"
+  )
+  [[ "$CONCLUSION" == "-" ]] && CONCLUSION=""
   echo "  [$(date +%H:%M:%S)] status=$STATUS conclusion=$CONCLUSION"
   if [[ "$STATUS" == "completed" ]]; then
     if [[ "$CONCLUSION" == "success" ]]; then
@@ -91,7 +93,7 @@ while true; do
     else
       echo "✗ Build failed (conclusion=$CONCLUSION)"
       echo "Fetching failed step logs..."
-      scripts/ios/logs.sh "$RUN_ID" || true
+      scripts/ios/logs.sh --failed-only "$RUN_ID" || true
       exit 1
     fi
   fi

@@ -1,5 +1,4 @@
 name: iOS Build & TestFlight
-# new api key with cert scope
 
 # Runs on the Mac mini self-hosted runner to build the Capacitor iOS app
 # and upload it to TestFlight. Web assets load remotely via server.url in
@@ -25,6 +24,10 @@ on:
         description: 'Capacitor environment (dev|prod)'
         required: false
         default: ''
+      cap_server_url:
+        description: 'Override the WebView URL (takes priority over cap_env)'
+        required: false
+        default: ''
       skip_upload:
         description: 'Build only, skip TestFlight upload'
         type: boolean
@@ -42,7 +45,6 @@ permissions:
 
 jobs:
   build:
-    # The Mac mini runner must be registered with labels: self-hosted, macos-mini
     runs-on: [self-hosted, macos-mini]
     timeout-minutes: 45
 
@@ -117,10 +119,28 @@ jobs:
           git commit -m "chore(ios): auto-scaffold Capacitor iOS project"
           git push origin HEAD:${{ github.ref_name }}
 
+      - name: Resolve CAP_SERVER_URL for this build
+        id: server_url
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ github.event.inputs.cap_server_url }}" ]]; then
+            URL="${{ github.event.inputs.cap_server_url }}"
+          elif [[ "$CAP_ENV" == "prod" ]]; then
+            URL=""  # capacitor.config.ts defaults to prod when unset
+          elif [[ -n "${{ github.event.head_commit.author.email }}" ]]; then
+            EMAIL="${{ github.event.head_commit.author.email }}"
+            SLUG=$(echo "$EMAIL" | tr '[:upper:]' '[:lower:]' | sed -e 's/@/-at-/g' -e 's/[^a-z0-9-]/-/g')
+            URL="https://$SLUG.dev.whoeverwants.com"
+          else
+            URL=""  # No push email (workflow_dispatch without override) → fall through to prod
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          [[ -n "$URL" ]] && echo "WebView URL: $URL" || echo "WebView URL: (prod default)"
+
       - name: Sync Capacitor (copy web assets + plugins → iOS project)
-        run: npx cap sync ios
         env:
-          CAP_ENV: ${{ env.CAP_ENV }}
+          CAP_SERVER_URL: ${{ steps.server_url.outputs.url }}
+        run: npx cap sync ios
 
       - name: Restore App Store Connect API key
         id: apikey
@@ -181,15 +201,22 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE_ID="${{ steps.bundle.outputs.bundle_id }}"
+          PBX="ios/App/App.xcodeproj/project.pbxproj"
           # Automatic signing ignores command-line PRODUCT_BUNDLE_IDENTIFIER
           # overrides, so we patch the project file directly. Every build
           # starts from git state, so the patch doesn't persist.
+          BEFORE=$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app' "$PBX" || true)
           sed -i.bak -E \
             "s|PRODUCT_BUNDLE_IDENTIFIER = com\.whoeverwants\.app[^;]*;|PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};|g" \
-            ios/App/App.xcodeproj/project.pbxproj
-          rm -f ios/App/App.xcodeproj/project.pbxproj.bak
-          echo "Bundle ID lines now in pbxproj:"
-          grep PRODUCT_BUNDLE_IDENTIFIER ios/App/App.xcodeproj/project.pbxproj
+            "$PBX"
+          rm -f "$PBX.bak"
+          AFTER=$(grep -c "PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};" "$PBX" || true)
+          if [[ "$BEFORE" -lt 2 || "$AFTER" != "$BEFORE" ]]; then
+            echo "::error::pbxproj patch mismatch (expected $BEFORE matches pre-sed; got $AFTER post-sed)"
+            grep PRODUCT_BUNDLE_IDENTIFIER "$PBX"
+            exit 1
+          fi
+          echo "Patched $AFTER bundle ID occurrence(s) to $BUNDLE_ID"
 
       - name: Compute build number
         id: build_number

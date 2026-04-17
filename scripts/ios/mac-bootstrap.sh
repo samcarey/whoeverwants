@@ -18,23 +18,20 @@ REPO_URL="https://github.com/samcarey/whoeverwants"
 
 say() { printf "\n\033[1;34m==> %s\033[0m\n" "$*"; }
 
-# ---- Homebrew ---------------------------------------------------------
 if ! command -v brew >/dev/null 2>&1; then
   say "Installing Homebrew"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 
-# Ensure brew is on PATH (Apple silicon default is /opt/homebrew)
 if [[ -x /opt/homebrew/bin/brew ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 elif [[ -x /usr/local/bin/brew ]]; then
   eval "$(/usr/local/bin/brew shellenv)"
 fi
 
-say "Installing formulae (node, cocoapods, xcpretty, coreutils)"
-brew install node cocoapods xcpretty coreutils || true
+say "Installing formulae (node, coreutils)"
+brew install node coreutils || true
 
-# ---- Xcode command-line tools ----------------------------------------
 if ! xcode-select -p >/dev/null 2>&1; then
   say "Installing Xcode command-line tools (a GUI prompt may appear)"
   xcode-select --install || true
@@ -108,17 +105,21 @@ else
   ./svc.sh start
 fi
 
-# ---- Done ------------------------------------------------------------
 say "Bootstrap complete."
 cat <<'EOF'
 Next steps:
   1. Verify the runner is online:
        https://github.com/samcarey/whoeverwants/settings/actions/runners
-  2. Confirm these GitHub repo secrets are set (see docs/ios-setup.md):
+  2. Create the CI keychain (one-off):
+       security create-keychain -p "<pick-a-password>" ~/Library/Keychains/ci.keychain-db
+       security list-keychains -d user -s ~/Library/Keychains/ci.keychain-db ~/Library/Keychains/login.keychain-db
+       security default-keychain -s ~/Library/Keychains/ci.keychain-db
+  3. Confirm these GitHub repo secrets are set (see docs/ios-setup.md):
        APP_STORE_CONNECT_API_KEY_ID
        APP_STORE_CONNECT_API_KEY_ISSUER_ID
-       APP_STORE_CONNECT_API_KEY_P8  (base64-encoded .p8 contents)
+       APP_STORE_CONNECT_API_KEY_P8           (base64 of the .p8 file)
        APPLE_TEAM_ID
-  3. Trigger the first build from the Claude environment:
+       CI_KEYCHAIN_PASSWORD                   (the password from step 2)
+  4. Trigger the first build from the Claude environment:
        bash scripts/ios/build.sh --env dev
 EOF
