@@ -49,7 +49,7 @@ jobs:
       # Resolve CAP_ENV: manual dispatch input > branch-based default.
       CAP_ENV: ${{ github.event.inputs.cap_env != '' && github.event.inputs.cap_env || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
       SCHEME: App
-      WORKSPACE: ios/App/App.xcworkspace
+      PROJECT: ios/App/App.xcodeproj
       ARCHIVE_PATH: ${{ github.workspace }}/build/App.xcarchive
       EXPORT_PATH: ${{ github.workspace }}/build/export
       EXPORT_OPTIONS: ${{ github.workspace }}/scripts/ios/ExportOptions.plist
@@ -92,7 +92,7 @@ jobs:
         id: scaffold
         run: |
           set -euo pipefail
-          if [[ ! -d ios/App/App.xcworkspace ]]; then
+          if [[ ! -d ios/App/App.xcodeproj ]]; then
             echo "iOS project missing — running 'npx cap add ios' to scaffold"
             npx cap add ios
             echo "scaffolded=true" >> "$GITHUB_OUTPUT"
@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           mkdir -p build
           xcodebuild \
-            -workspace "$WORKSPACE" \
+            -project "$PROJECT" \
             -scheme "$SCHEME" \
             -configuration Release \
             -destination "generic/platform=iOS" \
