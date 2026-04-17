@@ -157,6 +157,24 @@ jobs:
           echo "build_number=$BN" >> "$GITHUB_OUTPUT"
           echo "Using CFBundleVersion=$BN"
 
+      - name: Unlock CI keychain
+        env:
+          CI_KEYCHAIN_PASSWORD: ${{ secrets.CI_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$HOME/Library/Keychains/ci.keychain-db"
+          if [[ ! -f "$KC" ]]; then
+            echo "::error::$KC not found — run scripts/ios/mac-bootstrap.sh or create it manually."
+            exit 1
+          fi
+          # Make sure the CI keychain is in the search list and default.
+          security list-keychains -d user -s "$KC" "$HOME/Library/Keychains/login.keychain-db"
+          security default-keychain -s "$KC"
+          security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$KC"
+          # Avoid mid-build re-lock. This occasionally errors under SSH,
+          # but is tolerant here — the default 5-min timeout is plenty.
+          security set-keychain-settings -t 3600 "$KC" || true
+
       - name: Archive
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
