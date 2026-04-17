@@ -93,6 +93,8 @@ export default function PollCardModal({
       const sy = sourceRect.height / targetRect.height;
       const tx = sourceRect.left - targetRect.left;
       const ty = sourceRect.top - targetRect.top;
+      // eslint-disable-next-line no-console
+      console.log('[PollCardModal] effect run. source=', [sourceRect.left, sourceRect.top, sourceRect.width, sourceRect.height], 'target=', [targetRect.left, targetRect.top, targetRect.width, targetRect.height], 's=', sx, sy, 't=', tx, ty);
       // Position the sheet visually at the source card with transition:none.
       sheet.style.transformOrigin = 'top left';
       sheet.style.transition = 'none';
