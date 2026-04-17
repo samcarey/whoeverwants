@@ -63,6 +63,12 @@ jobs:
           echo "CAP_ENV=$CAP_ENV"
           echo "ref=${{ github.ref }}"
           sw_vers
+          echo "xcode-select path: $(xcode-select -p)"
+          if [[ "$(xcode-select -p)" == */CommandLineTools* ]]; then
+            echo "::error::xcode-select points at Command Line Tools. Run:"
+            echo "::error::  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+            exit 1
+          fi
           xcodebuild -version
           node --version
           npm --version
