@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
@@ -17,6 +17,7 @@ import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } fro
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import PollCardModal from "@/components/PollCardModal";
 
 import type { Thread } from "@/lib/threadUtils";
 
@@ -70,8 +71,10 @@ function buildThreadSync(
 function ThreadContent() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const { prefetchBatch } = usePrefetch();
   const threadId = params.threadId as string;
+  const pollQueryParam = searchParams.get('poll');
 
   // Initialize voted/abstained sets + thread synchronously from cached data
   // on first render, so the page mounts with full content (no loading flash
@@ -132,6 +135,25 @@ function ThreadContent() {
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
+
+  // Expanded-poll modal state — opening a poll card expands it into a full-sheet
+  // modal in place (no route change). Source rect captured on tap so the modal
+  // can FLIP-animate from/to it. Card DOM refs let us re-measure the current rect
+  // at close time (in case the list scrolled). sourceRect = null → fade-in
+  // (direct link arrival with no visible source card).
+  const [expandedPoll, setExpandedPoll] = useState<{ poll: Poll; sourceRect: DOMRect | null } | null>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // If ?poll=<shortId> is in the URL (direct link from /p/[shortId]), open the
+  // modal for that poll once the thread is loaded. Uses sourceRect=null so the
+  // modal fades in (no source card to expand from on first load).
+  useEffect(() => {
+    if (!pollQueryParam || !thread) return;
+    const match = thread.polls.find(p => p.short_id === pollQueryParam || p.id === pollQueryParam);
+    if (match && !expandedPoll) {
+      setExpandedPoll({ poll: match, sourceRect: null });
+    }
+  }, [pollQueryParam, thread]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the referenced poll, register access, discover children, build thread.
   // If we already have a synchronous cache-built thread, this runs in the
@@ -337,8 +359,14 @@ function ThreadContent() {
             };
 
             const goToPoll = () => {
-              const href = `/p/${poll.short_id || poll.id}`;
-              navigateWithTransition(router, href, 'forward');
+              const el = cardRefs.current.get(poll.id);
+              if (el) {
+                setExpandedPoll({ poll, sourceRect: el.getBoundingClientRect() });
+              } else {
+                // Fallback if ref missing for some reason — still navigate.
+                const href = `/p/${poll.short_id || poll.id}`;
+                navigateWithTransition(router, href, 'forward');
+              }
             };
 
             const handleTouchEnd = () => {
@@ -376,11 +404,16 @@ function ThreadContent() {
                 className="mx-1.5 mb-1.5"
               >
                 <div
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(poll.id, el);
+                    else cardRefs.current.delete(poll.id);
+                  }}
                   onClick={goToPoll}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
                   className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 transition-colors cursor-pointer select-none relative`}
+                  style={expandedPoll?.poll.id === poll.id ? { visibility: 'hidden' } : undefined}
                 >
                   {/* Status line */}
                   <div className="flex items-center justify-between">
@@ -455,6 +488,27 @@ function ThreadContent() {
           poll={modalPoll}
           onClose={() => setShowModal(false)}
           showForkButton={false}
+        />
+      )}
+
+      {/* Expanded-poll modal — renders over the thread, expands from the tapped
+          card's rect and shrinks back to the card's current rect on close. */}
+      {expandedPoll && (
+        <PollCardModal
+          poll={expandedPoll.poll}
+          sourceRect={expandedPoll.sourceRect}
+          getCurrentRect={() => {
+            const el = cardRefs.current.get(expandedPoll.poll.id);
+            return el ? el.getBoundingClientRect() : null;
+          }}
+          onClose={() => {
+            setExpandedPoll(null);
+            // Clear ?poll=<shortId> from the URL so re-renders don't re-open the modal
+            // and back/forward history behaves naturally.
+            if (pollQueryParam) {
+              router.replace(`/thread/${threadId}`);
+            }
+          }}
         />
       )}
     </div>

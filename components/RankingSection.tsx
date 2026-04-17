@@ -9,6 +9,7 @@ import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import VoterList from "@/components/VoterList";
 import type { OptionsMetadata } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
+import PollSubmitButton from "@/components/PollSubmitButton";
 
 interface RankingSectionProps {
   poll: any;
@@ -260,13 +261,13 @@ export default function RankingSection({
           <div className="mt-4">
             <CompactNameField name={voterName} setName={setVoterName} />
           </div>
-          <button
+          <PollSubmitButton
             onClick={handleVoteClick}
             disabled={isSubmitting || (!isAbstaining && !justCancelledAbstain && rankedChoices.filter(choice => choice && choice.trim().length > 0).length === 0 && suggestionChoices.filter(c => c && c.trim().length > 0).length === 0)}
             className="w-full mt-4 py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
           >
             {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-          </button>
+          </PollSubmitButton>
         </>
       )}
     </>

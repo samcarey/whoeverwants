@@ -41,16 +41,34 @@ import SubPollField from "@/components/SubPollField";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
+import { PollModalContext, POLL_MODAL_SUBMIT_PORTAL_ID } from "@/lib/pollModalContext";
+import PollSubmitButton from "@/components/PollSubmitButton";
 
 interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
   pollId: string | null;
+  // When true, the component is rendered inside PollCardModal: inline submit
+  // buttons are hidden (the modal chrome renders its own), page title is not
+  // pushed to the template header, and vote success triggers onRequestClose.
+  modalMode?: boolean;
+  onRequestClose?: () => void;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
-  // Set the page title in the template header
-  usePageTitle(poll.title);
+export default function PollPageClient({ poll, createdDate, pollId, modalMode = false, onRequestClose }: PollPageClientProps) {
+  // Set the page title in the template header — only when not in modal mode
+  // (the modal has its own title in the chrome header).
+  usePageTitle(modalMode ? '' : poll.title);
+
+  // Track the modal's submit portal target so PollSubmitButton children can
+  // portal into it. Polls the DOM on mount because the portal element is
+  // rendered by PollCardModal (parent) before this component mounts.
+  const [submitPortalEl, setSubmitPortalEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!modalMode) return;
+    const el = document.getElementById(POLL_MODAL_SUBMIT_PORTAL_ID);
+    if (el) setSubmitPortalEl(el);
+  }, [modalMode]);
 
   const router = useRouter();
   const { prefetch } = useAppPrefetch();
@@ -1458,6 +1476,12 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (isPollClosed || showPrelimResults) {
         await fetchPollResults();
       }
+
+      // When rendered inside PollCardModal, close the modal after a successful
+      // submission so the user returns to the thread list.
+      if (modalMode && onRequestClose) {
+        onRequestClose();
+      }
     } catch (error) {
       await logToServer('suggestion-vote', 'error', 'Unexpected error in submitVote', {
         error,
@@ -1503,9 +1527,9 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   );
 
   return (
-    <>
+    <PollModalContext.Provider value={{ modalMode, submitPortalEl, onRequestClose }}>
       <div className="poll-content">
-        
+
         {/* Show creation info */}
         <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4">
           {poll.creator_name ? (
@@ -1806,13 +1830,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     <CompactNameField name={voterName} setName={setVoterName} />
                   </div>
 
-                  <button
+                  <PollSubmitButton
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
                     className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-                  </button>
+                  </PollSubmitButton>
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
@@ -1979,14 +2003,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     </div>
                   )}
 
-                  <button
+                  <PollSubmitButton
                     type="button"
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || (yesNoChoice === 'yes' && hasNoEnabledTimeWindows)}
                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-                  </button>
+                  </PollSubmitButton>
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
@@ -2120,14 +2144,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
                       </div>
 
-                      <button
+                      <PollSubmitButton
                         type="button"
                         onClick={handleVoteClick}
                         disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
                         className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                       >
                         {isSubmitting ? 'Submitting...' : 'Submit Availability'}
-                      </button>
+                      </PollSubmitButton>
                     </>
                   ) : (
                     <>
@@ -2170,14 +2194,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                         <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
                       </div>
 
-                      <button
+                      <PollSubmitButton
                         type="button"
                         onClick={handleVoteClick}
                         disabled={isSubmitting}
                         className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                       >
                         {isSubmitting ? 'Submitting...' : 'Submit Preferences'}
-                      </button>
+                      </PollSubmitButton>
                     </>
                   )}
 
@@ -2476,6 +2500,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
 
 
-    </>
+    </PollModalContext.Provider>
   );
 }

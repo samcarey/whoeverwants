@@ -11,6 +11,7 @@ import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
 import FollowUpHeader from "@/components/FollowUpHeader";
+import PollSubmitButton from "@/components/PollSubmitButton";
 
 const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 import ForkHeader from "@/components/ForkHeader";
@@ -355,7 +356,7 @@ export default function SuggestionVotingInterface({
       </div>
 
       {/* Submit Button */}
-      <button
+      <PollSubmitButton
         onClick={handleVoteClick}
         disabled={isSubmitting}
         className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
@@ -370,7 +371,7 @@ export default function SuggestionVotingInterface({
             ? 'Submit (Abstain)'
             : 'Submit Vote'
         }
-      </button>
+      </PollSubmitButton>
 
       {/* Show follow-up/fork header after submit button */}
       <div className="mt-4">
