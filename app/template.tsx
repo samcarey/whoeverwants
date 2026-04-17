@@ -12,6 +12,7 @@ import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
 import { isUuidLike, extractPollRouteId } from '@/lib/pollId';
+import { findThreadRootRouteId } from '@/lib/threadUtils';
 import * as pollBackTarget from '@/lib/pollBackTarget';
 
 // Extract the import so it can be triggered independently for preloading.
@@ -944,9 +945,11 @@ function TemplateInner({ children }: AppTemplateProps) {
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow in upper left — only shown when user has navigated within the app.
-             The bottom bar Home button handles navigation to home. */}
-        {(isPollPage || isProfilePage) && hasAppHistory && (
+        {/* Back arrow in upper left. On poll pages it always renders and leads
+             to the containing thread — so direct-link visitors can jump to the
+             thread of polls this poll fits into. Profile page keeps the old
+             "only when there's in-app history" rule. */}
+        {(isPollPage || (isProfilePage && hasAppHistory)) && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => {
@@ -958,6 +961,20 @@ function TemplateInner({ children }: AppTemplateProps) {
                 if (customBack) {
                   navigateWithTransition(router, customBack, 'back', { mode: 'replace' });
                   return;
+                }
+                // Otherwise route back to the thread containing this poll.
+                // Walks up `follow_up_to` via the in-memory cache; a standalone
+                // poll resolves to `/thread/<itself>`, which renders a single-
+                // item thread.
+                if (pollRouteId) {
+                  const currentPoll = isUuidLike(pollRouteId)
+                    ? getCachedPollById(pollRouteId)
+                    : getCachedPollByShortId(pollRouteId);
+                  if (currentPoll) {
+                    const rootRouteId = findThreadRootRouteId(currentPoll, (id) => getCachedPollById(id));
+                    navigateWithTransition(router, `/thread/${rootRouteId}`, 'back');
+                    return;
+                  }
                 }
                 navigateBackWithTransition();
               }}
