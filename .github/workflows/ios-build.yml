@@ -135,6 +135,12 @@ jobs:
             echo "::error::APP_STORE_CONNECT_API_KEY_P8 does not look like PEM"
             exit 1
           }
+          # Diagnostics (safe — only counts + hashes, never the content):
+          echo "P8 bytes: $(wc -c < "$KEY_FILE")"
+          echo "P8 lines: $(wc -l < "$KEY_FILE")"
+          echo "P8 sha256: $(shasum -a 256 "$KEY_FILE" | awk '{print $1}')"
+          echo "First line: $(head -1 "$KEY_FILE")"
+          echo "Last line:  $(tail -1 "$KEY_FILE")"
           echo "key_path=$KEY_FILE" >> "$GITHUB_OUTPUT"
           echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
           echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
@@ -168,11 +174,12 @@ jobs:
             -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            archive | tee build/xcodebuild-archive.log | xcpretty || {
-              echo "::error::Archive failed — full log:"
-              cat build/xcodebuild-archive.log
+            archive > build/xcodebuild-archive.log 2>&1 || {
+              echo "::error::Archive failed — tail of log:"
+              tail -100 build/xcodebuild-archive.log
               exit 1
             }
+          echo "Archive complete."
 
       - name: Export IPA
         run: |
@@ -186,9 +193,9 @@ jobs:
             -authenticationKeyPath "${{ steps.apikey.outputs.key_path }}" \
             -authenticationKeyID "${{ steps.apikey.outputs.key_id }}" \
             -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
-            | tee build/xcodebuild-export.log | xcpretty || {
-              echo "::error::Export failed — full log:"
-              cat build/xcodebuild-export.log
+            > build/xcodebuild-export.log 2>&1 || {
+              echo "::error::Export failed — tail of log:"
+              tail -100 build/xcodebuild-export.log
               exit 1
             }
           ls -la "$EXPORT_PATH"
