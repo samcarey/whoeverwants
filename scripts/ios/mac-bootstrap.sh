@@ -58,6 +58,18 @@ if ! xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
   sudo xcodebuild -runFirstLaunch || true
 fi
 
+# Xcode 15+ ships with no platform SDKs preinstalled — trigger the iOS
+# download if it's not already cached. Takes 5–15 minutes.
+if xcodebuild -showsdks 2>/dev/null | grep -q 'iphoneos'; then
+  say "iOS platform SDK already installed"
+else
+  say "Downloading iOS platform SDK (this may take 5–15 min)"
+  xcodebuild -downloadPlatform iOS || {
+    echo "WARNING: iOS platform download failed. Run manually:" >&2
+    echo "    xcodebuild -downloadPlatform iOS" >&2
+  }
+fi
+
 # ---- GitHub Actions self-hosted runner -------------------------------
 if [[ -d "$RUNNER_DIR/.runner" ]]; then
   say "Runner already configured at $RUNNER_DIR — skipping registration"
