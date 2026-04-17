@@ -227,11 +227,21 @@ jobs:
           set -euo pipefail
           IPA=$(ls "$EXPORT_PATH"/*.ipa | head -n1)
           echo "Uploading $IPA to TestFlight..."
+          # altool prints errors but sometimes returns 0 when it shouldn't.
+          # Tee to a log and grep for UPLOAD FAILED as a belt-and-suspenders.
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA" \
             --apiKey "${{ steps.apikey.outputs.key_id }}" \
-            --apiIssuer "${{ steps.apikey.outputs.issuer_id }}"
+            --apiIssuer "${{ steps.apikey.outputs.issuer_id }}" \
+            2>&1 | tee build/altool-upload.log
+          if grep -q "UPLOAD FAILED" build/altool-upload.log; then
+            echo "::error::altool reported UPLOAD FAILED (exit code was misleading)"
+            exit 1
+          fi
+          if ! grep -q -E "No errors uploading|successful upload" build/altool-upload.log; then
+            echo "::warning::altool output did not contain a success marker; proceeding cautiously"
+          fi
 
       - name: Upload archive as artifact
         if: always()
