@@ -46,9 +46,8 @@ export default function PollCardModal({
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isClosing, setIsClosing] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => { setIsMounted(true); }, []);
+  // Avoid SSR mismatch: document.body is only available client-side.
+  const canPortal = typeof window !== 'undefined';
 
   // Lock body scroll while open — matches create-poll modal behavior.
   useEffect(() => {
@@ -197,7 +196,7 @@ export default function PollCardModal({
     return `@ ${t} ${d.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
   })();
 
-  if (!isMounted) return null;
+  if (!canPortal) return null;
 
   return createPortal(
     <div
