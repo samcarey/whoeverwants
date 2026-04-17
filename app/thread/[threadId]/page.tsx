@@ -373,14 +373,14 @@ function ThreadContent() {
             return (
               <div
                 key={poll.id}
-                className="border-b border-gray-200 dark:border-gray-700 mx-1.5"
+                className="mx-1.5 mb-1.5"
               >
                 <div
                   onClick={goToPoll}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
-                  className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                  className={`px-2 py-2 rounded-lg ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-800'} hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-blue-100 dark:active:bg-blue-900/40 transition-colors cursor-pointer select-none relative`}
                 >
                   {/* Status line */}
                   <div className="flex items-center justify-between">
