@@ -87,44 +87,46 @@ export default function PollCardModal({
       const sy = sourceRect.height / targetRect.height;
       const tx = sourceRect.left - targetRect.left;
       const ty = sourceRect.top - targetRect.top;
-      // Position the sheet visually at the source card.
+      // Position the sheet visually at the source card with transition:none.
       sheet.style.transformOrigin = 'top left';
+      sheet.style.transition = 'none';
       sheet.style.transform = `translate(${tx}px, ${ty}px) scale(${sx}, ${sy})`;
       sheet.style.borderRadius = '1rem'; // match card's rounded-2xl
-      sheet.style.transition = 'none';
       // Hide content until expand completes so it doesn't visually squash.
       if (content) {
-        content.style.opacity = '0';
         content.style.transition = 'none';
+        content.style.opacity = '0';
       }
-      backdrop.style.opacity = '0';
       backdrop.style.transition = 'none';
+      backdrop.style.opacity = '0';
+      // Force reflow so the browser commits the above as the transition's "from" state.
+      // Without this, setting the "to" state below overwrites "from" before paint and
+      // the transition never runs.
+      void sheet.offsetHeight;
 
-      // Next frame, animate to natural state.
-      requestAnimationFrame(() => {
-        sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
-        sheet.style.transform = '';
-        sheet.style.borderRadius = '';
-        backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-        backdrop.style.opacity = '';
-        if (content) {
-          // Fade content in slightly after expand begins.
-          content.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
-          content.style.opacity = '1';
-        }
-      });
+      // Apply transition + final state. Browser now interpolates between the
+      // committed shrunken state and the natural state over FLIP_DURATION_MS.
+      sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+      sheet.style.transform = '';
+      sheet.style.borderRadius = '';
+      backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+      backdrop.style.opacity = '';
+      if (content) {
+        // Fade content in once expand is mostly done to hide any residual content squish.
+        content.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
+        content.style.opacity = '1';
+      }
     } else {
       // No source rect (direct link): simple fade-in.
-      sheet.style.opacity = '0';
       sheet.style.transition = 'none';
-      backdrop.style.opacity = '0';
+      sheet.style.opacity = '0';
       backdrop.style.transition = 'none';
-      requestAnimationFrame(() => {
-        sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-        sheet.style.opacity = '';
-        backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-        backdrop.style.opacity = '';
-      });
+      backdrop.style.opacity = '0';
+      void sheet.offsetHeight;
+      sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+      sheet.style.opacity = '';
+      backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+      backdrop.style.opacity = '';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -145,13 +147,18 @@ export default function PollCardModal({
       const sy = currentRect.height / targetRect.height;
       const tx = currentRect.left - targetRect.left;
       const ty = currentRect.top - targetRect.top;
-      // Fade content out first, then shrink sheet.
+      // Fade content out first, then shrink sheet. Force a reflow so the
+      // content fade-out transition actually runs (otherwise setting
+      // transform + border-radius below could cause the browser to batch
+      // all style changes and skip the content fade).
       if (content) {
         content.style.transition = `opacity 120ms ease-in`;
+        void content.offsetHeight;
         content.style.opacity = '0';
       }
       sheet.style.transformOrigin = 'top left';
       sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+      void sheet.offsetHeight;
       sheet.style.transform = `translate(${tx}px, ${ty}px) scale(${sx}, ${sy})`;
       sheet.style.borderRadius = '1rem';
       backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-in`;
@@ -159,6 +166,7 @@ export default function PollCardModal({
     } else {
       // No target rect: fade out.
       sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-in`;
+      void sheet.offsetHeight;
       sheet.style.opacity = '0';
       backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-in`;
       backdrop.style.opacity = '0';
