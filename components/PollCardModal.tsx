@@ -14,7 +14,7 @@ import { POLL_MODAL_SUBMIT_PORTAL_ID } from "@/lib/pollModalContext";
 const MODAL_Z = 60;
 
 // Animation duration for expand/shrink FLIP
-const FLIP_DURATION_MS = 320;
+const FLIP_DURATION_MS = 2000;
 
 export interface PollCardModalProps {
   // The poll being shown (may be null while fetching — modal renders skeleton).
