@@ -1,4 +1,5 @@
 import { invalidatePoll } from '@/lib/pollCache';
+import { addForgottenPollId } from '@/lib/browserPollAccess';
 
 // Function to completely forget a poll from browser storage
 export function forgetPoll(pollId: string): void {
@@ -31,6 +32,10 @@ export function forgetPoll(pollId: string): void {
     // containing thread) don't rebuild views from stale data that still
     // includes this poll.
     invalidatePoll(pollId);
+
+    // Mark as explicitly forgotten so relation discovery won't re-add it
+    // when the server returns this poll as a follow-up of its parent.
+    addForgottenPollId(pollId);
 
     console.log(`Poll ${pollId.substring(0, 8)}... forgotten from browser storage`);
   } catch (error) {

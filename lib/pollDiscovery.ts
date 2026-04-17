@@ -1,5 +1,5 @@
 // Poll discovery utilities for follow-up functionality
-import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
+import { getAccessiblePollIds, addAccessiblePollId, getForgottenPollIds } from '@/lib/browserPollAccess';
 import { apiGetRelatedPolls } from '@/lib/api';
 import { invalidateAccessiblePolls } from '@/lib/pollCache';
 
@@ -58,7 +58,12 @@ export async function discoverRelatedPolls(): Promise<DiscoveryResult> {
         };
       }
 
-      const newPollIds = allRelatedIds.filter((id: string) => !currentPollIds.includes(id));
+      // Skip anything the user has explicitly forgotten — otherwise the
+      // server's follow_up walk would un-forget polls on the next navigation.
+      const forgottenIds = new Set(getForgottenPollIds());
+      const newPollIds = allRelatedIds.filter(
+        (id: string) => !currentPollIds.includes(id) && !forgottenIds.has(id)
+      );
 
       newPollIds.forEach((pollId: string) => {
         addAccessiblePollId(pollId);

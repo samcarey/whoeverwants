@@ -3,6 +3,7 @@
 
 const STORAGE_KEY = 'accessible_poll_ids';
 const CREATOR_SECRETS_KEY = 'poll_creator_secrets';
+const FORGOTTEN_KEY = 'forgotten_poll_ids';
 
 interface CreatorSecret {
   pollId: string;
@@ -30,15 +31,22 @@ export function getAccessiblePollIds(): string[] {
   }
 }
 
-// Add a poll ID to the accessible list
+// Add a poll ID to the accessible list. Callers should only use this for
+// *explicit* access grants (visiting a poll/thread URL, creating a poll) —
+// doing so clears any prior "forgotten" marker since the user is opting in.
+// Automatic discovery must go through the forgotten-list-aware path in
+// `discoverRelatedPolls` instead.
 export function addAccessiblePollId(pollId: string): void {
   if (typeof window === 'undefined' || !pollId) {
     return;
   }
 
   try {
+    // Explicit re-access undoes a prior forget.
+    removeForgottenPollId(pollId);
+
     const currentIds = getAccessiblePollIds();
-    
+
     // Add if not already present
     if (!currentIds.includes(pollId)) {
       currentIds.push(pollId);
@@ -92,6 +100,49 @@ export function hasAccessToPoll(pollId: string): boolean {
 // Get count of accessible polls
 export function getAccessiblePollCount(): number {
   return getAccessiblePollIds().length;
+}
+
+// Polls the user has explicitly forgotten. Kept separate from the accessible
+// list so that automatic relation discovery (which walks follow_up chains on
+// the server) can avoid re-adding them. Visiting a poll URL directly clears
+// the forgotten marker — direct URL visits always grant access.
+export function getForgottenPollIds(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(FORGOTTEN_KEY);
+    if (!stored) return [];
+    const ids = JSON.parse(stored);
+    return Array.isArray(ids) ? ids : [];
+  } catch (error) {
+    console.error('Error reading forgotten poll IDs:', error);
+    return [];
+  }
+}
+
+export function addForgottenPollId(pollId: string): void {
+  if (typeof window === 'undefined' || !pollId) return;
+  try {
+    const current = getForgottenPollIds();
+    if (!current.includes(pollId)) {
+      current.push(pollId);
+      localStorage.setItem(FORGOTTEN_KEY, JSON.stringify(current));
+    }
+  } catch (error) {
+    console.error('Error adding forgotten poll ID:', error);
+  }
+}
+
+export function removeForgottenPollId(pollId: string): void {
+  if (typeof window === 'undefined' || !pollId) return;
+  try {
+    const current = getForgottenPollIds();
+    const filtered = current.filter(id => id !== pollId);
+    if (filtered.length !== current.length) {
+      localStorage.setItem(FORGOTTEN_KEY, JSON.stringify(filtered));
+    }
+  } catch (error) {
+    console.error('Error removing forgotten poll ID:', error);
+  }
 }
 
 // Generate a random creator secret
