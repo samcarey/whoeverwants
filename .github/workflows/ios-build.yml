@@ -109,14 +109,19 @@ jobs:
         env:
           API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           API_KEY_ISSUER: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
-          API_KEY_P8_B64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
         run: |
           set -euo pipefail
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           mkdir -p "$KEY_DIR"
           KEY_FILE="$KEY_DIR/AuthKey_${API_KEY_ID}.p8"
-          echo "$API_KEY_P8_B64" | base64 --decode > "$KEY_FILE"
+          printf '%s\n' "$API_KEY_P8" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
+          # Sanity-check the key looks like a PEM private key.
+          head -1 "$KEY_FILE" | grep -q 'BEGIN PRIVATE KEY' || {
+            echo "::error::APP_STORE_CONNECT_API_KEY_P8 does not look like PEM"
+            exit 1
+          }
           echo "key_path=$KEY_FILE" >> "$GITHUB_OUTPUT"
           echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
           echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
