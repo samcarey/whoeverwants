@@ -196,6 +196,7 @@ This installs Docker, Caddy, the command execution API, clones the repo, starts 
 | E2E tests | Playwright 1.55.0 (Chromium, Firefox, WebKit) |
 | CI | GitHub Actions (Node 18/20 matrix, lint, coverage) |
 | PWA | Service workers, manifest.json, Apple web app support |
+| iOS | Capacitor 8 WebView shell (`capacitor.config.ts`), remote-URL loading; built on Mac mini self-hosted runner, distributed via TestFlight |
 
 ## Codebase Structure
 
@@ -710,6 +711,90 @@ The algorithm uses a **greedy selection with priority ordering**:
 - **All-or-nothing voters**: Those with restrictive maxes get lower priority
 - **Mixed constraints**: Algorithm finds optimal subset efficiently
 - **Empty result**: If no stable configuration exists, event doesn't happen (count=0)
+
+---
+
+## iOS App (Capacitor)
+
+The iOS app is a Capacitor 8 WebView shell that loads the hosted Next.js app
+remotely (`capacitor.config.ts → server.url`). Web code is NOT bundled — every
+Vercel/dev-server deploy is instantly visible on device. Native plugins
+(`@capacitor/haptics`, contacts, etc.) still work because Capacitor injects its
+bridge into the remote WebView.
+
+### Architecture
+
+- `capacitor.config.ts` selects the URL at build time:
+  - `CAP_SERVER_URL=<url>` — explicit override
+  - `CAP_ENV=dev` — personal dev server (`sam-at-samcarey-com.dev.whoeverwants.com`)
+  - default → `https://whoeverwants.com`
+- Bundle ID: `com.whoeverwants.app`. Apple Developer account (paid) required.
+- Distribution: TestFlight (no USB cable ever after initial setup).
+
+### Build pipeline
+
+A GitHub Actions workflow (`.github/workflows/ios-build.yml`) runs on a
+self-hosted Mac mini runner (labels: `self-hosted, macos-mini`). The workflow:
+
+1. Runs `npm ci` → `npx cap sync ios` → `pod install`.
+2. On first run only: auto-scaffolds `ios/` via `npx cap add ios` and commits
+   it back to the branch.
+3. Archives + exports a signed `.ipa` using App Store Connect API key auth
+   (`-allowProvisioningUpdates -authenticationKey*` flags, no Xcode GUI login
+   required).
+4. Uploads to TestFlight via `xcrun altool`.
+
+Triggers:
+- Pushes to `main`, `claude/capacitor-**`, or `ios/**` that touch
+  `capacitor.config.ts`, `ios/**`, `package.json`, `package-lock.json`, the
+  workflow file, or `scripts/ios/**`.
+- Manual via `workflow_dispatch` (see helper script below).
+
+### Helper scripts
+
+- `scripts/ios/build.sh [--env dev|prod] [--skip-upload] [--ref <branch>]` —
+  dispatches a workflow run and polls until completion. Prints the GitHub
+  Actions URL + final status.
+- `scripts/ios/logs.sh [<run_id>] [--failed-only]` — fetches and prints the
+  last 200 lines of each step's log for a run (current or specified).
+- `scripts/ios/mac-bootstrap.sh <runner_token>` — one-time Mac mini setup
+  (Homebrew, Node, CocoaPods, Xcode CLI tools, GitHub Actions runner as
+  LaunchAgent).
+
+### Feedback-loop cheat sheet
+
+| Change | Delay | Mechanism |
+|---|---|---|
+| Web code | ~30 s | Vercel or dev server; pull-to-refresh on device |
+| Native plugin / config | 8–20 min | Runner → TestFlight → tap "Update" in TestFlight app |
+
+### Required GitHub repo secrets
+
+- `APP_STORE_CONNECT_API_KEY_ID` — Key ID from App Store Connect
+- `APP_STORE_CONNECT_API_KEY_ISSUER_ID` — Issuer UUID
+- `APP_STORE_CONNECT_API_KEY_P8` — base64 of the `.p8` file
+- `APPLE_TEAM_ID` — 10-char team ID
+
+See `docs/ios-setup.md` for the full one-time setup walkthrough (App Store
+Connect app registration, API key creation, secret bootstrapping, Mac mini
+runner install).
+
+### Pitfalls to watch for
+
+- **`server.url` + App Store review**: App Store review sometimes objects to
+  pure remote-URL apps. Phase 2 plan is to switch to bundled web assets
+  (requires static export or `next export` equivalent; Next.js 16 App Router
+  with `force-dynamic` and `next.config.ts` rewrites makes this non-trivial).
+  Fine for dev/TestFlight/sideload.
+- **`CFBundleVersion` monotonicity**: the workflow uses
+  `git rev-list --count HEAD` for build numbers. Never rewrite history in a
+  way that lowers this count, or TestFlight will reject the upload.
+- **First build commits `ios/` back to branch**: the workflow auto-commits
+  on the first run. Subsequent pulls should include `ios/`. Don't manually
+  `rm -rf ios/` without also rerunning the scaffold flow.
+- **Don't use the dev URL for production TestFlight**: branch builds bake
+  the dev URL into `capacitor.config.ts` via `CAP_ENV=dev`. Only `main`
+  defaults to prod. Manual dispatches accept `cap_env` input.
 
 ---
 

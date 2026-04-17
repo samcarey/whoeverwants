@@ -55,3 +55,12 @@ __pycache__/
 
 # social test generated reports
 social_tests/reports/
+
+# iOS / Capacitor
+# Pods are installed by CI; Podfile.lock IS committed for reproducibility.
+ios/App/Pods/
+# cap sync copies web assets to ios/App/public (generated; do not commit)
+ios/App/public/
+ios/.DS_Store
+ios/App/build/
+DerivedData/

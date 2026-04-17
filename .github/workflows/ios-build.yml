@@ -1,0 +1,196 @@
+name: iOS Build & TestFlight
+
+# Runs on the Mac mini self-hosted runner to build the Capacitor iOS app
+# and upload it to TestFlight. Web assets load remotely via server.url in
+# capacitor.config.ts, so this workflow rarely needs to run — only when
+# native config changes (plugins, permissions, icons, etc.).
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/capacitor-**'
+      - 'ios/**'
+    paths:
+      - 'capacitor.config.ts'
+      - 'ios/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ios-build.yml'
+      - 'scripts/ios/**'
+  workflow_dispatch:
+    inputs:
+      cap_env:
+        description: 'Capacitor environment (dev|prod)'
+        required: false
+        default: ''
+      skip_upload:
+        description: 'Build only, skip TestFlight upload'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # Needed so the workflow can push back the auto-scaffolded ios/ directory
+  # on the very first run.
+  contents: write
+
+jobs:
+  build:
+    # The Mac mini runner must be registered with labels: self-hosted, macos-mini
+    runs-on: [self-hosted, macos-mini]
+    timeout-minutes: 45
+
+    env:
+      # Resolve CAP_ENV: manual dispatch input > branch-based default.
+      CAP_ENV: ${{ github.event.inputs.cap_env != '' && github.event.inputs.cap_env || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+      SCHEME: App
+      WORKSPACE: ios/App/App.xcworkspace
+      ARCHIVE_PATH: ${{ github.workspace }}/build/App.xcarchive
+      EXPORT_PATH: ${{ github.workspace }}/build/export
+      EXPORT_OPTIONS: ${{ github.workspace }}/scripts/ios/ExportOptions.plist
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
+          echo "CAP_ENV=$CAP_ENV"
+          echo "ref=${{ github.ref }}"
+          sw_vers
+          xcodebuild -version
+          node --version
+          npm --version
+          pod --version || true
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Scaffold iOS project (first run only)
+        id: scaffold
+        run: |
+          set -euo pipefail
+          if [[ ! -d ios/App/App.xcworkspace ]]; then
+            echo "iOS project missing — running 'npx cap add ios' to scaffold"
+            npx cap add ios
+            echo "scaffolded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scaffolded=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit scaffolded iOS project
+        if: steps.scaffold.outputs.scaffolded == 'true' && github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.email 'ios-ci@whoeverwants.app'
+          git config user.name 'iOS CI Bot'
+          git add ios/
+          git commit -m "chore(ios): auto-scaffold Capacitor iOS project"
+          git push origin HEAD:${{ github.ref_name }}
+
+      - name: Sync Capacitor (copy web assets + plugins → iOS project)
+        run: npx cap sync ios
+        env:
+          CAP_ENV: ${{ env.CAP_ENV }}
+
+      - name: Install CocoaPods
+        working-directory: ios/App
+        run: pod install --repo-update
+
+      - name: Restore App Store Connect API key
+        id: apikey
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_KEY_ISSUER: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          API_KEY_P8_B64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_FILE="$KEY_DIR/AuthKey_${API_KEY_ID}.p8"
+          echo "$API_KEY_P8_B64" | base64 --decode > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          echo "key_path=$KEY_FILE" >> "$GITHUB_OUTPUT"
+          echo "key_id=$API_KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "issuer_id=$API_KEY_ISSUER" >> "$GITHUB_OUTPUT"
+
+      - name: Compute build number
+        id: build_number
+        run: |
+          # Use the total number of commits on the current ref for a
+          # monotonically increasing build number. TestFlight rejects
+          # duplicates, so this must never go down.
+          BN=$(git rev-list --count HEAD)
+          echo "build_number=$BN" >> "$GITHUB_OUTPUT"
+          echo "Using CFBundleVersion=$BN"
+
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_NUMBER: ${{ steps.build_number.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.key_path }}" \
+            -authenticationKeyID "${{ steps.apikey.outputs.key_id }}" \
+            -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            archive | tee build/xcodebuild-archive.log | xcpretty || {
+              echo "::error::Archive failed — full log:"
+              cat build/xcodebuild-archive.log
+              exit 1
+            }
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.key_path }}" \
+            -authenticationKeyID "${{ steps.apikey.outputs.key_id }}" \
+            -authenticationKeyIssuerID "${{ steps.apikey.outputs.issuer_id }}" \
+            | tee build/xcodebuild-export.log | xcpretty || {
+              echo "::error::Export failed — full log:"
+              cat build/xcodebuild-export.log
+              exit 1
+            }
+          ls -la "$EXPORT_PATH"
+
+      - name: Upload to TestFlight
+        if: ${{ github.event.inputs.skip_upload != 'true' }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$EXPORT_PATH"/*.ipa | head -n1)
+          echo "Uploading $IPA to TestFlight..."
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$IPA" \
+            --apiKey "${{ steps.apikey.outputs.key_id }}" \
+            --apiIssuer "${{ steps.apikey.outputs.issuer_id }}"
+
+      - name: Upload archive as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs-${{ github.run_id }}
+          path: build/*.log
+          retention-days: 7
