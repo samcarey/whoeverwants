@@ -268,7 +268,7 @@ function ThreadContent() {
           no transform on mobile. */}
       <div
         ref={headerRef}
-        className="fixed left-0 right-0 z-20 bg-background border-b border-gray-200 dark:border-gray-700 touch-none"
+        className="fixed left-0 right-0 z-20 bg-background touch-none"
         style={{ top: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
@@ -373,14 +373,14 @@ function ThreadContent() {
             return (
               <div
                 key={poll.id}
-                className="border-b border-gray-200 dark:border-gray-700 mx-1.5"
+                className="mx-1.5 mb-1.5"
               >
                 <div
                   onClick={goToPoll}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
-                  className={`px-1 py-2.5 ${pressedPollId === poll.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 transition-colors cursor-pointer select-none relative`}
                 >
                   {/* Status line */}
                   <div className="flex items-center justify-between">
