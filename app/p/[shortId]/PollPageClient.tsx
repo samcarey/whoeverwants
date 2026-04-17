@@ -39,6 +39,7 @@ import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
+import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
 interface PollPageClientProps {
   poll: Poll;
@@ -1509,8 +1510,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
 
-        {/* Reference location badge */}
-        {poll.reference_location_label && (
+        {/* Reference location badge — only for location-based polls */}
+        {poll.reference_location_label && (isLocationLikeCategory(poll.category || '') || (poll.poll_type === 'participation' && !!poll.location_mode)) && (
           <div className="mb-3 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
