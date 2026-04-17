@@ -1,3 +1,5 @@
+import { invalidatePoll } from '@/lib/pollCache';
+
 // Function to completely forget a poll from browser storage
 export function forgetPoll(pollId: string): void {
   if (typeof window === 'undefined' || !pollId) {
@@ -24,6 +26,11 @@ export function forgetPoll(pollId: string): void {
     const creatorSecrets = JSON.parse(localStorage.getItem('poll_creator_secrets') || '[]');
     const filteredSecrets = creatorSecrets.filter((s: any) => s.pollId !== pollId);
     localStorage.setItem('poll_creator_secrets', JSON.stringify(filteredSecrets));
+
+    // Drop in-memory caches so subsequent navigations (e.g. back to the
+    // containing thread) don't rebuild views from stale data that still
+    // includes this poll.
+    invalidatePoll(pollId);
 
     console.log(`Poll ${pollId.substring(0, 8)}... forgotten from browser storage`);
   } catch (error) {
