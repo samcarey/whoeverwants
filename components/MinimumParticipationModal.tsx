@@ -11,8 +11,6 @@ interface MinimumParticipationModalProps {
   min?: number;
   max?: number;
   disabled?: boolean;
-  title?: string;
-  description?: string;
 }
 
 export default function MinimumParticipationModal({
@@ -23,8 +21,6 @@ export default function MinimumParticipationModal({
   min = 50,
   max = 100,
   disabled = false,
-  title = 'Minimum Availability',
-  description = "Only include time slots that at least this percentage of the most-available slot's respondents can attend.",
 }: MinimumParticipationModalProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -51,9 +47,9 @@ export default function MinimumParticipationModal({
         onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         <div className="bg-white dark:bg-gray-900 rounded-xl p-6 max-w-sm w-full shadow-xl">
-          <h3 className="text-lg font-semibold mb-1">{title}</h3>
+          <h3 className="text-lg font-semibold mb-1">Minimum Availability</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            {description}
+            Only include time slots that at least this percentage of the most-available slot&apos;s respondents can attend.
           </p>
 
           <div className="mb-4 text-center">
