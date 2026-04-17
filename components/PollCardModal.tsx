@@ -46,6 +46,10 @@ export default function PollCardModal({
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isClosing, setIsClosing] = useState(false);
+  // Guards against React StrictMode's double-invoke of useLayoutEffect in dev.
+  // Second invocation would measure an already-transformed sheet, giving a
+  // target rect equal to the source rect (no delta) and skipping the animation.
+  const didExpandSetupRef = useRef(false);
   // Avoid SSR mismatch: document.body is only available client-side.
   const canPortal = typeof window !== 'undefined';
 
@@ -74,6 +78,8 @@ export default function PollCardModal({
   // transform scale + origin) and matching border-radius, then on the next frame
   // animate to the natural rect (transform: none, final border-radius).
   useLayoutEffect(() => {
+    if (didExpandSetupRef.current) return;
+    didExpandSetupRef.current = true;
     const sheet = sheetRef.current;
     const backdrop = backdropRef.current;
     const content = contentRef.current;
@@ -86,15 +92,11 @@ export default function PollCardModal({
       const sy = sourceRect.height / targetRect.height;
       const tx = sourceRect.left - targetRect.left;
       const ty = sourceRect.top - targetRect.top;
-      // eslint-disable-next-line no-console
-      console.log('[PollCardModal] expand setup: sourceRect=', sourceRect, 'targetRect=', targetRect, 'sx=', sx, 'sy=', sy, 'tx=', tx, 'ty=', ty);
       // Position the sheet visually at the source card with transition:none.
       sheet.style.transformOrigin = 'top left';
       sheet.style.transition = 'none';
       sheet.style.transform = `translate(${tx}px, ${ty}px) scale(${sx}, ${sy})`;
       sheet.style.borderRadius = '1rem'; // match card's rounded-2xl
-      // eslint-disable-next-line no-console
-      console.log('[PollCardModal] post-set inline transform:', sheet.style.transform);
       // Hide content until expand completes so it doesn't visually squash.
       if (content) {
         content.style.transition = 'none';
@@ -108,11 +110,7 @@ export default function PollCardModal({
       // applies the target state. This guarantees the transition engine sees
       // a real style change between two paints and starts the transition.
       requestAnimationFrame(() => {
-        // eslint-disable-next-line no-console
-        console.log('[PollCardModal] rAF1 fires. inline transform=', sheet.style.transform, 'computed transform=', window.getComputedStyle(sheet).transform);
         requestAnimationFrame(() => {
-          // eslint-disable-next-line no-console
-          console.log('[PollCardModal] rAF2 fires. inline transform=', sheet.style.transform, 'computed transform=', window.getComputedStyle(sheet).transform);
           if (!sheetRef.current) return;
           sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
           sheet.style.transform = '';
