@@ -58,6 +58,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so `git rev-list --count HEAD` produces a monotonic
+          # CFBundleVersion. Shallow fetch would always yield 1.
+          fetch-depth: 0
 
       - name: Setup Homebrew PATH
         run: |
