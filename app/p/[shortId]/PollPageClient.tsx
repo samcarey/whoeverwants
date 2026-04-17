@@ -142,6 +142,13 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
   const userAbstainedFromRanking = !!(userVoteData?.is_abstain || userVoteData?.is_ranking_abstain);
 
+  // Reference location is stored on every poll (auto-filled from the creator's profile),
+  // so the "Near X" badge only makes sense for categories where proximity is part of the decision.
+  const showReferenceLocation =
+    !!poll.reference_location_label &&
+    (isLocationLikeCategory(poll.category ?? '') ||
+      (poll.poll_type === 'participation' && !!poll.location_mode));
+
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
     const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
@@ -1510,8 +1517,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
 
-        {/* Reference location badge — only for location-based polls */}
-        {poll.reference_location_label && (isLocationLikeCategory(poll.category || '') || (poll.poll_type === 'participation' && !!poll.location_mode)) && (
+        {showReferenceLocation && (
           <div className="mb-3 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
