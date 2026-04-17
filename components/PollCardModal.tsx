@@ -46,10 +46,6 @@ export default function PollCardModal({
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isClosing, setIsClosing] = useState(false);
-  // Guards against React StrictMode's double-invoke of useLayoutEffect in dev.
-  // Second invocation would measure an already-transformed sheet, giving a
-  // target rect equal to the source rect (no delta) and skipping the animation.
-  const didExpandSetupRef = useRef(false);
   // Avoid SSR mismatch: document.body is only available client-side.
   const canPortal = typeof window !== 'undefined';
 
@@ -78,15 +74,20 @@ export default function PollCardModal({
   // transform scale + origin) and matching border-radius, then on the next frame
   // animate to the natural rect (transform: none, final border-radius).
   useLayoutEffect(() => {
-    if (didExpandSetupRef.current) return;
-    didExpandSetupRef.current = true;
     const sheet = sheetRef.current;
     const backdrop = backdropRef.current;
     const content = contentRef.current;
     if (!sheet || !backdrop) return;
 
     if (sourceRect) {
-      // Measure natural rect of the sheet after its initial render.
+      // Measure natural rect by first resetting any transform from a prior
+      // effect run (React StrictMode double-invokes useLayoutEffect in dev).
+      // Without this, the second run measures an already-transformed sheet
+      // and computes an identity scale/translate, skipping the animation.
+      sheet.style.transition = 'none';
+      sheet.style.transform = '';
+      sheet.style.borderRadius = '';
+      void sheet.offsetHeight;
       const targetRect = sheet.getBoundingClientRect();
       const sx = sourceRect.width / targetRect.width;
       const sy = sourceRect.height / targetRect.height;
@@ -111,15 +112,19 @@ export default function PollCardModal({
       // a real style change between two paints and starts the transition.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!sheetRef.current) return;
-          sheet.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
-          sheet.style.transform = '';
-          sheet.style.borderRadius = '';
-          backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-          backdrop.style.opacity = '';
-          if (content) {
-            content.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
-            content.style.opacity = '1';
+          // Always read refs inside rAF — under React StrictMode, the initial
+          // `sheet`/`backdrop`/`content` locals may point to elements that
+          // were detached during simulated unmount/remount.
+          const s = sheetRef.current, b = backdropRef.current, c = contentRef.current;
+          if (!s || !b) return;
+          s.style.transition = `transform ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1), border-radius ${FLIP_DURATION_MS}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+          s.style.transform = '';
+          s.style.borderRadius = '';
+          b.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          b.style.opacity = '';
+          if (c) {
+            c.style.transition = `opacity 200ms ease-out ${FLIP_DURATION_MS - 150}ms`;
+            c.style.opacity = '1';
           }
         });
       });
@@ -131,11 +136,12 @@ export default function PollCardModal({
       backdrop.style.opacity = '0';
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!sheetRef.current) return;
-          sheet.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-          sheet.style.opacity = '';
-          backdrop.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
-          backdrop.style.opacity = '';
+          const s = sheetRef.current, b = backdropRef.current;
+          if (!s || !b) return;
+          s.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          s.style.opacity = '';
+          b.style.transition = `opacity ${FLIP_DURATION_MS}ms ease-out`;
+          b.style.opacity = '';
         });
       });
     }
