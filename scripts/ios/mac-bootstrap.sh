@@ -40,6 +40,17 @@ if ! xcode-select -p >/dev/null 2>&1; then
   xcode-select --install || true
 fi
 
+# Point xcode-select at the full Xcode.app (not Command Line Tools) so
+# `xcodebuild` is available. A fresh Xcode install often leaves the
+# active path as /Library/Developer/CommandLineTools.
+if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
+  CURRENT_XCPATH="$(xcode-select -p 2>/dev/null || true)"
+  if [[ "$CURRENT_XCPATH" != "/Applications/Xcode.app/Contents/Developer" ]]; then
+    say "Pointing xcode-select at /Applications/Xcode.app (sudo)"
+    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+  fi
+fi
+
 # Accept the Xcode license (requires sudo; may prompt once).
 if ! xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
   say "Accepting Xcode license + first-launch setup (sudo required)"
