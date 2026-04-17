@@ -14,7 +14,7 @@ import { POLL_MODAL_SUBMIT_PORTAL_ID } from "@/lib/pollModalContext";
 const MODAL_Z = 60;
 
 // Animation duration for expand/shrink FLIP
-const FLIP_DURATION_MS = 2000;
+const FLIP_DURATION_MS = 320;
 
 export interface PollCardModalProps {
   // The poll being shown (may be null while fetching — modal renders skeleton).
@@ -93,8 +93,6 @@ export default function PollCardModal({
       const sy = sourceRect.height / targetRect.height;
       const tx = sourceRect.left - targetRect.left;
       const ty = sourceRect.top - targetRect.top;
-      // eslint-disable-next-line no-console
-      console.log('[PollCardModal] effect run. source=', [sourceRect.left, sourceRect.top, sourceRect.width, sourceRect.height], 'target=', [targetRect.left, targetRect.top, targetRect.width, targetRect.height], 's=', sx, sy, 't=', tx, ty);
       // Position the sheet visually at the source card with transition:none.
       sheet.style.transformOrigin = 'top left';
       sheet.style.transition = 'none';
