@@ -2456,15 +2456,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       <ConfirmationModal
         isOpen={showForgetConfirmModal}
         onConfirm={() => {
-          // Compute the thread destination BEFORE forgetting — findThreadRootRouteId
-          // walks up follow_up_to via the cache, and forgetPoll invalidates the cache.
-          // If this poll has a parent, land on the thread root; otherwise fall back
-          // to home (navigating to /thread/<forgottenPoll> would just re-grant access).
-          const rootRouteId = findThreadRootRouteId(poll, (id) => getCachedPollById(id));
-          const goingToThread = rootRouteId !== (poll.short_id || poll.id);
+          // Root/standalone polls fall back to home — navigating to
+          // /thread/<forgottenPoll> would re-grant access via the anchor fetch.
+          const rootRouteId = poll.follow_up_to
+            ? findThreadRootRouteId(poll, getCachedPollById)
+            : null;
           forgetPoll(poll.id);
           setShowForgetConfirmModal(false);
-          router.push(goingToThread ? `/thread/${rootRouteId}` : '/');
+          router.push(rootRouteId ? `/thread/${rootRouteId}` : '/');
         }}
         onCancel={() => setShowForgetConfirmModal(false)}
         title="Forget Poll"

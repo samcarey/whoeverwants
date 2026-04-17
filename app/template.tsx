@@ -963,15 +963,13 @@ function TemplateInner({ children }: AppTemplateProps) {
                   return;
                 }
                 // Otherwise route back to the thread containing this poll.
-                // Walks up `follow_up_to` via the in-memory cache; a standalone
-                // poll resolves to `/thread/<itself>`, which renders a single-
-                // item thread.
+                // Standalone polls resolve to /thread/<itself>.
                 if (pollRouteId) {
                   const currentPoll = isUuidLike(pollRouteId)
                     ? getCachedPollById(pollRouteId)
                     : getCachedPollByShortId(pollRouteId);
                   if (currentPoll) {
-                    const rootRouteId = findThreadRootRouteId(currentPoll, (id) => getCachedPollById(id));
+                    const rootRouteId = findThreadRootRouteId(currentPoll, getCachedPollById);
                     navigateWithTransition(router, `/thread/${rootRouteId}`, 'back');
                     return;
                   }
