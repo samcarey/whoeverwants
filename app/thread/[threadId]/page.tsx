@@ -268,7 +268,7 @@ function ThreadContent() {
           no transform on mobile. */}
       <div
         ref={headerRef}
-        className="fixed left-0 right-0 z-20 bg-background border-b border-gray-200 dark:border-gray-700 touch-none"
+        className="fixed left-0 right-0 z-20 bg-background touch-none"
         style={{ top: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
