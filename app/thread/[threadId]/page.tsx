@@ -436,6 +436,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             const isClosed = !isOpen;
 
             const handleTouchStart = (e: React.TouchEvent) => {
+              if (typeof window !== 'undefined') (window as any).__touchDebug = (window as any).__touchDebug || []; (window as any).__touchDebug.push('ts ' + poll.id);
               isLongPress.current = false;
               isScrolling.current = false;
               setPressedPollId(poll.id);
