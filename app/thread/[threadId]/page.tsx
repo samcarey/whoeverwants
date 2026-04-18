@@ -549,16 +549,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               toggleExpand();
             };
 
-            // Collapse on tap anywhere inside the expanded area that isn't an
-            // interactive control. Uses target.closest so clicks on SVGs/text
-            // inside a button still count as "interactive".
-            const handleExpandedAreaClick = (e: React.MouseEvent) => {
-              if (!isExpanded) return;
-              const target = e.target as HTMLElement;
-              if (target.closest('button, input, textarea, select, a, label, [role="button"], [role="link"], [contenteditable]')) return;
-              setExpandedPollId(null);
-            };
-
             const handleTouchEnd = () => {
               if (longPressTimer.current) {
                 clearTimeout(longPressTimer.current);
@@ -717,7 +707,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       data-poll-expand-grid=""
                       className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                       aria-hidden={!isExpanded}
-                      onClick={handleExpandedAreaClick}
                     >
                       <div
                         className="overflow-hidden"
