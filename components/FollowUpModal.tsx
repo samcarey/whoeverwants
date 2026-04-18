@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import FollowUpHeader from "@/components/FollowUpHeader";
@@ -20,8 +21,20 @@ interface FollowUpModalProps {
 export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
+  // Ignore the synthetic click that fires immediately after the long-press
+  // touch release — otherwise it lands on the full-viewport backdrop and
+  // closes the modal on the same gesture that opened it.
+  const openedAtRef = useRef(0);
+  useEffect(() => {
+    if (isOpen) openedAtRef.current = Date.now();
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleBackdropClick = () => {
+    if (Date.now() - openedAtRef.current < 400) return;
+    onClose();
+  };
 
   const pollSnapshot = {
     ...buildPollSnapshot(poll),
@@ -33,7 +46,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50 dark:bg-black/70 z-[100] animate-fade-in"
-        onClick={onClose}
+        onClick={handleBackdropClick}
       />
 
       {/* Modal */}

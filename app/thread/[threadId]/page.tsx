@@ -436,7 +436,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             const isClosed = !isOpen;
 
             const handleTouchStart = (e: React.TouchEvent) => {
-              if (typeof window !== 'undefined') (window as any).__touchDebug = (window as any).__touchDebug || []; (window as any).__touchDebug.push('ts ' + poll.id);
               isLongPress.current = false;
               isScrolling.current = false;
               setPressedPollId(poll.id);
@@ -445,7 +444,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 y: e.touches[0].clientY,
               };
               longPressTimer.current = setTimeout(() => {
-                if (typeof window !== 'undefined') (window as any).__touchDebug.push('lp-timer fired, scrolling=' + isScrolling.current);
                 if (!isScrolling.current) {
                   isLongPress.current = true;
                   if ('vibrate' in navigator) {
