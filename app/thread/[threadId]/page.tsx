@@ -149,6 +149,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Ref to each card's overflow-hidden wrapper — its scrollHeight reports the
+  // natural expanded content height (pre-mounted via IntersectionObserver) so
+  // we can compute the target scroll position BEFORE the grid-rows animation
+  // finishes growing.
+  const expandedWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // Long press state
@@ -294,77 +299,61 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   //   2. Otherwise, if the card's bottom (after expansion) extends below the
   //      bottom bar, scroll down just enough to reveal it — but never far
   //      enough to push the compact header above the top bar.
-  // If the card already fits within the visible band, scroll stays put.
   //
-  // The grid-template-rows transition takes ~300ms, during which the list's
-  // scrollHeight grows from "compact total" to "expanded total". Calling
-  // scrollTo before the growth is complete gets clamped to the current max,
-  // which silently undershoots. We listen for transitionend on the grid
-  // element and scroll once layout has settled (falling back to a timeout).
+  // The scroll runs concurrently with the 300ms grid-rows expand animation:
+  // we manually rAF-animate scrollTop with the same easing, which keeps the
+  // two visuals synchronized and sidesteps the scrollTo-clamping issue (the
+  // list's scrollHeight grows proportionally as the card expands, so each
+  // intermediate target is always within bounds).
   useEffect(() => {
     if (!expandedPollId) return;
     const card = cardRefs.current.get(expandedPollId);
     const list = scrollListRef.current;
     if (!card || !list) return;
 
-    let cancelled = false;
+    // Measure once, up front, using the overflow-hidden wrapper's scrollHeight
+    // (which reflects the natural content size regardless of grid-row state).
+    const wrapper = expandedWrapperRefs.current.get(expandedPollId);
+    const expandedContentHeight = wrapper?.scrollHeight ?? 0;
+    const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
+    const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
+    const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
+    const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
+    const listRect = list.getBoundingClientRect();
+    const visibleTopY = listRect.top + headerHeight;
+    const visibleBottomY = listRect.bottom - bottomBarHeight;
+    const cardTopY = card.getBoundingClientRect().top;
+    const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 
-    const applyScrollAdjustment = () => {
-      if (cancelled) return;
-      const cardRect = card.getBoundingClientRect();
-      const listRect = list.getBoundingClientRect();
-      const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
-      const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
-      const visibleTopY = listRect.top + headerHeight;
-      const visibleBottomY = listRect.bottom - bottomBarHeight;
-      const cardTopY = cardRect.top;
-      const cardBottomY = cardRect.bottom;
-
-      let delta = 0;
-      if (cardTopY < visibleTopY) {
-        delta = cardTopY - visibleTopY; // scroll up
-      } else if (cardBottomY > visibleBottomY) {
-        const overshoot = cardBottomY - visibleBottomY;
-        const slack = cardTopY - visibleTopY;
-        delta = Math.min(overshoot, slack);
-      }
-
-      if (delta !== 0) {
-        list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' });
-      }
-    };
-
-    // The grid-rows transition runs on the grid element inside the card.
-    const gridEl = card.querySelector('[data-poll-expand-grid]') as HTMLElement | null;
-    let cleanup: (() => void) | null = null;
-    if (gridEl) {
-      const onTransitionEnd = (e: TransitionEvent) => {
-        if (e.propertyName !== 'grid-template-rows') return;
-        gridEl.removeEventListener('transitionend', onTransitionEnd);
-        if (timeoutId) clearTimeout(timeoutId);
-        applyScrollAdjustment();
-      };
-      gridEl.addEventListener('transitionend', onTransitionEnd);
-      // Safety net: if for some reason transitionend doesn't fire (reduced
-      // motion, backgrounded tab, etc.), still scroll after the expected
-      // animation duration + a small margin.
-      const timeoutId = setTimeout(() => {
-        gridEl.removeEventListener('transitionend', onTransitionEnd);
-        applyScrollAdjustment();
-      }, 360);
-      cleanup = () => {
-        gridEl.removeEventListener('transitionend', onTransitionEnd);
-        clearTimeout(timeoutId);
-      };
-    } else {
-      // Fallback: no grid found (shouldn't happen) — scroll after a frame.
-      const timeoutId = setTimeout(applyScrollAdjustment, 360);
-      cleanup = () => clearTimeout(timeoutId);
+    let targetDelta = 0;
+    if (cardTopY < visibleTopY) {
+      targetDelta = cardTopY - visibleTopY;
+    } else if (finalCardBottomY > visibleBottomY) {
+      const overshoot = finalCardBottomY - visibleBottomY;
+      const slack = cardTopY - visibleTopY;
+      targetDelta = Math.min(overshoot, slack);
     }
 
+    if (targetDelta === 0) return;
+
+    const startScrollTop = list.scrollTop;
+    const targetScrollTop = startScrollTop + targetDelta;
+    const DURATION = 300; // matches the grid-rows CSS transition
+    const startTime = performance.now();
+    let rafId: number | null = null;
+
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / DURATION, 1);
+      // ease-out cubic — matches the feel of the CSS transition
+      const eased = 1 - Math.pow(1 - t, 3);
+      list.scrollTop = startScrollTop + (targetScrollTop - startScrollTop) * eased;
+      if (t < 1) rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+
     return () => {
-      cancelled = true;
-      cleanup?.();
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [expandedPollId, headerHeight]);
 
@@ -733,7 +722,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                       aria-hidden={!isExpanded}
                     >
-                      <div className="overflow-hidden">
+                      <div
+                        className="overflow-hidden"
+                        ref={(el) => {
+                          if (el) expandedWrapperRefs.current.set(poll.id, el);
+                          else expandedWrapperRefs.current.delete(poll.id);
+                        }}
+                      >
                         <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                           <PollPageClient
                             poll={poll}
