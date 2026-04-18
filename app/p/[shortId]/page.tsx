@@ -3,109 +3,88 @@
 import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
-import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { useEffect, useLayoutEffect, useState, Suspense } from "react";
+import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { isUuidLike } from "@/lib/pollId";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { useParams, useSearchParams } from "next/navigation";
-import PollPageClient from "./PollPageClient";
+import { useParams } from "next/navigation";
+import { ThreadContent } from "@/app/thread/[threadId]/page";
 
 function PollContent() {
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
 
-  // Initialize poll synchronously from cache so the page renders its final
-  // content on the first paint — avoids a visible loading-spinner flash in
-  // the middle of the view transition slide animation.
-  const initialPoll: Poll | null = (() => {
-    if (typeof window === 'undefined') return null;
+  // Resolve synchronously from cache when possible so the thread view renders on first paint.
+  const resolvedInitial = (() => {
+    if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    return isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+    const poll = isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+    if (!poll) return null;
+    const rootRouteId = findThreadRootRouteId(poll, getCachedPollById);
+    return { poll, rootRouteId };
   })();
 
-  const [poll, setPoll] = useState<Poll | null>(initialPoll);
-  const [loading, setLoading] = useState(!initialPoll);
+  const [resolved, setResolved] = useState<{ poll: Poll; rootRouteId: string } | null>(resolvedInitial);
   const [error, setError] = useState(false);
-  const [pollId, setPollId] = useState<string | null>(initialPoll?.id ?? null);
-
-  // Prefetch critical pages
-  useEffect(() => {
-    router.prefetch('/');
-  }, [router]);
-
-  // Signal to the view transition helper that this page's content is rendered.
-  // useLayoutEffect fires before paint, so the attribute is set before the
-  // view transition callback captures the "new" snapshot.
-  useLayoutEffect(() => {
-    if (poll) {
-      const path = normalizePath(window.location.pathname);
-      document.documentElement.setAttribute('data-page-ready', path);
-      return () => {
-        if (document.documentElement.getAttribute('data-page-ready') === path) {
-          document.documentElement.removeAttribute('data-page-ready');
-        }
-      };
-    }
-  }, [poll]);
 
   useEffect(() => {
-    const pollId = params.shortId as string; // Note: this is actually a UUID now, not a short_id
-
-    if (!pollId) {
-      router.replace('/');
+    const shortId = params.shortId as string;
+    if (!shortId) {
+      router.replace("/");
       return;
     }
 
-    // If we already have the poll from the synchronous cache lookup above,
-    // register access and skip the fetch effect (it would only produce the
-    // same result).
-    if (initialPoll) {
-      addAccessiblePollId(initialPoll.id);
+    // If we already resolved synchronously, just register access and skip the fetch.
+    if (resolvedInitial) {
+      addAccessiblePollId(resolvedInitial.poll.id);
       return;
     }
 
-    async function fetchPoll() {
+    let cancelled = false;
+    (async () => {
       try {
-        const isUuid = isUuidLike(pollId);
-        let pollData: Poll | null = null;
-        try {
-          pollData = isUuid ? await apiGetPollById(pollId) : await apiGetPollByShortId(pollId);
-        } catch {
-          if (!isUuid) {
-            try {
-              pollData = await apiGetPollByShortId(pollId);
-            } catch {
-              pollData = null;
-            }
-          }
-        }
-
-        // Grant access to this poll
-        if (pollData) {
-          addAccessiblePollId(pollData.id);
-        }
-        
-        if (!pollData) {
-          setError(true);
+        const isUuid = isUuidLike(shortId);
+        const poll = isUuid
+          ? await apiGetPollById(shortId).catch(() => null)
+          : await apiGetPollByShortId(shortId).catch(() => null);
+        if (!poll) {
+          if (!cancelled) setError(true);
           return;
         }
-
-        setPoll(pollData);
-        setPollId(pollData.id);
-      } catch (err) {
-        console.error('Error fetching poll:', err);
-        setError(true);
-      } finally {
-        setLoading(false);
+        addAccessiblePollId(poll.id);
+        // Run discovery so the parent chain is populated in the cache before we
+        // walk up to find the thread root.
+        try { await discoverRelatedPolls(); } catch {}
+        const rootRouteId = findThreadRootRouteId(poll, getCachedPollById);
+        if (!cancelled) setResolved({ poll, rootRouteId });
+      } catch {
+        if (!cancelled) setError(true);
       }
-    }
+    })();
+    return () => { cancelled = true; };
+  }, [params.shortId, router, resolvedInitial]);
 
-    fetchPoll();
-  }, [params.shortId, router]);
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed or the link is incorrect.</p>
+          <button
+            onClick={() => router.push("/")}
+            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  if (loading) {
+  if (!resolved) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
@@ -119,44 +98,11 @@ function PollContent() {
     );
   }
 
-  if (error || !poll) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 dark:text-red-400 mb-4">
-            <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Poll Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">This poll may have been removed or the link is incorrect.</p>
-          <button
-            onClick={() => router.push('/')}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-          >
-            Go Home
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const createdDateTime = new Date(poll.created_at);
-  const createdTime = createdDateTime.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true
-  });
-  const createdDate = `@ ${createdTime} ${createdDateTime.toLocaleDateString("en-US", {
-    year: "2-digit",
-    month: "numeric",
-    day: "numeric",
-  })}`;
-
   return (
-    <div className="pb-4">
-      <PollPageClient poll={poll} createdDate={createdDate} pollId={pollId} />
-    </div>
+    <ThreadContent
+      threadId={resolved.rootRouteId}
+      initialExpandedPollId={resolved.poll.id}
+    />
   );
 }
 
