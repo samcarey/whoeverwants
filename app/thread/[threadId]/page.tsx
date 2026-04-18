@@ -6,9 +6,9 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
-import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
+import { apiGetPollById, apiGetPollByShortId, apiReopenPoll } from "@/lib/api";
+import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
@@ -156,6 +156,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const [showModal, setShowModal] = useState(false);
   // Delete confirmation — set to the poll that's about to be forgotten
   const [pollPendingDelete, setPollPendingDelete] = useState<Poll | null>(null);
+  // Reopen confirmation — set to the poll that's about to be reopened
+  const [pollPendingReopen, setPollPendingReopen] = useState<Poll | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
@@ -700,7 +702,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       </div>
 
-      {/* Thread-aware follow-up modal — Copy + Delete only. */}
+      {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
+           the poll is closed and the current browser is the creator (or dev). */}
       {modalPoll && (
         <FollowUpModal
           isOpen={showModal}
@@ -708,6 +711,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           onClose={() => setShowModal(false)}
           showForkButton={false}
           onDelete={() => setPollPendingDelete(modalPoll)}
+          onReopen={
+            modalPoll.is_closed &&
+            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+              ? () => setPollPendingReopen(modalPoll)
+              : undefined
+          }
         />
       )}
 
@@ -740,6 +749,42 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           });
         }}
         onCancel={() => setPollPendingDelete(null)}
+      />
+
+      {/* Reopen confirmation */}
+      <ConfirmationModal
+        isOpen={!!pollPendingReopen}
+        title="Reopen Poll"
+        message="Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again."
+        confirmText="Reopen Poll"
+        cancelText="Cancel"
+        confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
+        onConfirm={async () => {
+          const target = pollPendingReopen;
+          if (!target) return;
+          setPollPendingReopen(null);
+          try {
+            const secret = getCreatorSecret(target.id) || 'dev-override';
+            const updated = await apiReopenPoll(target.id, secret);
+            invalidatePoll(target.id);
+            // Optimistically flip is_closed on the poll within the thread.
+            setThread((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    polls: prev.polls.map((p) =>
+                      p.id === target.id
+                        ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
+                        : p,
+                    ),
+                  }
+                : prev,
+            );
+          } catch (err) {
+            console.error('Failed to reopen poll:', err);
+          }
+        }}
+        onCancel={() => setPollPendingReopen(null)}
       />
     </div>
   );
