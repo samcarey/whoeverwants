@@ -285,20 +285,53 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     };
   }, [thread]);
 
-  // When a card expands, scroll it so its top sits flush with the bottom of the
-  // fixed header. Use getBoundingClientRect rather than offsetTop to avoid depending
-  // on offsetParent positioning, which varies with parent layout. Two rAFs let React
-  // commit the expanded DOM before we measure.
+  // When a card expands, adjust scroll so the expanded card fits on screen
+  // without disturbing the user's view more than necessary:
+  //   1. If the compact header is currently hidden behind the fixed top bar,
+  //      scroll up so it sits flush with the bar.
+  //   2. Otherwise, if the card's bottom (after expansion) extends below the
+  //      bottom bar, scroll down just enough to reveal it — but never far
+  //      enough to push the compact header above the top bar.
+  // If the card already fits within the visible band, scroll stays put.
   useEffect(() => {
     if (!expandedPollId) return;
     const card = cardRefs.current.get(expandedPollId);
     const list = scrollListRef.current;
     if (!card || !list) return;
+    // Two rAFs: first lets React commit the grid-rows change, second lets
+    // the browser apply the layout/inline-style so scrollHeight is accurate.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const cardRect = card.getBoundingClientRect();
         const listRect = list.getBoundingClientRect();
-        list.scrollTop += cardRect.top - listRect.top - headerHeight;
+        // Natural height the card will have after the expand animation settles.
+        // card.scrollHeight includes the overflow-hidden-clipped expanded area.
+        const finalCardHeight = card.scrollHeight;
+        const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
+        const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
+
+        // Viewport-space bounds of the "useful" visible area inside the list.
+        const visibleTopY = listRect.top + headerHeight;
+        const visibleBottomY = listRect.bottom - bottomBarHeight;
+
+        const cardTopY = cardRect.top;
+        const finalCardBottomY = cardTopY + finalCardHeight;
+
+        let delta = 0;
+        if (cardTopY < visibleTopY) {
+          // Rule 1: top is behind the header — bring it down to flush with the bar.
+          delta = cardTopY - visibleTopY; // negative → scrollTop decreases
+        } else if (finalCardBottomY > visibleBottomY) {
+          // Rule 2: bottom will be behind the bottom bar — scroll down to show it,
+          // but never so far that the top disappears behind the top bar.
+          const overshoot = finalCardBottomY - visibleBottomY;
+          const slack = cardTopY - visibleTopY;
+          delta = Math.min(overshoot, slack);
+        }
+
+        if (delta !== 0) {
+          list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' });
+        }
       });
     });
   }, [expandedPollId, headerHeight]);
