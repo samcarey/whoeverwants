@@ -124,6 +124,11 @@ function ThreadContent() {
     prefetchBatch(hrefs, { priority: "low" });
   }, [thread, prefetchBatch]);
 
+  // Expanded card state — only one card can be expanded at a time
+  const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
+  // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
+  const touchJustHandled = useRef(false);
+
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -336,9 +341,13 @@ function ThreadContent() {
               }, 500);
             };
 
-            const goToPoll = () => {
-              const href = `/p/${poll.short_id || poll.id}`;
-              navigateWithTransition(router, href, 'forward');
+            const toggleExpanded = () => {
+              setExpandedPollId((current) => (current === poll.id ? null : poll.id));
+            };
+
+            const handleClick = () => {
+              if (touchJustHandled.current) return;
+              toggleExpanded();
             };
 
             const handleTouchEnd = () => {
@@ -348,7 +357,9 @@ function ThreadContent() {
               }
               if (!isScrolling.current && !isLongPress.current) {
                 setPressedPollId(null);
-                goToPoll();
+                touchJustHandled.current = true;
+                setTimeout(() => { touchJustHandled.current = false; }, 400);
+                toggleExpanded();
               } else {
                 setPressedPollId(null);
               }
@@ -370,17 +381,19 @@ function ThreadContent() {
               }
             };
 
+            const isExpanded = expandedPollId === poll.id;
+
             return (
               <div
                 key={poll.id}
                 className="mx-1.5 mb-1.5"
               >
                 <div
-                  onClick={goToPoll}
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
-                  onTouchMove={handleTouchMove}
-                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 transition-colors cursor-pointer select-none relative`}
+                  onClick={isExpanded ? undefined : handleClick}
+                  onTouchStart={isExpanded ? undefined : handleTouchStart}
+                  onTouchEnd={isExpanded ? undefined : handleTouchEnd}
+                  onTouchMove={isExpanded ? undefined : handleTouchMove}
+                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} ${!isExpanded ? 'hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 cursor-pointer' : ''} transition-colors select-none relative`}
                 >
                   {/* Status line */}
                   <div className="flex items-center justify-between">
@@ -440,6 +453,26 @@ function ThreadContent() {
                       </span>
                     )}
                   </div>
+
+                  {/* Expanded content (placeholder for now) */}
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                      <div className="text-sm text-gray-600 dark:text-gray-400 text-center py-4">
+                        Expanded content placeholder
+                      </div>
+                      <div className="flex justify-center">
+                        <button
+                          onClick={() => setExpandedPollId(null)}
+                          className="w-12 h-12 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                          aria-label="Collapse"
+                        >
+                          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
