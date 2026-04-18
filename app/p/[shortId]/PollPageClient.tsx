@@ -940,6 +940,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (updatedPoll) {
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
+        // Notify any parent views (e.g. the thread card list) to refresh their
+        // poll state so things like the Reopen action in the long-press modal
+        // see the new is_closed value.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('poll:updated', {
+            detail: { pollId: poll.id, updates: { is_closed: true, close_reason: 'manual' } },
+          }));
+        }
         await fetchPollResults();
       } else {
         alert('Failed to close poll. Please try again.');
@@ -1049,6 +1057,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setPollClosed(false);
         setManuallyReopened(true); // Set flag to override deadline expiration
         setPollResults(null); // Clear results since poll is now open
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('poll:updated', {
+            detail: { pollId: poll.id, updates: { is_closed: false, close_reason: null } },
+          }));
+        }
       } else {
         alert('Failed to reopen poll. Please try again.');
       }

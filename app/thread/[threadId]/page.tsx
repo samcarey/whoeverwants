@@ -355,6 +355,29 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     });
   }, [expandedPollId, headerHeight]);
 
+  // Listen for poll:updated events (fired when close/reopen happens from within
+  // a card). Merge the updates into our local thread state so downstream UI —
+  // e.g. whether the modal should offer a Reopen button — reflects reality.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId: string; updates: Partial<Poll> };
+      if (!detail?.pollId) return;
+      setThread((prev) =>
+        prev
+          ? {
+              ...prev,
+              polls: prev.polls.map((p) =>
+                p.id === detail.pollId ? { ...p, ...detail.updates } : p,
+              ),
+            }
+          : prev,
+      );
+      setModalPoll((prev) => (prev && prev.id === detail.pollId ? { ...prev, ...detail.updates } : prev));
+    };
+    window.addEventListener('poll:updated', handler);
+    return () => window.removeEventListener('poll:updated', handler);
+  }, []);
+
   // Dismiss the creation-time tooltip on any outside click/tap. Attachment is
   // deferred by one tick so the opening event doesn't close it immediately.
   useEffect(() => {
