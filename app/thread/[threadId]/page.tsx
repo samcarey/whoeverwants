@@ -538,16 +538,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               }, 500);
             };
 
-            // Tap expands the card when collapsed; when already expanded, tap is a
-            // no-op (only the corner chevron collapses). Long-press always opens the
-            // follow-up modal regardless of expansion state.
-            const expand = () => {
-              if (expandedPollId !== poll.id) setExpandedPollId(poll.id);
+            // Tap toggles expand/collapse. Long-press always opens the follow-up
+            // modal regardless of expansion state.
+            const toggleExpand = () => {
+              setExpandedPollId((curr) => (curr === poll.id ? null : poll.id));
             };
 
             const handleClick = () => {
               if (touchJustHandled.current) return;
-              expand();
+              toggleExpand();
             };
 
             const handleTouchEnd = () => {
@@ -559,7 +558,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 setPressedPollId(null);
                 touchJustHandled.current = true;
                 setTimeout(() => { touchJustHandled.current = false; }, 400);
-                expand();
+                toggleExpand();
               } else {
                 setPressedPollId(null);
               }
@@ -610,13 +609,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                     onTouchMove={handleTouchMove}
-                    className={!isExpanded ? 'cursor-pointer' : ''}
+                    className="cursor-pointer"
                   >
-                  {/* Status line: category icon (left) · countdown/badge (center) ·
-                       collapse arrow (right, expanded only). */}
+                  {/* Status line: category icon (left) · countdown/badge (right). */}
                   <div className="flex items-center gap-2">
                     <span className="text-sm w-8 shrink-0">{getCategoryIcon(poll)}</span>
-                    <span className="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400 min-w-0">
+                    <span className="flex-1 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400 min-w-0">
                       <ClientOnly fallback={<>Loading...</>}>
                         {(() => {
                           if (isClosed) {
@@ -644,19 +642,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         })()}
                       </ClientOnly>
                     </span>
-                    <div className="w-8 h-8 shrink-0 flex items-center justify-end">
-                      {isExpanded && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setExpandedPollId(null); }}
-                          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                          aria-label="Collapse"
-                        >
-                          <svg className="w-7 h-7 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
                   </div>
 
                   {/* Title */}
