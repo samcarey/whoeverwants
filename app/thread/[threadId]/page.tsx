@@ -149,6 +149,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Ref to each card's overflow-hidden wrapper. Its scrollHeight reports the
+  // natural height of the expanded content (the content is pre-mounted via
+  // the IntersectionObserver) regardless of whether the parent grid row is
+  // 0fr or 1fr — so we can predict the final card bottom even mid-animation.
+  const expandedWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // Long press state
@@ -306,9 +311,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       requestAnimationFrame(() => {
         const cardRect = card.getBoundingClientRect();
         const listRect = list.getBoundingClientRect();
-        // Natural height the card will have after the expand animation settles.
-        // card.scrollHeight includes the overflow-hidden-clipped expanded area.
-        const finalCardHeight = card.scrollHeight;
+        // The expanded content is pre-mounted inside an overflow:hidden wrapper
+        // whose scrollHeight reflects its natural (clipped) content height.
+        // Combined with the compact header's current height (card.offsetHeight
+        // reflects the mid-animation rendered size, but since we only want the
+        // TOP of the compact header — which is immune to the expansion below —
+        // we read it from cardRect.top and add the natural content below.) we
+        // get an accurate final card bottom even while the expand animates.
+        const wrapper = expandedWrapperRefs.current.get(expandedPollId);
+        const expandedContentHeight = wrapper?.scrollHeight ?? 0;
+        // Compact-header height = card's height with the expanded slot at 0fr.
+        // During animation, card.offsetHeight is the interpolated total. We
+        // subtract the wrapper's current laid-out height to isolate the
+        // compact portion.
+        const wrapperCurrentHeight = wrapper?.getBoundingClientRect().height ?? 0;
+        const compactHeight = card.getBoundingClientRect().height - wrapperCurrentHeight;
         const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
         const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
 
@@ -317,7 +334,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         const visibleBottomY = listRect.bottom - bottomBarHeight;
 
         const cardTopY = cardRect.top;
-        const finalCardBottomY = cardTopY + finalCardHeight;
+        const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 
         let delta = 0;
         if (cardTopY < visibleTopY) {
@@ -679,7 +696,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                       aria-hidden={!isExpanded}
                     >
-                      <div className="overflow-hidden">
+                      <div
+                        className="overflow-hidden"
+                        ref={(el) => {
+                          if (el) expandedWrapperRefs.current.set(poll.id, el);
+                          else expandedWrapperRefs.current.delete(poll.id);
+                        }}
+                      >
                         <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                           <PollPageClient
                             poll={poll}
