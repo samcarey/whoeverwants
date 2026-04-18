@@ -66,6 +66,8 @@ function TemplateInner({ children }: AppTemplateProps) {
   const [isStandalone, setIsStandalone] = useState(false);
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [showBottomBar, setShowBottomBar] = useState(true);
+  const [bottomBarHeight, setBottomBarHeight] = useState(56);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isIOSPWA, setIsIOSPWA] = useState(false);
   const lastScrollY = useRef(0);
@@ -89,6 +91,25 @@ function TemplateInner({ children }: AppTemplateProps) {
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
     setHasAppHistory(count > 1);
   }, [pathname]);
+
+  // Measure the bottom bar's rendered height so the scroll container can reserve
+  // the exact amount — hardcoding 56px leaves a white gap on web where the bar
+  // (no safe-area inset) is a few px shorter.
+  useEffect(() => {
+    if (!isMounted) return;
+    const el = bottomBarRef.current;
+    if (!el) return;
+    const measure = () => {
+      // Bar is translated off-screen when hidden; offsetHeight still reflects
+      // the laid-out height regardless of transform.
+      const h = el.offsetHeight;
+      if (h > 0) setBottomBarHeight(h);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMounted]);
 
   // Keep thread page ref in sync for the scroll handler (which runs in a [] effect).
   // Also force the bottom bar visible on arrival so a previously-hidden bar
@@ -744,7 +765,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          marginBottom: showBottomBar ? '3.5rem' : '0',
+          marginBottom: showBottomBar ? `${bottomBarHeight}px` : '0',
           transition: 'margin-bottom 200ms ease-out',
         }}>
         <div className={`pwa-safe-top relative ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
@@ -857,6 +878,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
       {isMounted && createPortal(
         <div
+          ref={bottomBarRef}
           className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm pwa-bottom-bar ${
             showBottomBar ? '' : 'pointer-events-none'
           }`}
