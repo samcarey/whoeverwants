@@ -557,34 +557,39 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     )}
                   </div>
 
-                  {/* Expanded full-poll content — pre-mounted (hidden) once the card
+                  {/* Expanded full-poll content — pre-mounted (clipped) once the card
                        enters the viewport so fetches + effects complete before expansion.
-                       display:none on the wrapper keeps it out of layout until expanded. */}
+                       Animates height via grid-template-rows 0fr ↔ 1fr with overflow
+                       hidden on the child, so the natural expanded height is used
+                       without JS measurement. */}
                   {(visiblePollIds.has(poll.id) || isExpanded) && (
                     <div
-                      className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600"
-                      style={{ display: isExpanded ? undefined : 'none' }}
+                      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                       aria-hidden={!isExpanded}
                     >
-                      <PollPageClient
-                        poll={poll}
-                        createdDate={(() => {
-                          const dt = new Date(poll.created_at);
-                          const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-                          return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
-                        })()}
-                        pollId={poll.id}
-                      />
-                      <div className="flex justify-center mt-4">
-                        <button
-                          onClick={() => setExpandedPollId(null)}
-                          className="w-12 h-12 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                          aria-label="Collapse"
-                        >
-                          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                          </svg>
-                        </button>
+                      <div className="overflow-hidden">
+                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                          <PollPageClient
+                            poll={poll}
+                            createdDate={(() => {
+                              const dt = new Date(poll.created_at);
+                              const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                              return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
+                            })()}
+                            pollId={poll.id}
+                          />
+                          <div className="flex justify-center mt-4">
+                            <button
+                              onClick={() => setExpandedPollId(null)}
+                              className="w-12 h-12 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                              aria-label="Collapse"
+                            >
+                              <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
