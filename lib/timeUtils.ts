@@ -41,6 +41,14 @@ export function formatDeadlineLabel(minutes: number, label: string): string {
   return `${label} (${timeString})`;
 }
 
+/** Compact absolute creation timestamp — e.g. "@ 12:30 AM 4/18/26". */
+export function formatCreationTimestamp(iso: string): string {
+  const dt = new Date(iso);
+  const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const d = dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" });
+  return `@ ${t} ${d}`;
+}
+
 // --- Time slot helpers (slot format: "YYYY-MM-DD HH:MM-HH:MM") ---
 
 /** Parse slot start time → {h, m} */

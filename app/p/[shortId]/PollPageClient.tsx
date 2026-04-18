@@ -29,8 +29,7 @@ import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
-import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
@@ -108,7 +107,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
   const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
   const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
-  const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   // Options the user saw when they last voted — used to detect newly added suggestions
@@ -2450,26 +2448,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmText="Reopen Poll"
         cancelText="Cancel"
         confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
-      />
-      
-      <ConfirmationModal
-        isOpen={showForgetConfirmModal}
-        onConfirm={() => {
-          // Root/standalone polls fall back to home — navigating to
-          // /thread/<forgottenPoll> would re-grant access via the anchor fetch.
-          const rootRouteId = poll.follow_up_to
-            ? findThreadRootRouteId(poll, getCachedPollById)
-            : null;
-          forgetPoll(poll.id);
-          setShowForgetConfirmModal(false);
-          router.push(rootRouteId ? `/thread/${rootRouteId}` : '/');
-        }}
-        onCancel={() => setShowForgetConfirmModal(false)}
-        title="Forget Poll"
-        message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
-        confirmText="Forget Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
 
 

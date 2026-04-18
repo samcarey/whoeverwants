@@ -11,6 +11,7 @@ import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
@@ -159,10 +160,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
-  // Delete confirmation — set to the poll that's about to be forgotten
-  const [pollPendingDelete, setPollPendingDelete] = useState<Poll | null>(null);
-  // Reopen confirmation — set to the poll that's about to be reopened
-  const [pollPendingReopen, setPollPendingReopen] = useState<Poll | null>(null);
+  // Confirmation state for destructive/semi-destructive actions on a poll
+  // (forget / reopen). Rendered by a single ConfirmationModal that varies its
+  // title/message/handler based on `kind`.
+  const [pendingAction, setPendingAction] = useState<
+    { kind: 'forget' | 'reopen'; poll: Poll } | null
+  >(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
@@ -290,7 +293,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       observer.disconnect();
       intersectionObserverRef.current = null;
     };
-  }, [thread]);
+    // Only re-create when the list actually becomes available — not on every
+    // thread mutation (e.g. forget/reopen). Card ref callbacks attach each new
+    // card to the live observer automatically.
+  }, [!!thread]);
 
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
@@ -364,16 +370,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { pollId: string; updates: Partial<Poll> };
       if (!detail?.pollId) return;
-      setThread((prev) =>
-        prev
-          ? {
-              ...prev,
-              polls: prev.polls.map((p) =>
-                p.id === detail.pollId ? { ...p, ...detail.updates } : p,
-              ),
-            }
-          : prev,
-      );
+      setThread((prev) => {
+        if (!prev || !prev.polls.some((p) => p.id === detail.pollId)) return prev;
+        return {
+          ...prev,
+          polls: prev.polls.map((p) =>
+            p.id === detail.pollId ? { ...p, ...detail.updates } : p,
+          ),
+        };
+      });
       setModalPoll((prev) => (prev && prev.id === detail.pollId ? { ...prev, ...detail.updates } : prev));
     };
     window.addEventListener('poll:updated', handler);
@@ -685,11 +690,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                 role="tooltip"
                                 className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
                               >
-                                {(() => {
-                                  const dt = new Date(poll.created_at);
-                                  const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-                                  return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
-                                })()}
+                                {formatCreationTimestamp(poll.created_at)}
                               </span>
                             )}
                           </span>
@@ -732,11 +733,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                           <PollPageClient
                             poll={poll}
-                            createdDate={(() => {
-                              const dt = new Date(poll.created_at);
-                              const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-                              return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
-                            })()}
+                            createdDate={formatCreationTimestamp(poll.created_at)}
                             pollId={poll.id}
                           />
                         </div>
@@ -759,81 +756,74 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           poll={modalPoll}
           onClose={() => setShowModal(false)}
           showForkButton={false}
-          onDelete={() => setPollPendingDelete(modalPoll)}
+          onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
           onReopen={
             modalPoll.is_closed &&
             (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
-              ? () => setPollPendingReopen(modalPoll)
+              ? () => setPendingAction({ kind: 'reopen', poll: modalPoll })
               : undefined
           }
         />
       )}
 
-      {/* Delete confirmation — forgets the poll from browser storage. */}
+      {/* Single confirmation for forget + reopen — the two share the same
+           lifecycle (tap → confirm/cancel → optimistic state update). */}
       <ConfirmationModal
-        isOpen={!!pollPendingDelete}
-        title="Forget poll"
-        message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
-        confirmText="Forget Poll"
+        isOpen={!!pendingAction}
+        title={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget poll'}
+        message={
+          pendingAction?.kind === 'reopen'
+            ? 'Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again.'
+            : "This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
+        }
+        confirmText={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget Poll'}
         cancelText="Cancel"
-        confirmButtonClass="bg-yellow-500 hover:bg-yellow-600 text-white"
-        onConfirm={() => {
-          const target = pollPendingDelete;
-          if (!target) return;
-          forgetPoll(target.id);
-          setPollPendingDelete(null);
-          // If the forgotten poll was expanded, collapse it so the URL doesn't
-          // still point at /p/<deletedId>.
-          setExpandedPollId((curr) => (curr === target.id ? null : curr));
-          // Optimistic thread update — filter out the forgotten poll. If it was
-          // the last poll in the thread, navigate home.
-          setThread((prev) => {
-            if (!prev) return prev;
-            const remaining = prev.polls.filter((p) => p.id !== target.id);
-            if (remaining.length === 0) {
-              router.push('/');
-              return prev;
-            }
-            return { ...prev, polls: remaining };
-          });
-        }}
-        onCancel={() => setPollPendingDelete(null)}
-      />
-
-      {/* Reopen confirmation */}
-      <ConfirmationModal
-        isOpen={!!pollPendingReopen}
-        title="Reopen Poll"
-        message="Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again."
-        confirmText="Reopen Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
+        confirmButtonClass={
+          pendingAction?.kind === 'reopen'
+            ? 'bg-green-600 hover:bg-green-700 text-white'
+            : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+        }
         onConfirm={async () => {
-          const target = pollPendingReopen;
-          if (!target) return;
-          setPollPendingReopen(null);
-          try {
-            const secret = getCreatorSecret(target.id) || 'dev-override';
-            const updated = await apiReopenPoll(target.id, secret);
-            invalidatePoll(target.id);
-            // Optimistically flip is_closed on the poll within the thread.
-            setThread((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    polls: prev.polls.map((p) =>
-                      p.id === target.id
-                        ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
-                        : p,
-                    ),
-                  }
-                : prev,
-            );
-          } catch (err) {
-            console.error('Failed to reopen poll:', err);
+          const action = pendingAction;
+          if (!action) return;
+          setPendingAction(null);
+          if (action.kind === 'forget') {
+            forgetPoll(action.poll.id);
+            // If the forgotten poll was expanded, collapse it so the URL doesn't
+            // still point at /p/<deletedId>.
+            setExpandedPollId((curr) => (curr === action.poll.id ? null : curr));
+            setThread((prev) => {
+              if (!prev) return prev;
+              const remaining = prev.polls.filter((p) => p.id !== action.poll.id);
+              if (remaining.length === 0) {
+                router.push('/');
+                return prev;
+              }
+              return { ...prev, polls: remaining };
+            });
+          } else {
+            try {
+              const secret = getCreatorSecret(action.poll.id) || 'dev-override';
+              const updated = await apiReopenPoll(action.poll.id, secret);
+              invalidatePoll(action.poll.id);
+              setThread((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      polls: prev.polls.map((p) =>
+                        p.id === action.poll.id
+                          ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
+                          : p,
+                      ),
+                    }
+                  : prev,
+              );
+            } catch (err) {
+              console.error('Failed to reopen poll:', err);
+            }
           }
         }}
-        onCancel={() => setPollPendingReopen(null)}
+        onCancel={() => setPendingAction(null)}
       />
     </div>
   );
