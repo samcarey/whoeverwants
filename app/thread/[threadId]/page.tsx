@@ -445,6 +445,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 y: e.touches[0].clientY,
               };
               longPressTimer.current = setTimeout(() => {
+                if (typeof window !== 'undefined') (window as any).__touchDebug.push('lp-timer fired, scrolling=' + isScrolling.current);
                 if (!isScrolling.current) {
                   isLongPress.current = true;
                   if ('vibrate' in navigator) {
