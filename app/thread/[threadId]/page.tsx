@@ -498,10 +498,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   onTouchMove={isExpanded ? undefined : handleTouchMove}
                   className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} ${!isExpanded ? 'hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 cursor-pointer' : ''} transition-colors select-none relative`}
                 >
-                  {/* Status line */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{getCategoryIcon(poll)}</span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {/* Status line: category icon (left) · countdown/badge (center) ·
+                       collapse arrow (right, expanded only). */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm w-8 shrink-0">{getCategoryIcon(poll)}</span>
+                    <span className="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400 min-w-0">
                       <ClientOnly fallback={<>Loading...</>}>
                         {(() => {
                           if (isClosed) {
@@ -529,6 +530,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         })()}
                       </ClientOnly>
                     </span>
+                    <div className="w-8 h-8 shrink-0 flex items-center justify-end">
+                      {isExpanded && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedPollId(null); }}
+                          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                          aria-label="Collapse"
+                        >
+                          <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Title */}
@@ -578,17 +592,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             })()}
                             pollId={poll.id}
                           />
-                          <div className="flex justify-center mt-4">
-                            <button
-                              onClick={() => setExpandedPollId(null)}
-                              className="w-12 h-12 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
-                              aria-label="Collapse"
-                            >
-                              <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                              </svg>
-                            </button>
-                          </div>
                         </div>
                       </div>
                     </div>
