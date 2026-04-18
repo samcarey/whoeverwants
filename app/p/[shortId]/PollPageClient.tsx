@@ -2362,16 +2362,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
-          {/* Poll Management Buttons - Close, Cutoff Suggestions, Reopen, and Forget Poll */}
-          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && isCreator)) && (
+          {/* Poll Management Buttons — Close, Cutoff Suggestions, Reopen.
+              The "Forget" action now lives in the long-press modal on the card. */}
+          {((isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && isCreator)) && (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
                 showCloseButton={!isPollClosed && isCreator}
                 showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
-                showForgetButton={hasPollDataState}
+                showForgetButton={false}
                 onCloseClick={handleCloseClick}
                 onReopenClick={handleReopenClick}
-                onForgetClick={() => setShowForgetConfirmModal(true)}
                 isClosingPoll={isClosingPoll}
                 isReopeningPoll={isReopeningPoll}
               />

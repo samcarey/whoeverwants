@@ -685,7 +685,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
         confirmText="Forget Poll"
         cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        confirmButtonClass="bg-yellow-500 hover:bg-yellow-600 text-white"
         onConfirm={() => {
           const target = pollPendingDelete;
           if (!target) return;
