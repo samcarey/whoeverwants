@@ -106,11 +106,13 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
             )}
           </div>
 
-          {/* Follow-up link — shown when this poll follows up on another.
-               Tapping the parent name navigates to that poll (which opens the
-               containing thread with that card expanded). */}
+          {/* Follow-up link — shown at the bottom of the modal when this poll
+               follows up on another. Tapping the parent name navigates to that
+               poll (which opens the containing thread with that card expanded). */}
           {poll.follow_up_to && (
-            <FollowUpHeader followUpToPollId={poll.follow_up_to} />
+            <div className="mt-4">
+              <FollowUpHeader followUpToPollId={poll.follow_up_to} />
+            </div>
           )}
         </div>
       </div>

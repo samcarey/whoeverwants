@@ -10,7 +10,6 @@ import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
 import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
-import FollowUpHeader from "@/components/FollowUpHeader";
 
 const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 import ForkHeader from "@/components/ForkHeader";
@@ -372,9 +371,9 @@ export default function SuggestionVotingInterface({
         }
       </button>
 
-      {/* Show follow-up/fork header after submit button */}
+      {/* Show fork header after submit button.
+           (Follow-up-to info now lives in the long-press modal.) */}
       <div className="mt-4">
-        {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
         {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
       </div>
     </>
