@@ -17,6 +17,7 @@ import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } fro
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import PollPageClient from "@/app/p/[shortId]/PollPageClient";
 
 import type { Thread } from "@/lib/threadUtils";
 
@@ -454,13 +455,19 @@ function ThreadContent() {
                     )}
                   </div>
 
-                  {/* Expanded content (placeholder for now) */}
+                  {/* Expanded full-poll content */}
                   {isExpanded && (
                     <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
-                      <div className="text-sm text-gray-600 dark:text-gray-400 text-center py-4">
-                        Expanded content placeholder
-                      </div>
-                      <div className="flex justify-center">
+                      <PollPageClient
+                        poll={poll}
+                        createdDate={(() => {
+                          const dt = new Date(poll.created_at);
+                          const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                          return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
+                        })()}
+                        pollId={poll.id}
+                      />
+                      <div className="flex justify-center mt-4">
                         <button
                           onClick={() => setExpandedPollId(null)}
                           className="w-12 h-12 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
