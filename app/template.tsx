@@ -734,14 +734,18 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       )}
 
-      {/* Scrollable Content Area - consistent across all pages */}
+      {/* Scrollable Content Area - consistent across all pages.
+          Bottom margin reserves space for the bottom bar when visible; collapses to
+          0 (in lockstep with the bar's 200ms slide-out) so no white gap remains. */}
       <div
         ref={scrollContainerRef}
-        className={`flex-1 safari-scroll-container mb-14 ${isThreadPage ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}
+        className={`flex-1 safari-scroll-container ${isThreadPage ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}
         style={{
           paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
+          marginBottom: showBottomBar ? '3.5rem' : '0',
+          transition: 'margin-bottom 200ms ease-out',
         }}>
         <div className={`pwa-safe-top relative ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
           {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
