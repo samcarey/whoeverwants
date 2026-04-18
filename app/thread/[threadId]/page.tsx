@@ -6,17 +6,21 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
-import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
+import { apiGetPollById, apiGetPollByShortId, apiReopenPoll } from "@/lib/api";
+import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
 
@@ -67,11 +71,14 @@ function buildThreadSync(
   return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
 }
 
-function ThreadContent() {
+interface ThreadContentProps {
+  threadId: string;
+  initialExpandedPollId?: string | null;
+}
+
+export function ThreadContent({ threadId, initialExpandedPollId = null }: ThreadContentProps) {
   const router = useRouter();
-  const params = useParams();
   const { prefetchBatch } = usePrefetch();
-  const threadId = params.threadId as string;
 
   // Initialize voted/abstained sets + thread synchronously from cached data
   // on first render, so the page mounts with full content (no loading flash
@@ -124,9 +131,41 @@ function ThreadContent() {
     prefetchBatch(hrefs, { priority: "low" });
   }, [thread, prefetchBatch]);
 
+  // Expanded card state — only one card can be expanded at a time.
+  // Initialized from the prop so the /p/<id> route can open a card on first render.
+  const [expandedPollId, setExpandedPollId] = useState<string | null>(initialExpandedPollId);
+  // Which poll's creation-time tooltip is currently showing (null = none). Shared
+  // across all cards so only one tooltip is visible at a time.
+  const [tooltipPollId, setTooltipPollId] = useState<string | null>(null);
+  // Polls whose expanded content has been pre-mounted because the card scrolled
+  // into view. We keep the mounted subtree display:none'd until expansion so all
+  // data fetches, state init, and child effects happen BEFORE the user taps —
+  // the expand then renders at the correct final height with no resize flicker.
+  const [visiblePollIds, setVisiblePollIds] = useState<Set<string>>(() => {
+    // Initialize with the pre-expanded poll (so its content mounts on first paint).
+    return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
+  });
+  // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
+  const touchJustHandled = useRef(false);
+  // Refs for each card wrapper so we can scroll the expanded card into view
+  // and observe viewport intersection.
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Ref to each card's overflow-hidden wrapper — its scrollHeight reports the
+  // natural expanded content height (pre-mounted via IntersectionObserver) so
+  // we can compute the target scroll position BEFORE the grid-rows animation
+  // finishes growing.
+  const expandedWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
+  // Confirmation state for destructive/semi-destructive actions on a poll
+  // (forget / reopen). Rendered by a single ConfirmationModal that varies its
+  // title/message/handler based on `kind`.
+  const [pendingAction, setPendingAction] = useState<
+    { kind: 'forget' | 'reopen'; poll: Poll } | null
+  >(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
@@ -216,6 +255,169 @@ function ThreadContent() {
       });
     }
   }, [thread, loading, headerHeight]);
+
+  // Set up a shared IntersectionObserver so cards pre-mount their expanded
+  // content when they scroll into view. rootMargin prefetches slightly early.
+  // Runs once; callback refs on each card attach/detach the observer.
+  useEffect(() => {
+    const list = scrollListRef.current;
+    if (!list || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const newlyVisible: string[] = [];
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = (entry.target as HTMLElement).dataset.pollId;
+            if (id) newlyVisible.push(id);
+          }
+        });
+        if (newlyVisible.length === 0) return;
+        setVisiblePollIds((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const id of newlyVisible) {
+            if (!next.has(id)) {
+              next.add(id);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { root: list, rootMargin: '200px 0px' },
+    );
+    intersectionObserverRef.current = observer;
+    // Attach to any cards already mounted (ref callbacks may have fired before this effect).
+    cardRefs.current.forEach((el) => observer.observe(el));
+    return () => {
+      observer.disconnect();
+      intersectionObserverRef.current = null;
+    };
+    // Only re-create when the list actually becomes available — not on every
+    // thread mutation (e.g. forget/reopen). Card ref callbacks attach each new
+    // card to the live observer automatically.
+  }, [!!thread]);
+
+  // When a card expands, adjust scroll so the expanded card fits on screen
+  // without disturbing the user's view more than necessary:
+  //   1. If the compact header is currently hidden behind the fixed top bar,
+  //      scroll up so it sits flush with the bar.
+  //   2. Otherwise, if the card's bottom (after expansion) extends below the
+  //      bottom bar, scroll down just enough to reveal it — but never far
+  //      enough to push the compact header above the top bar.
+  //
+  // The scroll runs concurrently with the 300ms grid-rows expand animation:
+  // we manually rAF-animate scrollTop with the same easing, which keeps the
+  // two visuals synchronized and sidesteps the scrollTo-clamping issue (the
+  // list's scrollHeight grows proportionally as the card expands, so each
+  // intermediate target is always within bounds).
+  useEffect(() => {
+    if (!expandedPollId) return;
+    const card = cardRefs.current.get(expandedPollId);
+    const list = scrollListRef.current;
+    if (!card || !list) return;
+
+    // Measure once, up front, using the overflow-hidden wrapper's scrollHeight
+    // (which reflects the natural content size regardless of grid-row state).
+    const wrapper = expandedWrapperRefs.current.get(expandedPollId);
+    const expandedContentHeight = wrapper?.scrollHeight ?? 0;
+    const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
+    const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
+    const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
+    const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
+    const listRect = list.getBoundingClientRect();
+    const visibleTopY = listRect.top + headerHeight;
+    const visibleBottomY = listRect.bottom - bottomBarHeight;
+    const cardTopY = card.getBoundingClientRect().top;
+    const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
+
+    let targetDelta = 0;
+    if (cardTopY < visibleTopY) {
+      targetDelta = cardTopY - visibleTopY;
+    } else if (finalCardBottomY > visibleBottomY) {
+      const overshoot = finalCardBottomY - visibleBottomY;
+      const slack = cardTopY - visibleTopY;
+      targetDelta = Math.min(overshoot, slack);
+    }
+
+    if (targetDelta === 0) return;
+
+    const startScrollTop = list.scrollTop;
+    const targetScrollTop = startScrollTop + targetDelta;
+    const DURATION = 300; // matches the grid-rows CSS transition
+    const startTime = performance.now();
+    let rafId: number | null = null;
+
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / DURATION, 1);
+      // ease-out cubic — matches the feel of the CSS transition
+      const eased = 1 - Math.pow(1 - t, 3);
+      list.scrollTop = startScrollTop + (targetScrollTop - startScrollTop) * eased;
+      if (t < 1) rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [expandedPollId, headerHeight]);
+
+  // Listen for poll:updated events (fired when close/reopen happens from within
+  // a card). Merge the updates into our local thread state so downstream UI —
+  // e.g. whether the modal should offer a Reopen button — reflects reality.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId: string; updates: Partial<Poll> };
+      if (!detail?.pollId) return;
+      setThread((prev) => {
+        if (!prev || !prev.polls.some((p) => p.id === detail.pollId)) return prev;
+        return {
+          ...prev,
+          polls: prev.polls.map((p) =>
+            p.id === detail.pollId ? { ...p, ...detail.updates } : p,
+          ),
+        };
+      });
+      setModalPoll((prev) => (prev && prev.id === detail.pollId ? { ...prev, ...detail.updates } : prev));
+    };
+    window.addEventListener('poll:updated', handler);
+    return () => window.removeEventListener('poll:updated', handler);
+  }, []);
+
+  // Dismiss the creation-time tooltip on any outside click/tap. Attachment is
+  // deferred by one tick so the opening event doesn't close it immediately.
+  useEffect(() => {
+    if (!tooltipPollId) return;
+    const close = () => setTooltipPollId(null);
+    const t = setTimeout(() => {
+      document.addEventListener('click', close);
+      document.addEventListener('touchstart', close, { passive: true });
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('click', close);
+      document.removeEventListener('touchstart', close);
+    };
+  }, [tooltipPollId]);
+
+  // Sync the URL to reflect which card is expanded, using shallow history.replaceState
+  // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
+  // same expanded card.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !thread) return;
+    let nextPath: string;
+    if (expandedPollId) {
+      const expandedPoll = thread.polls.find((p) => p.id === expandedPollId);
+      const routeId = expandedPoll?.short_id || expandedPollId;
+      nextPath = `/p/${routeId}/`;
+    } else {
+      nextPath = `/thread/${threadId}/`;
+    }
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(window.history.state, '', nextPath + window.location.search + window.location.hash);
+    }
+  }, [expandedPollId, thread, threadId]);
 
   if (loading) {
     return (
@@ -336,9 +538,16 @@ function ThreadContent() {
               }, 500);
             };
 
-            const goToPoll = () => {
-              const href = `/p/${poll.short_id || poll.id}`;
-              navigateWithTransition(router, href, 'forward');
+            // Tap expands the card when collapsed; when already expanded, tap is a
+            // no-op (only the corner chevron collapses). Long-press always opens the
+            // follow-up modal regardless of expansion state.
+            const expand = () => {
+              if (expandedPollId !== poll.id) setExpandedPollId(poll.id);
+            };
+
+            const handleClick = () => {
+              if (touchJustHandled.current) return;
+              expand();
             };
 
             const handleTouchEnd = () => {
@@ -348,7 +557,9 @@ function ThreadContent() {
               }
               if (!isScrolling.current && !isLongPress.current) {
                 setPressedPollId(null);
-                goToPoll();
+                touchJustHandled.current = true;
+                setTimeout(() => { touchJustHandled.current = false; }, 400);
+                expand();
               } else {
                 setPressedPollId(null);
               }
@@ -370,22 +581,42 @@ function ThreadContent() {
               }
             };
 
+            const isExpanded = expandedPollId === poll.id;
+
             return (
               <div
                 key={poll.id}
+                ref={(el) => {
+                  if (el) {
+                    el.dataset.pollId = poll.id;
+                    cardRefs.current.set(poll.id, el);
+                    intersectionObserverRef.current?.observe(el);
+                  } else {
+                    const prev = cardRefs.current.get(poll.id);
+                    if (prev) intersectionObserverRef.current?.unobserve(prev);
+                    cardRefs.current.delete(poll.id);
+                  }
+                }}
                 className="mx-1.5 mb-1.5"
               >
                 <div
-                  onClick={goToPoll}
-                  onTouchStart={handleTouchStart}
-                  onTouchEnd={handleTouchEnd}
-                  onTouchMove={handleTouchMove}
-                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 transition-colors cursor-pointer select-none relative`}
+                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} ${!isExpanded ? 'hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
-                  {/* Status line */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">{getCategoryIcon(poll)}</span>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {/* Compact header — click/touch + long-press live here so they work
+                       whether the card is collapsed or expanded without interfering
+                       with interactive elements inside the expanded PollPageClient. */}
+                  <div
+                    onClick={handleClick}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    className={!isExpanded ? 'cursor-pointer' : ''}
+                  >
+                  {/* Status line: category icon (left) · countdown/badge (center) ·
+                       collapse arrow (right, expanded only). */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm w-8 shrink-0">{getCategoryIcon(poll)}</span>
+                    <span className="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400 min-w-0">
                       <ClientOnly fallback={<>Loading...</>}>
                         {(() => {
                           if (isClosed) {
@@ -413,6 +644,19 @@ function ThreadContent() {
                         })()}
                       </ClientOnly>
                     </span>
+                    <div className="w-8 h-8 shrink-0 flex items-center justify-end">
+                      {isExpanded && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedPollId(null); }}
+                          className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
+                          aria-label="Collapse"
+                        >
+                          <svg className="w-7 h-7 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Title */}
@@ -424,7 +668,33 @@ function ThreadContent() {
                   <div className="flex items-center justify-between">
                     <div className="text-xs text-gray-400 dark:text-gray-500">
                       <ClientOnly fallback={null}>
-                        <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                        <>
+                          {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                          <span
+                            className="relative cursor-help"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTooltipPollId((prev) => (prev === poll.id ? null : poll.id));
+                            }}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onTouchEnd={(e) => e.stopPropagation()}
+                            onTouchMove={(e) => e.stopPropagation()}
+                            onMouseEnter={() => setTooltipPollId(poll.id)}
+                            onMouseLeave={() =>
+                              setTooltipPollId((prev) => (prev === poll.id ? null : prev))
+                            }
+                          >
+                            {relativeTime(poll.created_at)}
+                            {tooltipPollId === poll.id && (
+                              <span
+                                role="tooltip"
+                                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                              >
+                                {formatCreationTimestamp(poll.created_at)}
+                              </span>
+                            )}
+                          </span>
+                        </>
                       </ClientOnly>
                     </div>
                     {!isVoted && isOpen && (
@@ -440,6 +710,36 @@ function ThreadContent() {
                       </span>
                     )}
                   </div>
+                  </div>{/* /compact header */}
+
+                  {/* Expanded full-poll content — pre-mounted (clipped) once the card
+                       enters the viewport so fetches + effects complete before expansion.
+                       Animates height via grid-template-rows 0fr ↔ 1fr with overflow
+                       hidden on the child, so the natural expanded height is used
+                       without JS measurement. */}
+                  {(visiblePollIds.has(poll.id) || isExpanded) && (
+                    <div
+                      data-poll-expand-grid=""
+                      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+                      aria-hidden={!isExpanded}
+                    >
+                      <div
+                        className="overflow-hidden"
+                        ref={(el) => {
+                          if (el) expandedWrapperRefs.current.set(poll.id, el);
+                          else expandedWrapperRefs.current.delete(poll.id);
+                        }}
+                      >
+                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                          <PollPageClient
+                            poll={poll}
+                            createdDate={formatCreationTimestamp(poll.created_at)}
+                            pollId={poll.id}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -448,17 +748,91 @@ function ThreadContent() {
 
       </div>
 
-      {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
+      {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
+           the poll is closed and the current browser is the creator (or dev). */}
       {modalPoll && (
         <FollowUpModal
           isOpen={showModal}
           poll={modalPoll}
           onClose={() => setShowModal(false)}
           showForkButton={false}
+          onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
+          onReopen={
+            modalPoll.is_closed &&
+            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+              ? () => setPendingAction({ kind: 'reopen', poll: modalPoll })
+              : undefined
+          }
         />
       )}
+
+      {/* Single confirmation for forget + reopen — the two share the same
+           lifecycle (tap → confirm/cancel → optimistic state update). */}
+      <ConfirmationModal
+        isOpen={!!pendingAction}
+        title={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget poll'}
+        message={
+          pendingAction?.kind === 'reopen'
+            ? 'Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again.'
+            : "This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
+        }
+        confirmText={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget Poll'}
+        cancelText="Cancel"
+        confirmButtonClass={
+          pendingAction?.kind === 'reopen'
+            ? 'bg-green-600 hover:bg-green-700 text-white'
+            : 'bg-yellow-500 hover:bg-yellow-600 text-white'
+        }
+        onConfirm={async () => {
+          const action = pendingAction;
+          if (!action) return;
+          setPendingAction(null);
+          if (action.kind === 'forget') {
+            forgetPoll(action.poll.id);
+            // If the forgotten poll was expanded, collapse it so the URL doesn't
+            // still point at /p/<deletedId>.
+            setExpandedPollId((curr) => (curr === action.poll.id ? null : curr));
+            setThread((prev) => {
+              if (!prev) return prev;
+              const remaining = prev.polls.filter((p) => p.id !== action.poll.id);
+              if (remaining.length === 0) {
+                router.push('/');
+                return prev;
+              }
+              return { ...prev, polls: remaining };
+            });
+          } else {
+            try {
+              const secret = getCreatorSecret(action.poll.id) || 'dev-override';
+              const updated = await apiReopenPoll(action.poll.id, secret);
+              invalidatePoll(action.poll.id);
+              setThread((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      polls: prev.polls.map((p) =>
+                        p.id === action.poll.id
+                          ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
+                          : p,
+                      ),
+                    }
+                  : prev,
+              );
+            } catch (err) {
+              console.error('Failed to reopen poll:', err);
+            }
+          }
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
+}
+
+function ThreadPageInner() {
+  const params = useParams();
+  const threadId = params.threadId as string;
+  return <ThreadContent threadId={threadId} />;
 }
 
 export default function ThreadPage() {
@@ -474,7 +848,7 @@ export default function ThreadPage() {
         </div>
       </div>
     }>
-      <ThreadContent />
+      <ThreadPageInner />
     </Suspense>
   );
 }

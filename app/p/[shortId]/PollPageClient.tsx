@@ -11,7 +11,6 @@ import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
-import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
@@ -30,8 +29,7 @@ import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
-import { forgetPoll, hasPollData } from "@/lib/forgetPoll";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
 import ParticipationConditions from "@/components/ParticipationConditions";
@@ -109,7 +107,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
   const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
   const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
-  const [showForgetConfirmModal, setShowForgetConfirmModal] = useState(false);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   // Options the user saw when they last voted — used to detect newly added suggestions
@@ -941,6 +938,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
       if (updatedPoll) {
         setPollClosed(true);
         setManuallyReopened(false); // Reset manually reopened flag when closing
+        // Notify any parent views (e.g. the thread card list) to refresh their
+        // poll state so things like the Reopen action in the long-press modal
+        // see the new is_closed value.
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('poll:updated', {
+            detail: { pollId: poll.id, updates: { is_closed: true, close_reason: 'manual' } },
+          }));
+        }
         await fetchPollResults();
       } else {
         alert('Failed to close poll. Please try again.');
@@ -1050,6 +1055,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setPollClosed(false);
         setManuallyReopened(true); // Set flag to override deadline expiration
         setPollResults(null); // Clear results since poll is now open
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('poll:updated', {
+            detail: { pollId: poll.id, updates: { is_closed: false, close_reason: null } },
+          }));
+        }
       } else {
         alert('Failed to reopen poll. Please try again.');
       }
@@ -1505,15 +1515,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   return (
     <>
       <div className="poll-content">
-        
-        {/* Show creation info */}
-        <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4">
-          {poll.creator_name ? (
-            <>Created by <span className="text-blue-600 dark:text-blue-400">{poll.creator_name}</span> {createdDate}</>
-          ) : (
-            <>Created {createdDate}</>
-          )}
-        </div>
+        {/* Creation info lives on the compact card header (creator name + relative time);
+             full timestamp is available via the tooltip on that time. */}
 
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
@@ -1678,7 +1681,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Show follow-up/fork header for closed polls */}
         {isPollClosed && (
           <div className="mt-4">
-            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
             {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
           </div>
         )}
@@ -1816,8 +1818,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -1990,8 +1991,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -2182,8 +2182,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -2352,8 +2351,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -2375,16 +2373,15 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           )}
 
 
-          {/* Poll Management Buttons - Close, Cutoff Suggestions, Reopen, and Forget Poll */}
-          {(hasPollDataState || (isPollClosed && process.env.NODE_ENV === 'development') || (!isPollClosed && isCreator)) && (
+          {/* Poll Management Buttons — Close + Cutoff only. Forget and Reopen
+              are both available via the long-press modal on the card. */}
+          {!isPollClosed && isCreator && (
             <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
               <PollManagementButtons
-                showCloseButton={!isPollClosed && isCreator}
-                showReopenButton={!!(isPollClosed && process.env.NODE_ENV === 'development')}
-                showForgetButton={hasPollDataState}
+                showCloseButton={true}
+                showReopenButton={false}
+                showForgetButton={false}
                 onCloseClick={handleCloseClick}
-                onReopenClick={handleReopenClick}
-                onForgetClick={() => setShowForgetConfirmModal(true)}
                 isClosingPoll={isClosingPoll}
                 isReopeningPoll={isReopeningPoll}
               />
@@ -2451,26 +2448,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         confirmText="Reopen Poll"
         cancelText="Cancel"
         confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
-      />
-      
-      <ConfirmationModal
-        isOpen={showForgetConfirmModal}
-        onConfirm={() => {
-          // Root/standalone polls fall back to home — navigating to
-          // /thread/<forgottenPoll> would re-grant access via the anchor fetch.
-          const rootRouteId = poll.follow_up_to
-            ? findThreadRootRouteId(poll, getCachedPollById)
-            : null;
-          forgetPoll(poll.id);
-          setShowForgetConfirmModal(false);
-          router.push(rootRouteId ? `/thread/${rootRouteId}` : '/');
-        }}
-        onCancel={() => setShowForgetConfirmModal(false)}
-        title="Forget Poll"
-        message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
-        confirmText="Forget Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
       />
 
 

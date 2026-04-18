@@ -439,6 +439,9 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
+  // /p/<id> now renders the thread view with a card expanded; both routes share the
+  // thread-page layout (fixed header + scroll list) and the thread's own back button.
+  const isThreadLikePage = isThreadPage || isPollPage;
   const isCreateModalOpen = searchParams.has('create');
   const isProfilePage = pathname === '/profile' || pathname === '/profile/';
   const [modalClosing, setModalClosing] = useState(false);
@@ -746,20 +749,8 @@ function TemplateInner({ children }: AppTemplateProps) {
               fixed header (z-20). */}
           {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
           {/* Spacer div for header elements that are now rendered in portal */}
-          {(isPollPage || isProfilePage || pathname === '/') && (
+          {(isProfilePage || pathname === '/') && (
             <div className="relative">
-
-              {/* Poll page title */}
-              {isPollPage && pollPageTitle && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1
-                    className="text-2xl font-bold text-center break-words select-none"
-                    {...longPressProps}
-                  >
-                    {pollPageTitle}
-                  </h1>
-                </div>
-              )}
 
               {/* Profile page title */}
               {isProfilePage && (
@@ -790,7 +781,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             </div>
           )}
           
-          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadPage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadPage ? '' : (isPollPage || isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
+          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadLikePage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
             {children}
           </div>
         </div>
@@ -945,11 +936,10 @@ function TemplateInner({ children }: AppTemplateProps) {
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow in upper left. On poll pages it always renders and leads
-             to the containing thread — so direct-link visitors can jump to the
-             thread of polls this poll fits into. Profile page keeps the old
-             "only when there's in-app history" rule. */}
-        {(isPollPage || (isProfilePage && hasAppHistory)) && (
+        {/* Back arrow in upper left. Thread-like pages render their own back
+             button in their fixed header — only the profile page still uses the
+             template's portal back arrow, and only when there's in-app history. */}
+        {(isProfilePage && hasAppHistory) && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => {
