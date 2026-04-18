@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
+import FollowUpHeader from "@/components/FollowUpHeader";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
 
@@ -11,9 +12,12 @@ interface FollowUpModalProps {
   onClose: () => void;
   totalVotes?: number;
   showForkButton?: boolean;
+  // When provided, renders a Delete button alongside the others. The parent is
+  // responsible for confirmation + actually removing the poll.
+  onDelete?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -35,20 +39,7 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
-          <div className="flex gap-3 mb-4">
-            <button
-              onClick={() => {
-                router.push(`${pathname}?create=1&followUpTo=${poll.id}`);
-                onClose();
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10"/>
-              </svg>
-              Blank
-            </button>
-
+          <div className="flex gap-3">
             <button
               onClick={() => {
                 localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(pollSnapshot));
@@ -83,16 +74,31 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
                 Fork
               </button>
             )}
+
+            {onDelete && (
+              <button
+                onClick={() => {
+                  onDelete();
+                  onClose();
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                </svg>
+                Delete
+              </button>
+            )}
           </div>
 
-          <div className="mt-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center justify-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-              </svg>
-              Follow up with the same recipients
-            </h3>
-          </div>
+          {/* Follow-up link — shown when this poll follows up on another.
+               Tapping the parent name navigates to that poll (which opens the
+               containing thread with that card expanded). */}
+          {poll.follow_up_to && (
+            <FollowUpHeader followUpToPollId={poll.follow_up_to} />
+          )}
         </div>
       </div>
     </ModalPortal>

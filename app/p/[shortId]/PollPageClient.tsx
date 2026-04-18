@@ -11,7 +11,6 @@ import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
-import FollowUpHeader from "@/components/FollowUpHeader";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";
@@ -1671,7 +1670,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {/* Show follow-up/fork header for closed polls */}
         {isPollClosed && (
           <div className="mt-4">
-            {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
             {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
           </div>
         )}
@@ -1809,8 +1807,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -1983,8 +1980,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -2175,8 +2171,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                   )}
 
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}
@@ -2345,8 +2340,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
 
                   {/* Show follow-up/fork header after submit button */}
                   <div className="mt-4">
-                    {poll.follow_up_to && <FollowUpHeader followUpToPollId={poll.follow_up_to} />}
-                    {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
                   </div>
                 </>
               )}

@@ -16,8 +16,10 @@ import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
 
@@ -152,6 +154,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
   const [showModal, setShowModal] = useState(false);
+  // Delete confirmation — set to the poll that's about to be forgotten
+  const [pollPendingDelete, setPollPendingDelete] = useState<Poll | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
@@ -452,13 +456,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               }, 500);
             };
 
-            const toggleExpanded = () => {
-              setExpandedPollId((current) => (current === poll.id ? null : poll.id));
+            // Tap expands the card when collapsed; when already expanded, tap is a
+            // no-op (only the corner chevron collapses). Long-press always opens the
+            // follow-up modal regardless of expansion state.
+            const expand = () => {
+              if (expandedPollId !== poll.id) setExpandedPollId(poll.id);
             };
 
             const handleClick = () => {
               if (touchJustHandled.current) return;
-              toggleExpanded();
+              expand();
             };
 
             const handleTouchEnd = () => {
@@ -470,7 +477,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 setPressedPollId(null);
                 touchJustHandled.current = true;
                 setTimeout(() => { touchJustHandled.current = false; }, 400);
-                toggleExpanded();
+                expand();
               } else {
                 setPressedPollId(null);
               }
@@ -511,12 +518,18 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 className="mx-1.5 mb-1.5"
               >
                 <div
-                  onClick={isExpanded ? undefined : handleClick}
-                  onTouchStart={isExpanded ? undefined : handleTouchStart}
-                  onTouchEnd={isExpanded ? undefined : handleTouchEnd}
-                  onTouchMove={isExpanded ? undefined : handleTouchMove}
-                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} ${!isExpanded ? 'hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40 cursor-pointer' : ''} transition-colors select-none relative`}
+                  className={`px-2 py-2 rounded-2xl ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-200 dark:bg-gray-700'} ${!isExpanded ? 'hover:bg-gray-300 dark:hover:bg-gray-600 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
+                  {/* Compact header — click/touch + long-press live here so they work
+                       whether the card is collapsed or expanded without interfering
+                       with interactive elements inside the expanded PollPageClient. */}
+                  <div
+                    onClick={handleClick}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    className={!isExpanded ? 'cursor-pointer' : ''}
+                  >
                   {/* Status line: category icon (left) · countdown/badge (center) ·
                        collapse arrow (right, expanded only). */}
                   <div className="flex items-center gap-2">
@@ -619,6 +632,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </span>
                     )}
                   </div>
+                  </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
                        enters the viewport so fetches + effects complete before expansion.
@@ -653,15 +667,47 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       </div>
 
-      {/* Thread-aware follow-up modal (Blank + Copy only, no Fork) */}
+      {/* Thread-aware follow-up modal — Copy + Delete only. */}
       {modalPoll && (
         <FollowUpModal
           isOpen={showModal}
           poll={modalPoll}
           onClose={() => setShowModal(false)}
           showForkButton={false}
+          onDelete={() => setPollPendingDelete(modalPoll)}
         />
       )}
+
+      {/* Delete confirmation — forgets the poll from browser storage. */}
+      <ConfirmationModal
+        isOpen={!!pollPendingDelete}
+        title="Forget poll"
+        message="This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
+        confirmText="Forget Poll"
+        cancelText="Cancel"
+        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
+        onConfirm={() => {
+          const target = pollPendingDelete;
+          if (!target) return;
+          forgetPoll(target.id);
+          setPollPendingDelete(null);
+          // If the forgotten poll was expanded, collapse it so the URL doesn't
+          // still point at /p/<deletedId>.
+          setExpandedPollId((curr) => (curr === target.id ? null : curr));
+          // Optimistic thread update — filter out the forgotten poll. If it was
+          // the last poll in the thread, navigate home.
+          setThread((prev) => {
+            if (!prev) return prev;
+            const remaining = prev.polls.filter((p) => p.id !== target.id);
+            if (remaining.length === 0) {
+              router.push('/');
+              return prev;
+            }
+            return { ...prev, polls: remaining };
+          });
+        }}
+        onCancel={() => setPollPendingDelete(null)}
+      />
     </div>
   );
 }
