@@ -247,6 +247,24 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     });
   }, [expandedPollId, headerHeight]);
 
+  // Sync the URL to reflect which card is expanded, using shallow history.replaceState
+  // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
+  // same expanded card.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !thread) return;
+    let nextPath: string;
+    if (expandedPollId) {
+      const expandedPoll = thread.polls.find((p) => p.id === expandedPollId);
+      const routeId = expandedPoll?.short_id || expandedPollId;
+      nextPath = `/p/${routeId}/`;
+    } else {
+      nextPath = `/thread/${threadId}/`;
+    }
+    if (window.location.pathname !== nextPath) {
+      window.history.replaceState(window.history.state, '', nextPath + window.location.search + window.location.hash);
+    }
+  }, [expandedPollId, thread, threadId]);
+
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
