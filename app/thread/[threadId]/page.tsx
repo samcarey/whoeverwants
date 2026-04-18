@@ -68,11 +68,14 @@ function buildThreadSync(
   return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
 }
 
-function ThreadContent() {
+interface ThreadContentProps {
+  threadId: string;
+  initialExpandedPollId?: string | null;
+}
+
+export function ThreadContent({ threadId, initialExpandedPollId = null }: ThreadContentProps) {
   const router = useRouter();
-  const params = useParams();
   const { prefetchBatch } = usePrefetch();
-  const threadId = params.threadId as string;
 
   // Initialize voted/abstained sets + thread synchronously from cached data
   // on first render, so the page mounts with full content (no loading flash
@@ -125,8 +128,9 @@ function ThreadContent() {
     prefetchBatch(hrefs, { priority: "low" });
   }, [thread, prefetchBatch]);
 
-  // Expanded card state — only one card can be expanded at a time
-  const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
+  // Expanded card state — only one card can be expanded at a time.
+  // Initialized from the prop so the /p/<id> route can open a card on first render.
+  const [expandedPollId, setExpandedPollId] = useState<string | null>(initialExpandedPollId);
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -525,6 +529,12 @@ function ThreadContent() {
   );
 }
 
+function ThreadPageInner() {
+  const params = useParams();
+  const threadId = params.threadId as string;
+  return <ThreadContent threadId={threadId} />;
+}
+
 export default function ThreadPage() {
   return (
     <Suspense fallback={
@@ -538,7 +548,7 @@ export default function ThreadPage() {
         </div>
       </div>
     }>
-      <ThreadContent />
+      <ThreadPageInner />
     </Suspense>
   );
 }
