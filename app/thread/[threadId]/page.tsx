@@ -131,10 +131,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Expanded card state — only one card can be expanded at a time.
   // Initialized from the prop so the /p/<id> route can open a card on first render.
   const [expandedPollId, setExpandedPollId] = useState<string | null>(initialExpandedPollId);
+  // Polls whose expanded content has been pre-mounted because the card scrolled
+  // into view. We keep the mounted subtree display:none'd until expansion so all
+  // data fetches, state init, and child effects happen BEFORE the user taps —
+  // the expand then renders at the correct final height with no resize flicker.
+  const [visiblePollIds, setVisiblePollIds] = useState<Set<string>>(() => {
+    // Initialize with the pre-expanded poll (so its content mounts on first paint).
+    return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
+  });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
+  // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
@@ -228,6 +238,45 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       });
     }
   }, [thread, loading, headerHeight]);
+
+  // Set up a shared IntersectionObserver so cards pre-mount their expanded
+  // content when they scroll into view. rootMargin prefetches slightly early.
+  // Runs once; callback refs on each card attach/detach the observer.
+  useEffect(() => {
+    const list = scrollListRef.current;
+    if (!list || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const newlyVisible: string[] = [];
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = (entry.target as HTMLElement).dataset.pollId;
+            if (id) newlyVisible.push(id);
+          }
+        });
+        if (newlyVisible.length === 0) return;
+        setVisiblePollIds((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const id of newlyVisible) {
+            if (!next.has(id)) {
+              next.add(id);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { root: list, rootMargin: '200px 0px' },
+    );
+    intersectionObserverRef.current = observer;
+    // Attach to any cards already mounted (ref callbacks may have fired before this effect).
+    cardRefs.current.forEach((el) => observer.observe(el));
+    return () => {
+      observer.disconnect();
+      intersectionObserverRef.current = null;
+    };
+  }, []);
 
   // When a card expands, scroll it so its top sits flush with the bottom of the
   // fixed header. Use getBoundingClientRect rather than offsetTop to avoid depending
@@ -430,8 +479,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               <div
                 key={poll.id}
                 ref={(el) => {
-                  if (el) cardRefs.current.set(poll.id, el);
-                  else cardRefs.current.delete(poll.id);
+                  if (el) {
+                    el.dataset.pollId = poll.id;
+                    cardRefs.current.set(poll.id, el);
+                    intersectionObserverRef.current?.observe(el);
+                  } else {
+                    const prev = cardRefs.current.get(poll.id);
+                    if (prev) intersectionObserverRef.current?.unobserve(prev);
+                    cardRefs.current.delete(poll.id);
+                  }
                 }}
                 className="mx-1.5 mb-1.5"
               >
@@ -501,9 +557,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     )}
                   </div>
 
-                  {/* Expanded full-poll content */}
-                  {isExpanded && (
-                    <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                  {/* Expanded full-poll content — pre-mounted (hidden) once the card
+                       enters the viewport so fetches + effects complete before expansion.
+                       display:none on the wrapper keeps it out of layout until expanded. */}
+                  {(visiblePollIds.has(poll.id) || isExpanded) && (
+                    <div
+                      className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600"
+                      style={{ display: isExpanded ? undefined : 'none' }}
+                      aria-hidden={!isExpanded}
+                    >
                       <PollPageClient
                         poll={poll}
                         createdDate={(() => {
