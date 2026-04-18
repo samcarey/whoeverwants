@@ -91,8 +91,12 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, [pathname]);
 
   // Keep thread page ref in sync for the scroll handler (which runs in a [] effect).
+  // Also force the bottom bar visible on arrival so a previously-hidden bar
+  // (e.g., from scrolling a non-thread page) doesn't stay hidden here.
   useEffect(() => {
-    isThreadPageRef.current = pathname.startsWith('/thread/');
+    const onThreadPage = pathname.startsWith('/thread/');
+    isThreadPageRef.current = onThreadPage;
+    if (onThreadPage) setShowBottomBar(true);
   }, [pathname]);
 
   // Detect PWA standalone mode once — these are device constants that never change mid-session.
