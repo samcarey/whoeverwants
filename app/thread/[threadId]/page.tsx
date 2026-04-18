@@ -129,6 +129,8 @@ function ThreadContent() {
   const [expandedPollId, setExpandedPollId] = useState<string | null>(null);
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
+  // Refs for each card wrapper so we can scroll the expanded card into view
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Long press state
   const [modalPoll, setModalPoll] = useState<Poll | null>(null);
@@ -222,6 +224,24 @@ function ThreadContent() {
       });
     }
   }, [thread, loading, headerHeight]);
+
+  // When a card expands, scroll it so its top sits flush with the bottom of the
+  // fixed header. Use getBoundingClientRect rather than offsetTop to avoid depending
+  // on offsetParent positioning, which varies with parent layout. Two rAFs let React
+  // commit the expanded DOM before we measure.
+  useEffect(() => {
+    if (!expandedPollId) return;
+    const card = cardRefs.current.get(expandedPollId);
+    const list = scrollListRef.current;
+    if (!card || !list) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const cardRect = card.getBoundingClientRect();
+        const listRect = list.getBoundingClientRect();
+        list.scrollTop += cardRect.top - listRect.top - headerHeight;
+      });
+    });
+  }, [expandedPollId, headerHeight]);
 
   if (loading) {
     return (
@@ -387,6 +407,10 @@ function ThreadContent() {
             return (
               <div
                 key={poll.id}
+                ref={(el) => {
+                  if (el) cardRefs.current.set(poll.id, el);
+                  else cardRefs.current.delete(poll.id);
+                }}
                 className="mx-1.5 mb-1.5"
               >
                 <div
