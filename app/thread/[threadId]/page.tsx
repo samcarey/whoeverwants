@@ -244,13 +244,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Runs once; callback refs on each card attach/detach the observer.
   useEffect(() => {
     const list = scrollListRef.current;
-    console.log('[expand-debug] observer setup: list=', !!list, 'IO=', typeof IntersectionObserver !== 'undefined', 'cards=', cardRefs.current.size);
     if (!list || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
         const newlyVisible: string[] = [];
         entries.forEach((entry) => {
-          console.log('[expand-debug] IO entry:', (entry.target as HTMLElement).dataset.pollId, 'isIntersecting=', entry.isIntersecting);
           if (entry.isIntersecting) {
             const id = (entry.target as HTMLElement).dataset.pollId;
             if (id) newlyVisible.push(id);
@@ -266,7 +264,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               changed = true;
             }
           }
-          console.log('[expand-debug] visiblePollIds now:', Array.from(next));
           return changed ? next : prev;
         });
       },
