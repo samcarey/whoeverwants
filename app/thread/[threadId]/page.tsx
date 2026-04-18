@@ -149,11 +149,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // Ref to each card's overflow-hidden wrapper. Its scrollHeight reports the
-  // natural height of the expanded content (the content is pre-mounted via
-  // the IntersectionObserver) regardless of whether the parent grid row is
-  // 0fr or 1fr — so we can predict the final card bottom even mid-animation.
-  const expandedWrapperRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
 
   // Long press state
@@ -300,59 +295,77 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   //      bottom bar, scroll down just enough to reveal it — but never far
   //      enough to push the compact header above the top bar.
   // If the card already fits within the visible band, scroll stays put.
+  //
+  // The grid-template-rows transition takes ~300ms, during which the list's
+  // scrollHeight grows from "compact total" to "expanded total". Calling
+  // scrollTo before the growth is complete gets clamped to the current max,
+  // which silently undershoots. We listen for transitionend on the grid
+  // element and scroll once layout has settled (falling back to a timeout).
   useEffect(() => {
     if (!expandedPollId) return;
     const card = cardRefs.current.get(expandedPollId);
     const list = scrollListRef.current;
     if (!card || !list) return;
-    // Two rAFs: first lets React commit the grid-rows change, second lets
-    // the browser apply the layout/inline-style so scrollHeight is accurate.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const cardRect = card.getBoundingClientRect();
-        const listRect = list.getBoundingClientRect();
-        // The expanded content is pre-mounted inside an overflow:hidden wrapper
-        // whose scrollHeight reflects its natural (clipped) content height.
-        // Combined with the compact header's current height (card.offsetHeight
-        // reflects the mid-animation rendered size, but since we only want the
-        // TOP of the compact header — which is immune to the expansion below —
-        // we read it from cardRect.top and add the natural content below.) we
-        // get an accurate final card bottom even while the expand animates.
-        const wrapper = expandedWrapperRefs.current.get(expandedPollId);
-        const expandedContentHeight = wrapper?.scrollHeight ?? 0;
-        // Compact-header height = card's height with the expanded slot at 0fr.
-        // During animation, card.offsetHeight is the interpolated total. We
-        // subtract the wrapper's current laid-out height to isolate the
-        // compact portion.
-        const wrapperCurrentHeight = wrapper?.getBoundingClientRect().height ?? 0;
-        const compactHeight = card.getBoundingClientRect().height - wrapperCurrentHeight;
-        const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
-        const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
 
-        // Viewport-space bounds of the "useful" visible area inside the list.
-        const visibleTopY = listRect.top + headerHeight;
-        const visibleBottomY = listRect.bottom - bottomBarHeight;
+    let cancelled = false;
 
-        const cardTopY = cardRect.top;
-        const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
+    const applyScrollAdjustment = () => {
+      if (cancelled) return;
+      const cardRect = card.getBoundingClientRect();
+      const listRect = list.getBoundingClientRect();
+      const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
+      const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
+      const visibleTopY = listRect.top + headerHeight;
+      const visibleBottomY = listRect.bottom - bottomBarHeight;
+      const cardTopY = cardRect.top;
+      const cardBottomY = cardRect.bottom;
 
-        let delta = 0;
-        if (cardTopY < visibleTopY) {
-          // Rule 1: top is behind the header — bring it down to flush with the bar.
-          delta = cardTopY - visibleTopY; // negative → scrollTop decreases
-        } else if (finalCardBottomY > visibleBottomY) {
-          // Rule 2: bottom will be behind the bottom bar — scroll down to show it,
-          // but never so far that the top disappears behind the top bar.
-          const overshoot = finalCardBottomY - visibleBottomY;
-          const slack = cardTopY - visibleTopY;
-          delta = Math.min(overshoot, slack);
-        }
+      let delta = 0;
+      if (cardTopY < visibleTopY) {
+        delta = cardTopY - visibleTopY; // scroll up
+      } else if (cardBottomY > visibleBottomY) {
+        const overshoot = cardBottomY - visibleBottomY;
+        const slack = cardTopY - visibleTopY;
+        delta = Math.min(overshoot, slack);
+      }
 
-        if (delta !== 0) {
-          list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' });
-        }
-      });
-    });
+      if (delta !== 0) {
+        list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' });
+      }
+    };
+
+    // The grid-rows transition runs on the grid element inside the card.
+    const gridEl = card.querySelector('[data-poll-expand-grid]') as HTMLElement | null;
+    let cleanup: (() => void) | null = null;
+    if (gridEl) {
+      const onTransitionEnd = (e: TransitionEvent) => {
+        if (e.propertyName !== 'grid-template-rows') return;
+        gridEl.removeEventListener('transitionend', onTransitionEnd);
+        if (timeoutId) clearTimeout(timeoutId);
+        applyScrollAdjustment();
+      };
+      gridEl.addEventListener('transitionend', onTransitionEnd);
+      // Safety net: if for some reason transitionend doesn't fire (reduced
+      // motion, backgrounded tab, etc.), still scroll after the expected
+      // animation duration + a small margin.
+      const timeoutId = setTimeout(() => {
+        gridEl.removeEventListener('transitionend', onTransitionEnd);
+        applyScrollAdjustment();
+      }, 360);
+      cleanup = () => {
+        gridEl.removeEventListener('transitionend', onTransitionEnd);
+        clearTimeout(timeoutId);
+      };
+    } else {
+      // Fallback: no grid found (shouldn't happen) — scroll after a frame.
+      const timeoutId = setTimeout(applyScrollAdjustment, 360);
+      cleanup = () => clearTimeout(timeoutId);
+    }
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, [expandedPollId, headerHeight]);
 
   // Listen for poll:updated events (fired when close/reopen happens from within
@@ -716,16 +729,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        without JS measurement. */}
                   {(visiblePollIds.has(poll.id) || isExpanded) && (
                     <div
+                      data-poll-expand-grid=""
                       className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
                       aria-hidden={!isExpanded}
                     >
-                      <div
-                        className="overflow-hidden"
-                        ref={(el) => {
-                          if (el) expandedWrapperRefs.current.set(poll.id, el);
-                          else expandedWrapperRefs.current.delete(poll.id);
-                        }}
-                      >
+                      <div className="overflow-hidden">
                         <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                           <PollPageClient
                             poll={poll}
