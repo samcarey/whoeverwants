@@ -131,6 +131,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Expanded card state — only one card can be expanded at a time.
   // Initialized from the prop so the /p/<id> route can open a card on first render.
   const [expandedPollId, setExpandedPollId] = useState<string | null>(initialExpandedPollId);
+  // Which poll's creation-time tooltip is currently showing (null = none). Shared
+  // across all cards so only one tooltip is visible at a time.
+  const [tooltipPollId, setTooltipPollId] = useState<string | null>(null);
   // Polls whose expanded content has been pre-mounted because the card scrolled
   // into view. We keep the mounted subtree display:none'd until expansion so all
   // data fetches, state init, and child effects happen BEFORE the user taps —
@@ -295,6 +298,22 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       });
     });
   }, [expandedPollId, headerHeight]);
+
+  // Dismiss the creation-time tooltip on any outside click/tap. Attachment is
+  // deferred by one tick so the opening event doesn't close it immediately.
+  useEffect(() => {
+    if (!tooltipPollId) return;
+    const close = () => setTooltipPollId(null);
+    const t = setTimeout(() => {
+      document.addEventListener('click', close);
+      document.addEventListener('touchstart', close, { passive: true });
+    }, 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('click', close);
+      document.removeEventListener('touchstart', close);
+    };
+  }, [tooltipPollId]);
 
   // Sync the URL to reflect which card is expanded, using shallow history.replaceState
   // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
@@ -554,7 +573,37 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   <div className="flex items-center justify-between">
                     <div className="text-xs text-gray-400 dark:text-gray-500">
                       <ClientOnly fallback={null}>
-                        <>{poll.creator_name && <>{poll.creator_name} &middot; </>}{relativeTime(poll.created_at)}</>
+                        <>
+                          {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                          <span
+                            className="relative cursor-help"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTooltipPollId((prev) => (prev === poll.id ? null : poll.id));
+                            }}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            onTouchEnd={(e) => e.stopPropagation()}
+                            onTouchMove={(e) => e.stopPropagation()}
+                            onMouseEnter={() => setTooltipPollId(poll.id)}
+                            onMouseLeave={() =>
+                              setTooltipPollId((prev) => (prev === poll.id ? null : prev))
+                            }
+                          >
+                            {relativeTime(poll.created_at)}
+                            {tooltipPollId === poll.id && (
+                              <span
+                                role="tooltip"
+                                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                              >
+                                {(() => {
+                                  const dt = new Date(poll.created_at);
+                                  const t = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                                  return `@ ${t} ${dt.toLocaleDateString("en-US", { year: "2-digit", month: "numeric", day: "numeric" })}`;
+                                })()}
+                              </span>
+                            )}
+                          </span>
+                        </>
                       </ClientOnly>
                     </div>
                     {!isVoted && isOpen && (

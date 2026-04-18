@@ -1505,15 +1505,8 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   return (
     <>
       <div className="poll-content">
-        
-        {/* Show creation info */}
-        <div className="text-center text-sm text-gray-600 dark:text-gray-400 mb-4">
-          {poll.creator_name ? (
-            <>Created by <span className="text-blue-600 dark:text-blue-400">{poll.creator_name}</span> {createdDate}</>
-          ) : (
-            <>Created {createdDate}</>
-          )}
-        </div>
+        {/* Creation info lives on the compact card header (creator name + relative time);
+             full timestamp is available via the tooltip on that time. */}
 
         {/* Poll details (expandable) */}
         {poll.details && <PollDetails details={poll.details} />}
