@@ -4,7 +4,8 @@ import { Poll } from "@/lib/types";
 import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
+import { getAccessiblePolls } from "@/lib/simplePollQueries";
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import { isUuidLike } from "@/lib/pollId";
 import { useEffect, useState, Suspense } from "react";
@@ -17,13 +18,20 @@ function PollContent() {
   const params = useParams();
 
   // Resolve synchronously from cache when possible so the thread view renders on first paint.
+  // Walk up the follow_up_to chain using both the direct cache and the accessible-polls list
+  // (which includes polls not yet fetched individually) to find the thread root.
   const resolvedInitial = (() => {
     if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
     const poll = isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
     if (!poll) return null;
-    const rootRouteId = findThreadRootRouteId(poll, getCachedPollById);
+    const accessible = getCachedAccessiblePolls();
+    const byId = new Map<string, Poll>();
+    accessible?.forEach((p) => byId.set(p.id, p));
+    byId.set(poll.id, poll);
+    const lookup = (id: string) => byId.get(id) ?? getCachedPollById(id) ?? null;
+    const rootRouteId = findThreadRootRouteId(poll, lookup);
     return { poll, rootRouteId };
   })();
 
@@ -55,10 +63,15 @@ function PollContent() {
           return;
         }
         addAccessiblePollId(poll.id);
-        // Run discovery so the parent chain is populated in the cache before we
-        // walk up to find the thread root.
+        // Run discovery + fetch the accessible polls so ancestor polls are available
+        // for the follow_up_to walk.
         try { await discoverRelatedPolls(); } catch {}
-        const rootRouteId = findThreadRootRouteId(poll, getCachedPollById);
+        const accessible = (await getAccessiblePolls()) ?? [];
+        const byId = new Map<string, Poll>();
+        accessible.forEach((p) => byId.set(p.id, p));
+        byId.set(poll.id, poll);
+        const lookup = (id: string) => byId.get(id) ?? getCachedPollById(id) ?? null;
+        const rootRouteId = findThreadRootRouteId(poll, lookup);
         if (!cancelled) setResolved({ poll, rootRouteId });
       } catch {
         if (!cancelled) setError(true);
