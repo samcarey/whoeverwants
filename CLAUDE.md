@@ -1084,7 +1084,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **No bottom bar. No home button.** The old three-button bottom bar (Home / + / Profile) was removed. Navigation is:
   - **Floating "+" FAB**: rendered only on the home page and thread-like pages (`/` plus `isThreadLikePage = isPollPage || isThreadPage`). Pinned bottom-right via `position: fixed` + `max(1rem, env(safe-area-inset-{bottom,right}))`. Opens the create-poll modal; on thread pages it reads `data-thread-latest-poll-id` from `<body>` to auto-set `followUpTo`.
-  - **Profile icon**: only on the home page, upper-right, icon-only (no text). Rendered into `HeaderPortal` so it sits outside the scaling container at the viewport edge.
+  - **Profile icon**: only on the home page, upper-right, icon-only (no text). Rendered as `position: absolute` inside the home title's `relative` container so it sits in normal page flow and **scrolls off-screen with the page** (intentionally not fixed). `top` includes `env(safe-area-inset-top)` to clear the iOS notch.
   - **Back arrow**: the HeaderPortal back button only renders on the profile page when there's in-app history; all other pages (thread, poll) render their own back button in their fixed header.
 - **Content wrappers on home + thread-like pages reserve `calc(5.5rem + env(safe-area-inset-bottom, 0px))` of bottom padding** so the last card can scroll above the FAB. Other pages use the normal `pb-6`/`py-6` from the outer Tailwind classes.
 - **FAB portal target**: `#floating-fab-portal` (previously `#bottom-bar-portal`) in `app/layout.tsx`. Lives outside `.responsive-scaling-container` so fixed positioning is relative to the viewport, not the scaled container.

@@ -627,6 +627,24 @@ function TemplateInner({ children }: AppTemplateProps) {
           <div
             className="relative max-w-4xl mx-auto px-2 pb-1 page-title-safe-top"
           >
+            {/* Profile icon — upper-right, in normal page flow so it scrolls
+                off as the user scrolls down. Absolute-positioned within the
+                relative title container; `top` includes the safe-area inset
+                so it sits below the iOS notch. */}
+            <button
+              onClick={() => navigateWithTransition(router, '/profile', 'forward')}
+              {...prefetchOnHover('/profile')}
+              className="absolute w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+              style={{
+                top: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
+                right: 'max(0.5rem, env(safe-area-inset-right, 0px))',
+              }}
+              aria-label="Profile"
+            >
+              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </button>
             <div className="text-center">
               <h1 className="text-2xl font-bold mb-1 select-none" {...longPressProps}>
                 Whoever Wants
@@ -721,14 +739,14 @@ function TemplateInner({ children }: AppTemplateProps) {
             }
             router.push(`${pathname}?${params.toString()}`);
           }}
-          className="fixed z-50 floating-plus-button w-14 h-14 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-lg shadow-black/25 cursor-pointer"
+          className="fixed z-50 floating-plus-button w-11 h-11 rounded-full flex items-center justify-center bg-blue-500/85 dark:bg-blue-600/85 active:bg-blue-600 dark:active:bg-blue-500 backdrop-blur-sm shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
           aria-label="Create new poll"
         >
-          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </button>,
@@ -750,21 +768,6 @@ function TemplateInner({ children }: AppTemplateProps) {
               </svg>
             </button>
           </div>
-        )}
-
-        {/* Profile icon — home page only, upper-right. Tiny icon, no label. */}
-        {pathname === '/' && (
-          <button
-            onClick={() => navigateWithTransition(router, '/profile', 'forward')}
-            {...prefetchOnHover('/profile')}
-            className="fixed right-0 z-50 w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
-            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)', right: 'max(0.5rem, env(safe-area-inset-right, 0px))' }}
-            aria-label="Profile"
-          >
-            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </button>
         )}
 
       </HeaderPortal>
