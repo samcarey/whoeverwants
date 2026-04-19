@@ -4,7 +4,6 @@ import React, { useEffect, useState, useRef, useCallback, Suspense } from 'react
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import FloatingCopyLinkButton from '@/components/FloatingCopyLinkButton';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
@@ -1003,13 +1002,6 @@ function TemplateInner({ children }: AppTemplateProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-          </div>
-        )}
-        
-        {/* Copy link button in upper right for poll pages */}
-        {isPollPage && (
-          <div className="fixed right-4 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }}>
-            <FloatingCopyLinkButton url={typeof window !== 'undefined' ? window.location.href : ''} />
           </div>
         )}
         
