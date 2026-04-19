@@ -557,7 +557,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             }
             router.push(`${pathname}?${params.toString()}`);
           }}
-          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500/85 dark:bg-blue-600/85 active:bg-blue-600 dark:active:bg-blue-500 backdrop-blur-sm shadow-md shadow-black/20 cursor-pointer"
+          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
