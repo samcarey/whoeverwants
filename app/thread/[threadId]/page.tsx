@@ -320,11 +320,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const expandedContentHeight = wrapper?.scrollHeight ?? 0;
     const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
-    const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
-    const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
-    // Visible area is [headerHeight, innerHeight - bottomBarHeight].
+    // Visible area is [headerHeight, innerHeight]. The floating "+" overlays the
+    // bottom-right corner but doesn't consume horizontal flow, so we don't shrink
+    // the usable area for it — an expanded card's bottom may sit under the FAB,
+    // which is acceptable.
     const visibleTopY = headerHeight;
-    const visibleBottomY = window.innerHeight - bottomBarHeight;
+    const visibleBottomY = window.innerHeight;
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
@@ -10,9 +9,7 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
-import { isUuidLike, extractPollRouteId } from '@/lib/pollId';
-import { findThreadRootRouteId } from '@/lib/threadUtils';
-import * as pollBackTarget from '@/lib/pollBackTarget';
+import { isUuidLike } from '@/lib/pollId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -32,14 +29,6 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
-// Detect standalone PWA mode (iOS via navigator.standalone, Android/Chrome via display-mode media query).
-const isStandalonePWA = () =>
-  (navigator as unknown as { standalone?: boolean }).standalone === true ||
-  window.matchMedia('(display-mode: standalone)').matches;
-
-// Bottom bar scroll behavior
-const SCROLL_TOP_SAFE_ZONE = 50; // Don't hide bottom bar when within this many px of top
-
 // Pull-to-refresh constants (iOS PWA only)
 const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
 const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
@@ -58,18 +47,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { prefetchOnHover } = usePrefetch();
-  const [isStandalone, setIsStandalone] = useState(false);
   const [hasAppHistory, setHasAppHistory] = useState(false);
-  const [showBottomBar, setShowBottomBar] = useState(true);
-  const [bottomBarHeight, setBottomBarHeight] = useState(56);
-  const bottomBarRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [needsCustomPTR, setNeedsCustomPTR] = useState(false);
-  const lastScrollY = useRef(0);
-  const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
-  const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isInBounceRef = useRef(false);
-  const isThreadPageRef = useRef(false);
 
   // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
   // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
@@ -86,37 +66,8 @@ function TemplateInner({ children }: AppTemplateProps) {
     setHasAppHistory(count > 1);
   }, [pathname]);
 
-  // Measure the bottom bar's rendered height so the scroll container can reserve
-  // the exact amount — hardcoding 56px leaves a white gap on web where the bar
-  // (no safe-area inset) is a few px shorter.
-  useEffect(() => {
-    if (!isMounted) return;
-    const el = bottomBarRef.current;
-    if (!el) return;
-    const measure = () => {
-      // Bar is translated off-screen when hidden; offsetHeight still reflects
-      // the laid-out height regardless of transform.
-      const h = el.offsetHeight;
-      if (h > 0) setBottomBarHeight(h);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [isMounted]);
-
-  // Keep thread page ref in sync for the scroll handler (which runs in a [] effect).
-  // Also force the bottom bar visible on arrival so a previously-hidden bar
-  // (e.g., from scrolling a non-thread page) doesn't stay hidden here.
-  useEffect(() => {
-    const onThreadPage = pathname.startsWith('/thread/');
-    isThreadPageRef.current = onThreadPage;
-    if (onThreadPage) setShowBottomBar(true);
-  }, [pathname]);
-
   // Detect device constants once — values never change mid-session.
   useEffect(() => {
-    setIsStandalone(isStandalonePWA());
     // Mobile touch device: has touch AND coarse pointer (excludes desktops with
     // touchscreens driven primarily by a mouse).
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -158,7 +109,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   };
   
   const getInitialLeftElement = () => {
-    return <div className="w-6 h-6" />; // spacer since profile button is now in bottom bar
+    return <div className="w-6 h-6" />; // spacer
   };
   
   const [pageTitle, setPageTitle] = useState(getInitialPageTitle());
@@ -213,103 +164,6 @@ function TemplateInner({ children }: AppTemplateProps) {
 
     return () => {
       window.removeEventListener('pageTitleChange', handleTitleChange as EventListener);
-    };
-  }, []);
-
-  // Handle scroll direction detection for bottom bar.
-  // The document is the scroller — uses touch events (reliable on iOS) as the
-  // primary mechanism and window scroll as a fallback for desktop mouse wheel.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    let rAFId: number | null = null;
-
-    // Track current visibility to avoid no-op setState calls during scroll
-    let isVisible = true;
-    const setVisible = (visible: boolean) => {
-      // Never hide bottom bar on thread pages
-      if (isThreadPageRef.current) visible = true;
-      if (visible !== isVisible) {
-        isVisible = visible;
-        setShowBottomBar(visible);
-      }
-    };
-
-    const getScrollTop = () => window.scrollY;
-    const getMaxScroll = () =>
-      document.documentElement.scrollHeight - window.innerHeight;
-    const isNearTop = (pos: number) => pos < SCROLL_TOP_SAFE_ZONE;
-
-    // --- Touch-based direction detection (primary on iOS) ---
-    let touchStartScrollTop = 0;
-
-    const handleTouchStart = () => {
-      touchStartScrollTop = getScrollTop();
-    };
-
-    const handleTouchEnd = () => {
-      const pos = getScrollTop();
-      if (isNearTop(pos)) { setVisible(true); return; }
-      const delta = pos - touchStartScrollTop;
-      if (Math.abs(delta) >= scrollThreshold.current) {
-        setVisible(delta < 0); // scrolled up → show, scrolled down → hide
-      }
-    };
-
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    // --- Scroll event fallback (desktop mouse wheel + browser scroll) ---
-    const processScroll = () => {
-      rAFId = null;
-      const currentScrollY = getScrollTop();
-      const maxScrollY = getMaxScroll();
-
-      if (isNearTop(currentScrollY)) {
-        setVisible(true);
-        lastScrollY.current = currentScrollY;
-        return;
-      }
-
-      // iOS rubber band past the bottom — ignore
-      if (currentScrollY > maxScrollY) {
-        isInBounceRef.current = true;
-        if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
-        bounceTimeoutRef.current = setTimeout(() => {
-          isInBounceRef.current = false;
-          bounceTimeoutRef.current = null;
-        }, 150);
-        lastScrollY.current = maxScrollY;
-        return;
-      }
-
-      if (isInBounceRef.current) {
-        lastScrollY.current = currentScrollY;
-        return;
-      }
-
-      const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
-      if (scrollDifference >= scrollThreshold.current) {
-        setVisible(currentScrollY < lastScrollY.current);
-      }
-
-      lastScrollY.current = currentScrollY;
-    };
-
-    const handleScroll = () => {
-      if (rAFId === null) {
-        rAFId = requestAnimationFrame(processScroll);
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchend', handleTouchEnd);
-      window.removeEventListener('scroll', handleScroll);
-      if (rAFId !== null) cancelAnimationFrame(rAFId);
-      if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
     };
   }, []);
 
@@ -747,15 +601,12 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       )}
 
-      {/* Bottom padding reserves space for the fixed bottom bar when visible;
-          collapses to 0 in lockstep with the bar's 200ms slide-out so no white
-          gap remains when it hides. */}
+      {/* Horizontal safe-area padding; bottom padding is added per-page so
+          the floating "+" button never obscures the last item. */}
       <div
         style={{
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          paddingBottom: showBottomBar ? `${bottomBarHeight}px` : '0',
-          transition: 'padding-bottom 200ms ease-out',
         }}>
         {/* Commit age badge portal target — anchored to the top safe-area
              boundary via .pwa-badge-top. z-30 keeps it above the thread page's
@@ -787,7 +638,10 @@ function TemplateInner({ children }: AppTemplateProps) {
           </div>
         )}
 
-        <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+        <div
+          className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
+          style={(pathname === '/' || isThreadLikePage) ? { paddingBottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' } : undefined}
+        >
           {children}
         </div>
       </div>
@@ -851,127 +705,43 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Scroll-aware bottom bar - rendered via portal outside scaled container */}
-      {isMounted && createPortal(
-        <div
-          ref={bottomBarRef}
-          className={`fixed left-0 right-0 bottom-0 z-50 border-t border-gray-300 dark:border-gray-600 bg-gray-200/95 dark:bg-gray-800/95 backdrop-blur-sm pwa-bottom-bar ${
-            showBottomBar ? '' : 'pointer-events-none'
-          }`}
-          style={{
-            // Bottom padding handled by .pwa-bottom-bar CSS class (1x default, 2x in standalone).
-            transform: showBottomBar ? 'translateY(0)' : 'translateY(100%)',
-            transition: 'transform 200ms ease-out',
-            willChange: 'transform',
+      {/* Floating "+" create-poll button — fixed bottom-right, home + thread-like pages only.
+           Rendered via portal outside the scaling container so it positions against
+           the viewport. `view-transition-name: floating-plus` keeps it fixed (no
+           slide) across home <-> thread navigation — see globals.css. */}
+      {isMounted && (pathname === '/' || isThreadLikePage) && createPortal(
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set('create', '1');
+            // When on a thread page, auto-set followUpTo for the latest poll
+            const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
+            if (threadLatestPollId) {
+              params.set('followUpTo', threadLatestPollId);
+            }
+            router.push(`${pathname}?${params.toString()}`);
           }}
+          className="fixed z-50 floating-plus-button w-14 h-14 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-lg shadow-black/25 cursor-pointer"
+          style={{
+            right: 'max(1rem, env(safe-area-inset-right, 0px))',
+            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+          }}
+          aria-label="Create new poll"
         >
-        <div className="flex items-center justify-evenly py-1.5">
-          {/* Home button */}
-          <button
-            onClick={pathname === '/' ? undefined : () => navigateWithTransition(router, '/', 'back')}
-            {...prefetchOnHover('/')}
-            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
-            aria-label="Go to home"
-            disabled={pathname === '/'}
-          >
-            <svg className={`w-6 h-6 ${
-              pathname === '/'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400'
-            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span className={`text-[10px] font-medium ${
-              pathname === '/'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>Home</span>
-          </button>
-
-          {/* Create poll button */}
-          <button
-            onClick={() => {
-              const params = new URLSearchParams(searchParams.toString());
-              params.set('create', '1');
-              // When on a thread page, auto-set followUpTo for the latest poll
-              const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
-              if (threadLatestPollId) {
-                params.set('followUpTo', threadLatestPollId);
-              }
-              router.push(`${pathname}?${params.toString()}`);
-            }}
-            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
-            aria-label="Create new poll"
-          >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-              isCreateModalOpen
-                ? 'bg-blue-600 dark:bg-blue-500'
-                : 'bg-blue-500 dark:bg-blue-600'
-            } shadow-md`}>
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-          </button>
-
-          {/* Profile button */}
-          <button
-            onClick={isProfilePage ? undefined : () => navigateWithTransition(router, '/profile', 'forward')}
-            {...prefetchOnHover('/profile')}
-            className="flex flex-col items-center gap-0.5 min-w-[64px] cursor-pointer"
-            aria-label="Profile"
-            disabled={isProfilePage}
-          >
-            <svg className={`w-6 h-6 ${
-              isProfilePage
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400'
-            }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span className={`text-[10px] font-medium ${
-              isProfilePage
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>Profile</span>
-          </button>
-        </div>
-        </div>,
-        document.getElementById('bottom-bar-portal')!
+          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>,
+        document.getElementById('floating-fab-portal')!
       )}
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow in upper left. Thread-like pages render their own back
-             button in their fixed header — only the profile page still uses the
-             template's portal back arrow, and only when there's in-app history. */}
+        {/* Back arrow in upper left — profile page only, when there's in-app history. */}
         {(isProfilePage && hasAppHistory) && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
-              onClick={() => {
-                // Newly-created poll pages have a custom back target (the
-                // thread containing the poll) — `replace` mode so `back` from
-                // the thread skips over the poll rather than returning to it.
-                const pollRouteId = extractPollRouteId(pathname);
-                const customBack = pollRouteId && pollBackTarget.consume(pollRouteId);
-                if (customBack) {
-                  navigateWithTransition(router, customBack, 'back', { mode: 'replace' });
-                  return;
-                }
-                // Otherwise route back to the thread containing this poll.
-                // Standalone polls resolve to /thread/<itself>.
-                if (pollRouteId) {
-                  const currentPoll = isUuidLike(pollRouteId)
-                    ? getCachedPollById(pollRouteId)
-                    : getCachedPollByShortId(pollRouteId);
-                  if (currentPoll) {
-                    const rootRouteId = findThreadRootRouteId(currentPoll, getCachedPollById);
-                    navigateWithTransition(router, `/thread/${rootRouteId}`, 'back');
-                    return;
-                  }
-                }
-                navigateBackWithTransition();
-              }}
+              onClick={() => navigateBackWithTransition()}
               className="w-12 h-16 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
               aria-label="Go back"
             >
@@ -981,7 +751,22 @@ function TemplateInner({ children }: AppTemplateProps) {
             </button>
           </div>
         )}
-        
+
+        {/* Profile icon — home page only, upper-right. Tiny icon, no label. */}
+        {pathname === '/' && (
+          <button
+            onClick={() => navigateWithTransition(router, '/profile', 'forward')}
+            {...prefetchOnHover('/profile')}
+            className="fixed right-0 z-50 w-12 h-12 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)', right: 'max(0.5rem, env(safe-area-inset-right, 0px))' }}
+            aria-label="Profile"
+          >
+            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </button>
+        )}
+
       </HeaderPortal>
     </>
   );
