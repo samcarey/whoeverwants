@@ -464,14 +464,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Thread header — position:fixed so it stays locked to the safe area top even if
+      {/* Thread header — position:fixed so it stays locked to the viewport top even if
           ancestor containers (.pwa-safe-top / .safari-scroll-container) end up with a stray
           scrollTop on iOS PWA. Viewport-relative because .responsive-scaling-container has
-          no transform on mobile. Anchored at top:0 with padding-top:env(safe-area-inset-top)
-          so the background fills the notch area — otherwise items scroll-drift above the
-          safe-area boundary and become visible in the notch zone. The ref is on the inner
-          content div so offsetHeight measures only the content (not the safe-area padding),
-          keeping scroll-list paddingTop and visibleTopY math correct. */}
+          no transform on mobile. top:0 + padding-top:env(safe-area-inset-top) fills the
+          notch area with the bar's background (otherwise items are visible there when the
+          list scrolls). headerRef is on the inner content div so offsetHeight stays
+          content-only — the scroll list's paddingTop and expand-scroll visibleTopY math
+          both expect that (the safe-area padding is already provided by .pwa-safe-top). */}
       <div
         className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
