@@ -60,7 +60,7 @@ export default function RootLayout({
       >
         <CommitInfo showTimeBadge={process.env.NODE_ENV === 'development'} />
         <ResponsiveScaling>
-          <div className="h-screen-safe flex flex-col font-[family-name:var(--font-geist-sans)]">
+          <div className="font-[family-name:var(--font-geist-sans)]">
             {/* This is where content from each page will be rendered */}
             {children}
           </div>
