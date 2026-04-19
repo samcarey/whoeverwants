@@ -228,13 +228,3 @@ html[data-nav-direction="back"]::view-transition-new(root) {
     overflow-x: hidden;
   }
 }
-
-/* PWA standalone mode: extend the bottom bar into the home indicator zone
-   so the bar's background fills the iOS safe-area gap, with doubled bottom
-   padding to keep buttons visually above the home indicator. */
-@media (display-mode: standalone) {
-  .pwa-bottom-bar {
-    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
-    padding-bottom: calc(2 * env(safe-area-inset-bottom, 0px));
-  }
-}
