@@ -253,7 +253,11 @@ function TemplateInner({ children }: AppTemplateProps) {
     const handleTouchStart = (e: TouchEvent) => {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
-      const docAtTop = window.scrollY <= 5;
+      // Strictly require scrollY === 0. Any nonzero value means either the user
+      // is still scrolling toward the top or momentum scrolling is still in
+      // flight — engaging PTR in that window would fight the browser's own
+      // scroll and cause the body transform to visibly jostle the page.
+      const docAtTop = window.scrollY <= 0;
       isAtTop = docAtTop && !nestedScrollerAboveTop(e.target as HTMLElement);
     };
 
