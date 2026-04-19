@@ -36,6 +36,7 @@ import ParticipationConditions from "@/components/ParticipationConditions";
 import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
+import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
@@ -68,6 +69,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [isAbstaining, setIsAbstaining] = useState(false);
   const [suggestionChoices, setSuggestionChoices] = useState<string[]>([]);
   const [suggestionMetadata, setSuggestionMetadata] = useState<OptionsMetadata>({});
+  const [searchRadius, setSearchRadius] = useState(25);
   const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
 
   // Sync local metadata when poll prop changes (e.g., navigating between polls)
@@ -1522,12 +1524,17 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {poll.details && <PollDetails details={poll.details} />}
 
         {showReferenceLocation && (
-          <div className="mb-3 flex items-center justify-center gap-1.5 text-sm text-gray-500 dark:text-gray-400">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span>Near {poll.reference_location_label}</span>
+          <div className="mb-3 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Near {poll.reference_location_label}</span>
+            </div>
+            {canSubmitSuggestions && isLocationLikeCategory(poll.category ?? '') && (
+              <SearchRadiusBubble searchRadius={searchRadius} onSearchRadiusChange={setSearchRadius} />
+            )}
           </div>
         )}
 
@@ -2313,6 +2320,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       showCutoffButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
                       onCutoffClick={handleCutoffSuggestionsClick}
                       isCuttingOff={isCuttingOffSuggestions}
+                      searchRadius={searchRadius}
                     />
                   )}
 

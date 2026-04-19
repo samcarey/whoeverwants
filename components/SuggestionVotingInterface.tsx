@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import PollResultsDisplay from "@/components/PollResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
-import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 import type { ApiVote } from "@/lib/api";
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
@@ -44,6 +43,7 @@ interface SuggestionVotingInterfaceProps {
   showCutoffButton?: boolean;
   onCutoffClick?: () => void;
   isCuttingOff?: boolean;
+  searchRadius?: number;
 }
 
 export default function SuggestionVotingInterface({
@@ -76,10 +76,10 @@ export default function SuggestionVotingInterface({
   showCutoffButton = false,
   onCutoffClick,
   isCuttingOff = false,
+  searchRadius = 25,
 }: SuggestionVotingInterfaceProps) {
   const [newSuggestions, setNewSuggestions] = useState<string[]>([""]);
   const [filteredExistingSuggestions, setFilteredExistingSuggestions] = useState<string[]>([]);
-  const [searchRadius, setSearchRadius] = useState(25);
 
   // Helper function to convert existingSuggestions to format expected by SuggestionsList
   const getSuggestionsWithCounts = () => {
@@ -312,20 +312,6 @@ export default function SuggestionVotingInterface({
 
         {/* Add new suggestions using shared component */}
         <div className={filteredExistingSuggestions.length > 0 ? "mt-3 pt-3 border-t border-gray-200 dark:border-gray-600" : ""}>
-          {isLocationLikeCategory(poll.category || '') && poll.reference_latitude && (
-            <div className="mb-2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-              <span>Search within</span>
-              <select
-                value={searchRadius}
-                onChange={(e) => setSearchRadius(Number(e.target.value))}
-                className="px-1.5 py-0.5 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-800"
-              >
-                {[5, 10, 25, 50, 100, 250].map((r) => (
-                  <option key={r} value={r}>{r} mi</option>
-                ))}
-              </select>
-            </div>
-          )}
           <OptionsInput
             options={newSuggestions}
             setOptions={setNewSuggestions}
