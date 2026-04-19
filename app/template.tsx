@@ -84,7 +84,29 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
     window.addEventListener('unhandledrejection', handleChunkError);
-    return () => window.removeEventListener('unhandledrejection', handleChunkError);
+
+    // TEMPORARY diagnostic: log scroll position to client logs
+    let lastY = window.scrollY;
+    let lastT = Date.now();
+    const scrollLog = () => {
+      const y = window.scrollY;
+      const now = Date.now();
+      const dy = y - lastY;
+      const dt = now - lastT;
+      if (Math.abs(dy) > 0) {
+        console.log(`[st] +${dt}ms dy=${dy} y=${y}`);
+      }
+      lastY = y;
+      lastT = now;
+    };
+    window.addEventListener('scroll', scrollLog, { passive: true });
+    window.addEventListener('touchstart', () => console.log(`[st] touchstart y=${window.scrollY} h=${document.documentElement.scrollHeight}`), { passive: true });
+    window.addEventListener('touchend', () => console.log(`[st] touchend y=${window.scrollY}`), { passive: true });
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleChunkError);
+      window.removeEventListener('scroll', scrollLog);
+    };
   }, []);
 
   // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
