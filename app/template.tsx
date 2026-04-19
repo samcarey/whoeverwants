@@ -41,11 +41,6 @@ interface AppTemplateProps {
   children: React.ReactNode;
 }
 
-// Pull-to-refresh constants (iOS PWA only)
-const PTR_THRESHOLD = 240;  // px of raw touch movement to trigger refresh
-const PTR_CIRCUMFERENCE = 2 * Math.PI * 10; // SVG arc circumference (radius=10)
-const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
-
 export default function Template({ children }: AppTemplateProps) {
   return (
     <Suspense fallback={<div />}>
@@ -61,15 +56,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   const { prefetchOnHover } = usePrefetch();
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [needsCustomPTR, setNeedsCustomPTR] = useState(false);
 
-  // Pull-to-refresh state — uses refs + direct DOM manipulation for 60fps during drag,
-  // React state only for mount/unmount of indicator and final actions (refresh/snap-back).
-  const [pullActive, setPullActive] = useState(false);    // whether indicator is mounted
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const pullIndicatorRef = useRef<HTMLDivElement>(null);   // direct DOM ref for indicator
-  const pullArcRef = useRef<SVGCircleElement>(null);       // direct DOM ref for arc
-  
   // Track in-app navigation for back button (runs on each client-side navigation).
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -77,15 +64,6 @@ function TemplateInner({ children }: AppTemplateProps) {
     sessionStorage.setItem(NAV_COUNT_KEY, String(count));
     setHasAppHistory(count > 1);
   }, [pathname]);
-
-  // Detect device constants once — values never change mid-session.
-  useEffect(() => {
-    // Mobile touch device: has touch AND coarse pointer (excludes desktops with
-    // touchscreens driven primarily by a mouse).
-    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
-    setNeedsCustomPTR(hasTouch && coarsePointer);
-  }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
   useEffect(() => {
@@ -187,157 +165,6 @@ function TemplateInner({ children }: AppTemplateProps) {
       window.removeEventListener('pageTitleChange', handleTitleChange as EventListener);
     };
   }, []);
-
-  // Pull-to-refresh for all mobile touch devices (PWA + mobile web).
-  // The document is the scroller; the transform is applied to <body> so the
-  // whole page translates with the drag. Native PTR is suppressed via
-  // overscroll-behavior:none on html/body (globals.css).
-  //
-  // All listeners are PASSIVE — no e.preventDefault(). Calling preventDefault
-  // on even a 1px downward touchmove causes iOS to classify the entire gesture
-  // as non-scrollable, permanently blocking scroll for that touch. We track
-  // pull distance purely from touch position deltas.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !needsCustomPTR) return;
-
-    const body = document.body;
-
-    let startY = 0;
-    let isAtTop = true;
-    let isDragging = false;
-    let currentPullDistance = 0;
-    let refreshTriggered = false;
-    let rAFId: number | null = null;
-    let snapBackTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const updateDOM = (distance: number) => {
-      const damped = distance * 0.5;
-      body.style.transform = `translateY(${damped}px)`;
-      body.style.transition = 'none';
-
-      const indicator = pullIndicatorRef.current;
-      if (indicator) {
-        const fadeStart = PTR_INDICATOR_SIZE * 0.5;
-        const fadeEnd = PTR_INDICATOR_SIZE;
-        indicator.style.opacity = String(Math.min(Math.max((damped - fadeStart) / (fadeEnd - fadeStart), 0), 1));
-        indicator.style.transition = 'none';
-      }
-
-      const arc = pullArcRef.current;
-      if (arc) {
-        const pastThreshold = distance >= PTR_THRESHOLD;
-        arc.style.strokeDasharray = `${Math.min(distance / PTR_THRESHOLD, 1) * PTR_CIRCUMFERENCE} ${PTR_CIRCUMFERENCE}`;
-        arc.classList.toggle('text-blue-600', pastThreshold);
-        arc.classList.toggle('dark:text-blue-400', pastThreshold);
-        arc.classList.toggle('text-gray-400', !pastThreshold);
-        arc.classList.toggle('dark:text-gray-500', !pastThreshold);
-      }
-    };
-
-    // If any nested scrollable ancestor isn't at its top, PTR must NOT fire —
-    // the user is scrolling something inside (thread list, modal content,
-    // dropdown, etc.). Cheap property reads (scrollTop, scrollHeight) gate
-    // the expensive getComputedStyle call so non-scrolled ancestors are skipped.
-    const nestedScrollerAboveTop = (target: HTMLElement): boolean => {
-      let el: HTMLElement | null = target;
-      while (el && el !== body) {
-        if (el.scrollTop > 5 && el.scrollHeight > el.clientHeight) {
-          const oy = getComputedStyle(el).overflowY;
-          if (oy === 'auto' || oy === 'scroll') return true;
-        }
-        el = el.parentElement;
-      }
-      return false;
-    };
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (refreshTriggered) return;
-      startY = e.touches[0].clientY;
-      // Strictly require scrollY === 0. Any nonzero value means either the user
-      // is still scrolling toward the top or momentum scrolling is still in
-      // flight — engaging PTR in that window would fight the browser's own
-      // scroll and cause the body transform to visibly jostle the page.
-      const docAtTop = window.scrollY <= 0;
-      isAtTop = docAtTop && !nestedScrollerAboveTop(e.target as HTMLElement);
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (refreshTriggered || !isAtTop) return;
-
-      // Skip when a modal is open
-      const target = e.target as HTMLElement;
-      if (target.closest('[data-modal]')) return;
-
-      const rawDelta = e.touches[0].clientY - startY;
-
-      if (rawDelta > 10) {
-        if (!isDragging) {
-          isDragging = true;
-          // Cancel any pending snap-back from a previous gesture
-          if (snapBackTimeout) { clearTimeout(snapBackTimeout); snapBackTimeout = null; }
-          setPullActive(true);
-        }
-        currentPullDistance = rawDelta;
-        if (rAFId === null) {
-          rAFId = requestAnimationFrame(() => {
-            rAFId = null;
-            updateDOM(currentPullDistance);
-          });
-        }
-      } else if (isDragging && rawDelta <= 10) {
-        isDragging = false;
-        currentPullDistance = 0;
-        body.style.transform = '';
-        body.style.transition = '';
-        setPullActive(false);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      if (refreshTriggered) return;
-
-      if (isDragging && currentPullDistance >= PTR_THRESHOLD) {
-        refreshTriggered = true;
-        setIsRefreshing(true);
-        setTimeout(() => window.location.reload(), 400);
-      } else if (isDragging) {
-        body.style.transition = 'transform 0.3s ease';
-        body.style.transform = 'translateY(0px)';
-        const indicator = pullIndicatorRef.current;
-        if (indicator) {
-          indicator.style.transition = 'opacity 0.3s ease';
-          indicator.style.opacity = '0';
-        }
-        snapBackTimeout = setTimeout(() => {
-          body.style.transition = '';
-          body.style.transform = '';
-          setPullActive(false);
-          snapBackTimeout = null;
-        }, 300);
-      } else {
-        // Clear any stale transform
-        body.style.transform = '';
-        body.style.transition = '';
-      }
-
-      isDragging = false;
-      currentPullDistance = 0;
-    };
-
-    window.addEventListener('touchstart', handleTouchStart, { passive: true });
-    window.addEventListener('touchmove', handleTouchMove, { passive: true });
-    window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      window.removeEventListener('touchstart', handleTouchStart);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
-      body.style.transform = '';
-      body.style.transition = '';
-      if (rAFId !== null) cancelAnimationFrame(rAFId);
-      if (snapBackTimeout) clearTimeout(snapBackTimeout);
-    };
-  }, [needsCustomPTR]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
@@ -566,41 +393,6 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
-           Uses refs for direct DOM updates during drag (no React re-renders). */}
-      {needsCustomPTR && (pullActive || isRefreshing) && isMounted && createPortal(
-        <div
-          ref={pullIndicatorRef}
-          className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
-          style={{
-            top: 'calc(env(safe-area-inset-top, 0px) + 2px)',
-            opacity: isRefreshing ? 1 : 0,
-          }}
-        >
-          <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg p-2">
-            {isRefreshing ? (
-              <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
-                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" className="text-gray-200 dark:text-gray-600" strokeWidth="2.5" />
-                <circle
-                  ref={pullArcRef}
-                  cx="12" cy="12" r="10" stroke="currentColor"
-                  className="text-gray-400 dark:text-gray-500"
-                  strokeWidth="2.5" strokeLinecap="round"
-                  strokeDasharray={`0 ${PTR_CIRCUMFERENCE}`}
-                  transform="rotate(-90 12 12)"
-                />
-              </svg>
-            )}
-          </div>
-        </div>,
-        document.body
-      )}
-
       {/* Fallback header for pages without a page-specific header (not poll, thread, settings, home, or create-modal). */}
       {!isPollPage && !isThreadPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
