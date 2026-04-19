@@ -32,12 +32,6 @@ body {
      (commit badge, thread header, bottom bar) that each reserve their own space. */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  /* Disable the native overscroll bounce on iOS — its interaction with the
-     URL-bar hide/reveal animation produces a high-frequency up/down oscillation
-     at scroll edges (not a smooth bounce). Tradeoff: the browser's native
-     pull-to-refresh gesture also stops working on iOS; add a manual refresh
-     affordance if that matters. */
-  overscroll-behavior-y: none;
 }
 
 /* Hide scrollbar */

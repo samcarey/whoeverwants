@@ -84,7 +84,30 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
     window.addEventListener('unhandledrejection', handleChunkError);
-    return () => window.removeEventListener('unhandledrejection', handleChunkError);
+
+    // TEMPORARY: log every scroll position change to client logs so we can
+    // capture the oscillation pattern from real iOS devices.
+    let lastY = window.scrollY;
+    let lastT = Date.now();
+    const scrollLog = (e?: Event) => {
+      const y = window.scrollY;
+      const now = Date.now();
+      const dy = y - lastY;
+      const dt = now - lastT;
+      if (Math.abs(dy) > 0) {
+        console.log(`[scroll-trace] +${dt}ms dy=${dy} y=${y} type=${e?.type || 'init'}`);
+      }
+      lastY = y;
+      lastT = now;
+    };
+    window.addEventListener('scroll', scrollLog, { passive: true });
+    window.addEventListener('touchstart', () => console.log(`[scroll-trace] touchstart y=${window.scrollY}`), { passive: true });
+    window.addEventListener('touchend', () => console.log(`[scroll-trace] touchend y=${window.scrollY}`), { passive: true });
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleChunkError);
+      window.removeEventListener('scroll', scrollLog);
+    };
   }, []);
 
   // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
