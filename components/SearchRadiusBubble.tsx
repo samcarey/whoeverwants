@@ -16,11 +16,11 @@ export default function SearchRadiusBubble({
   const radiusInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (showRadiusModal) {
-      setRadiusInput(String(searchRadius));
-      setTimeout(() => radiusInputRef.current?.select(), 0);
-    }
-  }, [showRadiusModal, searchRadius]);
+    if (!showRadiusModal) return;
+    setRadiusInput(String(searchRadius));
+    const t = setTimeout(() => radiusInputRef.current?.select(), 0);
+    return () => clearTimeout(t);
+  }, [showRadiusModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyRadius = () => {
     const val = parseInt(radiusInput, 10);

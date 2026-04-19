@@ -1532,7 +1532,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
               </svg>
               <span>Near {poll.reference_location_label}</span>
             </div>
-            {canSubmitSuggestions && isLocationLikeCategory(poll.category ?? '') && poll.reference_latitude && (
+            {canSubmitSuggestions && isLocationLikeCategory(poll.category ?? '') && (
               <SearchRadiusBubble searchRadius={searchRadius} onSearchRadiusChange={setSearchRadius} />
             )}
           </div>
