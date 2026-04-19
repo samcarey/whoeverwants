@@ -577,7 +577,8 @@ function TemplateInner({ children }: AppTemplateProps) {
            Rendered via portal outside the scaling container so it positions against
            the viewport. `view-transition-name: floating-plus` keeps it fixed (no
            slide) across home <-> thread navigation — see globals.css. */}
-      {isMounted && (pathname === '/' || isThreadLikePage) && createPortal(
+      {/* Floating "+" FAB. Add ?no-fab to URL to disable it (diagnostic). */}
+      {isMounted && (pathname === '/' || isThreadLikePage) && !searchParams.has('no-fab') && createPortal(
         <button
           onClick={() => {
             const params = new URLSearchParams(searchParams.toString());
