@@ -467,13 +467,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       {/* Thread header — position:fixed so it stays locked to the safe area top even if
           ancestor containers (.pwa-safe-top / .safari-scroll-container) end up with a stray
           scrollTop on iOS PWA. Viewport-relative because .responsive-scaling-container has
-          no transform on mobile. */}
+          no transform on mobile. Anchored at top:0 with padding-top:env(safe-area-inset-top)
+          so the background fills the notch area — otherwise items scroll-drift above the
+          safe-area boundary and become visible in the notch zone. The ref is on the inner
+          content div so offsetHeight measures only the content (not the safe-area padding),
+          keeping scroll-list paddingTop and visibleTopY math correct. */}
       <div
-        ref={headerRef}
-        className="fixed left-0 right-0 z-20 bg-background touch-none"
-        style={{ top: 'env(safe-area-inset-top, 0px)' }}
+        className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
-        <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+        <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
           <button
             onClick={() => {
               if (hasAppHistory()) {
