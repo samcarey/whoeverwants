@@ -24,13 +24,17 @@ html {
   background: var(--background);
 }
 
-/* Disable native rubber-band overscroll on iOS. Applied to html, body, and the scroll
-   container because iOS WebKit can bounce any of them depending on which got the touch.
-   The PTR implementation is touch-event driven and unaffected. */
-html,
-body,
-.safari-scroll-container {
-  overscroll-behavior: none;
+/* Disable native rubber-band overscroll ONLY in PWA standalone mode. iOS PWA
+   blocks Apple's native pull-to-refresh, so we ship a custom touch-driven PTR
+   and need to suppress WebKit's bounce (which can come from html, body, or the
+   scroll container). In a regular mobile browser tab we must NOT disable this
+   — it blocks the browser's built-in pull-to-refresh gesture. */
+@media (display-mode: standalone) {
+  html,
+  body,
+  .safari-scroll-container {
+    overscroll-behavior: none;
+  }
 }
 
 body {
