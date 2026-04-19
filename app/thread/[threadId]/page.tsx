@@ -243,9 +243,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible. Document is
-  // the scroller now — use window.scrollTo. headerHeight is a dep because the
-  // document scrollHeight grows with the content's paddingTop.
+  // Auto-scroll to the bottom on load so newest polls are visible. headerHeight
+  // is a dep because the document scrollHeight grows once the header is measured
+  // and the content paddingTop applied.
   useEffect(() => {
     if (thread && !loading) {
       requestAnimationFrame(() => {
@@ -281,8 +281,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           return changed ? next : prev;
         });
       },
-      // root:null → observe relative to the viewport (which is the scroller
-      // now that we're on document scroll).
+      // root:null → observe relative to the viewport.
       { root: null, rootMargin: '200px 0px' },
     );
     intersectionObserverRef.current = observer;
@@ -323,7 +322,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
     const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
     const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
-    // Viewport is the scroll origin now. Visible area is [headerHeight, innerHeight - bottomBarHeight].
+    // Visible area is [headerHeight, innerHeight - bottomBarHeight].
     const visibleTopY = headerHeight;
     const visibleBottomY = window.innerHeight - bottomBarHeight;
     const cardTopY = card.getBoundingClientRect().top;
@@ -461,12 +460,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   });
 
   return (
-    <div>
-      {/* Thread header — position:fixed anchors it to the viewport top. top:0 +
-          padding-top:env(safe-area-inset-top) fills the notch area with the bar's
-          background (otherwise items are visible there when the document scrolls).
-          headerRef is on the inner content div so offsetHeight stays content-only;
-          the content below reserves exactly that much padding-top. */}
+    <>
+      {/* Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
+          the notch zone with the header background (otherwise items are visible
+          there when the document scrolls). headerRef is on the inner content
+          div so offsetHeight stays content-only; the sibling content below
+          reserves exactly that much padding-top. */}
       <div
         className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
@@ -502,10 +501,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         </div>
       </div>
 
-      {/* Poll list — document scrolls. paddingTop reserves space for the
-          fixed header above. */}
-      <div style={{ paddingTop: `${headerHeight}px` }}>
-        <div className="py-2">
+      {/* paddingTop reserves space for the fixed header above. */}
+      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const isOpen = isPollOpen(poll);
@@ -728,8 +725,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               </div>
             );
           })}
-        </div>
-
       </div>
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
@@ -809,7 +804,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         }}
         onCancel={() => setPendingAction(null)}
       />
-    </div>
+    </>
   );
 }
 

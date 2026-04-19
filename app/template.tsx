@@ -37,10 +37,6 @@ const isStandalonePWA = () =>
   (navigator as unknown as { standalone?: boolean }).standalone === true ||
   window.matchMedia('(display-mode: standalone)').matches;
 
-// navigator.standalone is iOS/iPadOS Safari-only; true = launched as standalone PWA.
-const isIOSSPWAStandalone = () =>
-  (navigator as unknown as { standalone?: boolean }).standalone === true;
-
 // Bottom bar scroll behavior
 const SCROLL_TOP_SAFE_ZONE = 50; // Don't hide bottom bar when within this many px of top
 
@@ -68,9 +64,6 @@ function TemplateInner({ children }: AppTemplateProps) {
   const [bottomBarHeight, setBottomBarHeight] = useState(56);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
-  const [isIOSPWA, setIsIOSPWA] = useState(false);
-  // True on any mobile touch device — custom PTR runs for both PWA and mobile web
-  // because the fixed-viewport layout breaks native browser PTR.
   const [needsCustomPTR, setNeedsCustomPTR] = useState(false);
   const lastScrollY = useRef(0);
   const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
@@ -121,12 +114,11 @@ function TemplateInner({ children }: AppTemplateProps) {
     if (onThreadPage) setShowBottomBar(true);
   }, [pathname]);
 
-  // Detect PWA standalone mode once — these are device constants that never change mid-session.
+  // Detect device constants once — values never change mid-session.
   useEffect(() => {
     setIsStandalone(isStandalonePWA());
-    setIsIOSPWA(isIOSSPWAStandalone());
-    // Mobile touch device: has touch AND coarse pointer (excludes desktops with touchscreens
-    // used primarily with a mouse, where native browser PTR isn't expected anyway).
+    // Mobile touch device: has touch AND coarse pointer (excludes desktops with
+    // touchscreens driven primarily by a mouse).
     const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
     setNeedsCustomPTR(hasTouch && coarsePointer);
@@ -367,17 +359,16 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
-    // Walk up from the touch target looking for an inner scrollable ancestor
-    // (thread list, modal content, dropdown, etc.). If any nested scroller
-    // isn't at its top, PTR must NOT fire — the user is scrolling something
-    // inside. Only fire PTR when the document AND every nested scroller above
-    // the touch target are at their top.
+    // If any nested scrollable ancestor isn't at its top, PTR must NOT fire —
+    // the user is scrolling something inside (thread list, modal content,
+    // dropdown, etc.). Cheap property reads (scrollTop, scrollHeight) gate
+    // the expensive getComputedStyle call so non-scrolled ancestors are skipped.
     const nestedScrollerAboveTop = (target: HTMLElement): boolean => {
       let el: HTMLElement | null = target;
       while (el && el !== body) {
-        if (el.scrollHeight > el.clientHeight) {
+        if (el.scrollTop > 5 && el.scrollHeight > el.clientHeight) {
           const oy = getComputedStyle(el).overflowY;
-          if ((oy === 'auto' || oy === 'scroll') && el.scrollTop > 5) return true;
+          if (oy === 'auto' || oy === 'scroll') return true;
         }
         el = el.parentElement;
       }
@@ -731,8 +722,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Fixed Header - skip for poll, create poll, profile, thread, and home pages.
-          Uses position:sticky so it stays pinned during document scroll. */}
+      {/* Fallback header for pages without a page-specific header (not poll, thread, profile, home, or create-modal). */}
       {!isPollPage && !isThreadPage && !isProfilePage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -757,9 +747,9 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       )}
 
-      {/* Document-scroll content wrapper. Bottom padding reserves space for the
-          fixed bottom bar when visible; collapses to 0 in lockstep with the
-          bar's 200ms slide-out so no white gap remains. */}
+      {/* Bottom padding reserves space for the fixed bottom bar when visible;
+          collapses to 0 in lockstep with the bar's 200ms slide-out so no white
+          gap remains when it hides. */}
       <div
         style={{
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
@@ -767,16 +757,14 @@ function TemplateInner({ children }: AppTemplateProps) {
           paddingBottom: showBottomBar ? `${bottomBarHeight}px` : '0',
           transition: 'padding-bottom 200ms ease-out',
         }}>
-        {/* Commit age badge portal target — position:fixed, anchored to the
-             top safe-area boundary via .pwa-badge-top. z-30 keeps it above the
-             thread page's fixed header (z-20). */}
+        {/* Commit age badge portal target — anchored to the top safe-area
+             boundary via .pwa-badge-top. z-30 keeps it above the thread page's
+             fixed header (z-20). */}
         {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
 
-        {/* Profile page title */}
         {isProfilePage && (
           <div
-            className="max-w-4xl mx-auto px-16 pt-4 pb-1"
-            style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+            className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
           >
             <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
               Profile
@@ -784,11 +772,9 @@ function TemplateInner({ children }: AppTemplateProps) {
           </div>
         )}
 
-        {/* Home page title */}
         {pathname === '/' && (
           <div
-            className="relative max-w-4xl mx-auto px-2 pt-4 pb-1"
-            style={{ paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+            className="relative max-w-4xl mx-auto px-2 pb-1 page-title-safe-top"
           >
             <div className="text-center">
               <h1 className="text-2xl font-bold mb-1 select-none" {...longPressProps}>

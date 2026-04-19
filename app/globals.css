@@ -23,9 +23,7 @@ html {
   background: var(--background);
 }
 
-/* Document is the scroller. Keep overscroll-behavior:none so the custom
-   touch-driven PTR (see app/template.tsx) can own the refresh gesture
-   without WebKit's native rubber-band bounce getting in the way. */
+/* overscroll-behavior:none — custom touch-driven PTR (template.tsx) owns the refresh gesture. */
 html,
 body {
   overscroll-behavior: none;
@@ -37,13 +35,9 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
   /* Horizontal safe-area only. Top/bottom insets are handled by fixed elements
-     (commit badge, thread header, bottom bar) that each reserve their own space
-     — padding the body top would fight with those and mis-align fixed headers. */
+     (commit badge, thread header, bottom bar) that each reserve their own space. */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  /* Template adds padding-top / padding-bottom at runtime sized to the
-     measured safe-area-inset-top (or any fixed header's height) and the
-     measured bottom-bar height. */
 }
 
 /* Hide scrollbar */
@@ -136,9 +130,15 @@ body {
  * - Large Desktop (1280px+): 2x
  */
 
-/* Default top for commit badge — overridden in standalone mode to account for safe area */
+/* Commit badge sits below the top safe-area inset. */
 .pwa-badge-top {
   top: env(safe-area-inset-top, 0px);
+}
+
+/* Page-title wrappers on pages without a fixed header (home, profile): 1rem of
+   breathing room plus the top safe-area inset so the title clears the notch. */
+.page-title-safe-top {
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
 }
 
 /* Default bottom bar padding — overridden in standalone mode */
