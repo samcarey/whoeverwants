@@ -243,11 +243,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible. headerHeight
-  // is a dep because the document scrollHeight grows once the header is measured
-  // and the content paddingTop applied.
+  // Auto-scroll to the bottom ONCE on initial load so newest polls are visible.
+  // Must wait for headerHeight > 0 (the content paddingTop grows once the fixed
+  // header is measured, so scrollHeight lags otherwise). After the first scroll
+  // the ref is set so subsequent thread-state mutations (poll:updated events,
+  // re-fetches, etc.) can't re-trigger the scroll — that was yanking the user
+  // back to the bottom mid-gesture when they tried to scroll up.
+  const initialScrollDoneRef = useRef(false);
   useEffect(() => {
-    if (thread && !loading) {
+    if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
       requestAnimationFrame(() => {
         window.scrollTo(0, document.documentElement.scrollHeight);
       });
