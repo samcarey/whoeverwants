@@ -10,7 +10,6 @@ import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 import ProfileButton from "@/components/ProfileButton";

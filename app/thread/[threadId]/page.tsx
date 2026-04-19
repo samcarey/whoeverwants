@@ -19,6 +19,7 @@ import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
 import { forgetPoll } from "@/lib/forgetPoll";
 
@@ -718,7 +719,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           else expandedWrapperRefs.current.delete(poll.id);
                         }}
                       >
-                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600 relative">
+                          <div className="absolute top-3 left-0 z-10">
+                            <FloatingCopyLinkButton
+                              url={typeof window !== 'undefined' ? `${window.location.origin}/p/${poll.short_id || poll.id}/` : ''}
+                            />
+                          </div>
                           <PollPageClient
                             poll={poll}
                             createdDate={formatCreationTimestamp(poll.created_at)}
