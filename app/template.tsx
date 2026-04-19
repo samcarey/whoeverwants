@@ -69,6 +69,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [isIOSPWA, setIsIOSPWA] = useState(false);
+  // True on any mobile touch device — custom PTR runs for both PWA and mobile web
+  // because the fixed-viewport layout breaks native browser PTR.
+  const [needsCustomPTR, setNeedsCustomPTR] = useState(false);
   const lastScrollY = useRef(0);
   const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -123,6 +126,11 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     setIsStandalone(isStandalonePWA());
     setIsIOSPWA(isIOSSPWAStandalone());
+    // Mobile touch device: has touch AND coarse pointer (excludes desktops with touchscreens
+    // used primarily with a mouse, where native browser PTR isn't expected anyway).
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    setNeedsCustomPTR(hasTouch && coarsePointer);
   }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
@@ -322,7 +330,10 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
-  // Pull-to-refresh for iOS PWA standalone mode only.
+  // Pull-to-refresh for all mobile touch devices (PWA + mobile web).
+  // Native browser PTR is unreliable in this fixed-viewport layout (body has
+  // overflow:hidden and scrolling lives in an inner container), so we ship a
+  // custom touch-driven implementation that works consistently everywhere.
   // Uses direct DOM manipulation during touchmove for 60fps updates.
   //
   // All listeners are PASSIVE — no e.preventDefault(). Calling preventDefault
@@ -331,7 +342,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // overscroll-behavior-y: none on the scroll container suppresses native
   // bounce, and we track pull distance purely from touch position deltas.
   useEffect(() => {
-    if (typeof window === 'undefined' || !isIOSPWA) return;
+    if (typeof window === 'undefined' || !needsCustomPTR) return;
 
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
@@ -459,7 +470,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       if (rAFId !== null) cancelAnimationFrame(rAFId);
       if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
-  }, [isIOSPWA]);
+  }, [needsCustomPTR]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
@@ -690,7 +701,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     <>
       {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
            Uses refs for direct DOM updates during drag (no React re-renders). */}
-      {isIOSPWA && (pullActive || isRefreshing) && isMounted && createPortal(
+      {needsCustomPTR && (pullActive || isRefreshing) && isMounted && createPortal(
         <div
           ref={pullIndicatorRef}
           className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
