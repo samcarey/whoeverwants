@@ -385,10 +385,28 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
+    // Find the nearest scrollable ancestor of the touch target. On thread pages
+    // the outer .safari-scroll-container is overflow-hidden and scrolling lives
+    // in an inner descendant — checking only the outer container would make
+    // isAtTop always true and hijack every downward drag as a PTR gesture.
+    const findScroller = (target: HTMLElement): HTMLElement => {
+      const root = scrollContainer.parentElement;
+      let el: HTMLElement | null = target;
+      while (el && el !== root) {
+        if (el === scrollContainer) return scrollContainer;
+        if (el.scrollHeight > el.clientHeight) {
+          const oy = getComputedStyle(el).overflowY;
+          if (oy === 'auto' || oy === 'scroll') return el;
+        }
+        el = el.parentElement;
+      }
+      return scrollContainer;
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
-      isAtTop = scrollContainer.scrollTop <= 5;
+      isAtTop = findScroller(e.target as HTMLElement).scrollTop <= 5;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
