@@ -464,16 +464,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Thread header — position:fixed so it stays locked to the safe area top even if
+      {/* Thread header — position:fixed so it stays locked to the viewport top even if
           ancestor containers (.pwa-safe-top / .safari-scroll-container) end up with a stray
           scrollTop on iOS PWA. Viewport-relative because .responsive-scaling-container has
-          no transform on mobile. */}
+          no transform on mobile. top:0 + padding-top:env(safe-area-inset-top) fills the
+          notch area with the bar's background (otherwise items are visible there when the
+          list scrolls). headerRef is on the inner content div so offsetHeight stays
+          content-only — the scroll list's paddingTop and expand-scroll visibleTopY math
+          both expect that (the safe-area padding is already provided by .pwa-safe-top). */}
       <div
-        ref={headerRef}
-        className="fixed left-0 right-0 z-20 bg-background touch-none"
-        style={{ top: 'env(safe-area-inset-top, 0px)' }}
+        className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
-        <div className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+        <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
           <button
             onClick={() => {
               if (hasAppHistory()) {
