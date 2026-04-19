@@ -84,38 +84,7 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
     window.addEventListener('unhandledrejection', handleChunkError);
-
-    // TEMPORARY diagnostic: log scroll position + scrollHeight + innerHeight
-    let lastY = window.scrollY;
-    let lastT = Date.now();
-    const scrollLog = () => {
-      const y = window.scrollY;
-      const now = Date.now();
-      const dy = y - lastY;
-      const dt = now - lastT;
-      if (Math.abs(dy) > 0) {
-        const sh = document.documentElement.scrollHeight;
-        const wh = window.innerHeight;
-        console.log(`[st] +${dt}ms dy=${dy} y=${y} sh=${sh} wh=${wh} max=${sh-wh}`);
-      }
-      lastY = y;
-      lastT = now;
-    };
-    window.addEventListener('scroll', scrollLog, { passive: true });
-    window.addEventListener('touchstart', () => {
-      const sh = document.documentElement.scrollHeight;
-      const wh = window.innerHeight;
-      console.log(`[st] touchstart y=${window.scrollY} sh=${sh} wh=${wh} max=${sh-wh}`);
-    }, { passive: true });
-    window.addEventListener('touchend', () => {
-      const sh = document.documentElement.scrollHeight;
-      console.log(`[st] touchend y=${window.scrollY} sh=${sh}`);
-    }, { passive: true });
-
-    return () => {
-      window.removeEventListener('unhandledrejection', handleChunkError);
-      window.removeEventListener('scroll', scrollLog);
-    };
+    return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
 
   // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
@@ -507,7 +476,7 @@ function TemplateInner({ children }: AppTemplateProps) {
 
         <div
           className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
-          style={(pathname === '/' || isThreadLikePage) ? { paddingBottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' } : undefined}
+          style={(pathname === '/' || isThreadLikePage) ? { paddingBottom: '6rem' } : undefined}
         >
           {children}
         </div>
