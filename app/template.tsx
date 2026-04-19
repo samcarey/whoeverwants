@@ -320,7 +320,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // thread-page layout (fixed header + scroll list) and the thread's own back button.
   const isThreadLikePage = isThreadPage || isPollPage;
   const isCreateModalOpen = searchParams.has('create');
-  const isProfilePage = pathname === '/profile' || pathname === '/profile/';
+  const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
   const [modalClosing, setModalClosing] = useState(false);
 
   // Refs for modal drag-to-dismiss — uses direct DOM manipulation for 60fps.
@@ -576,8 +576,8 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Fallback header for pages without a page-specific header (not poll, thread, profile, home, or create-modal). */}
-      {!isPollPage && !isThreadPage && !isProfilePage && pathname !== '/' && (
+      {/* Fallback header for pages without a page-specific header (not poll, thread, settings, home, or create-modal). */}
+      {!isPollPage && !isThreadPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -613,12 +613,12 @@ function TemplateInner({ children }: AppTemplateProps) {
              fixed header (z-20). */}
         {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
 
-        {isProfilePage && (
+        {isSettingsPage && (
           <div
             className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
           >
             <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
-              Profile
+              Settings
             </h1>
           </div>
         )}
@@ -627,22 +627,23 @@ function TemplateInner({ children }: AppTemplateProps) {
           <div
             className="relative max-w-4xl mx-auto px-2 pb-1 page-title-safe-top"
           >
-            {/* Profile icon — upper-right, in normal page flow so it scrolls
+            {/* Settings gear — upper-left, in normal page flow so it scrolls
                 off as the user scrolls down. Absolute-positioned within the
                 relative title container; `top` includes the safe-area inset
                 so it sits below the iOS notch. */}
             <button
-              onClick={() => navigateWithTransition(router, '/profile', 'forward')}
-              {...prefetchOnHover('/profile')}
+              onClick={() => navigateWithTransition(router, '/settings', 'forward')}
+              {...prefetchOnHover('/settings')}
               className="absolute w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
               style={{
                 top: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
-                right: 'max(0.5rem, env(safe-area-inset-right, 0px))',
+                left: 'max(0.5rem, env(safe-area-inset-left, 0px))',
               }}
-              aria-label="Profile"
+              aria-label="Settings"
             >
               <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
             <div className="text-center">
@@ -657,7 +658,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         )}
 
         <div
-          className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
+          className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
           style={(pathname === '/' || isThreadLikePage) ? { paddingBottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' } : undefined}
         >
           {children}
@@ -739,14 +740,14 @@ function TemplateInner({ children }: AppTemplateProps) {
             }
             router.push(`${pathname}?${params.toString()}`);
           }}
-          className="fixed z-50 floating-plus-button w-11 h-11 rounded-full flex items-center justify-center bg-blue-500/85 dark:bg-blue-600/85 active:bg-blue-600 dark:active:bg-blue-500 backdrop-blur-sm shadow-md shadow-black/20 cursor-pointer"
+          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500/85 dark:bg-blue-600/85 active:bg-blue-600 dark:active:bg-blue-500 backdrop-blur-sm shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
           aria-label="Create new poll"
         >
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </button>,
@@ -755,8 +756,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
       {/* Header elements rendered outside scaling container */}
       <HeaderPortal>
-        {/* Back arrow in upper left — profile page only, when there's in-app history. */}
-        {(isProfilePage && hasAppHistory) && (
+        {/* Back arrow in upper left — settings page only, when there's in-app history. */}
+        {(isSettingsPage && hasAppHistory) && (
           <div className="fixed left-0 z-50" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}>
             <button
               onClick={() => navigateBackWithTransition()}

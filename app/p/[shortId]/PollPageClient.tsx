@@ -12,7 +12,6 @@ import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
-import ProfileButton from "@/components/ProfileButton";
 
 import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";

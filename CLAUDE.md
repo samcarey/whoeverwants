@@ -213,7 +213,7 @@ whoeverwants/
 │   │   └── PollPageClient.tsx      # Full poll view (voting, results, management)
 │   ├── thread/[threadId]/page.tsx   # Thread view (polls in follow-up chain)
 │   ├── poll/page.tsx               # Alternate poll endpoint
-│   ├── profile/page.tsx            # User profile (name management)
+│   ├── settings/page.tsx           # User settings (name, location, clear data)
 │   └── api/                        # Server-side API routes
 │       ├── test-pushover/          # Push notification testing
 │       └── notify-claude-input/    # Claude notification integration
@@ -242,7 +242,6 @@ whoeverwants/
 │   ├── DuplicateButton.tsx         # Duplicate poll button
 │   ├── VoterList.tsx               # List of voters on a poll
 │   ├── FloatingCopyLinkButton.tsx  # Copy poll URL button
-│   ├── ProfileButton.tsx           # Profile access button
 │   ├── GradientBorderButton.tsx    # Styled gradient button
 │   ├── ClientOnly.tsx              # Client-only render wrapper
 │   ├── ModalPortal.tsx             # Modal portal container
@@ -1075,7 +1074,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 ### iOS PWA Safe Area Positioning
 
 - **`position: fixed; top: 0` goes behind the notch** in iOS PWA with `viewport-fit: cover` and `black-translucent` status bar. Either push content down via `padding-top: env(safe-area-inset-top)` on the fixed element (so its background fills the notch zone), or anchor the element at `top: env(safe-area-inset-top)` (so it sits below the notch). The thread header uses the first pattern; the commit badge uses the second via `.pwa-badge-top`.
-- **Body gets horizontal safe-area padding** (`padding-left/right: env(safe-area-inset-left/right)`); vertical safe-area insets are handled per-element by whatever sits at the top/bottom (fixed thread header, home/profile titles via `.page-title-safe-top`, the floating "+" FAB via its inline `max(1rem, env(safe-area-inset-bottom))` offset).
+- **Body gets horizontal safe-area padding** (`padding-left/right: env(safe-area-inset-left/right)`); vertical safe-area insets are handled per-element by whatever sits at the top/bottom (fixed thread header, home/settings titles via `.page-title-safe-top`, the floating "+" FAB via its inline `max(1rem, env(safe-area-inset-bottom))` offset).
 - **Use CSS media queries, not JS state, for PWA safe-area layout.** React state (`isStandalone`) starts `false` and only updates after `useEffect`, causing a visible jump on first render. `@media (display-mode: standalone)` applies instantly before any JS runs. Reserve `isStandalone` state for conditional rendering (e.g., back button visibility) where a one-frame flash is acceptable.
 - **To position at the true screen edge**, render via a portal to `document.body` (outside the `.responsive-scaling-container`). From there, `fixed top: 0` = the safe area boundary (notch bottom) in PWA standalone mode.
 - **Fixed header bars need to cover the notch zone, not just sit below it.** A header anchored at `top: env(safe-area-inset-top)` leaves the area above it (the notch zone) uncovered, showing scrolling content through it. Instead, anchor the bar at `top: 0` and push its content down with `padding-top: env(safe-area-inset-top, 0px)` so the background fills from the physical screen top. The measurement ref (for computing a sibling's `padding-top`) must be on the inner content div so `offsetHeight` stays content-only. Pattern used in `app/thread/[threadId]/page.tsx`.
@@ -1084,15 +1083,15 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **No bottom bar. No home button.** The old three-button bottom bar (Home / + / Profile) was removed. Navigation is:
   - **Floating "+" FAB**: rendered only on the home page and thread-like pages (`/` plus `isThreadLikePage = isPollPage || isThreadPage`). Pinned bottom-right via `position: fixed` + `max(1rem, env(safe-area-inset-{bottom,right}))`. Opens the create-poll modal; on thread pages it reads `data-thread-latest-poll-id` from `<body>` to auto-set `followUpTo`.
-  - **Profile icon**: only on the home page, upper-right, icon-only (no text). Rendered as `position: absolute` inside the home title's `relative` container so it sits in normal page flow and **scrolls off-screen with the page** (intentionally not fixed). `top` includes `env(safe-area-inset-top)` to clear the iOS notch.
-  - **Back arrow**: the HeaderPortal back button only renders on the profile page when there's in-app history; all other pages (thread, poll) render their own back button in their fixed header.
+  - **Settings gear**: only on the home page, upper-left, icon-only (no text). Links to `/settings`. Rendered as `position: absolute` inside the home title's `relative` container so it sits in normal page flow and **scrolls off-screen with the page** (intentionally not fixed). `top` includes `env(safe-area-inset-top)` to clear the iOS notch.
+  - **Back arrow**: the HeaderPortal back button only renders on the settings page when there's in-app history; all other pages (thread, poll) render their own back button in their fixed header.
 - **Content wrappers on home + thread-like pages reserve `calc(5.5rem + env(safe-area-inset-bottom, 0px))` of bottom padding** so the last card can scroll above the FAB. Other pages use the normal `pb-6`/`py-6` from the outer Tailwind classes.
 - **FAB portal target**: `#floating-fab-portal` (previously `#bottom-bar-portal`) in `app/layout.tsx`. Lives outside `.responsive-scaling-container` so fixed positioning is relative to the viewport, not the scaled container.
 - **`view-transition-name: floating-plus`** on the FAB (via `.floating-plus-button` class) keeps it pinned across home ↔ thread navigation instead of sliding with the root snapshot. When navigating to a route that doesn't render the FAB, there's no element taking the name and the browser gracefully skips the transition group. Globals.css zeros the animation for both old/new pseudo-elements.
 
 ### Back Button Navigation Strategy
 
-- **On poll pages the back arrow always renders and leads to the containing thread** — including on direct/first-link loads where there's no in-app history. Computed at click time by walking up `follow_up_to` in the `pollCache` via `findThreadRootRouteId`; a standalone poll resolves to `/thread/<itself>`, which renders as a single-item thread. For the profile page the old "only when there's in-app history" rule still applies.
+- **On poll pages the back arrow always renders and leads to the containing thread** — including on direct/first-link loads where there's no in-app history. Computed at click time by walking up `follow_up_to` in the `pollCache` via `findThreadRootRouteId`; a standalone poll resolves to `/thread/<itself>`, which renders as a single-item thread. For the settings page the old "only when there's in-app history" rule still applies.
 - **Detect standalone mode with `isStandalonePWA()`** which checks both `navigator.standalone` (iOS) and `window.matchMedia('(display-mode: standalone)')` (Android/Chrome). Both are device constants — evaluate once on mount, not on every navigation.
 - **Don't use `document.referrer` or `window.history.length` for navigation decisions.** `document.referrer` is unreliable (privacy settings, cross-origin, browser variations). `history.length` is cumulative across the tab's lifetime, not app-specific. Use `sessionStorage` to track in-app navigation count instead (per-tab, auto-cleared on close).
 - **After a create-poll submission, the back button should lead to the thread containing the new poll**, not back through the `?create=1` URL (which reopens the modal) and not to whatever random page the user was on before opening the modal. Implemented via `lib/pollBackTarget.ts`: the create-poll flow calls `pollBackTarget.set(pollRouteId, threadRootRouteId)` before `router.replace('/p/<id>')`; the back button in `app/template.tsx` calls `pollBackTarget.consume(pollRouteId)` and uses `navigateWithTransition(router, customBack, 'back', { mode: 'replace' })` to replace the poll entry with the thread entry — so subsequent `back` from the thread skips over the poll. Skip setting the target when the page underneath the modal already matches the thread URL (avoids leaving a duplicate history entry).
@@ -1169,7 +1168,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 ### Trim-on-Blur Policy (App-Wide)
 
-- **All text inputs trim leading/trailing whitespace on blur.** This is applied globally across the app: create-poll form fields (title, options, category, context, details), profile page (name, location), `CompactNameField`, `AutocompleteInput`, `LocationTimeFieldConfig`, and `ReferenceLocationInput`. When adding new text inputs, add `onBlur` trim handling.
+- **All text inputs trim leading/trailing whitespace on blur.** This is applied globally across the app: create-poll form fields (title, options, category, context, details), settings page (name, location), `CompactNameField`, `AutocompleteInput`, `LocationTimeFieldConfig`, and `ReferenceLocationInput`. When adding new text inputs, add `onBlur` trim handling.
 
 ### Create-Poll Form UI Patterns
 

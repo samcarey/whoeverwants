@@ -135,7 +135,7 @@ body {
   top: env(safe-area-inset-top, 0px);
 }
 
-/* Page-title wrappers on pages without a fixed header (home, profile): 1rem of
+/* Page-title wrappers on pages without a fixed header (home, settings): 1rem of
    breathing room plus the top safe-area inset so the title clears the notch. */
 .page-title-safe-top {
   padding-top: calc(1rem + env(safe-area-inset-top, 0px));
