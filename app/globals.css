@@ -21,6 +21,11 @@
 
 html {
   background: var(--background);
+  /* Disable scroll anchoring at the root too — Firefox iOS specifically
+     picks its anchor against html, not body, so body-level
+     overflow-anchor:none doesn't reach it. A full +236px single-frame
+     scrollY jump was observed at the top edge on FxiOS. */
+  overflow-anchor: none;
 }
 
 body {
