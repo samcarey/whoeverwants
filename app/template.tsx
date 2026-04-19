@@ -85,7 +85,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
     window.addEventListener('unhandledrejection', handleChunkError);
 
-    // TEMPORARY diagnostic: log scroll position to client logs
+    // TEMPORARY diagnostic: log scroll position + scrollHeight + innerHeight
     let lastY = window.scrollY;
     let lastT = Date.now();
     const scrollLog = () => {
@@ -94,14 +94,23 @@ function TemplateInner({ children }: AppTemplateProps) {
       const dy = y - lastY;
       const dt = now - lastT;
       if (Math.abs(dy) > 0) {
-        console.log(`[st] +${dt}ms dy=${dy} y=${y}`);
+        const sh = document.documentElement.scrollHeight;
+        const wh = window.innerHeight;
+        console.log(`[st] +${dt}ms dy=${dy} y=${y} sh=${sh} wh=${wh} max=${sh-wh}`);
       }
       lastY = y;
       lastT = now;
     };
     window.addEventListener('scroll', scrollLog, { passive: true });
-    window.addEventListener('touchstart', () => console.log(`[st] touchstart y=${window.scrollY} h=${document.documentElement.scrollHeight}`), { passive: true });
-    window.addEventListener('touchend', () => console.log(`[st] touchend y=${window.scrollY}`), { passive: true });
+    window.addEventListener('touchstart', () => {
+      const sh = document.documentElement.scrollHeight;
+      const wh = window.innerHeight;
+      console.log(`[st] touchstart y=${window.scrollY} sh=${sh} wh=${wh} max=${sh-wh}`);
+    }, { passive: true });
+    window.addEventListener('touchend', () => {
+      const sh = document.documentElement.scrollHeight;
+      console.log(`[st] touchend y=${window.scrollY} sh=${sh}`);
+    }, { passive: true });
 
     return () => {
       window.removeEventListener('unhandledrejection', handleChunkError);
