@@ -86,7 +86,7 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
-export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: boolean }) {
+function CommitInfoInner({ showTimeBadge = false }: { showTimeBadge?: boolean }) {
   const [commitData, setCommitData] = useState<CommitData | null>(null);
   const [relativeTime, setRelativeTime] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
@@ -363,4 +363,14 @@ export default function CommitInfo({ showTimeBadge = false }: { showTimeBadge?: 
       )}
     </>
   );
+}
+
+export default function CommitInfo(props: { showTimeBadge?: boolean }) {
+  // Diagnostic: `?no-commit` in URL disables the component entirely (scroll-jitter test).
+  const [disabled, setDisabled] = useState(false);
+  useEffect(() => {
+    setDisabled(window.location.search.includes('no-commit'));
+  }, []);
+  if (disabled) return null;
+  return <CommitInfoInner {...props} />;
 }
