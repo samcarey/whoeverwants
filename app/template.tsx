@@ -13,10 +13,22 @@ import { isUuidLike } from '@/lib/pollId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
+// Raw import — no recovery logic. Used for the speculative idle preload,
+// which must NOT reload on failure (on dev servers turbopack compiles
+// chunks on demand, so a 404 during idle is expected and transient).
+const importCreatePollRaw = () => import('@/app/create-poll/page');
+
+// Reload-on-chunk-error wrapper — used only for the actual lazy mount,
+// where a chunk miss means the user's cached build is stale after a
+// deploy and a full reload is the correct recovery.
 const importCreatePoll = () =>
-  import('@/app/create-poll/page').catch((err) => {
+  importCreatePollRaw().catch((err) => {
     if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
-      window.location.reload();
+      // Guard against reload loops: only reload once per session.
+      if (typeof window !== 'undefined' && !sessionStorage.getItem('chunkReloadAttempted')) {
+        sessionStorage.setItem('chunkReloadAttempted', '1');
+        window.location.reload();
+      }
     }
     throw err;
   });
@@ -81,10 +93,16 @@ function TemplateInner({ children }: AppTemplateProps) {
     installClientLogForwarder();
 
     // Reload on ChunkLoadError — stale cached chunks after a new deploy.
+    // Guarded against reload loops via a sessionStorage flag (dev turbopack
+    // sometimes 404s transiently on speculative chunk fetches, which would
+    // otherwise trigger reload → preload → 404 → reload...).
     const handleChunkError = (event: PromiseRejectionEvent) => {
       const err = event.reason;
       if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk')) {
-        window.location.reload();
+        if (!sessionStorage.getItem('chunkReloadAttempted')) {
+          sessionStorage.setItem('chunkReloadAttempted', '1');
+          window.location.reload();
+        }
       }
     };
     window.addEventListener('unhandledrejection', handleChunkError);
@@ -92,12 +110,15 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, []);
 
   // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
+  // Uses the raw import + swallows errors — a failed speculative preload must NOT
+  // trigger a page reload (that was the cause of the dev-server refresh loop).
   useEffect(() => {
+    const preload = () => { importCreatePollRaw().catch(() => {}); };
     if ('requestIdleCallback' in window) {
-      const id = requestIdleCallback(() => importCreatePoll(), { timeout: 3000 });
+      const id = requestIdleCallback(preload, { timeout: 3000 });
       return () => cancelIdleCallback(id);
     } else {
-      const t = setTimeout(() => importCreatePoll(), 1500);
+      const t = setTimeout(preload, 1500);
       return () => clearTimeout(t);
     }
   }, []);
@@ -641,7 +662,7 @@ function TemplateInner({ children }: AppTemplateProps) {
               }}
               aria-label="Settings"
             >
-              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
