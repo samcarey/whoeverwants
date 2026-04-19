@@ -243,16 +243,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible. Use direct scrollTop,
-  // not scrollIntoView — the latter traverses overflow-hidden ancestors and pushes safe-area
-  // padding off-screen on iOS PWA. headerHeight is a dep because scrollHeight grows with the
-  // list's paddingTop, so the target offset changes once the header is measured.
-  const scrollListRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll to the bottom on load so newest polls are visible. headerHeight
+  // is a dep because the document scrollHeight grows once the header is measured
+  // and the content paddingTop applied.
   useEffect(() => {
     if (thread && !loading) {
       requestAnimationFrame(() => {
-        const el = scrollListRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
+        window.scrollTo(0, document.documentElement.scrollHeight);
       });
     }
   }, [thread, loading, headerHeight]);
@@ -261,8 +258,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // content when they scroll into view. rootMargin prefetches slightly early.
   // Runs once; callback refs on each card attach/detach the observer.
   useEffect(() => {
-    const list = scrollListRef.current;
-    if (!list || typeof IntersectionObserver === 'undefined') return;
+    if (!thread || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
         const newlyVisible: string[] = [];
@@ -285,7 +281,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           return changed ? next : prev;
         });
       },
-      { root: list, rootMargin: '200px 0px' },
+      // root:null → observe relative to the viewport.
+      { root: null, rootMargin: '200px 0px' },
     );
     intersectionObserverRef.current = observer;
     // Attach to any cards already mounted (ref callbacks may have fired before this effect).
@@ -294,9 +291,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       observer.disconnect();
       intersectionObserverRef.current = null;
     };
-    // Only re-create when the list actually becomes available — not on every
-    // thread mutation (e.g. forget/reopen). Card ref callbacks attach each new
-    // card to the live observer automatically.
+    // Only re-create when a thread first arrives — not on every mutation
+    // (forget/reopen). Card ref callbacks attach each new card to the live
+    // observer automatically.
   }, [!!thread]);
 
   // When a card expands, adjust scroll so the expanded card fits on screen
@@ -315,8 +312,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   useEffect(() => {
     if (!expandedPollId) return;
     const card = cardRefs.current.get(expandedPollId);
-    const list = scrollListRef.current;
-    if (!card || !list) return;
+    if (!card) return;
 
     // Measure once, up front, using the overflow-hidden wrapper's scrollHeight
     // (which reflects the natural content size regardless of grid-row state).
@@ -326,9 +322,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
     const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
     const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
-    const listRect = list.getBoundingClientRect();
-    const visibleTopY = listRect.top + headerHeight;
-    const visibleBottomY = listRect.bottom - bottomBarHeight;
+    // Visible area is [headerHeight, innerHeight - bottomBarHeight].
+    const visibleTopY = headerHeight;
+    const visibleBottomY = window.innerHeight - bottomBarHeight;
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 
@@ -343,8 +339,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
     if (targetDelta === 0) return;
 
-    const startScrollTop = list.scrollTop;
-    const targetScrollTop = startScrollTop + targetDelta;
+    const startScrollY = window.scrollY;
+    const targetScrollY = startScrollY + targetDelta;
     const DURATION = 300; // matches the grid-rows CSS transition
     const startTime = performance.now();
     let rafId: number | null = null;
@@ -354,7 +350,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       const t = Math.min(elapsed / DURATION, 1);
       // ease-out cubic — matches the feel of the CSS transition
       const eased = 1 - Math.pow(1 - t, 3);
-      list.scrollTop = startScrollTop + (targetScrollTop - startScrollTop) * eased;
+      window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
       if (t < 1) rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -422,7 +418,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <svg className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -436,7 +432,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   if (error || !thread) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Thread Not Found</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">This thread may not exist or you don&apos;t have access.</p>
@@ -464,15 +460,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   });
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Thread header — position:fixed so it stays locked to the viewport top even if
-          ancestor containers (.pwa-safe-top / .safari-scroll-container) end up with a stray
-          scrollTop on iOS PWA. Viewport-relative because .responsive-scaling-container has
-          no transform on mobile. top:0 + padding-top:env(safe-area-inset-top) fills the
-          notch area with the bar's background (otherwise items are visible there when the
-          list scrolls). headerRef is on the inner content div so offsetHeight stays
-          content-only — the scroll list's paddingTop and expand-scroll visibleTopY math
-          both expect that (the safe-area padding is already provided by .pwa-safe-top). */}
+    <>
+      {/* Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
+          the notch zone with the header background (otherwise items are visible
+          there when the document scrolls). headerRef is on the inner content
+          div so offsetHeight stays content-only; the sibling content below
+          reserves exactly that much padding-top. */}
       <div
         className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
@@ -508,14 +501,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         </div>
       </div>
 
-      {/* Scrollable poll list — auto-scrolls to bottom on load.
-          paddingTop reserves space for the fixed header above. */}
-      <div
-        ref={scrollListRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
-        style={{ paddingTop: `${headerHeight}px` }}
-      >
-        <div className="py-2">
+      {/* paddingTop reserves space for the fixed header above. */}
+      <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         {threadPolls.map((poll) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const isOpen = isPollOpen(poll);
@@ -738,8 +725,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               </div>
             );
           })}
-        </div>
-
       </div>
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
@@ -819,7 +804,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         }}
         onCancel={() => setPendingAction(null)}
       />
-    </div>
+    </>
   );
 }
 
@@ -832,7 +817,7 @@ function ThreadPageInner() {
 export default function ThreadPage() {
   return (
     <Suspense fallback={
-      <div className="h-full flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <svg className="animate-spin h-8 w-8 text-gray-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

@@ -37,10 +37,6 @@ const isStandalonePWA = () =>
   (navigator as unknown as { standalone?: boolean }).standalone === true ||
   window.matchMedia('(display-mode: standalone)').matches;
 
-// navigator.standalone is iOS/iPadOS Safari-only; true = launched as standalone PWA.
-const isIOSSPWAStandalone = () =>
-  (navigator as unknown as { standalone?: boolean }).standalone === true;
-
 // Bottom bar scroll behavior
 const SCROLL_TOP_SAFE_ZONE = 50; // Don't hide bottom bar when within this many px of top
 
@@ -51,7 +47,7 @@ const PTR_INDICATOR_SIZE = 40; // approx height of circle + padding
 
 export default function Template({ children }: AppTemplateProps) {
   return (
-    <Suspense fallback={<div className="h-screen-safe flex flex-col" />}>
+    <Suspense fallback={<div />}>
       <TemplateInner>{children}</TemplateInner>
     </Suspense>
   );
@@ -68,10 +64,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   const [bottomBarHeight, setBottomBarHeight] = useState(56);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
-  const [isIOSPWA, setIsIOSPWA] = useState(false);
+  const [needsCustomPTR, setNeedsCustomPTR] = useState(false);
   const lastScrollY = useRef(0);
   const scrollThreshold = useRef(5); // Minimum scroll distance to trigger hide/show
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInBounceRef = useRef(false);
   const isThreadPageRef = useRef(false);
@@ -119,10 +114,14 @@ function TemplateInner({ children }: AppTemplateProps) {
     if (onThreadPage) setShowBottomBar(true);
   }, [pathname]);
 
-  // Detect PWA standalone mode once — these are device constants that never change mid-session.
+  // Detect device constants once — values never change mid-session.
   useEffect(() => {
     setIsStandalone(isStandalonePWA());
-    setIsIOSPWA(isIOSSPWAStandalone());
+    // Mobile touch device: has touch AND coarse pointer (excludes desktops with
+    // touchscreens driven primarily by a mouse).
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    setNeedsCustomPTR(hasTouch && coarsePointer);
   }, []);
 
   // Set mounted state for portal rendering + install client log forwarder on dev sites
@@ -218,13 +217,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, []);
 
   // Handle scroll direction detection for bottom bar.
-  // Uses touch events as primary mechanism (reliable on iOS PWA + browser),
-  // with scroll event listener as fallback for desktop/mouse-wheel.
+  // The document is the scroller — uses touch events (reliable on iOS) as the
+  // primary mechanism and window scroll as a fallback for desktop mouse wheel.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
 
     let rAFId: number | null = null;
 
@@ -239,15 +235,12 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
-    // Prefer container scrollTop; fall back to window only if container isn't scrollable
-    const getScrollTop = () =>
-      scrollContainer.scrollHeight > scrollContainer.clientHeight
-        ? scrollContainer.scrollTop
-        : window.scrollY;
-
+    const getScrollTop = () => window.scrollY;
+    const getMaxScroll = () =>
+      document.documentElement.scrollHeight - window.innerHeight;
     const isNearTop = (pos: number) => pos < SCROLL_TOP_SAFE_ZONE;
 
-    // --- Touch-based direction detection (primary, works in iOS PWA) ---
+    // --- Touch-based direction detection (primary on iOS) ---
     let touchStartScrollTop = 0;
 
     const handleTouchStart = () => {
@@ -263,14 +256,14 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
-    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-    // --- Scroll event fallback (desktop mouse wheel, and browser scroll) ---
+    // --- Scroll event fallback (desktop mouse wheel + browser scroll) ---
     const processScroll = () => {
       rAFId = null;
       const currentScrollY = getScrollTop();
-      const maxScrollY = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      const maxScrollY = getMaxScroll();
 
       if (isNearTop(currentScrollY)) {
         setVisible(true);
@@ -309,38 +302,30 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
-    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
-      scrollContainer.removeEventListener('touchstart', handleTouchStart);
-      scrollContainer.removeEventListener('touchend', handleTouchEnd);
-      scrollContainer.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('scroll', handleScroll);
       if (rAFId !== null) cancelAnimationFrame(rAFId);
       if (bounceTimeoutRef.current) clearTimeout(bounceTimeoutRef.current);
     };
   }, []);
 
-  // Pull-to-refresh for iOS PWA standalone mode only.
-  // Uses direct DOM manipulation during touchmove for 60fps updates.
+  // Pull-to-refresh for all mobile touch devices (PWA + mobile web).
+  // The document is the scroller; the transform is applied to <body> so the
+  // whole page translates with the drag. Native PTR is suppressed via
+  // overscroll-behavior:none on html/body (globals.css).
   //
   // All listeners are PASSIVE — no e.preventDefault(). Calling preventDefault
   // on even a 1px downward touchmove causes iOS to classify the entire gesture
-  // as non-scrollable, permanently blocking scroll for that touch. Instead,
-  // overscroll-behavior-y: none on the scroll container suppresses native
-  // bounce, and we track pull distance purely from touch position deltas.
+  // as non-scrollable, permanently blocking scroll for that touch. We track
+  // pull distance purely from touch position deltas.
   useEffect(() => {
-    if (typeof window === 'undefined' || !isIOSPWA) return;
+    if (typeof window === 'undefined' || !needsCustomPTR) return;
 
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
-
-    // Suppress native overscroll bounce via CSS. In PWA standalone mode,
-    // body is overflow:hidden so only the scroll container can bounce.
-    scrollContainer.style.overscrollBehaviorY = 'none';
-    document.body.style.overscrollBehavior = 'none';
-    document.documentElement.style.overscrollBehavior = 'none';
+    const body = document.body;
 
     let startY = 0;
     let isAtTop = true;
@@ -352,8 +337,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
     const updateDOM = (distance: number) => {
       const damped = distance * 0.5;
-      scrollContainer.style.transform = `translateY(${damped}px)`;
-      scrollContainer.style.transition = 'none';
+      body.style.transform = `translateY(${damped}px)`;
+      body.style.transition = 'none';
 
       const indicator = pullIndicatorRef.current;
       if (indicator) {
@@ -374,10 +359,27 @@ function TemplateInner({ children }: AppTemplateProps) {
       }
     };
 
+    // If any nested scrollable ancestor isn't at its top, PTR must NOT fire —
+    // the user is scrolling something inside (thread list, modal content,
+    // dropdown, etc.). Cheap property reads (scrollTop, scrollHeight) gate
+    // the expensive getComputedStyle call so non-scrolled ancestors are skipped.
+    const nestedScrollerAboveTop = (target: HTMLElement): boolean => {
+      let el: HTMLElement | null = target;
+      while (el && el !== body) {
+        if (el.scrollTop > 5 && el.scrollHeight > el.clientHeight) {
+          const oy = getComputedStyle(el).overflowY;
+          if (oy === 'auto' || oy === 'scroll') return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    };
+
     const handleTouchStart = (e: TouchEvent) => {
       if (refreshTriggered) return;
       startY = e.touches[0].clientY;
-      isAtTop = scrollContainer.scrollTop <= 5;
+      const docAtTop = window.scrollY <= 5;
+      isAtTop = docAtTop && !nestedScrollerAboveTop(e.target as HTMLElement);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
@@ -406,8 +408,8 @@ function TemplateInner({ children }: AppTemplateProps) {
       } else if (isDragging && rawDelta <= 10) {
         isDragging = false;
         currentPullDistance = 0;
-        scrollContainer.style.transform = '';
-        scrollContainer.style.transition = '';
+        body.style.transform = '';
+        body.style.transition = '';
         setPullActive(false);
       }
     };
@@ -420,46 +422,43 @@ function TemplateInner({ children }: AppTemplateProps) {
         setIsRefreshing(true);
         setTimeout(() => window.location.reload(), 400);
       } else if (isDragging) {
-        scrollContainer.style.transition = 'transform 0.3s ease';
-        scrollContainer.style.transform = 'translateY(0px)';
+        body.style.transition = 'transform 0.3s ease';
+        body.style.transform = 'translateY(0px)';
         const indicator = pullIndicatorRef.current;
         if (indicator) {
           indicator.style.transition = 'opacity 0.3s ease';
           indicator.style.opacity = '0';
         }
         snapBackTimeout = setTimeout(() => {
-          scrollContainer.style.transition = '';
-          scrollContainer.style.transform = '';
+          body.style.transition = '';
+          body.style.transform = '';
           setPullActive(false);
           snapBackTimeout = null;
         }, 300);
       } else {
         // Clear any stale transform
-        scrollContainer.style.transform = '';
-        scrollContainer.style.transition = '';
+        body.style.transform = '';
+        body.style.transition = '';
       }
 
       isDragging = false;
       currentPullDistance = 0;
     };
 
-    scrollContainer.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollContainer.addEventListener('touchmove', handleTouchMove, { passive: true });
-    scrollContainer.addEventListener('touchend', handleTouchEnd, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      scrollContainer.removeEventListener('touchstart', handleTouchStart);
-      scrollContainer.removeEventListener('touchmove', handleTouchMove);
-      scrollContainer.removeEventListener('touchend', handleTouchEnd);
-      scrollContainer.style.overscrollBehaviorY = '';
-      document.body.style.overscrollBehavior = '';
-      document.documentElement.style.overscrollBehavior = '';
-      scrollContainer.style.transform = '';
-      scrollContainer.style.transition = '';
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      body.style.transform = '';
+      body.style.transition = '';
       if (rAFId !== null) cancelAnimationFrame(rAFId);
       if (snapBackTimeout) clearTimeout(snapBackTimeout);
     };
-  }, [isIOSPWA]);
+  }, [needsCustomPTR]);
 
   const isPollPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
@@ -690,7 +689,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     <>
       {/* Pull-to-refresh indicator — rendered via portal to escape scaling container.
            Uses refs for direct DOM updates during drag (no React re-renders). */}
-      {isIOSPWA && (pullActive || isRefreshing) && isMounted && createPortal(
+      {needsCustomPTR && (pullActive || isRefreshing) && isMounted && createPortal(
         <div
           ref={pullIndicatorRef}
           className="fixed left-0 right-0 z-[9999] flex justify-center pointer-events-none"
@@ -723,17 +722,14 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Fixed Header - skip for poll, create poll, profile, thread, and home pages */}
+      {/* Fallback header for pages without a page-specific header (not poll, thread, profile, home, or create-modal). */}
       {!isPollPage && !isThreadPage && !isProfilePage && pathname !== '/' && (
-        <div className="flex-shrink-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700" 
+        <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
-            {/* Left element - stays at top */}
             <div className="flex items-center justify-center">
               {leftElement}
             </div>
-            
-            {/* Title - vertically centered with slight downward and leftward offset */}
             {pageTitle && (
               <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
                 <h1
@@ -744,9 +740,6 @@ function TemplateInner({ children }: AppTemplateProps) {
                 </h1>
               </div>
             )}
-            
-            
-            {/* Right element - stays at top */}
             <div className="flex items-center justify-center">
               {rightElement}
             </div>
@@ -754,64 +747,48 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       )}
 
-      {/* Scrollable Content Area - consistent across all pages.
-          Bottom margin reserves space for the bottom bar when visible; collapses to
-          0 (in lockstep with the bar's 200ms slide-out) so no white gap remains. */}
+      {/* Bottom padding reserves space for the fixed bottom bar when visible;
+          collapses to 0 in lockstep with the bar's 200ms slide-out so no white
+          gap remains when it hides. */}
       <div
-        ref={scrollContainerRef}
-        className={`flex-1 safari-scroll-container ${isThreadPage ? 'overflow-hidden flex flex-col' : 'overflow-auto'}`}
         style={{
-          paddingTop: '0',
           paddingLeft: 'max(0.35rem, env(safe-area-inset-left))',
           paddingRight: 'max(0.35rem, env(safe-area-inset-right))',
-          marginBottom: showBottomBar ? `${bottomBarHeight}px` : '0',
-          transition: 'margin-bottom 200ms ease-out',
+          paddingBottom: showBottomBar ? `${bottomBarHeight}px` : '0',
+          transition: 'padding-bottom 200ms ease-out',
         }}>
-        <div className={`pwa-safe-top relative ${isThreadPage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
-          {/* Commit age badge - absolutely positioned so it never pushes content down when it loads.
-               Uses pwa-badge-top class to sit below the safe area inset in PWA standalone mode.
-               Only rendered after mount to avoid hydration mismatch — CommitInfo (in layout)
-               injects portal content here client-side. */}
-          {/* position:fixed anchors the badge to the safe-area boundary so ancestor scroll
-              drift on iOS PWA can't push it off-screen. z-30 keeps it above the thread page's
-              fixed header (z-20). */}
-          {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
-          {/* Spacer div for header elements that are now rendered in portal */}
-          {(isProfilePage || pathname === '/') && (
-            <div className="relative">
+        {/* Commit age badge portal target — anchored to the top safe-area
+             boundary via .pwa-badge-top. z-30 keeps it above the thread page's
+             fixed header (z-20). */}
+        {isMounted && <div id="commit-badge-portal" className="fixed left-0 right-0 z-30 pwa-badge-top"></div>}
 
-              {/* Profile page title */}
-              {isProfilePage && (
-                <div className="max-w-4xl mx-auto px-16 pt-4 pb-1">
-                  <h1
-                    className="text-2xl font-bold text-center break-words select-none"
-                    {...longPressProps}
-                  >
-                    Profile
-                  </h1>
-                </div>
-              )}
-              
-              {/* Home page title */}
-              {pathname === '/' && (
-                <div className="relative max-w-4xl mx-auto px-2 pt-4 pb-1">
-                  <div className="text-center">
-                    <h1
-                      className="text-2xl font-bold mb-1 select-none"
-                      {...longPressProps}
-                    >Whoever Wants</h1>
-                    <div className="h-7 flex items-center justify-center mb-1" id="home-phrase-content">
-                      {/* Blue phrase will be injected here */}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          
-          <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'} ${isThreadLikePage ? 'w-full flex-1 flex flex-col overflow-hidden' : ''}`}>
-            {children}
+        {isProfilePage && (
+          <div
+            className="max-w-4xl mx-auto px-16 pb-1 page-title-safe-top"
+          >
+            <h1 className="text-2xl font-bold text-center break-words select-none" {...longPressProps}>
+              Profile
+            </h1>
           </div>
+        )}
+
+        {pathname === '/' && (
+          <div
+            className="relative max-w-4xl mx-auto px-2 pb-1 page-title-safe-top"
+          >
+            <div className="text-center">
+              <h1 className="text-2xl font-bold mb-1 select-none" {...longPressProps}>
+                Whoever Wants
+              </h1>
+              <div className="h-7 flex items-center justify-center mb-1" id="home-phrase-content">
+                {/* Blue phrase will be injected here */}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isProfilePage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}>
+          {children}
         </div>
       </div>
 
