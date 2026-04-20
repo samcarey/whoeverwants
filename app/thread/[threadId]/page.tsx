@@ -570,12 +570,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: row 2 pins the icon's layout box to the card's
-                     top. A small pt nudges it to account for emoji font metrics —
-                     emoji glyphs render slightly above their line-box top, so
-                     without the pt the icon visually appears above the card's
-                     top border even though the layout rects line up. */}
-                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none pt-1.5">
+                {/* Icon column: row-start-2 pins the cell to the card's top.
+                     pt-3.5 places the icon's em-box center at 23px below the
+                     card top, which is where the title's first-line center sits
+                     (card py-2 of 8px + 1px border + line-height/2 of 14px). */}
+                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none pt-3.5">
                   {getCategoryIcon(poll)}
                 </div>
 
