@@ -568,10 +568,75 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     cardRefs.current.delete(poll.id);
                   }
                 }}
-                className="mx-1.5 mb-1.5"
+                className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
+                {/* mt-[7px] splits the difference between the title line-box
+                     center (9px) and its cap-to-baseline center (5px) —
+                     emoji glyphs have varying visual weight, so neither pure
+                     reference reads right across all icons. Tweak this if
+                     icons feel off. */}
+                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[7px]">
+                  {getCategoryIcon(poll)}
+                </div>
+
+                {/* Outside the card so taps on the header don't trigger the
+                     card's expand/long-press handlers. */}
+                <div className="col-start-2 row-start-1 flex items-center gap-2 px-3 min-w-0">
+                  <div className="flex items-center gap-1 min-w-0 flex-1 text-xs text-gray-400 dark:text-gray-500">
+                    <ClientOnly fallback={null}>
+                      <span className="truncate">
+                        {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                        <span
+                          className="relative cursor-help"
+                          onClick={() => setTooltipPollId((prev) => (prev === poll.id ? null : poll.id))}
+                          onMouseEnter={() => setTooltipPollId(poll.id)}
+                          onMouseLeave={() => setTooltipPollId((prev) => (prev === poll.id ? null : prev))}
+                        >
+                          {relativeTime(poll.created_at)}
+                          {tooltipPollId === poll.id && (
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                            >
+                              {formatCreationTimestamp(poll.created_at)}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                    </ClientOnly>
+                  </div>
+                  <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
+                    <ClientOnly fallback={null}>
+                      {(() => {
+                        if (isClosed) {
+                          const badge = getResultBadge(poll);
+                          return (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs leading-none">{badge.emoji}</span>
+                              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
+                                {badge.text}
+                              </span>
+                            </div>
+                          );
+                        }
+                        const inSuggestions = isInSuggestionPhase(poll);
+                        if (inSuggestions && poll.suggestion_deadline) {
+                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                        }
+                        if (inSuggestions && poll.suggestion_deadline_minutes) {
+                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                        }
+                        if (poll.response_deadline) {
+                          return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
+                        }
+                        return null;
+                      })()}
+                    </ClientOnly>
+                  </div>
+                </div>
+
                 <div
-                  className={`px-2 py-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 py-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -583,90 +648,24 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     onTouchMove={handleTouchMove}
                     className="cursor-pointer"
                   >
-                  {/* Status line: category icon (left) · countdown/badge (right). */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm w-8 shrink-0">{getCategoryIcon(poll)}</span>
-                    <span className="flex-1 flex items-center justify-end text-sm text-gray-500 dark:text-gray-400 min-w-0">
-                      <ClientOnly fallback={<>Loading...</>}>
-                        {(() => {
-                          if (isClosed) {
-                            const badge = getResultBadge(poll);
-                            return (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs leading-none">{badge.emoji}</span>
-                                <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
-                                  {badge.text}
-                                </span>
-                              </div>
-                            );
-                          }
-                          const inSuggestions = isInSuggestionPhase(poll);
-                          if (inSuggestions && poll.suggestion_deadline) {
-                            return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
-                          }
-                          if (inSuggestions && poll.suggestion_deadline_minutes) {
-                            return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
-                          }
-                          if (poll.response_deadline) {
-                            return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
-                          }
-                          return null;
-                        })()}
-                      </ClientOnly>
-                    </span>
-                  </div>
-
-                  {/* Title */}
                   <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                     {poll.title}
                   </h3>
 
-                  {/* Metadata */}
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-400 dark:text-gray-500">
-                      <ClientOnly fallback={null}>
-                        <>
-                          {poll.creator_name && <>{poll.creator_name} &middot; </>}
-                          <span
-                            className="relative cursor-help"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTooltipPollId((prev) => (prev === poll.id ? null : poll.id));
-                            }}
-                            onTouchStart={(e) => e.stopPropagation()}
-                            onTouchEnd={(e) => e.stopPropagation()}
-                            onTouchMove={(e) => e.stopPropagation()}
-                            onMouseEnter={() => setTooltipPollId(poll.id)}
-                            onMouseLeave={() =>
-                              setTooltipPollId((prev) => (prev === poll.id ? null : prev))
-                            }
-                          >
-                            {relativeTime(poll.created_at)}
-                            {tooltipPollId === poll.id && (
-                              <span
-                                role="tooltip"
-                                className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
-                              >
-                                {formatCreationTimestamp(poll.created_at)}
-                              </span>
-                            )}
-                          </span>
-                        </>
-                      </ClientOnly>
-                    </div>
-                    {!isVoted && isOpen && (
-                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
-                        Not voted
-                      </span>
-                    )}
-                    {isOpen && (
+                  {isOpen && (
+                    <div className="flex items-center justify-end gap-2 mt-1">
+                      {!isVoted && (
+                        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                          Not voted
+                        </span>
+                      )}
                       <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
                         {(poll.response_count ?? 0) > 0
                           ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
                           : 'No responses yet'}
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
