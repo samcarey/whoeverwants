@@ -139,7 +139,10 @@ function TemplateInner({ children }: AppTemplateProps) {
   const isThreadPage = pathname.startsWith('/thread/');
   // /p/<id> now renders the thread view with a card expanded; both routes share the
   // thread-page layout (fixed header + scroll list) and the thread's own back button.
-  const isThreadLikePage = isThreadPage || isPollPage;
+  // Thread sub-routes (/thread/<id>/info, .../edit-title) render their own fixed
+  // header but opt out of the thread-like FAB + padding treatment.
+  const isThreadRootView = /^\/(thread|p)\/[^/]+\/?$/.test(pathname);
+  const isThreadLikePage = isThreadRootView;
   const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
   const [modalClosing, setModalClosing] = useState(false);

@@ -484,14 +484,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             names={thread.participantNames}
             anonymousCount={thread.anonymousRespondentCount}
           />
-          <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => navigateWithTransition(router, `/thread/${threadId}/info`, 'forward')}
+            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
+            aria-label="Thread details"
+          >
             <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
               {thread.title}
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
             </p>
-          </div>
+          </button>
         </div>
       </div>
 

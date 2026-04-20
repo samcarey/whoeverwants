@@ -14,8 +14,13 @@ export interface Thread {
   polls: Poll[];
   /** Deduplicated participant names across all polls in the thread */
   participantNames: string[];
-  /** Display title: comma-separated participant names */
+  /** Display title: latestPoll.thread_title override if set, otherwise the
+   *  comma-separated participant-names default. */
   title: string;
+  /** The participant-names default (no thread_title override applied). */
+  defaultTitle: string;
+  /** True when the thread title comes from a user override (latestPoll.thread_title). */
+  hasCustomTitle: boolean;
   /** Number of unvoted polls in the thread */
   unvotedCount: number;
   /** Earliest deadline among unvoted open polls (undefined if none) */
@@ -143,10 +148,13 @@ function buildThreadFromPolls(
   }
   const participantNames = Array.from(nameSet).sort();
 
-  // Build title from participant names, or "New Thread" if none yet
-  const title = participantNames.length > 0
+  // Default title uses participant names; override comes from the latest poll's thread_title.
+  const defaultTitle = participantNames.length > 0
     ? participantNames.join(', ')
     : 'New Thread';
+  const latestThreadTitle = polls[polls.length - 1]?.thread_title?.trim();
+  const hasCustomTitle = !!latestThreadTitle;
+  const title = hasCustomTitle ? latestThreadTitle! : defaultTitle;
 
   // Count unvoted polls and find soonest unvoted deadline
   const now = new Date();
@@ -185,6 +193,8 @@ function buildThreadFromPolls(
     polls,
     participantNames,
     title,
+    defaultTitle,
+    hasCustomTitle,
     unvotedCount,
     soonestUnvotedDeadline,
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline ? new Date(soonestUnvotedDeadline).getTime() : undefined,
