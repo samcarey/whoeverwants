@@ -12,40 +12,34 @@ import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 
 const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => { setIsClient(true); }, []);
+  // Update countdown text imperatively via a ref so it doesn't trigger a React
+  // re-render every second. On Firefox iOS, per-second setState calls across
+  // many countdowns triggered a scrollY snap of ~225px mid-momentum on scroll-
+  // up — using a ref + textContent leaves React's tree untouched.
+  const spanRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    if (!isClient) return;
-    // Diagnostic: `?no-countdown` runs updateCountdown once and skips the setInterval
-    // to test whether per-second re-renders of the countdown spans cause the Firefox
-    // iOS scroll jitter.
-    const suppressed = typeof window !== 'undefined' && window.location.search.includes('no-countdown');
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const deadlineTime = new Date(deadline).getTime();
-      const difference = deadlineTime - now;
-      if (difference <= 0) { setTimeLeft("Expired"); return; }
+    const el = spanRef.current;
+    if (!el) return;
+    const render = () => {
+      const difference = new Date(deadline).getTime() - Date.now();
+      if (difference <= 0) { el.textContent = 'Expired'; return false; }
       const days = Math.floor(difference / (1000 * 60 * 60 * 24));
       const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      let timeString = "";
-      if (days > 0) timeString = `${days}d ${hours}h ${minutes}m`;
-      else if (hours > 0) timeString = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) timeString = `${minutes}m ${seconds}s`;
-      else timeString = `${seconds}s`;
-      setTimeLeft(timeString);
+      if (days > 0) el.textContent = `${days}d ${hours}h ${minutes}m`;
+      else if (hours > 0) el.textContent = `${hours}h ${minutes}m ${seconds}s`;
+      else if (minutes > 0) el.textContent = `${minutes}m ${seconds}s`;
+      else el.textContent = `${seconds}s`;
+      return true;
     };
-    updateCountdown();
-    if (suppressed) return;
-    const interval = setInterval(updateCountdown, 1000);
+    if (!render()) return;
+    const interval = setInterval(() => { if (!render()) clearInterval(interval); }, 1000);
     return () => clearInterval(interval);
-  }, [deadline, isClient]);
+  }, [deadline]);
 
-  return <span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span>;
+  return <span ref={spanRef} className={`font-mono font-semibold ${colorClass}`} />;
 };
 
 interface ThreadListProps {
