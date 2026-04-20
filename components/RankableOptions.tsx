@@ -543,9 +543,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       const noPreferenceRect = noPreferenceContainer.getBoundingClientRect();
       // Extend no preference list drop zone upward (toward divider) when dragging from main
       const extendedTop = dragState.sourceList === 'main' ? noPreferenceRect.top - dropZoneBuffer : noPreferenceRect.top;
-      
-      if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right && 
-          screenY >= extendedTop && screenY <= noPreferenceRect.bottom) {
+      // When the list is empty and we're dragging from main, the container
+      // is collapsed to zero height — extend detection far below the
+      // divider so dropping "below the line" reliably hits this zone.
+      const extendedBottom =
+        noPreferenceList.length === 0 && dragState.sourceList === 'main'
+          ? noPreferenceRect.top + Math.max(noPreferenceRect.height, totalItemHeight) + window.innerHeight
+          : noPreferenceRect.bottom;
+
+      if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right &&
+          screenY >= extendedTop && screenY <= extendedBottom) {
         const relativeY = screenY - noPreferenceRect.top;
         // Allow appending to noPreference list when dragging from main list
         const allowAppend = dragState.sourceList === 'main';
@@ -1561,9 +1568,17 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     title?: string,
     description?: string
   ) => {
+    // Collapse the no-preference zone entirely when it's empty and the user
+    // isn't dragging anything toward it — the dotted drop area should only
+    // take up space when it has items or the user is previewing a drop into it.
+    const isNoPrefEmptyCollapsed =
+      listType === 'noPreference' &&
+      listItems.length === 0 &&
+      !(dragState.isDragging && dragState.targetList === 'noPreference');
+
     // Use dynamic height from state with smooth transitions
-    const dynamicHeight = containerHeights[listType];
-    
+    const dynamicHeight = isNoPrefEmptyCollapsed ? 0 : containerHeights[listType];
+
     // Calculate how many number slots to show (account for items being dragged in from other list)
     const numberSlotCount = listType === 'main'
       ? (dragState.isDragging && dragState.sourceList === 'noPreference' && dragState.targetList === 'main'
@@ -1645,14 +1660,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
           <div
             ref={containerRef}
-            className={`flex-1 p-3 relative transition-all duration-200 ease-out ${
-              listItems.length === 0
+            className={`flex-1 relative transition-all duration-200 ease-out ${
+              isNoPrefEmptyCollapsed ? 'p-0' : 'p-3'
+            } ${
+              listItems.length === 0 && !isNoPrefEmptyCollapsed
                 ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg'
                 : ''
             }`}
             style={{
               height: `${dynamicHeight}px`,
-              minHeight: `${totalItemHeight}px`,
+              minHeight: isNoPrefEmptyCollapsed ? '0px' : `${totalItemHeight}px`,
               // Link circles overflow the container's left edge so they
               // can overlap the corners of the option cards.
               overflow: 'visible',
@@ -1727,7 +1744,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             })()}
 
             {/* Show empty state message if list is empty */}
-            {listItems.length === 0 && (
+            {listItems.length === 0 && !isNoPrefEmptyCollapsed && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <p className={`text-sm ${
