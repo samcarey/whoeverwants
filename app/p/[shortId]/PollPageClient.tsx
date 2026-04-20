@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
-import Countdown from "@/components/Countdown";
 import CompactNameField from "@/components/CompactNameField";
 import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
@@ -1600,43 +1599,39 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             );
           }
 
-          // Case 4: Poll is still open and not expired - show countdown
+          // Case 4: Poll is still open and not expired — live countdown is
+          // shown above the card (thread view), so the ballot no longer shows
+          // its own clock. Deferred-deadline notices stay: they convey the
+          // duration that the timer will run once it starts, which the
+          // above-card "Taking Suggestions" label doesn't.
           if (!isPollClosed && !isExpired && deadline) {
-            // During suggestion phase, show suggestion deadline instead of response deadline
-            if (inSuggestionPhase) {
-              if (poll.suggestion_deadline) {
-                return <Countdown deadline={poll.suggestion_deadline} label="Suggestions cutoff" />;
-              }
-              // Deferred deadline: timer starts when first suggestion is submitted
-              if (poll.suggestion_deadline_minutes) {
-                const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
-                return (
-                  <div className="mb-3 text-center">
-                    <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                      Suggestions cutoff {durationLabel} after first suggestion
-                    </span>
-                  </div>
-                );
-              }
+            if (inSuggestionPhase && !poll.suggestion_deadline && poll.suggestion_deadline_minutes) {
+              const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
+              return (
+                <div className="mb-3 text-center">
+                  <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                    Suggestions cutoff {durationLabel} after first suggestion
+                  </span>
+                </div>
+              );
             }
-            // Time poll in availability phase: show availability deadline
-            if (poll.poll_type === 'time' && inAvailabilityPhase) {
-              const effectiveAvailDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
-              if (effectiveAvailDeadline) {
-                return <Countdown deadline={effectiveAvailDeadline} label="Availability cutoff" />;
-              }
-              if (poll.suggestion_deadline_minutes) {
-                const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
-                return (
-                  <div className="mb-3 text-center">
-                    <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                      Availability cutoff {durationLabel} after first response
-                    </span>
-                  </div>
-                );
-              }
+            if (
+              poll.poll_type === 'time' &&
+              inAvailabilityPhase &&
+              !suggestionDeadlineOverride &&
+              !poll.suggestion_deadline &&
+              poll.suggestion_deadline_minutes
+            ) {
+              const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
+              return (
+                <div className="mb-3 text-center">
+                  <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                    Availability cutoff {durationLabel} after first response
+                  </span>
+                </div>
+              );
             }
-            return <Countdown deadline={poll.response_deadline || null} />;
+            return null;
           }
 
           // Case 5: Timer expired but poll is still open - don't show a card
