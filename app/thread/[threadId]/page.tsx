@@ -570,19 +570,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: mount a fixed 28px-tall flex container, then
-                     offset it so the icon center splits the difference between
-                     the title line-box center (mt-[9px]) and its cap-to-baseline
-                     center (mt-[5px]) — a halfway compromise that reads right
-                     when emoji glyphs have slightly varying visual weight. */}
+                {/* mt-[7px] splits the difference between the title line-box
+                     center (9px) and its cap-to-baseline center (5px) —
+                     emoji glyphs have varying visual weight, so neither pure
+                     reference reads right across all icons. Tweak this if
+                     icons feel off. */}
                 <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[7px]">
                   {getCategoryIcon(poll)}
                 </div>
 
-                {/* Above-card header: creator/age on the left, status element
-                     (countdown, "Taking Suggestions", closed badge) on the right.
-                     Lives outside the bordered card so it sits just above the
-                     card's top edge. Not part of the tap/long-press zone. */}
+                {/* Outside the card so taps on the header don't trigger the
+                     card's expand/long-press handlers. */}
                 <div className="col-start-2 row-start-1 flex items-center gap-2 px-3 min-w-0">
                   <div className="flex items-center gap-1 min-w-0 flex-1 text-xs text-gray-400 dark:text-gray-500">
                     <ClientOnly fallback={null}>
@@ -650,12 +648,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     onTouchMove={handleTouchMove}
                     className="cursor-pointer"
                   >
-                  {/* Title */}
                   <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
                     {poll.title}
                   </h3>
 
-                  {/* Response-state pills (only while open) */}
                   {isOpen && (
                     <div className="flex items-center justify-end gap-2 mt-1">
                       {!isVoted && (

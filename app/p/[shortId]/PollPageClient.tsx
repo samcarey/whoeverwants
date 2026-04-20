@@ -1599,34 +1599,29 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             );
           }
 
-          // Case 4: Poll is still open and not expired — live countdown is
-          // shown above the card (thread view), so the ballot no longer shows
-          // its own clock. Deferred-deadline notices stay: they convey the
-          // duration that the timer will run once it starts, which the
-          // above-card "Taking Suggestions" label doesn't.
+          // Case 4: Poll open, not expired. Live countdown is rendered
+          // above the card in the thread view; only deferred-deadline
+          // notices render here, since they convey run-duration info
+          // ("X minutes after first submission") that the above-card
+          // "Taking Suggestions" label doesn't surface.
           if (!isPollClosed && !isExpired && deadline) {
-            if (inSuggestionPhase && !poll.suggestion_deadline && poll.suggestion_deadline_minutes) {
-              const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
-              return (
-                <div className="mb-3 text-center">
-                  <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                    Suggestions cutoff {durationLabel} after first suggestion
-                  </span>
-                </div>
-              );
-            }
-            if (
+            const mins = poll.suggestion_deadline_minutes;
+            const isDeferredSuggestion =
+              inSuggestionPhase && !poll.suggestion_deadline && mins;
+            const isDeferredAvailability =
               poll.poll_type === 'time' &&
               inAvailabilityPhase &&
               !suggestionDeadlineOverride &&
               !poll.suggestion_deadline &&
-              poll.suggestion_deadline_minutes
-            ) {
-              const durationLabel = formatDurationLabel(poll.suggestion_deadline_minutes);
+              mins;
+            if (isDeferredSuggestion || isDeferredAvailability) {
+              const label = isDeferredSuggestion
+                ? `Suggestions cutoff ${formatDurationLabel(mins!)} after first suggestion`
+                : `Availability cutoff ${formatDurationLabel(mins!)} after first response`;
               return (
                 <div className="mb-3 text-center">
                   <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                    Availability cutoff {durationLabel} after first response
+                    {label}
                   </span>
                 </div>
               );
