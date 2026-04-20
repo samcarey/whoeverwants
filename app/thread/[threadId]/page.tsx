@@ -317,7 +317,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
     const isInitialExpand =
       !hasHandledInitialExpandRef.current &&
-      initialExpandedPollId !== null &&
       expandedPollId === initialExpandedPollId;
 
     let targetDelta = 0;
