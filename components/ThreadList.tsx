@@ -19,6 +19,10 @@ const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-gree
 
   useEffect(() => {
     if (!isClient) return;
+    // Diagnostic: `?no-countdown` runs updateCountdown once and skips the setInterval
+    // to test whether per-second re-renders of the countdown spans cause the Firefox
+    // iOS scroll jitter.
+    const suppressed = typeof window !== 'undefined' && window.location.search.includes('no-countdown');
     const updateCountdown = () => {
       const now = new Date().getTime();
       const deadlineTime = new Date(deadline).getTime();
@@ -36,6 +40,7 @@ const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-gree
       setTimeLeft(timeString);
     };
     updateCountdown();
+    if (suppressed) return;
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, [deadline, isClient]);
