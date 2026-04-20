@@ -69,6 +69,8 @@ class CreatePollRequest(BaseModel):
     # For time polls: slot is included if its availability count >= max_slot_availability * (min_availability_percent / 100).
     # Default 95 means slots within 5% of the most-available slot pass.
     min_availability_percent: int = 95
+    # Optional user-set thread title. Normally inherited from the follow-up parent.
+    thread_title: str | None = None
 
 
 class SubmitVoteRequest(BaseModel):
@@ -119,6 +121,11 @@ class ClosePollRequest(BaseModel):
 
 class ReopenPollRequest(BaseModel):
     creator_secret: str
+
+
+class UpdateThreadTitleRequest(BaseModel):
+    # Empty string or all-whitespace clears the override (stored as NULL).
+    thread_title: str | None = None
 
 
 class CutoffSuggestionsRequest(BaseModel):
@@ -193,6 +200,7 @@ class PollResponse(BaseModel):
     show_preliminary_results: bool = True
     response_count: int | None = None
     min_availability_percent: int | None = None
+    thread_title: str | None = None
     results: "PollResultsResponse | None" = None
     voter_names: list[str] | None = None
 

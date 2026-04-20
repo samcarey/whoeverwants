@@ -25,6 +25,7 @@ from models import (
     ReopenPollRequest,
     SubmitVoteRequest,
     TimeSlotResponse,
+    UpdateThreadTitleRequest,
     VoteResponse,
 )
 from algorithms.suggestion import count_suggestion_votes
@@ -224,6 +225,7 @@ def _row_to_poll(row: dict) -> PollResponse:
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
         min_availability_percent=row.get("min_availability_percent"),
+        thread_title=row.get("thread_title"),
     )
 
 
@@ -429,6 +431,11 @@ def create_poll(req: CreatePollRequest):
         resolved_location = req.location_value if req.location_mode == "set" else None
         resolved_time = req.time_value if req.time_mode == "set" else None
 
+        # thread_title: explicit request wins; otherwise inherit from the
+        # follow_up_to parent via a COALESCE subquery in the INSERT (below)
+        # so we avoid a round-trip. Forks don't inherit — fork_of doesn't
+        # drive the subquery.
+
         row = conn.execute(
             """
             INSERT INTO polls (title, poll_type, options, response_deadline,
@@ -451,6 +458,7 @@ def create_poll(req: CreatePollRequest):
                                is_auto_title,
                                min_responses, show_preliminary_results,
                                min_availability_percent,
+                               thread_title,
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
@@ -472,6 +480,7 @@ def create_poll(req: CreatePollRequest):
                     %(is_auto_title)s,
                     %(min_responses)s, %(show_preliminary_results)s,
                     %(min_availability_percent)s,
+                    COALESCE(%(thread_title)s, (SELECT thread_title FROM polls WHERE id = %(follow_up_to)s)),
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -515,6 +524,7 @@ def create_poll(req: CreatePollRequest):
                 "min_responses": req.min_responses,
                 "show_preliminary_results": req.show_preliminary_results,
                 "min_availability_percent": req.min_availability_percent if req.poll_type == PollType.time else None,
+                "thread_title": req.thread_title,
                 "now": now,
             },
         ).fetchone()
@@ -1260,6 +1270,34 @@ def reopen_poll(poll_id: str, req: ReopenPollRequest):
         ).fetchone()
     if not row:
         raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+    return _row_to_poll(row)
+
+
+@router.post("/{poll_id}/thread-title", response_model=PollResponse)
+def update_thread_title(poll_id: str, req: UpdateThreadTitleRequest):
+    """Update (or clear) a poll's thread_title override. No auth required —
+    anyone with the poll's link can rename the thread. An empty or
+    whitespace-only value clears the override (stored as NULL), causing the
+    thread UI to fall back to the participant-names default title."""
+    normalized = (req.thread_title or "").strip()
+    value: str | None = normalized if normalized else None
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            UPDATE polls
+            SET thread_title = %(thread_title)s,
+                updated_at = %(now)s
+            WHERE id = %(poll_id)s
+            RETURNING *
+            """,
+            {
+                "poll_id": poll_id,
+                "thread_title": value,
+                "now": datetime.now(timezone.utc),
+            },
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Poll not found")
     return _row_to_poll(row)
 
 

@@ -143,6 +143,7 @@ function toPoll(data: any): Poll {
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
+    thread_title: data.thread_title ?? null,
     voter_names: data.voter_names ?? undefined,
   };
 }
@@ -229,6 +230,7 @@ export async function apiCreatePoll(params: {
   min_availability_percent?: number;
   suggestion_deadline_minutes?: number;
   is_auto_title?: boolean;
+  thread_title?: string | null;
 }): Promise<Poll> {
   const data = await apiFetch('', {
     method: 'POST',
@@ -414,6 +416,15 @@ export async function apiReopenPoll(pollId: string, creatorSecret: string): Prom
   const data = await apiFetch(`/${encodeURIComponent(pollId)}/reopen`, {
     method: 'POST',
     body: JSON.stringify({ creator_secret: creatorSecret }),
+  });
+  return toPoll(data);
+}
+
+/** Update (or clear) a poll's thread_title override. Empty string clears it. */
+export async function apiUpdateThreadTitle(pollId: string, threadTitle: string | null): Promise<Poll> {
+  const data = await apiFetch(`/${encodeURIComponent(pollId)}/thread-title`, {
+    method: 'POST',
+    body: JSON.stringify({ thread_title: threadTitle }),
   });
   return toPoll(data);
 }

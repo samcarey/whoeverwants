@@ -69,6 +69,7 @@ export interface Poll {
   show_preliminary_results?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
+  thread_title?: string | null;
   results?: PollResults | null;
   voter_names?: string[] | null;
 }

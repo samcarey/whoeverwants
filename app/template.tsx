@@ -9,7 +9,7 @@ import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
-import { isUuidLike } from '@/lib/pollId';
+import { isUuidLike, isThreadRootView } from '@/lib/pollId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -139,7 +139,9 @@ function TemplateInner({ children }: AppTemplateProps) {
   const isThreadPage = pathname.startsWith('/thread/');
   // /p/<id> now renders the thread view with a card expanded; both routes share the
   // thread-page layout (fixed header + scroll list) and the thread's own back button.
-  const isThreadLikePage = isThreadPage || isPollPage;
+  // Thread sub-routes (/thread/<id>/info, .../edit-title) render their own fixed
+  // header but opt out of the thread-like FAB + padding treatment.
+  const isThreadLikePage = isThreadRootView(pathname);
   const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
   const [modalClosing, setModalClosing] = useState(false);

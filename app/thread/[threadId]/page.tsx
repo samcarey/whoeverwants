@@ -5,10 +5,10 @@ import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { buildThreadFromPollDown } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId, apiReopenPoll } from "@/lib/api";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls, invalidatePoll } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
@@ -25,24 +25,6 @@ import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
-
-/** Attempt to build the thread synchronously from in-memory caches.
- *  Returns null if any required data is missing — the normal async fetch path
- *  will then run. Called during initial render so the page mounts with real
- *  content (no loading spinner flash) when we came from home or another page
- *  that already populated the cache. */
-function buildThreadSync(
-  threadId: string,
-  voted: Set<string>,
-  abstained: Set<string>
-): Thread | null {
-  if (typeof window === 'undefined') return null;
-  const anchor = isUuidLike(threadId) ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
-  if (!anchor) return null;
-  const polls = getCachedAccessiblePolls();
-  if (!polls) return null;
-  return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
-}
 
 interface ThreadContentProps {
   threadId: string;
@@ -62,7 +44,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     }
     const voted = loadVotedPolls();
     return {
-      thread: buildThreadSync(threadId, voted.votedPollIds, voted.abstainedPollIds),
+      thread: buildThreadSyncFromCache(threadId, voted.votedPollIds, voted.abstainedPollIds),
       votedPollIds: voted.votedPollIds,
       abstainedPollIds: voted.abstainedPollIds,
     };
@@ -484,14 +466,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             names={thread.participantNames}
             anonymousCount={thread.anonymousRespondentCount}
           />
-          <div className="min-w-0">
+          <button
+            type="button"
+            onClick={() => navigateWithTransition(router, `/thread/${threadId}/info`, 'forward')}
+            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
+            aria-label="Thread details"
+          >
             <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
               {thread.title}
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
             </p>
-          </div>
+          </button>
         </div>
       </div>
 
