@@ -1269,8 +1269,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       let newNoPreferenceHeight = baseNoPreferenceHeight;
 
       if (dragState.sourceList === 'main' && dragState.targetList === 'noPreference') {
-        // Dragging from main to no preference - DON'T shrink main (keep stable), but grow no preference
-        newMainHeight = baseMainHeight; // Keep main list at original size during preview
+        // Dragging from main to no preference — shrink main by the tier
+        // size at the same time we grow no preference, so the overall
+        // layout stays the same length instead of leaving a phantom
+        // empty slot at the bottom of the main list.
+        newMainHeight = Math.max((mainList.length - tierSize) * totalItemHeight - gapSize, totalItemHeight);
         newNoPreferenceHeight = Math.max((noPreferenceList.length + tierSize) * totalItemHeight - gapSize, totalItemHeight);
       } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
         // Dragging from no preference to main - grow main, shrink no preference (real-time feedback)
@@ -1663,7 +1666,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
             className={`flex-1 relative transition-all duration-200 ease-out ${
               isNoPrefEmptyCollapsed ? 'p-0' : 'p-3'
             } ${
-              listItems.length === 0 && !isNoPrefEmptyCollapsed
+              listType === 'main' && listItems.length === 0
                 ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg'
                 : ''
             }`}
@@ -1743,16 +1746,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 ));
             })()}
 
-            {/* Show empty state message if list is empty */}
-            {listItems.length === 0 && !isNoPrefEmptyCollapsed && (
+            {/* Show empty state message for the main list only. The
+                no-preference zone stays visually empty: collapsed when
+                nothing targets it, and just raw allocated space (no
+                border, no placeholder text) during a drag preview. */}
+            {listType === 'main' && listItems.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
-                  <p className={`text-sm ${
-                    listType === 'noPreference'
-                      ? 'text-gray-500 dark:text-gray-400 font-medium'
-                      : 'text-gray-400 dark:text-gray-500'
-                  }`}>
-                    {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
+                  <p className="text-sm text-gray-400 dark:text-gray-500">
+                    Drag items here to rank them
                   </p>
                 </div>
               </div>
