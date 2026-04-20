@@ -459,6 +459,7 @@ The sections below contain mandatory rules. Follow them exactly.
   3. **Rebase on main** (`git fetch origin main && git rebase origin/main`) to ensure the branch merges cleanly. Force-push if needed after rebase.
   4. Create the PR.
   5. **Wait for PR checks to pass AND verify mergeability** before showing the PR link. Poll **both** the check-runs API (`/commits/{sha}/check-runs`) AND the commit statuses API (`/commits/{sha}/statuses`) every 15s until all checks complete — GitHub Actions results appear in check-runs, but Vercel build status appears in commit statuses. Also confirm `mergeable: true` on the PR. Report the link only after both succeed, or report failures.
+  6. **Always `subscribe_pr_activity` immediately after reporting the PR link** — the user wants CI failures and review comments streamed into the session by default. Don't ask first.
 - **Demo after every change**: After pushing a fix or feature, wait for the dev server to finish rebuilding (poll the dev API health endpoint until it returns 200), then use the API to create a realistic demonstration that showcases the new behavior. Create polls, cast votes with realistic names, set up whatever scenario best highlights the change. Think creatively — make names, options, and poll titles feel like real people making real decisions. Use a generous expiration buffer (e.g., 7 days) unless the demo specifically requires an imminent deadline. Share the dev server link to the demo poll with the user so they can see the change in action.
 
 ### Python Tooling: uv (Mandatory)
