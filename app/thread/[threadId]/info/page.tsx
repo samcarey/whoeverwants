@@ -8,11 +8,17 @@ import RespondentCircles from "@/components/RespondentCircles";
 import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
 function ThreadInfoInner() {
-  const router = useRouter();
   const params = useParams();
   const threadId = params.threadId as string;
   const { thread, loading, error } = useThread(threadId);
 
+  if (loading) return <ThreadLoading />;
+  if (error || !thread) return <ThreadNotFound />;
+  return <Info thread={thread} threadId={threadId} />;
+}
+
+function Info({ thread, threadId }: { thread: import("@/lib/threadUtils").Thread; threadId: string }) {
+  const router = useRouter();
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
@@ -29,9 +35,6 @@ function ThreadInfoInner() {
     if (hasAppHistory()) navigateBackWithTransition();
     else navigateWithTransition(router, `/thread/${threadId}`, 'back');
   };
-
-  if (loading) return <ThreadLoading />;
-  if (error || !thread) return <ThreadNotFound />;
 
   const totalCount = thread.participantNames.length;
 
