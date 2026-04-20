@@ -570,11 +570,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: row 2 places it at the card's top, so the icon's
-                     top edge aligns exactly with the card's top border — no magic
-                     padding. items-start keeps it pinned at the top when the card
-                     expands. */}
-                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none">
+                {/* Icon column: row 2 pins the icon's layout box to the card's
+                     top. A small pt nudges it to account for emoji font metrics —
+                     emoji glyphs render slightly above their line-box top, so
+                     without the pt the icon visually appears above the card's
+                     top border even though the layout rects line up. */}
+                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none pt-1.5">
                   {getCategoryIcon(poll)}
                 </div>
 
