@@ -8,39 +8,9 @@ import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
-
-const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
-  // Update countdown text imperatively via a ref so it doesn't trigger a React
-  // re-render every second. On Firefox iOS, per-second setState calls across
-  // many countdowns triggered a scrollY snap of ~225px mid-momentum on scroll-
-  // up — using a ref + textContent leaves React's tree untouched.
-  const spanRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const el = spanRef.current;
-    if (!el) return;
-    const render = () => {
-      const difference = new Date(deadline).getTime() - Date.now();
-      if (difference <= 0) { el.textContent = 'Expired'; return false; }
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      if (days > 0) el.textContent = `${days}d ${hours}h ${minutes}m`;
-      else if (hours > 0) el.textContent = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) el.textContent = `${minutes}m ${seconds}s`;
-      else el.textContent = `${seconds}s`;
-      return true;
-    };
-    if (!render()) return;
-    const interval = setInterval(() => { if (!render()) clearInterval(interval); }, 1000);
-    return () => clearInterval(interval);
-  }, [deadline]);
-
-  return <span ref={spanRef} className={`font-mono font-semibold ${colorClass}`} />;
-};
 
 interface ThreadListProps {
   polls: Poll[];
@@ -169,7 +139,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
                   {thread.soonestUnvotedDeadline && (
                     <div className="text-xs">
                       <ClientOnly fallback={null}>
-                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} />
+                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} colorClass="text-green-600 dark:text-green-400" hideSecondsInDays />
                       </ClientOnly>
                     </div>
                   )}

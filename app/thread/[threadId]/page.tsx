@@ -21,37 +21,10 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
-
-const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
-  // Update text imperatively via a ref so the 1s tick doesn't trigger a React
-  // re-render — same Firefox-iOS-scroll-jitter concern as the home page's
-  // countdown (see components/ThreadList.tsx).
-  const spanRef = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const el = spanRef.current;
-    if (!el) return;
-    const render = () => {
-      const difference = new Date(deadline).getTime() - Date.now();
-      if (difference <= 0) { el.textContent = 'Expired'; return false; }
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      if (days > 0) el.textContent = `${days}d ${hours}h ${minutes}m ${seconds}s`;
-      else if (hours > 0) el.textContent = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) el.textContent = `${minutes}m ${seconds}s`;
-      else el.textContent = `${seconds}s`;
-      return true;
-    };
-    if (!render()) return;
-    const interval = setInterval(() => { if (!render()) clearInterval(interval); }, 1000);
-    return () => clearInterval(interval);
-  }, [deadline]);
-  return <>{label && `${label}: `}<span ref={spanRef} className={`font-mono font-semibold ${colorClass}`} /></>;
-};
 
 /** Attempt to build the thread synchronously from in-memory caches.
  *  Returns null if any required data is missing — the normal async fetch path
@@ -242,12 +215,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom ONCE on initial load so newest polls are visible.
-  // Must wait for headerHeight > 0 (the content paddingTop grows once the fixed
-  // header is measured, so scrollHeight lags otherwise). After the first scroll
-  // the ref is set so subsequent thread-state mutations (poll:updated events,
-  // re-fetches, etc.) can't re-trigger the scroll — that was yanking the user
-  // back to the bottom mid-gesture when they tried to scroll up.
+  // Auto-scroll to the bottom once on initial load so newest polls are visible.
+  // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
+  // measured, otherwise scrollHeight lags). Gated on a ref so subsequent
+  // thread-state mutations (poll:updated events, re-fetches) can't re-fire it
+  // — that yanked the user back to the bottom mid-scroll.
   const initialScrollDoneRef = useRef(false);
   useEffect(() => {
     if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {

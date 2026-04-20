@@ -21,10 +21,9 @@
 
 html {
   background: var(--background);
-  /* Disable scroll anchoring at the root too — Firefox iOS specifically
-     picks its anchor against html, not body, so body-level
-     overflow-anchor:none doesn't reach it. A full +236px single-frame
-     scrollY jump was observed at the top edge on FxiOS. */
+  /* Disable scroll anchoring. The home page's typing animation replaces the
+     phrase div's innerHTML repeatedly on mount, which otherwise lets the
+     browser re-pick its anchor and compensate scrollY by the node height. */
   overflow-anchor: none;
 }
 
@@ -33,16 +32,11 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
-  /* Horizontal safe-area only. Top/bottom insets are handled by fixed elements
-     (commit badge, thread header, bottom bar) that each reserve their own space. */
+  /* Horizontal safe-area only. Top/bottom insets are handled per-element by
+     whatever sits at the top/bottom (fixed thread header, home/settings
+     titles via .page-title-safe-top, the floating "+" FAB). */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  /* Disable scroll anchoring. The home page's typing animation replaces the
-     phrase div's innerHTML every ~60ms for its first ~1s, which makes the
-     browser's scroll anchor re-pick its anchor and corrects scrollY by the
-     node height — producing single-frame snaps (dy≈-130 in 16ms) that read as
-     high-frequency jitter when the user is actively scrolling. */
-  overflow-anchor: none;
 }
 
 /* Hide scrollbar */

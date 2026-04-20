@@ -101,19 +101,6 @@ function TemplateInner({ children }: AppTemplateProps) {
     }
   }, []);
   
-  // Determine initial state based on pathname to avoid layout shift
-  const getInitialPageTitle = () => {
-    if (pathname === '/create-poll' || pathname === '/create-poll/') return 'Ask For…';
-    return '';
-  };
-  
-  const getInitialLeftElement = () => {
-    return <div className="w-6 h-6" />; // spacer
-  };
-  
-  const [pageTitle, setPageTitle] = useState(getInitialPageTitle());
-  const [leftElement, setLeftElement] = useState<React.ReactNode>(getInitialLeftElement());
-  const [rightElement, setRightElement] = useState<React.ReactNode>(<div className="w-6 h-6" />);
   // Initialize pollPageTitle synchronously from the poll cache on poll pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).
@@ -126,32 +113,14 @@ function TemplateInner({ children }: AppTemplateProps) {
     return poll?.title ?? '';
   });
 
-  // Long-press detection for opening the debug modal (replaces simple tap)
   const { props: longPressProps } = useLongPress(() =>
     window.dispatchEvent(new Event('openCommitInfo'))
   );
 
-  // Determine page-specific header content based on pathname
-  useEffect(() => {
-    if (pathname === '/') {
-      setPageTitle('');
-      setLeftElement(<div className="w-6 h-6" />); // spacer
-      setRightElement(<div className="w-6 h-6" />); // spacer
-    } else if (pathname === '/create-poll' || pathname === '/create-poll/') {
-      setPageTitle('Create Poll');
-      setLeftElement(<div className="w-6 h-6" />); // spacer
-      setRightElement(<div className="w-6 h-6" />); // spacer
-    } else if (pathname.startsWith('/p/')) {
-      // Poll pages - title will be set by the page content via custom event
-      setPageTitle(pollPageTitle);
-      setLeftElement(<div className="w-6 h-6" />); // spacer
-      setRightElement(<div className="w-6 h-6" />); // spacer
-    } else {
-      setPageTitle('');
-      setLeftElement(<div className="w-6 h-6" />); // spacer
-      setRightElement(<div className="w-6 h-6" />); // spacer
-    }
-  }, [pathname, pollPageTitle]);
+  const pageTitle =
+    pathname === '/create-poll' || pathname === '/create-poll/' ? 'Create Poll' :
+    pathname.startsWith('/p/') ? pollPageTitle :
+    '';
 
   // Listen for title changes from poll pages
   useEffect(() => {
@@ -398,9 +367,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
-            <div className="flex items-center justify-center">
-              {leftElement}
-            </div>
+            <div className="w-6 h-6" />
             {pageTitle && (
               <div className="absolute left-1/2 top-1/2" style={{transform: 'translate(-50%, -50%) translateY(0.125em) translateX(-0.5rem)'}}>
                 <h1
@@ -411,9 +378,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                 </h1>
               </div>
             )}
-            <div className="flex items-center justify-center">
-              {rightElement}
-            </div>
+            <div className="w-6 h-6" />
           </div>
         </div>
       )}
