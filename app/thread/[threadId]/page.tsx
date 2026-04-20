@@ -649,7 +649,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     className="cursor-pointer"
                   >
                   <div className="flex items-start gap-2">
-                    <h3 className="flex-1 min-w-0 font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
+                    <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
                       {poll.title}
                     </h3>
                     <div
