@@ -220,15 +220,18 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // measured, otherwise scrollHeight lags). Gated on a ref so subsequent
   // thread-state mutations (poll:updated events, re-fetches) can't re-fire it
   // — that yanked the user back to the bottom mid-scroll.
+  // Skipped when entering on an expanded poll (/p/<id>/) — the expand-scroll
+  // effect below positions that card flush with the top bar instead.
   const initialScrollDoneRef = useRef(false);
   useEffect(() => {
     if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {
       initialScrollDoneRef.current = true;
+      if (initialExpandedPollId) return;
       requestAnimationFrame(() => {
         window.scrollTo(0, document.documentElement.scrollHeight);
       });
     }
-  }, [thread, loading, headerHeight]);
+  }, [thread, loading, headerHeight, initialExpandedPollId]);
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -274,9 +277,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
-  //   1. If the compact header is currently hidden behind the fixed top bar,
+  //   1. On initial mount with an expanded poll (/p/<id>/ or after creating a
+  //      poll), always align the card top flush with the bottom of the top
+  //      bar — that's the entry target the user navigated to.
+  //   2. Otherwise, if the compact header is hidden behind the fixed top bar,
   //      scroll up so it sits flush with the bar.
-  //   2. Otherwise, if the card's bottom (after expansion) extends below the
+  //   3. Otherwise, if the card's bottom (after expansion) extends below the
   //      bottom bar, scroll down just enough to reveal it — but never far
   //      enough to push the compact header above the top bar.
   //
@@ -285,8 +291,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // two visuals synchronized and sidesteps the scrollTo-clamping issue (the
   // list's scrollHeight grows proportionally as the card expands, so each
   // intermediate target is always within bounds).
+  const hasHandledInitialExpandRef = useRef(false);
   useEffect(() => {
     if (!expandedPollId) return;
+    // Wait for the fixed-header height measurement so visibleTopY is correct
+    // before we compute the target scroll position.
+    if (headerHeight === 0) return;
     const card = cardRefs.current.get(expandedPollId);
     if (!card) return;
 
@@ -305,8 +315,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 
+    const isInitialExpand =
+      !hasHandledInitialExpandRef.current &&
+      expandedPollId === initialExpandedPollId;
+
     let targetDelta = 0;
-    if (cardTopY < visibleTopY) {
+    if (isInitialExpand) {
+      targetDelta = cardTopY - visibleTopY;
+      hasHandledInitialExpandRef.current = true;
+    } else if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
     } else if (finalCardBottomY > visibleBottomY) {
       const overshoot = finalCardBottomY - visibleBottomY;
