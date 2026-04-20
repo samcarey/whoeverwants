@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
 
-export default function ProfilePage() {
+export default function SettingsPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [locationInput, setLocationInput] = useState("");
@@ -51,12 +51,12 @@ export default function ProfilePage() {
         }
       }
 
-      setMessage({ type: 'success', text: 'Profile saved!' });
+      setMessage({ type: 'success', text: 'Settings saved!' });
       setTimeout(() => {
         router.back();
       }, 1000);
     } catch {
-      setMessage({ type: 'error', text: 'Failed to save profile' });
+      setMessage({ type: 'error', text: 'Failed to save settings' });
     } finally {
       setIsLoading(false);
     }
@@ -98,13 +98,13 @@ export default function ProfilePage() {
   };
 
   const handleClearAll = () => {
-    if (confirm('Are you sure you want to clear your profile?')) {
+    if (confirm('Are you sure you want to clear your settings?')) {
       clearUserName();
       clearUserLocation();
       setName("");
       setSavedLocation(null);
       setLocationInput("");
-      setMessage({ type: 'success', text: 'Profile cleared!' });
+      setMessage({ type: 'success', text: 'Settings cleared!' });
       setTimeout(() => {
         router.push('/');
       }, 1000);
@@ -213,7 +213,7 @@ export default function ProfilePage() {
           onClick={handleClearAll}
           className="w-full rounded-full border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center justify-center font-medium text-base h-12"
         >
-          Clear Profile
+          Clear Settings
         </button>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
           Remove your saved name and location from this browser

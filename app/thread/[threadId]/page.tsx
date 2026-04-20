@@ -21,38 +21,10 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
-
-const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isClient, setIsClient] = useState(false);
-  useEffect(() => { setIsClient(true); }, []);
-  useEffect(() => {
-    if (!isClient) return;
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const deadlineTime = new Date(deadline).getTime();
-      const difference = deadlineTime - now;
-      if (difference <= 0) { setTimeLeft("Expired"); return; }
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      let timeString = "";
-      if (days > 0) timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
-      else if (hours > 0) timeString = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) timeString = `${minutes}m ${seconds}s`;
-      else timeString = `${seconds}s`;
-      setTimeLeft(timeString);
-    };
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [deadline, isClient]);
-  return <>{label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span></>;
-};
 
 /** Attempt to build the thread synchronously from in-memory caches.
  *  Returns null if any required data is missing — the normal async fetch path
@@ -243,11 +215,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => ro.disconnect();
   }, [thread]);
 
-  // Auto-scroll to the bottom on load so newest polls are visible. headerHeight
-  // is a dep because the document scrollHeight grows once the header is measured
-  // and the content paddingTop applied.
+  // Auto-scroll to the bottom once on initial load so newest polls are visible.
+  // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
+  // measured, otherwise scrollHeight lags). Gated on a ref so subsequent
+  // thread-state mutations (poll:updated events, re-fetches) can't re-fire it
+  // — that yanked the user back to the bottom mid-scroll.
+  const initialScrollDoneRef = useRef(false);
   useEffect(() => {
-    if (thread && !loading) {
+    if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
       requestAnimationFrame(() => {
         window.scrollTo(0, document.documentElement.scrollHeight);
       });
@@ -320,11 +296,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const expandedContentHeight = wrapper?.scrollHeight ?? 0;
     const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
-    const bottomBarEl = typeof document !== 'undefined' ? document.getElementById('bottom-bar-portal') : null;
-    const bottomBarHeight = bottomBarEl ? bottomBarEl.offsetHeight : 0;
-    // Visible area is [headerHeight, innerHeight - bottomBarHeight].
+    // Visible area is [headerHeight, innerHeight]. The floating "+" overlays the
+    // bottom-right corner but doesn't consume horizontal flow, so we don't shrink
+    // the usable area for it — an expanded card's bottom may sit under the FAB,
+    // which is acceptable.
     const visibleTopY = headerHeight;
-    const visibleBottomY = window.innerHeight - bottomBarHeight;
+    const visibleBottomY = window.innerHeight;
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
 

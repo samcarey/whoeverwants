@@ -7,6 +7,7 @@ import { getUserName } from "@/lib/userProfile";
 import { getSeenPollOptions } from "@/lib/browserPollAccess";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, BADGE_COLORS, POLL_TYPE_SYMBOLS } from "@/lib/pollListUtils";
 import type { ResultBadge } from "@/lib/pollListUtils";
 import { usePrefetch } from "@/lib/prefetch";
@@ -66,59 +67,6 @@ function PollTitle({ poll, className }: { poll: Poll; className: string }) {
     </div>
   );
 }
-
-// Simple countdown component
-const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
-
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const deadlineTime = new Date(deadline).getTime();
-      const difference = deadlineTime - now;
-
-      if (difference <= 0) {
-        setTimeLeft("Expired");
-        return;
-      }
-
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-
-      let timeString = "";
-      if (days > 0) {
-        timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
-      } else if (hours > 0) {
-        timeString = `${hours}h ${minutes}m ${seconds}s`;
-      } else if (minutes > 0) {
-        timeString = `${minutes}m ${seconds}s`;
-      } else {
-        timeString = `${seconds}s`;
-      }
-
-      setTimeLeft(timeString);
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [deadline, isClient]);
-
-  return (
-    <>
-      {label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span>
-    </>
-  );
-};
 
 function getOptionDisplayName(optionKey: string, poll: Poll): string {
   const meta = poll.options_metadata?.[optionKey];

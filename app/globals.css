@@ -21,12 +21,10 @@
 
 html {
   background: var(--background);
-}
-
-/* overscroll-behavior:none — custom touch-driven PTR (template.tsx) owns the refresh gesture. */
-html,
-body {
-  overscroll-behavior: none;
+  /* Disable scroll anchoring. The home page's typing animation replaces the
+     phrase div's innerHTML repeatedly on mount, which otherwise lets the
+     browser re-pick its anchor and compensate scrollY by the node height. */
+  overflow-anchor: none;
 }
 
 body {
@@ -34,8 +32,9 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   margin: 0;
-  /* Horizontal safe-area only. Top/bottom insets are handled by fixed elements
-     (commit badge, thread header, bottom bar) that each reserve their own space. */
+  /* Horizontal safe-area only. Top/bottom insets are handled per-element by
+     whatever sits at the top/bottom (fixed thread header, home/settings
+     titles via .page-title-safe-top, the floating "+" FAB). */
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
@@ -135,26 +134,25 @@ body {
   top: env(safe-area-inset-top, 0px);
 }
 
-/* Page-title wrappers on pages without a fixed header (home, profile): 1rem of
+/* Page-title wrappers on pages without a fixed header (home, settings): 1rem of
    breathing room plus the top safe-area inset so the title clears the notch. */
 .page-title-safe-top {
   padding-top: calc(1rem + env(safe-area-inset-top, 0px));
 }
 
-/* Default bottom bar padding — overridden in standalone mode */
-.pwa-bottom-bar {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  /* Keep the bottom bar fixed during view transitions — it gets its own
-     snapshot and is excluded from the root slide animation. */
-  view-transition-name: bottom-bar;
+/* Floating create-poll ("+") FAB — pinned during page transitions so it
+   stays visible across home <-> thread navigation instead of sliding with
+   the root snapshot. */
+.floating-plus-button {
+  view-transition-name: floating-plus;
 }
 
 /* =========================================================================
  * View Transitions — iOS-style slide animations
  * Forward (list → detail): new page slides in from right, old slides left.
  * Back (detail → list): new page slides in from left, old slides right.
- * Bottom bar and hero title get their own transition groups so they
- * either stay put (bottom bar) or morph between positions (hero title).
+ * The floating "+" gets its own transition group so it stays put across
+ * home <-> thread navigation (appearing/disappearing on other routes).
  * ========================================================================= */
 
 @keyframes vt-slide-out-left {
@@ -190,9 +188,11 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
 }
 
-/* Bottom bar: no animation — it stays fixed across navigations. */
-::view-transition-old(bottom-bar),
-::view-transition-new(bottom-bar) {
+/* Floating "+" button: no animation — it stays fixed across home <-> thread
+   navigation. On routes that don't render the button, there's no element
+   taking the `floating-plus` name, so the browser gracefully skips the group. */
+::view-transition-old(floating-plus),
+::view-transition-new(floating-plus) {
   animation: none;
   opacity: 1;
 }
@@ -229,12 +229,3 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   }
 }
 
-/* PWA standalone mode: extend the bottom bar into the home indicator zone
-   so the bar's background fills the iOS safe-area gap, with doubled bottom
-   padding to keep buttons visually above the home indicator. */
-@media (display-mode: standalone) {
-  .pwa-bottom-bar {
-    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
-    padding-bottom: calc(2 * env(safe-area-inset-bottom, 0px));
-  }
-}

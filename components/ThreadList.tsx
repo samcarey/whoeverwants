@@ -8,40 +8,9 @@ import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
+import SimpleCountdown from "@/components/SimpleCountdown";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
-
-const SimpleCountdown = ({ deadline, colorClass = "text-green-600 dark:text-green-400" }: { deadline: string; colorClass?: string }) => {
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => { setIsClient(true); }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const deadlineTime = new Date(deadline).getTime();
-      const difference = deadlineTime - now;
-      if (difference <= 0) { setTimeLeft("Expired"); return; }
-      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      let timeString = "";
-      if (days > 0) timeString = `${days}d ${hours}h ${minutes}m`;
-      else if (hours > 0) timeString = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) timeString = `${minutes}m ${seconds}s`;
-      else timeString = `${seconds}s`;
-      setTimeLeft(timeString);
-    };
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [deadline, isClient]);
-
-  return <span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span>;
-};
 
 interface ThreadListProps {
   polls: Poll[];
@@ -170,7 +139,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
                   {thread.soonestUnvotedDeadline && (
                     <div className="text-xs">
                       <ClientOnly fallback={null}>
-                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} />
+                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} colorClass="text-green-600 dark:text-green-400" hideSecondsInDays />
                       </ClientOnly>
                     </div>
                   )}

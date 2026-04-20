@@ -69,8 +69,8 @@ export default function RootLayout({
         {/* Header elements rendered outside scaling to maintain proper positioning */}
         <div id="header-portal"></div>
         
-        {/* Bottom bar rendered outside scaling to maintain proper positioning */}
-        <div id="bottom-bar-portal"></div>
+        {/* Floating "+" FAB rendered outside scaling to maintain proper positioning */}
+        <div id="floating-fab-portal"></div>
         <script
           dangerouslySetInnerHTML={{
             __html: `
