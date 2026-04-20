@@ -570,13 +570,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: mount a fixed 28px-tall flex container at the
-                     title's first-line position. The title's VISUAL center
-                     (ascender-to-baseline, ignoring descender space) sits a bit
-                     above the line-box center, so we shift the icon container
-                     up ~4px vs pure line-box alignment (mt-[5px] instead of the
-                     pb + border = 9px that would land on the line-box top). */}
-                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[5px]">
+                {/* Icon column: mount a fixed 28px-tall flex container, then
+                     offset it so the icon center splits the difference between
+                     the title line-box center (mt-[9px]) and its cap-to-baseline
+                     center (mt-[5px]) — a halfway compromise that reads right
+                     when emoji glyphs have slightly varying visual weight. */}
+                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[7px]">
                   {getCategoryIcon(poll)}
                 </div>
 
