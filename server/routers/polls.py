@@ -431,17 +431,10 @@ def create_poll(req: CreatePollRequest):
         resolved_location = req.location_value if req.location_mode == "set" else None
         resolved_time = req.time_value if req.time_mode == "set" else None
 
-        # Inherit thread_title from the follow-up parent unless the client
-        # explicitly supplied one. Forks are standalone threads, so they don't
-        # inherit — only follow_up_to.
-        thread_title = req.thread_title
-        if thread_title is None and req.follow_up_to:
-            parent = conn.execute(
-                "SELECT thread_title FROM polls WHERE id = %(id)s",
-                {"id": req.follow_up_to},
-            ).fetchone()
-            if parent:
-                thread_title = parent.get("thread_title")
+        # thread_title: explicit request wins; otherwise inherit from the
+        # follow_up_to parent via a COALESCE subquery in the INSERT (below)
+        # so we avoid a round-trip. Forks don't inherit — fork_of doesn't
+        # drive the subquery.
 
         row = conn.execute(
             """
@@ -487,7 +480,7 @@ def create_poll(req: CreatePollRequest):
                     %(is_auto_title)s,
                     %(min_responses)s, %(show_preliminary_results)s,
                     %(min_availability_percent)s,
-                    %(thread_title)s,
+                    COALESCE(%(thread_title)s, (SELECT thread_title FROM polls WHERE id = %(follow_up_to)s)),
                     %(now)s, %(now)s)
             RETURNING *
             """,
@@ -531,7 +524,7 @@ def create_poll(req: CreatePollRequest):
                 "min_responses": req.min_responses,
                 "show_preliminary_results": req.show_preliminary_results,
                 "min_availability_percent": req.min_availability_percent if req.poll_type == PollType.time else None,
-                "thread_title": thread_title,
+                "thread_title": req.thread_title,
                 "now": now,
             },
         ).fetchone()

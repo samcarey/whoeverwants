@@ -6,6 +6,8 @@
  */
 
 import type { Poll } from './types';
+import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from './pollCache';
+import { isUuidLike } from './pollId';
 
 export interface Thread {
   /** ID of the root poll (topmost accessible poll in the chain) */
@@ -19,8 +21,6 @@ export interface Thread {
   title: string;
   /** The participant-names default (no thread_title override applied). */
   defaultTitle: string;
-  /** True when the thread title comes from a user override (latestPoll.thread_title). */
-  hasCustomTitle: boolean;
   /** Number of unvoted polls in the thread */
   unvotedCount: number;
   /** Earliest deadline among unvoted open polls (undefined if none) */
@@ -153,8 +153,7 @@ function buildThreadFromPolls(
     ? participantNames.join(', ')
     : 'New Thread';
   const latestThreadTitle = polls[polls.length - 1]?.thread_title?.trim();
-  const hasCustomTitle = !!latestThreadTitle;
-  const title = hasCustomTitle ? latestThreadTitle! : defaultTitle;
+  const title = latestThreadTitle || defaultTitle;
 
   // Count unvoted polls and find soonest unvoted deadline
   const now = new Date();
@@ -194,7 +193,6 @@ function buildThreadFromPolls(
     participantNames,
     title,
     defaultTitle,
-    hasCustomTitle,
     unvotedCount,
     soonestUnvotedDeadline,
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline ? new Date(soonestUnvotedDeadline).getTime() : undefined,
@@ -278,4 +276,20 @@ export function buildThreadFromPollDown(
 
   const threadPolls = collectDescendants([anchorPollId], pollById, childrenOf, new Set());
   return buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
+}
+
+/** Build the thread for a route id (UUID or short_id) synchronously from
+ *  in-memory caches. Returns null if any required piece is missing — callers
+ *  fall through to their async fetch path. */
+export function buildThreadSyncFromCache(
+  threadId: string,
+  voted: Set<string>,
+  abstained: Set<string>,
+): Thread | null {
+  if (typeof window === 'undefined') return null;
+  const anchor = isUuidLike(threadId) ? getCachedPollById(threadId) : getCachedPollByShortId(threadId);
+  if (!anchor) return null;
+  const polls = getCachedAccessiblePolls();
+  if (!polls) return null;
+  return buildThreadFromPollDown(anchor.id, polls, voted, abstained);
 }

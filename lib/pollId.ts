@@ -28,3 +28,10 @@ export function extractPollRouteId(pathname: string): string | null {
   const match = pathname.match(/^\/p\/([^/]+)\/?$/);
   return match ? match[1] : null;
 }
+
+/** True when `pathname` is the top-level thread or poll view (`/thread/<id>`
+ *  or `/p/<id>`). False for sub-routes like `/thread/<id>/info`. Template uses
+ *  this to decide which pages get the thread-like layout + floating-plus FAB. */
+export function isThreadRootView(pathname: string): boolean {
+  return /^\/(thread|p)\/[^/]+\/?$/.test(pathname);
+}
