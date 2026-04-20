@@ -570,11 +570,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: row-start-2 pins the cell to the card's top.
-                     pt-3.5 places the icon's em-box center at 23px below the
-                     card top, which is where the title's first-line center sits
-                     (card py-2 of 8px + 1px border + line-height/2 of 14px). */}
-                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none pt-3.5">
+                {/* Icon column: align the bottom of the icon's em-box with the
+                     bottom of the title's first line. Title first line-box
+                     bottom = card border (1px) + py-2 (8px) + line-height (28px)
+                     = 37px below card top. Icon em-box is 18px (text-lg
+                     leading-none), so pt = 37 − 18 = 19px. */}
+                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none pt-[19px]">
                   {getCategoryIcon(poll)}
                 </div>
 
