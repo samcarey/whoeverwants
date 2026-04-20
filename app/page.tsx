@@ -220,24 +220,13 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && polls.length === 0 && !(typeof window !== 'undefined' && window.location.search.includes('plain-list')) && (
+      {!loading && !error && polls.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           Once you create a poll or open a link from someone, it will be shown here.
         </div>
       )}
 
-      {/* Diagnostic: `?plain-list` replaces ThreadList with dumb divs of equivalent height. */}
-      {!loading && !error && typeof window !== 'undefined' && window.location.search.includes('plain-list') && (
-        <div>
-          {Array.from({ length: 16 }, (_, i) => (
-            <div key={i} className="border-b border-gray-200 dark:border-gray-700 px-4 py-4 h-[75px] flex items-center">
-              Plain item {i + 1}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!loading && !error && !(typeof window !== 'undefined' && window.location.search.includes('plain-list')) && (
+      {!loading && !error && (
         <ThreadList polls={polls} />
       )}
 

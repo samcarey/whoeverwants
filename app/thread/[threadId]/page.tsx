@@ -26,32 +26,31 @@ import { forgetPoll } from "@/lib/forgetPoll";
 import type { Thread } from "@/lib/threadUtils";
 
 const SimpleCountdown = ({ deadline, label, colorClass = "text-blue-600 dark:text-blue-400" }: { deadline: string; label: string; colorClass?: string }) => {
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isClient, setIsClient] = useState(false);
-  useEffect(() => { setIsClient(true); }, []);
+  // Update text imperatively via a ref so the 1s tick doesn't trigger a React
+  // re-render — same Firefox-iOS-scroll-jitter concern as the home page's
+  // countdown (see components/ThreadList.tsx).
+  const spanRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    if (!isClient) return;
-    const updateCountdown = () => {
-      const now = new Date().getTime();
-      const deadlineTime = new Date(deadline).getTime();
-      const difference = deadlineTime - now;
-      if (difference <= 0) { setTimeLeft("Expired"); return; }
+    const el = spanRef.current;
+    if (!el) return;
+    const render = () => {
+      const difference = new Date(deadline).getTime() - Date.now();
+      if (difference <= 0) { el.textContent = 'Expired'; return false; }
       const days = Math.floor(difference / (1000 * 60 * 60 * 24));
       const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((difference % (1000 * 60)) / 1000);
-      let timeString = "";
-      if (days > 0) timeString = `${days}d ${hours}h ${minutes}m ${seconds}s`;
-      else if (hours > 0) timeString = `${hours}h ${minutes}m ${seconds}s`;
-      else if (minutes > 0) timeString = `${minutes}m ${seconds}s`;
-      else timeString = `${seconds}s`;
-      setTimeLeft(timeString);
+      if (days > 0) el.textContent = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+      else if (hours > 0) el.textContent = `${hours}h ${minutes}m ${seconds}s`;
+      else if (minutes > 0) el.textContent = `${minutes}m ${seconds}s`;
+      else el.textContent = `${seconds}s`;
+      return true;
     };
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
+    if (!render()) return;
+    const interval = setInterval(() => { if (!render()) clearInterval(interval); }, 1000);
     return () => clearInterval(interval);
-  }, [deadline, isClient]);
-  return <>{label && `${label}: `}<span className={`font-mono font-semibold ${colorClass}`}>{timeLeft}</span></>;
+  }, [deadline]);
+  return <>{label && `${label}: `}<span ref={spanRef} className={`font-mono font-semibold ${colorClass}`} /></>;
 };
 
 /** Attempt to build the thread synchronously from in-memory caches.
