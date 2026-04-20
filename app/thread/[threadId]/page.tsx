@@ -568,21 +568,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     cardRefs.current.delete(poll.id);
                   }
                 }}
-                className="ml-0 mr-1.5 mb-1.5 flex items-start gap-0.5"
+                className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* Icon column: sits just to the left of the card's upper-left
-                     corner, outside the border. pt offset clears the above-card
-                     header row so the icon lines up with the card top. */}
-                <div className="w-7 shrink-0 flex justify-center text-lg leading-none pt-[22px]">
+                {/* Icon column: row 2 places it at the card's top, so the icon's
+                     top edge aligns exactly with the card's top border — no magic
+                     padding. items-start keeps it pinned at the top when the card
+                     expands. */}
+                <div className="col-start-1 row-start-2 flex items-start justify-center text-lg leading-none">
                   {getCategoryIcon(poll)}
                 </div>
 
-                <div className="flex-1 min-w-0">
                 {/* Above-card header: creator/age on the left, status element
                      (countdown, "Taking Suggestions", closed badge) on the right.
                      Lives outside the bordered card so it sits just above the
                      card's top edge. Not part of the tap/long-press zone. */}
-                <div className="flex items-center gap-2 px-3 pb-0.5 min-w-0">
+                <div className="col-start-2 row-start-1 flex items-center gap-2 px-3 min-w-0">
                   <div className="flex items-center gap-1 min-w-0 flex-1 text-xs text-gray-400 dark:text-gray-500">
                     <ClientOnly fallback={null}>
                       <span className="truncate">
@@ -637,7 +637,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 <div
-                  className={`px-2 py-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 py-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -705,7 +705,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     </div>
                   )}
                 </div>
-                </div>{/* /main column */}
               </div>
             );
           })}
