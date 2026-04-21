@@ -35,7 +35,7 @@ import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
-import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot, formatShortDateTime } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
 interface PollPageClientProps {
@@ -1568,36 +1568,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
             return (
               <div className="mb-3 text-center">
                 <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                  Closed manually on {closedDate.toLocaleString("en-US", {
-                    month: "numeric",
-                    day: "numeric",
-                    year: "2-digit",
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true
-                  })}
+                  Closed manually on {formatShortDateTime(closedDate)}
                 </span>
               </div>
             );
           }
-          
-          // Case 3: Poll expired and is closed
-          if (isPollClosed && isExpired) {
-            return (
-              <div className="mb-3 text-center">
-                <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                  Expired on {deadline.toLocaleString("en-US", {
-                    month: "numeric",
-                    day: "numeric",
-                    year: "2-digit",
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true
-                  })}
-                </span>
-              </div>
-            );
-          }
+
+          // Case 3 (expired + closed) renders nothing here — the
+          // "Expired on <date>" label is surfaced in the long-press modal.
 
           // Case 4: Poll open, not expired. Live countdown is rendered
           // above the card in the thread view; only deferred-deadline
