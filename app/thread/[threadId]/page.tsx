@@ -10,7 +10,7 @@ import { apiGetPollById, apiGetPollByShortId, apiReopenPoll } from "@/lib/api";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -619,17 +619,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <span className="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400 min-w-0">
                       <ClientOnly fallback={<>Loading...</>}>
                         {(() => {
-                          if (isClosed) {
-                            const badge = getResultBadge(poll);
-                            return (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs leading-none">{badge.emoji}</span>
-                                <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
-                                  {badge.text}
-                                </span>
-                              </div>
-                            );
-                          }
+                          if (isClosed) return null;
                           const inSuggestions = isInSuggestionPhase(poll);
                           if (inSuggestions && poll.suggestion_deadline) {
                             return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;

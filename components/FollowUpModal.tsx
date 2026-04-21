@@ -6,6 +6,7 @@ import ModalPortal from "@/components/ModalPortal";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
+import { getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 
 interface FollowUpModalProps {
   isOpen: boolean;
@@ -45,6 +46,11 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
     total_votes: totalVotes,
   };
 
+  const isClosed = poll.is_closed || (
+    !!poll.response_deadline && new Date(poll.response_deadline) <= new Date()
+  );
+  const closedBadge = isClosed ? getResultBadge(poll) : null;
+
   return (
     <ModalPortal>
       {/* Backdrop */}
@@ -56,6 +62,14 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
+          {closedBadge && (
+            <div className="mb-4 flex items-center justify-center gap-1">
+              <span className="text-xs leading-none">{closedBadge.emoji}</span>
+              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[closedBadge.color]}`}>
+                {closedBadge.text}
+              </span>
+            </div>
+          )}
           <div className="flex gap-3">
             <button
               onClick={() => {
