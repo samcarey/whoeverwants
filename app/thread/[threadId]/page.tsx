@@ -636,7 +636,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 py-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -648,9 +648,22 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     onTouchMove={handleTouchMove}
                     className="cursor-pointer"
                   >
-                  <h3 className="font-medium text-lg line-clamp-2 text-gray-900 dark:text-white">
-                    {poll.title}
-                  </h3>
+                  <div className="flex items-start gap-2">
+                    <h3 className="flex-1 min-w-0 font-medium text-lg leading-tight line-clamp-2 text-gray-900 dark:text-white">
+                      {poll.title}
+                    </h3>
+                    <div
+                      className="shrink-0 -mt-0.5 -mr-1"
+                      onClick={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onTouchEnd={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                    >
+                      <FloatingCopyLinkButton
+                        url={typeof window !== 'undefined' ? `${window.location.origin}/p/${poll.short_id || poll.id}/` : ''}
+                      />
+                    </div>
+                  </div>
 
                   {isOpen && (
                     <div className="flex items-center justify-end gap-2 mt-1">
@@ -686,12 +699,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           else expandedWrapperRefs.current.delete(poll.id);
                         }}
                       >
-                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600 relative">
-                          <div className="absolute top-3 left-0 z-10">
-                            <FloatingCopyLinkButton
-                              url={typeof window !== 'undefined' ? `${window.location.origin}/p/${poll.short_id || poll.id}/` : ''}
-                            />
-                          </div>
+                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                           <PollPageClient
                             poll={poll}
                             createdDate={formatCreationTimestamp(poll.created_at)}
