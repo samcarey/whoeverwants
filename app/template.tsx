@@ -413,9 +413,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
           >
             <div className="relative text-center">
-              {/* Settings gear — absolute within the h1 row so its vertical
-                  center auto-aligns with the title's center (no hardcoded
-                  offset). `top-1/2 -translate-y-1/2` does the centering. */}
+              {/* Wrapper is relative so the gear auto-centers with the h1. */}
               <button
                 onClick={() => navigateWithTransition(router, '/settings', 'forward')}
                 {...prefetchOnHover('/settings')}
