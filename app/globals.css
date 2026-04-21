@@ -134,10 +134,10 @@ body {
   top: env(safe-area-inset-top, 0px);
 }
 
-/* Page-title wrappers on pages without a fixed header (home, settings): 1rem of
+/* Page-title wrappers on pages without a fixed header (home, settings): 2rem of
    breathing room plus the top safe-area inset so the title clears the notch. */
 .page-title-safe-top {
-  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-top: calc(2rem + env(safe-area-inset-top, 0px));
 }
 
 /* Floating create-poll ("+") FAB — pinned during page transitions so it
