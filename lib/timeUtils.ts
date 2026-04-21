@@ -49,6 +49,18 @@ export function formatCreationTimestamp(iso: string): string {
   return `@ ${t} ${d}`;
 }
 
+/** Compact date-time for poll close/expire messages — e.g. "4/18/26, 12:30 AM". */
+export function formatShortDateTime(date: Date): string {
+  return date.toLocaleString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 // --- Time slot helpers (slot format: "YYYY-MM-DD HH:MM-HH:MM") ---
 
 /** Parse slot start time → {h, m} */

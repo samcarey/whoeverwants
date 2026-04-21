@@ -6,6 +6,7 @@ import ModalPortal from "@/components/ModalPortal";
 import FollowUpHeader from "@/components/FollowUpHeader";
 import { Poll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
+import { formatShortDateTime } from "@/lib/timeUtils";
 
 interface FollowUpModalProps {
   isOpen: boolean;
@@ -45,6 +46,11 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
     total_votes: totalVotes,
   };
 
+  const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
+  const expiredText = deadline && deadline <= new Date()
+    ? `Expired on ${formatShortDateTime(deadline)}`
+    : null;
+
   return (
     <ModalPortal>
       {/* Backdrop */}
@@ -56,6 +62,13 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
+          {expiredText && (
+            <div className="mb-4 text-center">
+              <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                {expiredText}
+              </span>
+            </div>
+          )}
           <div className="flex gap-3">
             <button
               onClick={() => {
