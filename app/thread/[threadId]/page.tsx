@@ -301,14 +301,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       !hasHandledInitialExpandRef.current &&
       expandedPollId === initialExpandedPollId;
 
+    const BOTTOM_GAP = 12;
+
     let targetDelta = 0;
     if (isInitialExpand) {
       targetDelta = cardTopY - visibleTopY;
       hasHandledInitialExpandRef.current = true;
     } else if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
-    } else if (finalCardBottomY > visibleBottomY) {
-      const overshoot = finalCardBottomY - visibleBottomY;
+    } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
+      const overshoot = finalCardBottomY + BOTTOM_GAP - visibleBottomY;
       const slack = cardTopY - visibleTopY;
       targetDelta = Math.min(overshoot, slack);
     }
@@ -699,7 +701,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           else expandedWrapperRefs.current.delete(poll.id);
                         }}
                       >
-                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                        <div className="mt-3">
                           <PollPageClient
                             poll={poll}
                             createdDate={formatCreationTimestamp(poll.created_at)}
