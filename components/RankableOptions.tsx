@@ -507,8 +507,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         dragState.sourceList === 'main'
           ? mainRect.top + Math.max(mainList.length * totalItemHeight - gapSize, totalItemHeight)
           : mainRect.bottom;
-      // Extend main list drop zone downward (toward divider) when dragging from no preference
-      const extendedBottom = dragState.sourceList === 'noPreference' ? stableMainBottom + dropZoneBuffer : stableMainBottom;
+      // When dragging from no preference toward main, extend the main
+      // drop zone all the way down to the top of the no-preference
+      // container so the main list starts making space as soon as the
+      // cursor leaves noPref, instead of after the user has dragged
+      // most of the way past the divider.
+      const noPrefTop = noPreferenceContainer?.getBoundingClientRect().top;
+      const extendedBottom =
+        dragState.sourceList === 'noPreference' && noPrefTop !== undefined
+          ? Math.max(stableMainBottom, noPrefTop)
+          : stableMainBottom;
 
       if (screenX >= mainRect.left && screenX <= mainRect.right &&
           screenY >= mainRect.top && screenY <= extendedBottom) {
