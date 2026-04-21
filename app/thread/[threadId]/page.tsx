@@ -704,7 +704,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           else expandedWrapperRefs.current.delete(poll.id);
                         }}
                       >
-                        <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                        <div className="mt-3">
                           <PollPageClient
                             poll={poll}
                             createdDate={formatCreationTimestamp(poll.created_at)}
