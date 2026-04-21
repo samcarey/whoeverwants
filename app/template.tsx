@@ -409,7 +409,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
         {pathname === '/' && (
           <div
-            className="relative max-w-4xl mx-auto px-2 pb-1 page-title-safe-top"
+            className="relative max-w-4xl mx-auto px-2 pb-1"
+            style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))' }}
           >
             {/* Settings gear — upper-left, in normal page flow so it scrolls
                 off as the user scrolls down. Absolute-positioned within the
