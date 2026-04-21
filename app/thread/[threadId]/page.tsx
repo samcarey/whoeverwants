@@ -577,7 +577,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      emoji glyphs have varying visual weight, so neither pure
                      reference reads right across all icons. Tweak this if
                      icons feel off. */}
-                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[6px]">
+                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[3px]">
                   {getCategoryIcon(poll)}
                 </div>
 
