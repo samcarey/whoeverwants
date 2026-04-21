@@ -301,14 +301,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       !hasHandledInitialExpandRef.current &&
       expandedPollId === initialExpandedPollId;
 
+    // Extra gap below the card so its bottom isn't flush with the viewport edge.
+    // Capped by the available slack (same logic as the overshoot itself), so we
+    // never push the compact header above the top bar to add the gap.
+    const BOTTOM_GAP = 12;
+
     let targetDelta = 0;
     if (isInitialExpand) {
       targetDelta = cardTopY - visibleTopY;
       hasHandledInitialExpandRef.current = true;
     } else if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
-    } else if (finalCardBottomY > visibleBottomY) {
-      const overshoot = finalCardBottomY - visibleBottomY;
+    } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
+      const overshoot = finalCardBottomY + BOTTOM_GAP - visibleBottomY;
       const slack = cardTopY - visibleTopY;
       targetDelta = Math.min(overshoot, slack);
     }
