@@ -496,8 +496,19 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     
     if (mainContainer) {
       const mainRect = mainContainer.getBoundingClientRect();
+      // When dragging from main toward no-preference, the main container
+      // shrinks by the tier's height as a drop preview. If detection used
+      // the (shrunk) `mainRect.bottom`, the user would have to drag well
+      // above the shrunk edge to re-enter main — which feels like a
+      // lurch. Instead, detect against the STABLE pre-shrink bottom, so
+      // the boundary between "close to its original main slot" and
+      // "headed for the exclusion zone" stays where the user expects it.
+      const stableMainBottom =
+        dragState.sourceList === 'main'
+          ? mainRect.top + Math.max(mainList.length * totalItemHeight - gapSize, totalItemHeight)
+          : mainRect.bottom;
       // Extend main list drop zone downward (toward divider) when dragging from no preference
-      const extendedBottom = dragState.sourceList === 'noPreference' ? mainRect.bottom + dropZoneBuffer : mainRect.bottom;
+      const extendedBottom = dragState.sourceList === 'noPreference' ? stableMainBottom + dropZoneBuffer : stableMainBottom;
 
       if (screenX >= mainRect.left && screenX <= mainRect.right &&
           screenY >= mainRect.top && screenY <= extendedBottom) {
@@ -562,7 +573,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize, gapSize]);
 
   /**
    * Toggle the "linked" (equal-rank) state between two adjacent main-list items.
