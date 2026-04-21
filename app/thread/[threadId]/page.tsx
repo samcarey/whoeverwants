@@ -301,9 +301,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       !hasHandledInitialExpandRef.current &&
       expandedPollId === initialExpandedPollId;
 
-    // Extra gap below the card so its bottom isn't flush with the viewport edge.
-    // Capped by the available slack (same logic as the overshoot itself), so we
-    // never push the compact header above the top bar to add the gap.
     const BOTTOM_GAP = 12;
 
     let targetDelta = 0;
