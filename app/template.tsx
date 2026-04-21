@@ -771,7 +771,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                     <h1
                       className="text-2xl font-bold mb-1 select-none"
                       {...longPressProps}
-                    >Whoever Wants</h1>
+                    >Whoever Wants!</h1>
                     <div className="h-7 flex items-center justify-center mb-1" id="home-phrase-content">
                       {/* Blue phrase will be injected here */}
                     </div>
