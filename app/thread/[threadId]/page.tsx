@@ -572,11 +572,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* mt-[7px] splits the difference between the title line-box
-                     center (9px) and its cap-to-baseline center (5px) —
-                     emoji glyphs have varying visual weight, so neither pure
-                     reference reads right across all icons. Tweak this if
-                     icons feel off. */}
+                {/* mt-[3px] is tuned to align the emoji icon with the title
+                     text for the current card padding (pt-1.5 pb-[5px]). If
+                     the card padding changes, re-tune — the title's cap-line
+                     moves with the top padding and the icon needs to track. */}
                 <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[3px]">
                   {getCategoryIcon(poll)}
                 </div>
