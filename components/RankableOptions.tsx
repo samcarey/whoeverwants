@@ -496,8 +496,27 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     
     if (mainContainer) {
       const mainRect = mainContainer.getBoundingClientRect();
-      // Extend main list drop zone downward (toward divider) when dragging from no preference
-      const extendedBottom = dragState.sourceList === 'noPreference' ? mainRect.bottom + dropZoneBuffer : mainRect.bottom;
+      // When dragging from main toward no-preference, the main container
+      // shrinks by the tier's height as a drop preview. If detection used
+      // the (shrunk) `mainRect.bottom`, the user would have to drag well
+      // above the shrunk edge to re-enter main — which feels like a
+      // lurch. Instead, detect against the STABLE pre-shrink bottom, so
+      // the boundary between "close to its original main slot" and
+      // "headed for the exclusion zone" stays where the user expects it.
+      const stableMainBottom =
+        dragState.sourceList === 'main'
+          ? mainRect.top + Math.max(mainList.length * totalItemHeight - gapSize, totalItemHeight)
+          : mainRect.bottom;
+      // When dragging from no preference toward main, extend the main
+      // drop zone all the way down to the top of the no-preference
+      // container so the main list starts making space as soon as the
+      // cursor leaves noPref, instead of after the user has dragged
+      // most of the way past the divider.
+      const noPrefTop = noPreferenceContainer?.getBoundingClientRect().top;
+      const extendedBottom =
+        dragState.sourceList === 'noPreference' && noPrefTop !== undefined
+          ? Math.max(stableMainBottom, noPrefTop)
+          : stableMainBottom;
 
       if (screenX >= mainRect.left && screenX <= mainRect.right &&
           screenY >= mainRect.top && screenY <= extendedBottom) {
@@ -543,9 +562,23 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       const noPreferenceRect = noPreferenceContainer.getBoundingClientRect();
       // Extend no preference list drop zone upward (toward divider) when dragging from main
       const extendedTop = dragState.sourceList === 'main' ? noPreferenceRect.top - dropZoneBuffer : noPreferenceRect.top;
-      
-      if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right && 
-          screenY >= extendedTop && screenY <= noPreferenceRect.bottom) {
+      // The noPref container collapses to zero height in two scenarios
+      // mid-drag: empty + dragging from main with target=main, and
+      // single-item + dragging from noPref with target=main. Without
+      // an extended bottom, the cursor can't re-enter noPref to put
+      // the item back. Extend detection far below the divider so the
+      // drag back is symmetric with the drag in.
+      const noPrefIsCollapsedDuringDrag =
+        dragState.isDragging && (
+          (noPreferenceList.length === 0 && dragState.targetList !== 'noPreference') ||
+          (noPreferenceList.length === 1 && dragState.sourceList === 'noPreference' && dragState.targetList === 'main')
+        );
+      const extendedBottom = noPrefIsCollapsedDuringDrag
+        ? noPreferenceRect.top + Math.max(noPreferenceRect.height, totalItemHeight) + window.innerHeight
+        : noPreferenceRect.bottom;
+
+      if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right &&
+          screenY >= extendedTop && screenY <= extendedBottom) {
         const relativeY = screenY - noPreferenceRect.top;
         // Allow appending to noPreference list when dragging from main list
         const allowAppend = dragState.sourceList === 'main';
@@ -555,7 +588,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.isDragging, dragState.sourceList, dragState.targetList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize, gapSize]);
 
   /**
    * Toggle the "linked" (equal-rank) state between two adjacent main-list items.
@@ -1262,13 +1295,22 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       let newNoPreferenceHeight = baseNoPreferenceHeight;
 
       if (dragState.sourceList === 'main' && dragState.targetList === 'noPreference') {
-        // Dragging from main to no preference - DON'T shrink main (keep stable), but grow no preference
-        newMainHeight = baseMainHeight; // Keep main list at original size during preview
+        // Dragging from main to no preference — shrink main by the tier
+        // size at the same time we grow no preference, so the overall
+        // layout stays the same length instead of leaving a phantom
+        // empty slot at the bottom of the main list.
+        newMainHeight = Math.max((mainList.length - tierSize) * totalItemHeight - gapSize, totalItemHeight);
         newNoPreferenceHeight = Math.max((noPreferenceList.length + tierSize) * totalItemHeight - gapSize, totalItemHeight);
       } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
-        // Dragging from no preference to main - grow main, shrink no preference (real-time feedback)
+        // Dragging from no preference to main — grow main by 1 slot and
+        // shrink noPref by 1 slot so total layout height stays stable.
+        // If noPref would be emptied entirely, collapse it to 0 (the
+        // `Math.max(..., totalItemHeight)` floor would otherwise pin it
+        // at 64px and inflate the overall height).
         newMainHeight = Math.max((mainList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
-        newNoPreferenceHeight = Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
+        newNoPreferenceHeight = noPreferenceList.length === 1
+          ? 0
+          : Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
       }
 
       return {
@@ -1289,15 +1331,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     const newHeights = calculateContainerHeights();
     setContainerHeights(newHeights);
   }, [calculateContainerHeights]);
-
-  // Initialize container heights when component mounts or lists are first populated
-  useEffect(() => {
-    if ((mainList.length > 0 || noPreferenceList.length >= 0) && 
-        (containerHeights.main === 0 || containerHeights.noPreference === 0)) {
-      const initialHeights = calculateContainerHeights();
-      setContainerHeights(initialHeights);
-    }
-  }, [mainList.length, noPreferenceList.length, containerHeights, calculateContainerHeights]);
 
   const handlePointerStart = useCallback((e: React.PointerEvent, id: string) => {
     if (disabled) return;
@@ -1561,9 +1594,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     title?: string,
     description?: string
   ) => {
+    // Collapse the no-preference zone entirely when it's effectively empty:
+    //  - truly empty and nothing is being dragged toward it, OR
+    //  - it holds exactly one item and that item is being dragged out to
+    //    main (so visually its slot should disappear in lockstep with the
+    //    slot appearing in main, keeping the overall layout height stable).
+    const isNoPrefEmptyCollapsed =
+      listType === 'noPreference' && (
+        (listItems.length === 0 && !(dragState.isDragging && dragState.targetList === 'noPreference')) ||
+        (listItems.length === 1 && dragState.isDragging && dragState.sourceList === 'noPreference' && dragState.targetList === 'main')
+      );
+
     // Use dynamic height from state with smooth transitions
-    const dynamicHeight = containerHeights[listType];
-    
+    const dynamicHeight = isNoPrefEmptyCollapsed ? 0 : containerHeights[listType];
+
     // Calculate how many number slots to show (account for items being dragged in from other list)
     const numberSlotCount = listType === 'main'
       ? (dragState.isDragging && dragState.sourceList === 'noPreference' && dragState.targetList === 'main'
@@ -1645,14 +1689,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
 
           <div
             ref={containerRef}
-            className={`flex-1 p-3 relative transition-all duration-200 ease-out ${
-              listItems.length === 0
+            className={`flex-1 relative transition-all duration-200 ease-out ${
+              isNoPrefEmptyCollapsed ? 'p-0' : 'p-3'
+            } ${
+              listType === 'main' && listItems.length === 0
                 ? 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 rounded-lg'
                 : ''
             }`}
             style={{
               height: `${dynamicHeight}px`,
-              minHeight: `${totalItemHeight}px`,
+              minHeight: isNoPrefEmptyCollapsed ? '0px' : `${totalItemHeight}px`,
               // Link circles overflow the container's left edge so they
               // can overlap the corners of the option cards.
               overflow: 'visible',
@@ -1726,16 +1772,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
                 ));
             })()}
 
-            {/* Show empty state message if list is empty */}
-            {listItems.length === 0 && (
+            {/* Show empty state message for the main list only. The
+                no-preference zone stays visually empty: collapsed when
+                nothing targets it, and just raw allocated space (no
+                border, no placeholder text) during a drag preview. */}
+            {listType === 'main' && listItems.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
-                  <p className={`text-sm ${
-                    listType === 'noPreference'
-                      ? 'text-gray-500 dark:text-gray-400 font-medium'
-                      : 'text-gray-400 dark:text-gray-500'
-                  }`}>
-                    {listType === 'main' ? 'Drag items here to rank them' : 'Drag items here to exclude from ranking'}
+                  <p className="text-sm text-gray-400 dark:text-gray-500">
+                    Drag items here to rank them
                   </p>
                 </div>
               </div>
