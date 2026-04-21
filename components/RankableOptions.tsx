@@ -1325,15 +1325,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     setContainerHeights(newHeights);
   }, [calculateContainerHeights]);
 
-  // Initialize container heights when component mounts or lists are first populated
-  useEffect(() => {
-    if ((mainList.length > 0 || noPreferenceList.length >= 0) && 
-        (containerHeights.main === 0 || containerHeights.noPreference === 0)) {
-      const initialHeights = calculateContainerHeights();
-      setContainerHeights(initialHeights);
-    }
-  }, [mainList.length, noPreferenceList.length, containerHeights, calculateContainerHeights]);
-
   const handlePointerStart = useCallback((e: React.PointerEvent, id: string) => {
     if (disabled) return;
 
