@@ -1295,9 +1295,15 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
         newMainHeight = Math.max((mainList.length - tierSize) * totalItemHeight - gapSize, totalItemHeight);
         newNoPreferenceHeight = Math.max((noPreferenceList.length + tierSize) * totalItemHeight - gapSize, totalItemHeight);
       } else if (dragState.sourceList === 'noPreference' && dragState.targetList === 'main') {
-        // Dragging from no preference to main - grow main, shrink no preference (real-time feedback)
+        // Dragging from no preference to main — grow main by 1 slot and
+        // shrink noPref by 1 slot so total layout height stays stable.
+        // If noPref would be emptied entirely, collapse it to 0 (the
+        // `Math.max(..., totalItemHeight)` floor would otherwise pin it
+        // at 64px and inflate the overall height).
         newMainHeight = Math.max((mainList.length + 1) * totalItemHeight - gapSize, totalItemHeight);
-        newNoPreferenceHeight = Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
+        newNoPreferenceHeight = noPreferenceList.length === 1
+          ? 0
+          : Math.max((noPreferenceList.length - 1) * totalItemHeight - gapSize, totalItemHeight);
       }
 
       return {
@@ -1590,13 +1596,16 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     title?: string,
     description?: string
   ) => {
-    // Collapse the no-preference zone entirely when it's empty and the user
-    // isn't dragging anything toward it — the dotted drop area should only
-    // take up space when it has items or the user is previewing a drop into it.
+    // Collapse the no-preference zone entirely when it's effectively empty:
+    //  - truly empty and nothing is being dragged toward it, OR
+    //  - it holds exactly one item and that item is being dragged out to
+    //    main (so visually its slot should disappear in lockstep with the
+    //    slot appearing in main, keeping the overall layout height stable).
     const isNoPrefEmptyCollapsed =
-      listType === 'noPreference' &&
-      listItems.length === 0 &&
-      !(dragState.isDragging && dragState.targetList === 'noPreference');
+      listType === 'noPreference' && (
+        (listItems.length === 0 && !(dragState.isDragging && dragState.targetList === 'noPreference')) ||
+        (listItems.length === 1 && dragState.isDragging && dragState.sourceList === 'noPreference' && dragState.targetList === 'main')
+      );
 
     // Use dynamic height from state with smooth transitions
     const dynamicHeight = isNoPrefEmptyCollapsed ? 0 : containerHeights[listType];
