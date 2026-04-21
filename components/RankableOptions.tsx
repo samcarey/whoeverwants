@@ -562,13 +562,20 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
       const noPreferenceRect = noPreferenceContainer.getBoundingClientRect();
       // Extend no preference list drop zone upward (toward divider) when dragging from main
       const extendedTop = dragState.sourceList === 'main' ? noPreferenceRect.top - dropZoneBuffer : noPreferenceRect.top;
-      // When the list is empty and we're dragging from main, the container
-      // is collapsed to zero height — extend detection far below the
-      // divider so dropping "below the line" reliably hits this zone.
-      const extendedBottom =
-        noPreferenceList.length === 0 && dragState.sourceList === 'main'
-          ? noPreferenceRect.top + Math.max(noPreferenceRect.height, totalItemHeight) + window.innerHeight
-          : noPreferenceRect.bottom;
+      // The noPref container collapses to zero height in two scenarios
+      // mid-drag: empty + dragging from main with target=main, and
+      // single-item + dragging from noPref with target=main. Without
+      // an extended bottom, the cursor can't re-enter noPref to put
+      // the item back. Extend detection far below the divider so the
+      // drag back is symmetric with the drag in.
+      const noPrefIsCollapsedDuringDrag =
+        dragState.isDragging && (
+          (noPreferenceList.length === 0 && dragState.targetList !== 'noPreference') ||
+          (noPreferenceList.length === 1 && dragState.sourceList === 'noPreference' && dragState.targetList === 'main')
+        );
+      const extendedBottom = noPrefIsCollapsedDuringDrag
+        ? noPreferenceRect.top + Math.max(noPreferenceRect.height, totalItemHeight) + window.innerHeight
+        : noPreferenceRect.bottom;
 
       if (screenX >= noPreferenceRect.left && screenX <= noPreferenceRect.right &&
           screenY >= extendedTop && screenY <= extendedBottom) {
@@ -581,7 +588,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     }
     
     return null;
-  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.sourceList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize, gapSize]);
+  }, [getIndexFromY, mainList.length, noPreferenceList.length, dragState.isDragging, dragState.sourceList, dragState.targetList, dragState.tierStart, dragState.tierSize, dragState.dragStartIndex, dragState.mouseOffset.y, mainList, linkedPairs, totalItemHeight, itemHeight, groupedStepSize, gapSize]);
 
   /**
    * Toggle the "linked" (equal-rank) state between two adjacent main-list items.
