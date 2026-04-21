@@ -421,7 +421,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                 {...prefetchOnHover('/settings')}
                 className="absolute top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors"
                 style={{
-                  left: 'max(0.5rem, env(safe-area-inset-left, 0px))',
+                  left: 'max(0.25rem, env(safe-area-inset-left, 0px))',
                 }}
                 aria-label="Settings"
               >
@@ -525,7 +525,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           }}
           className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
-            right: 'max(1rem, env(safe-area-inset-right, 0px))',
+            right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
           aria-label="Create new poll"
