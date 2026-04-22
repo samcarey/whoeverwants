@@ -155,11 +155,12 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
   // --- Expanded view ---
   //
-  // The option cards are fixed-width (w-24) and right-justified in the
-  // thread card. The Your-Vote pill lives INSIDE the chosen card, directly
-  // under the option title. Percentages and vote counts stack on their own
-  // rows under each card; Abstain sits on the left of the same flex row as
-  // the vote counts via items-end bottom-alignment.
+  // Option cards are fixed-width (w-24) and right-justified in the thread
+  // card. When the viewer has voted Yes/No, a small blue checkmark badge
+  // floats in the UPPER-LEFT corner of the chosen card, and a matching
+  // blue "Your Vote" label sits in the upper-left of the whole expanded
+  // area. Abstain / "You abstained" stays bottom-left (same line as the
+  // vote counts).
   const renderCard = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
     const userVoted = isYes ? userVotedYes : userVotedNo;
@@ -167,16 +168,18 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const containerClass = sideContainer(side);
     const labelClass = sideLabelClass(side);
     const interactive = canVote && !userVoted;
-    const cardClasses = `w-24 px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    const cardClasses = `relative w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
     const cardInner = (
-      <div className="flex flex-col items-center leading-tight">
-        <span className={`text-base ${labelClass}`}>{label}</span>
+      <>
         {userVoted && (
-          <span className="mt-1 inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap">
-            Your Vote
+          <span className="absolute -top-1.5 -left-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-blue-500 text-white shadow">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
           </span>
         )}
-      </div>
+        <span className={`text-base ${labelClass}`}>{label}</span>
+      </>
     );
     return interactive ? (
       <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
@@ -201,9 +204,18 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     </button>
   ) : null;
 
+  const showYourVoteLabel = userVotedYes || userVotedNo;
+
   return (
-    <div className="flex items-end justify-between gap-2">
-      <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
+    <div className="flex items-stretch justify-between gap-2">
+      <div className="flex flex-col justify-between items-start">
+        {showYourVoteLabel ? (
+          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+            Your Vote
+          </span>
+        ) : <span />}
+        <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
+      </div>
       <div className="grid grid-cols-2 gap-x-2 gap-y-0 items-stretch">
         {renderCard('yes')}
         {renderCard('no')}
