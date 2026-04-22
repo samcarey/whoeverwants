@@ -172,8 +172,8 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const cardInner = (
       <>
         {userVoted && (
-          <span className="absolute -top-1.5 -left-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-blue-500 text-white shadow">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+          <span className="absolute -top-2 -left-2 w-[1.625rem] h-[1.625rem] flex items-center justify-center rounded-full bg-blue-500 text-white shadow">
+            <svg className="w-[1.1rem] h-[1.1rem]" fill="none" stroke="currentColor" strokeWidth={4} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </span>
@@ -204,18 +204,9 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     </button>
   ) : null;
 
-  const showYourVoteLabel = userVotedYes || userVotedNo;
-
   return (
-    <div className="flex items-stretch justify-between gap-2">
-      <div className="flex flex-col justify-between items-start">
-        {showYourVoteLabel ? (
-          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-            Your Vote
-          </span>
-        ) : <span />}
-        <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
-      </div>
+    <div className="flex items-end justify-between gap-2">
+      <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
       <div className="grid grid-cols-2 gap-x-2 gap-y-0 items-stretch">
         {renderCard('yes')}
         {renderCard('no')}
