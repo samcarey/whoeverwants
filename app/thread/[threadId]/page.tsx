@@ -14,7 +14,7 @@ import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invali
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { loadVotedPolls } from "@/lib/votedPollsStorage";
+import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
@@ -284,70 +284,54 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   }, [!!thread]);
 
   // Fetch results + viewer's own vote for every yes_no poll that has entered
-  // the viewport. Both calls are coalesced + cache-backed, so they're free
-  // when PollPageClient fetches concurrently. Results drive the winner
-  // preview; the user's vote drives the Your-Vote badge + tap-to-change flow.
+  // the viewport. Both calls are coalesced + cache-backed. Results drive the
+  // winner preview; the user's vote drives the Your-Vote badge + tap-to-
+  // change flow. The setState guards compare by field content (not identity)
+  // because apiGetPollResults always allocates a fresh result object even
+  // when the underlying data is unchanged.
   useEffect(() => {
     if (!thread) return;
     let cancelled = false;
 
     const maybeFetch = async (pollId: string, pollType: string) => {
       if (pollType !== 'yes_no') return;
-      const cached = getCachedPollResults(pollId);
-      if (cached && !cancelled) {
+      const voteId = getStoredVoteId(pollId);
+      const [results, votes] = await Promise.all([
+        apiGetPollResults(pollId).catch(() => null),
+        voteId ? apiGetVotes(pollId).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (cancelled) return;
+      if (results) {
         setPollResultsMap((prev) => {
-          if (prev.get(pollId) === cached) return prev;
-          const next = new Map(prev);
-          next.set(pollId, cached);
-          return next;
-        });
-      }
-      try {
-        const results = await apiGetPollResults(pollId);
-        if (cancelled) return;
-        setPollResultsMap((prev) => {
-          if (prev.get(pollId) === results) return prev;
+          const existing = prev.get(pollId);
+          if (
+            existing &&
+            existing.total_votes === results.total_votes &&
+            existing.yes_count === results.yes_count &&
+            existing.no_count === results.no_count &&
+            existing.winner === results.winner
+          ) {
+            return prev;
+          }
           const next = new Map(prev);
           next.set(pollId, results);
           return next;
         });
-      } catch {
-        // Preview is opportunistic — silent on failure.
       }
-
-      // Resolve the viewer's own vote (if any) so the card can show the
-      // Your-Vote badge + tappable change affordance.
-      let voteId: string | null = null;
-      try {
-        const ids = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-        voteId = ids[pollId] || null;
-      } catch {
-        voteId = null;
-      }
-      if (!voteId) return;
-      try {
-        const votes = await apiGetVotes(pollId);
-        if (cancelled) return;
+      if (voteId && votes) {
         const mine = votes.find((v) => v.id === voteId);
         if (!mine) return;
-        const choice: 'yes' | 'no' | 'abstain' | null = mine.is_abstain
-          ? 'abstain'
-          : mine.yes_no_choice === 'yes'
-            ? 'yes'
-            : mine.yes_no_choice === 'no'
-              ? 'no'
-              : null;
+        const choice = parseYesNoChoice(mine);
+        const voterName = mine.voter_name ?? null;
         setUserVoteMap((prev) => {
           const existing = prev.get(pollId);
-          if (existing && existing.voteId === voteId && existing.choice === choice && existing.voterName === (mine.voter_name ?? null)) {
+          if (existing && existing.voteId === voteId && existing.choice === choice && existing.voterName === voterName) {
             return prev;
           }
           const next = new Map(prev);
-          next.set(pollId, { choice, voteId: voteId!, voterName: mine.voter_name ?? null });
+          next.set(pollId, { choice, voteId, voterName });
           return next;
         });
-      } catch {
-        // Silent — badge is opportunistic.
       }
     };
 
@@ -372,10 +356,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     };
   }, [thread, visiblePollIds]);
 
-  // Submit the confirmed vote change via apiEditVote. Preserves voter_name
-  // from the existing vote, optimistically updates local state, invalidates
-  // caches, and fires POLL_VOTES_CHANGED_EVENT so other UI (VoterList, etc.)
-  // re-renders.
   const confirmVoteChange = async () => {
     if (!pendingVoteChange) return;
     const { pollId, newChoice } = pendingVoteChange;
@@ -385,7 +365,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       let resultVoteId: string;
       let resultVoterName: string | null;
       if (current) {
-        // Edit existing vote — preserves voter_name.
         const updated = await apiEditVote(pollId, current.voteId, {
           yes_no_choice: newChoice === 'abstain' ? null : newChoice,
           is_abstain: newChoice === 'abstain',
@@ -394,7 +373,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         resultVoteId = current.voteId;
         resultVoterName = updated.voter_name ?? current.voterName;
       } else {
-        // First-time vote — use saved profile name (or anonymous if none).
         const savedName = getUserName();
         const submitted = await apiSubmitVote(pollId, {
           vote_type: 'yes_no',
@@ -404,14 +382,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         });
         resultVoteId = submitted.id;
         resultVoterName = submitted.voter_name ?? null;
-        // Record the vote id in localStorage so future edits route correctly.
-        try {
-          const ids = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-          ids[pollId] = resultVoteId;
-          localStorage.setItem('pollVoteIds', JSON.stringify(ids));
-        } catch {
-          // ignore
-        }
+        setStoredVoteId(pollId, resultVoteId);
       }
       invalidatePoll(pollId);
       setUserVoteMap((prev) => {
@@ -419,18 +390,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         next.set(pollId, { choice: newChoice, voteId: resultVoteId, voterName: resultVoterName });
         return next;
       });
-      // Keep localStorage votedPolls flag in sync so the awaiting-response
-      // border and home-page badges match the new state.
-      try {
-        const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-        votedPolls[pollId] = newChoice === 'abstain' ? 'abstained' : true;
-        localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
-        const fresh = loadVotedPolls();
-        setVotedPollIds(fresh.votedPollIds);
-        setAbstainedPollIds(fresh.abstainedPollIds);
-      } catch {
-        // ignore
-      }
+      setVotedPollFlag(pollId, newChoice === 'abstain' ? 'abstained' : true);
+      const fresh = loadVotedPolls();
+      setVotedPollIds(fresh.votedPollIds);
+      setAbstainedPollIds(fresh.abstainedPollIds);
       window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId } }));
       setPendingVoteChange(null);
     } catch (err) {

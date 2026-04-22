@@ -121,11 +121,8 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     return 'text-gray-500 dark:text-gray-400';
   };
 
-  // --- Compact (collapsed) view ---
-  //
-  // Shown when hideLoser is true. "PRELIMINARY" sits on the left of the
-  // same line as the winner pill + stats; the stats float to the right.
-  // When there are no votes yet, only the left label shows.
+  // Compact (collapsed) view: a single-line winner pill + stats. Renders
+  // nothing when no votes have been cast yet.
   if (hideLoser) {
     const winnerSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
     const winnerLabel = winnerSide === 'yes' ? 'Yes' : 'No';
@@ -153,14 +150,6 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     );
   }
 
-  // --- Expanded view ---
-  //
-  // Option cards are fixed-width (w-24) and right-justified in the thread
-  // card. When the viewer has voted Yes/No, a small blue checkmark badge
-  // floats in the UPPER-LEFT corner of the chosen card, and a matching
-  // blue "Your Vote" label sits in the upper-left of the whole expanded
-  // area. Abstain / "You abstained" stays bottom-left (same line as the
-  // vote counts).
   const renderCard = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
     const userVoted = isYes ? userVotedYes : userVotedNo;
@@ -169,10 +158,8 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const labelClass = sideLabelClass(side);
     const interactive = canVote && !userVoted;
     const cardClasses = `relative w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
-    // Mirror the checkmark badge to whichever outer corner of the card
-    // hugs the edge of the cards block — upper-LEFT on the Yes (left)
-    // card, upper-RIGHT on the No (right) card — so it never collides
-    // with the neighboring card.
+    // Badge hugs the outer edge of its card so it can't overlap the
+    // neighboring card regardless of which side the viewer voted for.
     const badgeCornerClass = isYes ? '-top-2 -left-2' : '-top-2 -right-2';
     const cardInner = (
       <>
