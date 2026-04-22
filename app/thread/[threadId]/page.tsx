@@ -369,14 +369,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   }, []);
 
   // Re-read votedPolls from localStorage when a vote is submitted anywhere in
-  // the app. The golden border on awaiting cards reads from these sets, so it
-  // disappears immediately after voting — but the sort order is pinned below
-  // (useMemo keyed on thread identity) so the card doesn't jump positions.
+  // the app. The golden border reads from these sets, so it clears immediately
+  // on vote. loadVotedPolls always allocates new Sets, so compare contents
+  // before committing — otherwise every event triggers a re-render even when
+  // this user's vote on this thread didn't change.
   useEffect(() => {
+    const setsEqual = (a: Set<string>, b: Set<string>) => {
+      if (a.size !== b.size) return false;
+      for (const x of a) if (!b.has(x)) return false;
+      return true;
+    };
     const handler = () => {
       const fresh = loadVotedPolls();
-      setVotedPollIds(fresh.votedPollIds);
-      setAbstainedPollIds(fresh.abstainedPollIds);
+      setVotedPollIds((prev) => (setsEqual(prev, fresh.votedPollIds) ? prev : fresh.votedPollIds));
+      setAbstainedPollIds((prev) => (setsEqual(prev, fresh.abstainedPollIds) ? prev : fresh.abstainedPollIds));
     };
     window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
     return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
@@ -398,24 +404,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     };
   }, [tooltipPollId]);
 
-  // Polls the user hasn't responded to yet (open + not voted/abstained) get
-  // sorted to the bottom of the list and get a golden border. The border reads
-  // from the live voted/abstained state so it disappears immediately on vote,
-  // but the sort order is pinned to the thread's first load (useMemo below so
-  // voting inside a card doesn't re-sort the list underneath the user — the
-  // card stays put until the next refresh).
-  //
+  // Awaiting polls (open + not voted/abstained) get sorted to the bottom and
+  // wear a golden border. The border uses the live predicate so it clears
+  // immediately on vote; the sort order captures this at thread-load only so
+  // the card doesn't jump positions underneath the user.
+  const now = new Date();
+  const isPollOpen = (poll: Poll) =>
+    poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
+  const isAwaitingResponse = (poll: Poll) =>
+    isPollOpen(poll) && !votedPollIds.has(poll.id) && !abstainedPollIds.has(poll.id);
+
   // Defined above the early returns so the hook call order is stable.
   const threadPolls = useMemo(() => {
     if (!thread) return [] as Poll[];
-    const now = new Date();
-    const isOpen = (p: Poll) =>
-      p.response_deadline ? new Date(p.response_deadline) > now && !p.is_closed : !p.is_closed;
-    const awaitingAtLoad = new Set(
-      thread.polls
-        .filter((p) => isOpen(p) && !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id))
-        .map((p) => p.id),
-    );
+    const awaitingAtLoad = new Set(thread.polls.filter(isAwaitingResponse).map((p) => p.id));
     return [...thread.polls].sort((a, b) => {
       const aAwaiting = awaitingAtLoad.has(a.id);
       const bAwaiting = awaitingAtLoad.has(b.id);
@@ -473,16 +475,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       </div>
     );
   }
-
-  const now = new Date();
-  const isPollOpen = (poll: Poll) =>
-    poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
-
-  // Live-state awaiting check. Used only for the golden-border class; the sort
-  // order is pinned by the useMemo above (keyed on thread identity) so voting
-  // inside a card clears the border but doesn't reshuffle the list.
-  const isAwaitingResponse = (poll: Poll) =>
-    isPollOpen(poll) && !votedPollIds.has(poll.id) && !abstainedPollIds.has(poll.id);
 
   return (
     <>
