@@ -166,59 +166,35 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
   // --- Expanded view ---
   //
-  // Two option cards side-by-side, each showing its label (left-justified)
-  // with stats on centered lines below. Your-Vote badge floats in the
-  // top-right corner of the chosen card so the cards stay the same size.
-  // Abstain sits at the bottom-LEFT, outside the cards row.
-  const renderCardColumn = (side: 'yes' | 'no') => {
+  // A 4-column grid keeps the two option cards narrow + centered in the
+  // thread card, with a fixed-width badge slot on each side (the Your-Vote
+  // pill sits on whichever side matches the viewer's choice — left slot for
+  // Yes, right slot for No). Row 2 carries percentages (centered under each
+  // card); row 3 carries vote counts with the Abstain button left-justified
+  // in the leftmost slot.
+  const renderCard = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
-    const count = isYes ? yesCount : noCount;
-    const percentage = isYes ? yesPercentage : noPercentage;
     const userVoted = isYes ? userVotedYes : userVotedNo;
     const label = isYes ? 'Yes' : 'No';
     const containerClass = sideContainer(side);
-    const percentClass = sidePercentClass(side);
     const labelClass = sideLabelClass(side);
-    const countClass = sideCountClass(side);
-
     const interactive = canVote && !userVoted;
-    const cardClasses = `w-full text-left px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
-
-    const cardInner = (
-      <span className={`text-base ${labelClass}`}>
-        {label}
-      </span>
-    );
-
-    const card = interactive ? (
+    const cardClasses = `w-full text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    const cardInner = <span className={`text-base ${labelClass}`}>{label}</span>;
+    return interactive ? (
       <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
         {cardInner}
       </button>
     ) : (
       <div className={cardClasses}>{cardInner}</div>
     );
-
-    return (
-      <div className="relative flex flex-col">
-        {card}
-        {userVoted && (
-          <span className="absolute -top-1.5 -right-1.5 px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap shadow">
-            Your Vote
-          </span>
-        )}
-        {hasStats && (
-          <div className="mt-1 flex items-baseline justify-center gap-1.5">
-            <span className={`text-lg font-bold tabular-nums ${percentClass}`}>
-              {percentage}%
-            </span>
-            <span className={`text-xs tabular-nums ${countClass}`}>
-              {count} / {totalVotes} votes
-            </span>
-          </div>
-        )}
-      </div>
-    );
   };
+
+  const YourVotePill = (
+    <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap">
+      Your Vote
+    </span>
+  );
 
   const abstainContent = userAbstained ? (
     <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -235,13 +211,47 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   ) : null;
 
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-2">
-        {renderCardColumn('yes')}
-        {renderCardColumn('no')}
+    <div className="grid grid-cols-[4.5rem_5rem_5rem_4.5rem] gap-x-2 gap-y-1 w-fit mx-auto items-center">
+      {/* Row 1: left badge slot, Yes, No, right badge slot */}
+      <div className="flex justify-end">
+        {userVotedYes && YourVotePill}
       </div>
-      {abstainContent && (
-        <div className="mt-2 flex justify-start">{abstainContent}</div>
+      {renderCard('yes')}
+      {renderCard('no')}
+      <div className="flex justify-start">
+        {userVotedNo && YourVotePill}
+      </div>
+
+      {/* Row 2: percentages under each card */}
+      {hasStats && (
+        <>
+          <div />
+          <div className={`text-center text-lg font-bold tabular-nums ${sidePercentClass('yes')}`}>
+            {yesPercentage}%
+          </div>
+          <div className={`text-center text-lg font-bold tabular-nums ${sidePercentClass('no')}`}>
+            {noPercentage}%
+          </div>
+          <div />
+        </>
+      )}
+
+      {/* Row 3: Abstain on the left, vote counts under each card */}
+      {(abstainContent || hasStats) && (
+        <>
+          <div className="text-left">{abstainContent}</div>
+          {hasStats ? (
+            <div className={`text-center text-xs tabular-nums ${sideCountClass('yes')}`}>
+              {yesCount} / {totalVotes}
+            </div>
+          ) : <div />}
+          {hasStats ? (
+            <div className={`text-center text-xs tabular-nums ${sideCountClass('no')}`}>
+              {noCount} / {totalVotes}
+            </div>
+          ) : <div />}
+          <div />
+        </>
       )}
     </div>
   );
