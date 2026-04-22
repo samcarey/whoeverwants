@@ -1647,14 +1647,14 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
-              {isPollClosed ? (
-                // Results + "You abstained" row are rendered by the thread
-                // view's external YesNoResults — nothing to show here.
+              {suppressYesNoHere ? (
+                // All yes_no UI (voting, changing, results) is rendered by
+                // the thread view's external YesNoResults — nothing to show
+                // here for any state.
+                null
+              ) : isPollClosed ? (
                 null
               ) : hasVoted && !isEditingVote ? (
-                // Same story for open polls once the viewer has voted: the
-                // external results card carries the Your-Vote badge + the
-                // abstain row + tap-to-change affordance.
                 null
               ) : (
                 <>

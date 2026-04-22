@@ -6,7 +6,8 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
@@ -379,21 +380,43 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     if (!pendingVoteChange) return;
     const { pollId, newChoice } = pendingVoteChange;
     const current = userVoteMap.get(pollId);
-    if (!current) {
-      setPendingVoteChange(null);
-      return;
-    }
     setVoteChangeSubmitting(true);
     try {
-      const updated = await apiEditVote(pollId, current.voteId, {
-        yes_no_choice: newChoice === 'abstain' ? null : newChoice,
-        is_abstain: newChoice === 'abstain',
-        voter_name: current.voterName,
-      });
+      let resultVoteId: string;
+      let resultVoterName: string | null;
+      if (current) {
+        // Edit existing vote — preserves voter_name.
+        const updated = await apiEditVote(pollId, current.voteId, {
+          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+          is_abstain: newChoice === 'abstain',
+          voter_name: current.voterName,
+        });
+        resultVoteId = current.voteId;
+        resultVoterName = updated.voter_name ?? current.voterName;
+      } else {
+        // First-time vote — use saved profile name (or anonymous if none).
+        const savedName = getUserName();
+        const submitted = await apiSubmitVote(pollId, {
+          vote_type: 'yes_no',
+          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+          is_abstain: newChoice === 'abstain',
+          voter_name: savedName && savedName.trim() ? savedName.trim() : null,
+        });
+        resultVoteId = submitted.id;
+        resultVoterName = submitted.voter_name ?? null;
+        // Record the vote id in localStorage so future edits route correctly.
+        try {
+          const ids = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
+          ids[pollId] = resultVoteId;
+          localStorage.setItem('pollVoteIds', JSON.stringify(ids));
+        } catch {
+          // ignore
+        }
+      }
       invalidatePoll(pollId);
       setUserVoteMap((prev) => {
         const next = new Map(prev);
-        next.set(pollId, { choice: newChoice, voteId: current.voteId, voterName: updated.voter_name ?? current.voterName });
+        next.set(pollId, { choice: newChoice, voteId: resultVoteId, voterName: resultVoterName });
         return next;
       });
       // Keep localStorage votedPolls flag in sync so the awaiting-response
@@ -411,7 +434,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId } }));
       setPendingVoteChange(null);
     } catch (err) {
-      console.error('Vote change failed:', err);
+      console.error('Vote submit/change failed:', err);
     } finally {
       setVoteChangeSubmitting(false);
     }
@@ -866,9 +889,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        rendering (externalYesNoResults) to avoid duplication. */}
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
-                    if (!r || !r.total_votes) return null;
-                    const showPrelim = !isClosed && !!poll.show_preliminary_results;
-                    if (!isClosed && !showPrelim) return null;
+                    if (!r) return null;
+                    const showPrelim = !isClosed && !!poll.show_preliminary_results && r.total_votes > 0;
                     const userVote = userVoteMap.get(poll.id);
                     // Stop propagation so that tapping an option card or the
                     // Abstain link doesn't bubble up to the compact-header
@@ -882,21 +904,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         onTouchEnd={stopBubble}
                         onTouchMove={stopBubble}
                       >
-                        {showPrelim && (
-                          <div className="mb-1 text-[10px] text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-                            Preliminary
-                          </div>
-                        )}
                         <PollResultsDisplay
                           results={r}
                           isPollClosed={isClosed}
                           hideLoser={!isExpanded}
                           userVoteChoice={userVote?.choice ?? null}
                           onVoteChange={
-                            userVote
-                              ? (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
-                              : undefined
+                            isClosed
+                              ? undefined
+                              : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
                           }
+                          compactLeftLabel={showPrelim ? 'PRELIMINARY' : undefined}
                         />
                       </div>
                     );
@@ -909,14 +927,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        hidden on the child, so the natural expanded height is used
                        without JS measurement. */}
                   {(visiblePollIds.has(poll.id) || isExpanded) && (() => {
-                    // For yes_no polls where the external results already
-                    // cover the whole state (voted or closed), PollPageClient
-                    // renders nothing — so drop the mt-3 wrapper gap that
-                    // would otherwise leave a visible empty strip under the
-                    // abstain row.
-                    const pollPageClientEmpty =
-                      poll.poll_type === 'yes_no' &&
-                      (userVoteMap.has(poll.id) || isClosed);
+                    // For yes_no polls the thread view renders the whole
+                    // voting + results UI externally (via YesNoResults), so
+                    // PollPageClient returns null for its yes_no branch.
+                    // Drop the mt-3 wrapper gap here so nothing empty sits
+                    // under the external block.
+                    const pollPageClientEmpty = poll.poll_type === 'yes_no';
                     return (
                       <div
                         data-poll-expand-grid=""
