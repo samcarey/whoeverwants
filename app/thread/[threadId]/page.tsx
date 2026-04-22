@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -798,6 +798,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <ClientOnly fallback={null}>
                       {(() => {
                         if (isClosed) {
+                          // Ranked choice (incl. suggestion polls after cutoff)
+                          // renders the winner inside the card via
+                          // CompactRankedChoicePreview — skip the above-card
+                          // badge to avoid duplicating it.
+                          if (poll.poll_type === 'ranked_choice') return null;
                           const badge = getResultBadge(poll);
                           return (
                             <div className="flex items-center gap-1">
@@ -814,6 +819,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         }
                         if (inSuggestions && poll.suggestion_deadline_minutes) {
                           return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                        }
+                        // Time polls in the availability phase get a label
+                        // in the same slot + format as "Taking Suggestions".
+                        if (isInTimeAvailabilityPhase(poll)) {
+                          if (poll.suggestion_deadline) {
+                            return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
+                          }
+                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting availability</span>;
                         }
                         if (poll.response_deadline) {
                           return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
@@ -911,20 +924,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     );
                   })()}
                   {!isExpanded && poll.poll_type === 'time' && (() => {
+                    // In availability phase the label lives in the above-
+                    // card strip — skip the in-card strip entirely.
+                    if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
-                    // Availability phase: poll.options empty and no options
-                    // list in the results. Once finalized (either at the
-                    // availability cutoff or via auto-finalize in get_poll)
-                    // options populates and the preferences phase begins.
-                    const inAvail = !r.options || r.options.length === 0;
                     return (
                       <div className="mt-2">
-                        <CompactTimePreview
-                          results={r}
-                          isPollClosed={isClosed}
-                          inAvailabilityPhase={inAvail}
-                        />
+                        <CompactTimePreview results={r} isPollClosed={isClosed} />
                       </div>
                     );
                   })()}

@@ -137,7 +137,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
     if (!hasStats) {
       return (
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-end mr-[0.4rem]">
           <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
         </div>
       );
@@ -817,8 +817,11 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
 // yes/no hideLoser strip: right-justified, text-sm pill + stats. Each
 // component handles its own "no voters yet" / phase-specific empty states.
 
+// 80% more right-margin than the card's default px-2 (8px → ~14.4px) so the
+// text doesn't feel crowded against the card border. Only applies to
+// non-pill (plain text) messages; pilled content already has internal padding.
 const NO_VOTERS_NOTE = (
-  <div className="flex items-center justify-end">
+  <div className="flex items-center justify-end mr-[0.4rem]">
     <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
   </div>
 );
@@ -862,9 +865,6 @@ export function CompactRankedChoicePreview({
       >
         {winner}
       </span>
-      <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 shrink-0">
-        {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
-      </span>
     </div>
   );
 }
@@ -878,7 +878,7 @@ export function CompactSuggestionPreview({
   const suggestionCount = counts.length;
   if (suggestionCount === 0) {
     return (
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end mr-[0.4rem]">
         <span className="text-xs text-gray-500 dark:text-gray-400">No suggestions yet</span>
       </div>
     );
@@ -895,22 +895,11 @@ export function CompactSuggestionPreview({
 export function CompactTimePreview({
   results,
   isPollClosed,
-  inAvailabilityPhase,
 }: {
   results: PollResults;
   isPollClosed?: boolean;
-  inAvailabilityPhase?: boolean;
 }) {
   const totalVotes = results.total_votes || 0;
-  if (inAvailabilityPhase) {
-    return (
-      <div className="flex items-center justify-end">
-        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-          Collecting availability
-        </span>
-      </div>
-    );
-  }
   const winner = results.winner;
   if (totalVotes === 0 || !winner) {
     return NO_VOTERS_NOTE;
