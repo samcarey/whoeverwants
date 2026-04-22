@@ -721,16 +721,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   )}
                 </div>
 
-                {/* Respondent list under the card, right-aligned to the card
-                     edge and capped at 75% width so bubbles wrap before
-                     reaching the leftmost quarter. During the suggestion phase
-                     we narrow to respondents who actually engaged with it
-                     (suggested or abstained). */}
+                {/* Respondent list under the card: one line, right-aligned to
+                     the card edge, capped at 75% of card width. Overflow
+                     collapses into a trailing "+N" badge. During the suggestion
+                     phase we narrow to respondents who actually engaged with
+                     it (suggested or abstained). */}
                 <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">
                   <ClientOnly fallback={null}>
                     <VoterList
                       pollId={poll.id}
-                      className="justify-end max-w-[75%]"
+                      singleLine
+                      className="max-w-[75%]"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
                     />
                   </ClientOnly>
