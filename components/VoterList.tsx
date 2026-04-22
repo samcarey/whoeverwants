@@ -166,8 +166,10 @@ export default function VoterList({ pollId, className = "", label, filter, singl
           <span
             key={voter.id}
             className={`inline-block px-2.5 py-0.5 rounded-full text-xs ${
-              isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
-            } ${getVoterColor(index)}`}
+              isCurrentUser
+                ? 'font-bold bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
+                : `font-medium ${getVoterColor(index)}`
+            }`}
           >
             {displayName}
           </span>
@@ -260,8 +262,10 @@ function SingleLineVoters({
             key={voter.id}
             ref={(el) => { bubbleRefs.current[index] = el; }}
             className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs ${
-              isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
-            } ${getVoterColor(index)}`}
+              isCurrentUser
+                ? 'font-bold bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
+                : `font-medium ${getVoterColor(index)}`
+            }`}
           >
             {displayName}
           </span>

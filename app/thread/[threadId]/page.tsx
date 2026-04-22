@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, Suspense, Fragment } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -437,13 +437,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const isPollOpen = (poll: Poll) =>
     poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
 
-  // Unvoted open polls sort to bottom so they're visible on auto-scroll
+  // Polls the user hasn't responded to yet get grouped under an "Awaiting
+  // response" header at the bottom of the list, with a faint blue glow on each
+  // card. Closed polls are considered responded regardless of vote status —
+  // the user can't act on them anymore.
+  const isAwaitingResponse = (poll: Poll) =>
+    isPollOpen(poll) && !votedPollIds.has(poll.id) && !abstainedPollIds.has(poll.id);
+
   const threadPolls = [...thread.polls].sort((a, b) => {
-    const aNeedsAction = isPollOpen(a) && !votedPollIds.has(a.id) && !abstainedPollIds.has(a.id);
-    const bNeedsAction = isPollOpen(b) && !votedPollIds.has(b.id) && !abstainedPollIds.has(b.id);
-    if (aNeedsAction !== bNeedsAction) return aNeedsAction ? 1 : -1;
+    const aAwaiting = isAwaitingResponse(a);
+    const bAwaiting = isAwaitingResponse(b);
+    if (aAwaiting !== bAwaiting) return aAwaiting ? 1 : -1;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
+
+  const firstAwaitingIdx = threadPolls.findIndex(isAwaitingResponse);
 
   return (
     <>
@@ -494,10 +502,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        {threadPolls.map((poll) => {
+        {threadPolls.map((poll, idx) => {
             const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
+            const isAwaiting = isAwaitingResponse(poll);
+            const showAwaitingHeader = idx === firstAwaitingIdx && firstAwaitingIdx > 0;
 
             const handleTouchStart = (e: React.TouchEvent) => {
               isLongPress.current = false;
@@ -565,8 +575,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             const isExpanded = expandedPollId === poll.id;
 
             return (
+              <Fragment key={poll.id}>
+              {showAwaitingHeader && (
+                <div className="mt-4 mb-3 flex items-center gap-2 px-1">
+                  <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    Awaiting response
+                  </span>
+                  <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                </div>
+              )}
               <div
-                key={poll.id}
                 ref={(el) => {
                   if (el) {
                     el.dataset.pollId = poll.id;
@@ -646,7 +665,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isAwaiting ? 'shadow-[0_0_12px_2px_rgba(59,130,246,0.25)] dark:shadow-[0_0_12px_2px_rgba(96,165,250,0.35)]' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -725,6 +744,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   </ClientOnly>
                 </div>
               </div>
+              </Fragment>
             );
           })}
       </div>
