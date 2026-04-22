@@ -200,6 +200,35 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   // [0fr ↔ 1fr] clip so they reveal together when hideLoser flips off. The
   // winner's Y position shifts slightly as the abstain row opens, but that
   // motion is synchronous with the surrounding card's own expand animation.
+  //
+  // In the collapsed state we replace the whole arrangement with a compact
+  // single-line view: a small winner pill plus small-font stats next to it.
+  const winnerSideCompact: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
+  const winnerLabel = winnerSideCompact === 'yes' ? 'Yes' : 'No';
+  const winnerPct = winnerSideCompact === 'yes' ? yesPercentage : noPercentage;
+  const winnerCount = winnerSideCompact === 'yes' ? yesCount : noCount;
+  const winnerPillClasses = yesIsWinner
+    ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100'
+    : noIsWinner
+      ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
+      : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
+
+  if (hideLoser) {
+    return (
+      <div className="flex items-baseline justify-end gap-2">
+        <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold self-center ${winnerPillClasses}`}>
+          {winnerLabel}
+        </span>
+        <span className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-200">
+          {winnerPct}%
+        </span>
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
+          {winnerCount} / {totalVotes} votes
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div
