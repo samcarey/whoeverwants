@@ -503,7 +503,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         {threadPolls.map((poll, idx) => {
-            const isVoted = votedPollIds.has(poll.id) || abstainedPollIds.has(poll.id);
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
             const isAwaiting = isAwaitingResponse(poll);
@@ -693,14 +692,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       />
                     </div>
                   </div>
-
-                  {isOpen && !isVoted && (
-                    <div className="flex items-center justify-end gap-2 mt-1">
-                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
-                        Not voted
-                      </span>
-                    </div>
-                  )}
                   </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
