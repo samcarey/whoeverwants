@@ -41,9 +41,13 @@ interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
   pollId: string | null;
+  // When true, this component skips rendering YesNoResults itself — the
+  // caller (thread view) is rendering them in a stable DOM position above
+  // the expand clip to avoid winner-card flicker across expand/collapse.
+  externalYesNoResults?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults }: PollPageClientProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -1489,8 +1493,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     </button>
   ) : null;
 
+  // When the thread view renders yes/no results externally (to keep the
+  // winner card DOM-stable across expand/collapse), the internal copies of
+  // PollResultsDisplay would duplicate them — so skip them entirely for
+  // yes_no polls in that context.
+  const suppressYesNoHere = !!externalYesNoResults && poll.poll_type === 'yes_no';
+
   const preliminaryResultsBlock = (className: string) => (
-    showPrelimResults && !isPollClosed ? (
+    showPrelimResults && !isPollClosed && !suppressYesNoHere ? (
       <div className={className}>
         <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
           Preliminary Results
@@ -1597,7 +1607,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("")}
 
         {/* For closed polls, show results first */}
-        {isPollClosed && (
+        {isPollClosed && !suppressYesNoHere && (
           <div>
             {loadingResults ? (
               <div className="flex justify-center items-center py-3">

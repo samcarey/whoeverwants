@@ -18,14 +18,16 @@ interface PollResultsProps {
   userVoteData?: any;
   onFollowUpClick?: () => void;
   optionsMetadata?: OptionsMetadata | null;
-  // For yes/no polls: render only the winning option card (used by the
-  // thread-card compact preview so the winner is glanceable when collapsed).
-  winnerOnly?: boolean;
+  // For yes/no polls: keeps the winner card rendered in a stable DOM
+  // position and hides the losing card (via grid-rows animation) when true.
+  // Used by the thread view so the winner doesn't flicker across
+  // expand/collapse transitions.
+  hideLoser?: boolean;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, winnerOnly }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} winnerOnly={winnerOnly} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -43,7 +45,7 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, winnerOnly = false }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, winnerOnly?: boolean }) {
+function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -130,10 +132,21 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, wi
   const topSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
   const bottomSide: 'yes' | 'no' = topSide === 'yes' ? 'no' : 'yes';
 
+  // The winner card stays in a stable DOM position; the loser is wrapped in
+  // a grid-rows [0fr↔1fr] clip so hideLoser toggles it smoothly without
+  // re-mounting the winner above it. The inner mt-1.5 gives the 6px gap when
+  // expanded and gets clipped to zero when collapsed.
   return (
-    <div className="space-y-1.5">
+    <div>
       {renderCard(topSide)}
-      {!winnerOnly && renderCard(bottomSide)}
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-out ${hideLoser ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
+        aria-hidden={hideLoser}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-1.5">{renderCard(bottomSide)}</div>
+        </div>
+      </div>
     </div>
   );
 }

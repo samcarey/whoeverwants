@@ -766,11 +766,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       />
                     </div>
                   </div>
-                  {/* Compact winner preview — only visible when the card is
-                       collapsed, so the winning option is always glanceable
-                       without expanding. When expanded, the full stacked
-                       YesNoResults inside PollPageClient shows both cards. */}
-                  {!isExpanded && poll.poll_type === 'yes_no' && (() => {
+                  {/* Yes/No results rendered here — above the expand clip —
+                       so the winner card stays in a stable DOM position
+                       across expand/collapse (no remount → no flicker). The
+                       YesNoResults component animates the loser's reveal via
+                       its own grid-rows transition when hideLoser toggles.
+                       PollPageClient below suppresses its own YesNoResults
+                       rendering (externalYesNoResults) to avoid duplication. */}
+                  {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r || !r.total_votes) return null;
                     const showPrelim = !isClosed && !!poll.show_preliminary_results;
@@ -782,7 +785,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             Preliminary
                           </div>
                         )}
-                        <PollResultsDisplay results={r} isPollClosed={isClosed} winnerOnly />
+                        <PollResultsDisplay results={r} isPollClosed={isClosed} hideLoser={!isExpanded} />
                       </div>
                     );
                   })()}
@@ -811,6 +814,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             poll={poll}
                             createdDate={formatCreationTimestamp(poll.created_at)}
                             pollId={poll.id}
+                            externalYesNoResults={poll.poll_type === 'yes_no'}
                           />
                         </div>
                       </div>
