@@ -6,9 +6,10 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, invalidatePoll } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
@@ -23,6 +24,7 @@ import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import PollResultsDisplay from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
@@ -108,6 +110,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // Initialize with the pre-expanded poll (so its content mounts on first paint).
     return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
   });
+  // Per-poll results for the compact winner preview shown above the grid-rows
+  // clip. Fetched lazily when a card enters the viewport. Cache-backed so this
+  // is zero-cost after the first load per poll.
+  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => new Map());
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -264,6 +270,61 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // (forget/reopen). Card ref callbacks attach each new card to the live
     // observer automatically.
   }, [!!thread]);
+
+  // Fetch results for every yes_no poll that has entered the viewport. The
+  // apiGetPollResults call is coalesced + cache-backed, so this is free when
+  // PollPageClient also fetches concurrently. Used to populate the compact
+  // winner preview shown on collapsed cards. Also listens for vote/update
+  // events to keep previews fresh.
+  useEffect(() => {
+    if (!thread) return;
+    let cancelled = false;
+
+    const maybeFetch = async (pollId: string, pollType: string) => {
+      if (pollType !== 'yes_no') return;
+      const cached = getCachedPollResults(pollId);
+      if (cached && !cancelled) {
+        setPollResultsMap((prev) => {
+          if (prev.get(pollId) === cached) return prev;
+          const next = new Map(prev);
+          next.set(pollId, cached);
+          return next;
+        });
+      }
+      try {
+        const results = await apiGetPollResults(pollId);
+        if (cancelled) return;
+        setPollResultsMap((prev) => {
+          if (prev.get(pollId) === results) return prev;
+          const next = new Map(prev);
+          next.set(pollId, results);
+          return next;
+        });
+      } catch {
+        // Preview is opportunistic — silent on failure.
+      }
+    };
+
+    for (const poll of thread.polls) {
+      if (!visiblePollIds.has(poll.id)) continue;
+      void maybeFetch(poll.id, poll.poll_type);
+    }
+
+    const onVotesChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
+      const pollId = detail?.pollId;
+      if (!pollId) return;
+      const poll = thread.polls.find((p) => p.id === pollId);
+      if (!poll) return;
+      void maybeFetch(poll.id, poll.poll_type);
+    };
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
+    };
+  }, [thread, visiblePollIds]);
 
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
@@ -705,6 +766,26 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       />
                     </div>
                   </div>
+                  {/* Compact winner preview — only visible when the card is
+                       collapsed, so the winning option is always glanceable
+                       without expanding. When expanded, the full stacked
+                       YesNoResults inside PollPageClient shows both cards. */}
+                  {!isExpanded && poll.poll_type === 'yes_no' && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r || !r.total_votes) return null;
+                    const showPrelim = !isClosed && !!poll.show_preliminary_results;
+                    if (!isClosed && !showPrelim) return null;
+                    return (
+                      <div className="mt-2">
+                        {showPrelim && (
+                          <div className="mb-1 text-[10px] text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
+                            Preliminary
+                          </div>
+                        )}
+                        <PollResultsDisplay results={r} isPollClosed={isClosed} winnerOnly />
+                      </div>
+                    );
+                  })()}
                   </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
@@ -758,6 +839,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         <FollowUpModal
           isOpen={showModal}
           poll={modalPoll}
+          totalVotes={pollResultsMap.get(modalPoll.id)?.total_votes}
           onClose={() => setShowModal(false)}
           showForkButton={false}
           onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}

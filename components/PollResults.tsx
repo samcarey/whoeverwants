@@ -18,11 +18,14 @@ interface PollResultsProps {
   userVoteData?: any;
   onFollowUpClick?: () => void;
   optionsMetadata?: OptionsMetadata | null;
+  // For yes/no polls: render only the winning option card (used by the
+  // thread-card compact preview so the winner is glanceable when collapsed).
+  winnerOnly?: boolean;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, winnerOnly }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} winnerOnly={winnerOnly} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -40,124 +43,97 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, winnerOnly = false }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, winnerOnly?: boolean }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
   const noPercentage = results.no_percentage || 0;
   const winner = results.winner;
   const totalVotes = results.total_votes;
-  
-  // Check if user voted and what they voted for (only show on closed polls in development)
+
   const userVotedYes = userVoteData?.yes_no_choice === 'yes';
   const userVotedNo = userVoteData?.yes_no_choice === 'no';
 
   if (totalVotes === 0) {
     return (
       <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">No Voters</p>
       </div>
     );
   }
 
+  const yesIsWinner = winner === 'yes';
+  const noIsWinner = winner === 'no';
+  const isTie = winner === 'tie';
+
+  const renderCard = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const count = isYes ? yesCount : noCount;
+    const percentage = isYes ? yesPercentage : noPercentage;
+    const isWinner = isYes ? yesIsWinner : noIsWinner;
+    const userVoted = isYes ? userVotedYes : userVotedNo;
+    const label = isYes ? 'Yes' : 'No';
+
+    const containerClass = isWinner
+      ? isYes
+        ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-sm'
+        : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-sm'
+      : isTie
+        ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
+        : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600';
+
+    const percentClass = isWinner
+      ? isYes
+        ? 'text-green-800 dark:text-green-200'
+        : 'text-red-800 dark:text-red-200'
+      : isTie
+        ? 'text-yellow-800 dark:text-yellow-200'
+        : 'text-gray-700 dark:text-gray-300';
+
+    const labelClass = isWinner
+      ? isYes
+        ? 'text-green-900 dark:text-green-100 font-bold'
+        : 'text-red-900 dark:text-red-100 font-bold'
+      : isTie
+        ? 'text-yellow-900 dark:text-yellow-100 font-bold'
+        : 'text-gray-600/70 dark:text-gray-400/70 font-medium';
+
+    const countClass = isWinner
+      ? isYes
+        ? 'text-green-700 dark:text-green-300'
+        : 'text-red-700 dark:text-red-300'
+      : 'text-gray-500 dark:text-gray-400';
+
+    return (
+      <div className={`px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass}`}>
+        <div className="flex items-baseline justify-center gap-2">
+          <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
+            {percentage}%
+          </span>
+          <span className={`text-base ${labelClass}`}>
+            {label}
+          </span>
+          <span className={`text-xs ${countClass}`}>
+            {count} vote{count !== 1 ? 's' : ''}
+          </span>
+          {userVoted && (
+            <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full">
+              Your Vote
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Winner on top. Tie → yes first (arbitrary but stable).
+  const topSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
+  const bottomSide: 'yes' | 'no' = topSide === 'yes' ? 'no' : 'yes';
+
   return (
-    <div>
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Yes Results */}
-        <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'yes' 
-            ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-lg' 
-            : winner === 'tie'
-            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
-            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
-        }`}>
-          <div className="text-center">
-            <div className={`text-2xl font-bold mb-1 ${
-              winner === 'yes' 
-                ? 'text-green-800 dark:text-green-200'
-                : winner === 'tie'
-                ? 'text-yellow-800 dark:text-yellow-200'
-                : 'text-gray-700 dark:text-gray-300'
-            }`}>
-              {yesPercentage}%
-            </div>
-            <div className={`text-lg mb-2 ${
-              winner === 'yes' 
-                ? 'text-green-900 dark:text-green-100 font-bold'
-                : winner === 'tie'
-                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
-                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
-            }`}>
-              Yes
-            </div>
-            <div className={`text-sm ${
-              winner === 'yes' 
-                ? 'text-green-700 dark:text-green-300' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>
-              {yesCount} vote{yesCount !== 1 ? "s" : ""}
-            </div>
-            {userVotedYes && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Vote
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* No Results */}
-        <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'no' 
-            ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-lg' 
-            : winner === 'tie'
-            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
-            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
-        }`}>
-          <div className="text-center">
-            <div className={`text-2xl font-bold mb-1 ${
-              winner === 'no' 
-                ? 'text-red-800 dark:text-red-200'
-                : winner === 'tie'
-                ? 'text-yellow-800 dark:text-yellow-200'
-                : 'text-gray-700 dark:text-gray-300'
-            }`}>
-              {noPercentage}%
-            </div>
-            <div className={`text-lg mb-2 ${
-              winner === 'no' 
-                ? 'text-red-900 dark:text-red-100 font-bold'
-                : winner === 'tie'
-                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
-                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
-            }`}>
-              No
-            </div>
-            <div className={`text-sm ${
-              winner === 'no' 
-                ? 'text-red-700 dark:text-red-300' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>
-              {noCount} vote{noCount !== 1 ? "s" : ""}
-            </div>
-            {userVotedNo && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Vote
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+    <div className="space-y-1.5">
+      {renderCard(topSide)}
+      {!winnerOnly && renderCard(bottomSide)}
     </div>
   );
 }

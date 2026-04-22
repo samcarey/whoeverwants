@@ -51,6 +51,10 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
     ? `Expired on ${formatShortDateTime(deadline)}`
     : null;
 
+  const totalVotesText = typeof totalVotes === 'number' && totalVotes > 0
+    ? `${totalVotes} total vote${totalVotes !== 1 ? 's' : ''}`
+    : null;
+
   return (
     <ModalPortal>
       {/* Backdrop */}
@@ -62,11 +66,22 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
-          {expiredText && (
-            <div className="mb-4 text-center">
-              <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                {expiredText}
-              </span>
+          {(expiredText || totalVotesText) && (
+            <div className="mb-4 text-center space-y-0.5">
+              {expiredText && (
+                <div>
+                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                    {expiredText}
+                  </span>
+                </div>
+              )}
+              {totalVotesText && (
+                <div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {totalVotesText}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           <div className="flex gap-3">
