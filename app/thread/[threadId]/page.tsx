@@ -25,7 +25,7 @@ import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
-import PollResultsDisplay from "@/components/PollResults";
+import PollResultsDisplay, { CompactRankedChoicePreview, CompactSuggestionPreview, CompactTimePreview } from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
@@ -294,8 +294,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     let cancelled = false;
 
     const maybeFetch = async (pollId: string, pollType: string) => {
-      if (pollType !== 'yes_no') return;
-      const voteId = getStoredVoteId(pollId);
+      // Fetch results for every type that has a compact preview (yes_no,
+      // ranked_choice, time). For ranked_choice the "suggestion phase"
+      // variant reuses the same results (suggestion_counts field populated
+      // pre-cutoff). User-vote fetching is yes_no-only; other types drive
+      // their compact strip off the shared results alone.
+      const wantsResults =
+        pollType === 'yes_no' ||
+        pollType === 'ranked_choice' ||
+        pollType === 'time';
+      if (!wantsResults) return;
+      const voteId = pollType === 'yes_no' ? getStoredVoteId(pollId) : null;
       const [results, votes] = await Promise.all([
         apiGetPollResults(pollId).catch(() => null),
         voteId ? apiGetVotes(pollId).catch(() => null) : Promise.resolve(null),
@@ -309,7 +318,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             existing.total_votes === results.total_votes &&
             existing.yes_count === results.yes_count &&
             existing.no_count === results.no_count &&
-            existing.winner === results.winner
+            existing.winner === results.winner &&
+            (existing.suggestion_counts?.length ?? 0) === (results.suggestion_counts?.length ?? 0)
           ) {
             return prev;
           }
@@ -876,6 +886,44 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                               ? undefined
                               : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
                           }
+                        />
+                      </div>
+                    );
+                  })()}
+                  {/* Compact preview strips for ranked_choice / suggestion
+                       (ranked_choice with a suggestion phase) / time polls.
+                       Rendered in the same slot as the yes/no hideLoser
+                       strip (lower-right of the compact card) and hidden
+                       when the card is expanded — the full breakdown then
+                       shows below inside the grid-rows expand clip. */}
+                  {!isExpanded && poll.poll_type === 'ranked_choice' && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    const inSuggestions = isInSuggestionPhase(poll);
+                    return (
+                      <div className="mt-2">
+                        {inSuggestions ? (
+                          <CompactSuggestionPreview results={r} />
+                        ) : (
+                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {!isExpanded && poll.poll_type === 'time' && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    // Availability phase: poll.options empty and no options
+                    // list in the results. Once finalized (either at the
+                    // availability cutoff or via auto-finalize in get_poll)
+                    // options populates and the preferences phase begins.
+                    const inAvail = !r.options || r.options.length === 0;
+                    return (
+                      <div className="mt-2">
+                        <CompactTimePreview
+                          results={r}
+                          isPollClosed={isClosed}
+                          inAvailabilityPhase={inAvail}
                         />
                       </div>
                     );

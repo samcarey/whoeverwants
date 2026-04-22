@@ -5,6 +5,7 @@ import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import {
+  formatDayLabel,
   formatStackedDayLabel,
   formatTimeSlot,
   getBubbleLabel,
@@ -134,7 +135,13 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
-    if (!hasStats) return null;
+    if (!hasStats) {
+      return (
+        <div className="flex items-center justify-end">
+          <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-end gap-2">
         <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
@@ -801,6 +808,125 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Compact single-line preview components rendered in the lower-right of the
+// thread card's compact header when collapsed. Mirror the shape of the
+// yes/no hideLoser strip: right-justified, text-sm pill + stats. Each
+// component handles its own "no voters yet" / phase-specific empty states.
+
+const NO_VOTERS_NOTE = (
+  <div className="flex items-center justify-end">
+    <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
+  </div>
+);
+
+// Shortened slot label for the compact pill — day + start time only.
+function formatSlotCompact(slot: string): string {
+  try {
+    const [datePart, timePart] = slot.split(" ");
+    const [startStr] = timePart.split("-");
+    const [h, m] = startStr.split(":").map(Number);
+    const ampm = h < 12 ? "AM" : "PM";
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const minSuffix = m === 0 ? "" : `:${String(m).padStart(2, "0")}`;
+    return `${formatDayLabel(datePart)} ${h12}${minSuffix} ${ampm}`;
+  } catch {
+    return slot;
+  }
+}
+
+export function CompactRankedChoicePreview({
+  results,
+  isPollClosed,
+}: {
+  results: PollResults;
+  isPollClosed?: boolean;
+}) {
+  const totalVotes = results.total_votes || 0;
+  const winner = results.winner;
+  if (totalVotes === 0 || !winner || winner === "tie") {
+    return NO_VOTERS_NOTE;
+  }
+  const winnerPillColors = isPollClosed
+    ? "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100"
+    : "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      <span className="text-xs shrink-0">🏆</span>
+      <span
+        className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem] ${winnerPillColors}`}
+        title={winner}
+      >
+        {winner}
+      </span>
+      <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400 shrink-0">
+        {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
+      </span>
+    </div>
+  );
+}
+
+export function CompactSuggestionPreview({
+  results,
+}: {
+  results: PollResults;
+}) {
+  const counts = results.suggestion_counts || [];
+  const suggestionCount = counts.length;
+  if (suggestionCount === 0) {
+    return (
+      <div className="flex items-center justify-end">
+        <span className="text-xs text-gray-500 dark:text-gray-400">No suggestions yet</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span className="inline-block px-3 py-0.5 rounded-full border text-sm font-bold bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100">
+        {suggestionCount} {suggestionCount === 1 ? "suggestion" : "suggestions"}
+      </span>
+    </div>
+  );
+}
+
+export function CompactTimePreview({
+  results,
+  isPollClosed,
+  inAvailabilityPhase,
+}: {
+  results: PollResults;
+  isPollClosed?: boolean;
+  inAvailabilityPhase?: boolean;
+}) {
+  const totalVotes = results.total_votes || 0;
+  if (inAvailabilityPhase) {
+    return (
+      <div className="flex items-center justify-end">
+        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+          Collecting availability
+        </span>
+      </div>
+    );
+  }
+  const winner = results.winner;
+  if (totalVotes === 0 || !winner) {
+    return NO_VOTERS_NOTE;
+  }
+  const pillColors = isPollClosed
+    ? "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100"
+    : "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      <span className="text-xs shrink-0">📅</span>
+      <span
+        className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem] ${pillColors}`}
+        title={formatTimeSlot(winner)}
+      >
+        {formatSlotCompact(winner)}
+      </span>
     </div>
   );
 }
