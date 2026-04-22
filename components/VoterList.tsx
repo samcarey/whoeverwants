@@ -13,10 +13,11 @@ interface VoterListProps {
   className?: string;
   refreshTrigger?: number;
   label?: string;
+  icon?: string;
   filter?: (vote: ApiVote) => boolean;
 }
 
-export default function VoterList({ pollId, className = "", refreshTrigger, label, filter }: VoterListProps) {
+export default function VoterList({ pollId, className = "", refreshTrigger, label, icon = "👥", filter }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,10 +61,20 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
     }
   }, [refreshTrigger, pollId, fetchVoters]);
 
+  useEffect(() => {
+    if (!pollId) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
+      if (detail?.pollId === pollId) fetchVoters();
+    };
+    window.addEventListener('poll:votesChanged', handler);
+    return () => window.removeEventListener('poll:votesChanged', handler);
+  }, [pollId, fetchVoters]);
+
   if (initialLoading) {
     return (
       <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
-        <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>👥</span>
+        <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>{icon}</span>
         {[1, 2, 3].map((i) => (
           <div
             key={i}
@@ -130,7 +141,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   return (
     <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
       <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
-        {voters.length} 👥
+        {voters.length} {icon}
       </span>
 
       {namedVoters.map((voter, index) => {

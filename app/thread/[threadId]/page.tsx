@@ -19,12 +19,20 @@ import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
+import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
+
+// Stable filter: votes submitted during the suggestion phase (gave suggestions
+// or fully abstained from suggestions). Declared at module scope so VoterList
+// doesn't re-run its effect on every parent render.
+const suggestionPhaseRespondentFilter = (v: ApiVote) =>
+  !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
 interface ThreadContentProps {
   threadId: string;
@@ -711,6 +719,29 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* Respondent list under the card: during the suggestion phase
+                     show suggesters (💡), otherwise show voters (🗳️). */}
+                <div className="col-start-2 row-start-3 mt-1.5 px-2">
+                  <ClientOnly fallback={null}>
+                    {isInSuggestionPhase(poll) ? (
+                      <VoterList
+                        pollId={poll.id}
+                        icon="💡"
+                        label="Suggested"
+                        filter={suggestionPhaseRespondentFilter}
+                        className="justify-start"
+                      />
+                    ) : (
+                      <VoterList
+                        pollId={poll.id}
+                        icon="🗳️"
+                        label="Voted"
+                        className="justify-start"
+                      />
+                    )}
+                  </ClientOnly>
                 </div>
               </div>
             );
