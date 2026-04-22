@@ -23,11 +23,16 @@ interface PollResultsProps {
   // Used by the thread view so the winner doesn't flicker across
   // expand/collapse transitions.
   hideLoser?: boolean;
+  // For yes/no polls: the current viewer's choice (if voted). When defined
+  // along with onVoteChange, the option cards + abstain row become
+  // tappable — clicking a different option fires onVoteChange(newChoice).
+  userVoteChoice?: 'yes' | 'no' | 'abstain' | null;
+  onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -45,7 +50,7 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean }) {
+function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -53,8 +58,23 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   const winner = results.winner;
   const totalVotes = results.total_votes;
 
-  const userVotedYes = userVoteData?.yes_no_choice === 'yes';
-  const userVotedNo = userVoteData?.yes_no_choice === 'no';
+  // Prefer the explicit userVoteChoice prop (used by the thread view) over
+  // the legacy userVoteData shape so callers can drive the badges + abstain
+  // row without needing the full vote object.
+  const voteChoice: 'yes' | 'no' | 'abstain' | null =
+    userVoteChoice !== undefined
+      ? userVoteChoice
+      : userVoteData?.is_abstain
+        ? 'abstain'
+        : userVoteData?.yes_no_choice === 'yes'
+          ? 'yes'
+          : userVoteData?.yes_no_choice === 'no'
+            ? 'no'
+            : null;
+  const userVotedYes = voteChoice === 'yes';
+  const userVotedNo = voteChoice === 'no';
+  const userAbstained = voteChoice === 'abstain';
+  const canChangeVote = !isPollClosed && !!onVoteChange && voteChoice != null;
 
   if (totalVotes === 0) {
     return (
@@ -106,36 +126,73 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         : 'text-red-700 dark:text-red-300'
       : 'text-gray-500 dark:text-gray-400';
 
-    return (
-      <div className={`px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass}`}>
-        <div className="flex items-baseline justify-center gap-2">
-          <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
-            {percentage}%
+    const interactive = canChangeVote && !userVoted;
+    const cardClasses = `px-3 py-1.5 rounded-lg border-2 transition-all w-full text-left ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+
+    const content = (
+      <div className="flex items-baseline justify-center gap-2">
+        <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
+          {percentage}%
+        </span>
+        <span className={`text-base ${labelClass}`}>
+          {label}
+        </span>
+        <span className={`text-xs ${countClass}`}>
+          {count} vote{count !== 1 ? 's' : ''}
+        </span>
+        {userVoted && (
+          <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full">
+            Your Vote
           </span>
-          <span className={`text-base ${labelClass}`}>
-            {label}
-          </span>
-          <span className={`text-xs ${countClass}`}>
-            {count} vote{count !== 1 ? 's' : ''}
-          </span>
-          {userVoted && (
-            <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full">
-              Your Vote
-            </span>
-          )}
-        </div>
+        )}
       </div>
     );
+
+    if (interactive) {
+      return (
+        <button
+          type="button"
+          onClick={() => onVoteChange!(side)}
+          className={cardClasses}
+        >
+          {content}
+        </button>
+      );
+    }
+    return <div className={cardClasses}>{content}</div>;
   };
 
   // Winner on top. Tie → yes first (arbitrary but stable).
   const topSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
   const bottomSide: 'yes' | 'no' = topSide === 'yes' ? 'no' : 'yes';
 
+  // Abstain row — shown only once the viewer has voted (voteChoice != null).
+  // Already-abstained: informational gold text. Otherwise: tappable text that
+  // matches visual weight so cards + abstain feel like a single control set.
+  const abstainRow = voteChoice == null ? null : userAbstained ? (
+    <div className="mt-1.5 flex justify-end">
+      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+        You abstained
+      </span>
+    </div>
+  ) : canChangeVote ? (
+    <div className="mt-1.5 flex justify-end">
+      <button
+        type="button"
+        onClick={() => onVoteChange!('abstain')}
+        className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70"
+      >
+        Abstain
+      </button>
+    </div>
+  ) : null;
+
   // The winner card stays in a stable DOM position; the loser is wrapped in
   // a grid-rows [0fr↔1fr] clip so hideLoser toggles it smoothly without
   // re-mounting the winner above it. The inner mt-1.5 gives the 6px gap when
-  // expanded and gets clipped to zero when collapsed.
+  // expanded and gets clipped to zero when collapsed. The abstain row sits
+  // outside the clip — users should see their abstain status even when the
+  // card is compact.
   return (
     <div>
       {renderCard(topSide)}
@@ -147,6 +204,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
           <div className="mt-1.5">{renderCard(bottomSide)}</div>
         </div>
       </div>
+      {abstainRow}
     </div>
   );
 }

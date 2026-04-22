@@ -1648,66 +1648,14 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         {poll.poll_type === 'yes_no' ? (
           <div>
               {isPollClosed ? (
-                // Results render above this block; here we only surface the
-                // "You Abstained" badge so the layout doesn't introduce extra
-                // whitespace when there's nothing to show.
-                userVoteData?.is_abstain ? (
-                  <div className="mt-2 flex justify-center">
-                    <div className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                      <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                        You Abstained
-                      </span>
-                    </div>
-                  </div>
-                ) : null
+                // Results + "You abstained" row are rendered by the thread
+                // view's external YesNoResults — nothing to show here.
+                null
               ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-3">
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">Your vote:</h4>
-                      {editVoteButton}
-                    </div>
-                    {isLoadingVoteData ? (
-                      <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
-                          <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                        <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
-                      </div>
-                    ) : (
-                      <div className={`flex items-center p-3 rounded-lg ${
-                        userVoteData?.is_abstain || isAbstaining
-                          ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
-                          : userVoteData?.yes_no_choice === 'yes'
-                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
-                            : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
-                      }`}>
-                        <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'bg-yellow-600 text-white'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-red-600 text-white'
-                        }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
-                        </span>
-                        <span className={`font-medium ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'text-yellow-800 dark:text-yellow-200'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'text-green-800 dark:text-green-200'
-                              : 'text-red-800 dark:text-red-200'
-                        }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? 'Yes' : 'No'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                </div>
+                // Same story for open polls once the viewer has voted: the
+                // external results card carries the Your-Vote badge + the
+                // abstain row + tap-to-change affordance.
+                null
               ) : (
                 <>
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
