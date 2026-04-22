@@ -675,17 +675,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     </div>
                   </div>
 
-                  {isOpen && (
+                  {isOpen && !isVoted && (
                     <div className="flex items-center justify-end gap-2 mt-1">
-                      {!isVoted && (
-                        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
-                          Not voted
-                        </span>
-                      )}
-                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-                        {(poll.response_count ?? 0) > 0
-                          ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
-                          : 'No responses yet'}
+                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                        Not voted
                       </span>
                     </div>
                   )}
