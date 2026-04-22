@@ -30,7 +30,6 @@ interface RankingSectionProps {
   setVoterName: (name: string) => void;
   handleVoteClick: () => void;
   voteError: string | null;
-  voterListRefresh: number;
   optionsMetadata: OptionsMetadata | null;
   canSubmitSuggestions: boolean;
   canSubmitRankings: boolean;
@@ -64,7 +63,6 @@ export default function RankingSection({
   setVoterName,
   handleVoteClick,
   voteError,
-  voterListRefresh,
   optionsMetadata,
   canSubmitSuggestions,
   canSubmitRankings,
@@ -251,7 +249,7 @@ export default function RankingSection({
 
       {hasSuggestionPhase && hasVoted && !isEditingRanking && !isLoadingVoteData && (
         <div className="mt-2 mb-3">
-          <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} label="Ranked" filter={rankingsVoterFilter} />
+          <VoterList pollId={poll.id} label="Ranked" filter={rankingsVoterFilter} />
         </div>
       )}
 

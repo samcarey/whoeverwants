@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
-import { apiGetVotes, ApiVote } from '@/lib/api';
+import { apiGetVotes, ApiVote, POLL_VOTES_CHANGED_EVENT } from '@/lib/api';
 
 interface Voter {
   id: string;
@@ -11,16 +11,14 @@ interface Voter {
 interface VoterListProps {
   pollId: string;
   className?: string;
-  refreshTrigger?: number;
   label?: string;
-  icon?: string;
   filter?: (vote: ApiVote) => boolean;
   /** Single-line overflow mode: hides icon + count, renders one row, and
    *  collapses overflow into a "+N" badge. Used under thread poll cards. */
   singleLine?: boolean;
 }
 
-export default function VoterList({ pollId, className = "", refreshTrigger, label, icon = "👥", filter, singleLine = false }: VoterListProps) {
+export default function VoterList({ pollId, className = "", label, filter, singleLine = false }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,38 +57,25 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   }, [pollId, fetchVoters]);
 
   useEffect(() => {
-    if (refreshTrigger && pollId) {
-      fetchVoters();
-    }
-  }, [refreshTrigger, pollId, fetchVoters]);
-
-  useEffect(() => {
     if (!pollId) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
       if (detail?.pollId === pollId) fetchVoters();
     };
-    window.addEventListener('poll:votesChanged', handler);
-    return () => window.removeEventListener('poll:votesChanged', handler);
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
   }, [pollId, fetchVoters]);
 
   if (initialLoading) {
-    if (singleLine) {
-      return (
-        <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
-              style={{ width: `${50 + (i * 12) % 30}px`, height: '24px' }}
-            />
-          ))}
-        </div>
-      );
-    }
     return (
-      <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
-        <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>{icon}</span>
+      <div
+        className={`flex items-center gap-1.5 ${
+          singleLine ? 'overflow-hidden whitespace-nowrap' : 'flex-wrap justify-center'
+        } ${className}`}
+      >
+        {!singleLine && (
+          <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>👥</span>
+        )}
         {[1, 2, 3].map((i) => (
           <div
             key={i}
@@ -106,7 +91,6 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
     return null;
   }
 
-  // Get current user's vote ID from localStorage
   const getUserVoteId = (): string | null => {
     if (typeof window === 'undefined') return null;
     try {
@@ -155,9 +139,6 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   };
 
   if (singleLine) {
-    // Render all bubbles + anon + a trailing "+N" badge that acts as the
-    // overflow placeholder. A layout effect hides bubbles that don't fit and
-    // updates the badge count; if everything fits, the badge is hidden.
     return (
       <SingleLineVoters
         namedVoters={namedVoters}
@@ -172,7 +153,7 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   return (
     <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
       <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>
-        {voters.length} {icon}
+        {voters.length} 👥
       </span>
 
       {namedVoters.map((voter, index) => {
@@ -224,23 +205,22 @@ function SingleLineVoters({
   const [overflow, setOverflow] = useState(0);
 
   const totalItems = namedVoters.length + (adjustedAnonymousCount > 0 ? 1 : 0);
-  const GAP = 6; // matches gap-1.5
+  const GAP = 6; // matches Tailwind gap-1.5
 
-  // Re-measure on size change and whenever the item set changes.
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const measure = () => {
-      const containerWidth = el.clientWidth;
       const items: HTMLElement[] = [];
       for (const ref of bubbleRefs.current) {
         if (ref) items.push(ref);
       }
       if (anonRef.current) items.push(anonRef.current);
-      // Temporarily ensure all items are visible for measurement.
+      // Make every item visible before measuring; React controls the +N
+      // badge's own visibility via the `overflow` state / style prop.
       for (const it of items) it.style.display = '';
-      if (plusRef.current) plusRef.current.style.display = '';
       const plusWidth = plusRef.current ? plusRef.current.offsetWidth : 0;
+      const containerWidth = el.clientWidth;
       let used = 0;
       let fit = 0;
       for (let i = 0; i < items.length; i++) {
@@ -254,12 +234,10 @@ function SingleLineVoters({
           break;
         }
       }
-      const hidden = items.length - fit;
       for (let i = 0; i < items.length; i++) {
         items[i].style.display = i < fit ? '' : 'none';
       }
-      if (plusRef.current) plusRef.current.style.display = hidden > 0 ? '' : 'none';
-      setOverflow(hidden);
+      setOverflow(items.length - fit);
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -300,7 +278,7 @@ function SingleLineVoters({
       <span
         ref={plusRef}
         className="inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
-        style={{ display: overflow > 0 ? '' : 'none' }}
+        style={{ display: overflow > 0 ? undefined : 'none' }}
       >
         +{overflow}
       </span>

@@ -18,7 +18,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
@@ -153,7 +153,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
-  const [voterListRefresh, setVoterListRefresh] = useState(0);
 
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
@@ -1404,9 +1403,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setOptionsMetadataLocal(prev => ({ ...prev, ...suggestionMetadata }));
       }
 
-      // Trigger voter list refresh immediately
-      setVoterListRefresh(prev => prev + 1);
-      window.dispatchEvent(new CustomEvent('poll:votesChanged', { detail: { pollId: poll.id } }));
+      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: poll.id } }));
 
       // Start deferred availability deadline on first time poll availability submission
       if (poll.poll_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
@@ -2276,7 +2273,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     setVoterName={setVoterName}
                     handleVoteClick={handleVoteClick}
                     voteError={voteError}
-                    voterListRefresh={voterListRefresh}
                     optionsMetadata={optionsMetadataLocal}
                     canSubmitSuggestions={canSubmitSuggestions}
                     canSubmitRankings={canSubmitRankings}

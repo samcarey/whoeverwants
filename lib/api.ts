@@ -37,6 +37,11 @@ function getApiEndpoint(endpoint: string): string {
 
 const API_BASE = getApiEndpoint('polls');
 
+// Dispatched on `window` with `{ detail: { pollId } }` after any vote mutation
+// so VoterList instances refresh immediately instead of waiting for the poll
+// interval. Mirrors the existing `poll:updated` channel for metadata changes.
+export const POLL_VOTES_CHANGED_EVENT = 'poll:votesChanged';
+
 // --- Vote types matching the Python VoteResponse model ---
 
 export interface ApiVote {

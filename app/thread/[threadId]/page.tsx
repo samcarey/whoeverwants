@@ -714,11 +714,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   )}
                 </div>
 
-                {/* Respondent list under the card: one line, right-aligned to
-                     the card edge, capped at 75% of card width. Overflow
-                     collapses into a trailing "+N" badge. During the suggestion
-                     phase we narrow to respondents who actually engaged with
-                     it (suggested or abstained). */}
                 <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">
                   <ClientOnly fallback={null}>
                     <VoterList
