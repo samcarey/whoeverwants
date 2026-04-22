@@ -211,7 +211,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
   return (
     <div className="flex items-end justify-between gap-2">
-      <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
+      <div className="whitespace-nowrap pb-0.5 ml-3">{abstainContent}</div>
       <div className="grid grid-cols-2 gap-x-2 gap-y-0 items-stretch">
         {renderCard('yes')}
         {renderCard('no')}
