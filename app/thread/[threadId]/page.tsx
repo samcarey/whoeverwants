@@ -507,7 +507,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
             const isAwaiting = isAwaitingResponse(poll);
-            const showAwaitingHeader = idx === firstAwaitingIdx && firstAwaitingIdx > 0;
+            const showAwaitingHeader = idx === firstAwaitingIdx && firstAwaitingIdx !== -1;
 
             const handleTouchStart = (e: React.TouchEvent) => {
               isLongPress.current = false;
@@ -665,7 +665,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border border-gray-200 dark:border-gray-800 ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isAwaiting ? 'shadow-[0_0_12px_2px_rgba(59,130,246,0.25)] dark:shadow-[0_0_12px_2px_rgba(96,165,250,0.35)]' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
