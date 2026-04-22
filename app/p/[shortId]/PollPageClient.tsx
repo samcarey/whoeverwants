@@ -12,14 +12,13 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 
-import VoterList from "@/components/VoterList";
 import PollManagementButtons from "@/components/PollManagementButtons";
 
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, ApiVote } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
@@ -154,10 +153,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
   const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
-  const [voterListRefresh, setVoterListRefresh] = useState(0);
-
-  // Stable filter callbacks for VoterList
-  const suggestionsVoterFilter = useCallback((v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0), []);
 
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
@@ -1408,8 +1403,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setOptionsMetadataLocal(prev => ({ ...prev, ...suggestionMetadata }));
       }
 
-      // Trigger voter list refresh immediately
-      setVoterListRefresh(prev => prev + 1);
+      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: poll.id } }));
 
       // Start deferred availability deadline on first time poll availability submission
       if (poll.poll_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
@@ -1658,13 +1652,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
         )}
 
-        {/* Voter list for closed polls - always shown after Follow-up button */}
-        {isPollClosed && (
-          <div className="mt-4">
-            <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-          </div>
-        )}
-
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
@@ -1744,12 +1731,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     )}
                   </div>
 
-                  {/* Voter list for open yes/no polls */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -1876,12 +1857,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </>
                     )}
                   </div>
-
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -2031,12 +2006,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       )}
                     </div>
                   ) : null}
-
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && (
-                    <div className="mt-4">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -2244,13 +2213,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                       </div>
                     ) : null}
                   </div>
-
-                  {/* Voter list for non-suggestion ranked choice polls */}
-                  {!isPollClosed && hasVoted && !isLoadingVoteData && !hasSuggestionPhase && (
-                    <div className="mt-4">
-                      <VoterList pollId={poll.id} refreshTrigger={voterListRefresh} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 <>
@@ -2311,7 +2273,6 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
                     setVoterName={setVoterName}
                     handleVoteClick={handleVoteClick}
                     voteError={voteError}
-                    voterListRefresh={voterListRefresh}
                     optionsMetadata={optionsMetadataLocal}
                     canSubmitSuggestions={canSubmitSuggestions}
                     canSubmitRankings={canSubmitRankings}

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { apiGetVotes, ApiVote } from '@/lib/api';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { apiGetVotes, ApiVote, POLL_VOTES_CHANGED_EVENT } from '@/lib/api';
 
 interface Voter {
   id: string;
@@ -11,12 +11,14 @@ interface Voter {
 interface VoterListProps {
   pollId: string;
   className?: string;
-  refreshTrigger?: number;
   label?: string;
   filter?: (vote: ApiVote) => boolean;
+  /** Single-line overflow mode: hides icon + count, renders one row, and
+   *  collapses overflow into a "+N" badge. Used under thread poll cards. */
+  singleLine?: boolean;
 }
 
-export default function VoterList({ pollId, className = "", refreshTrigger, label, filter }: VoterListProps) {
+export default function VoterList({ pollId, className = "", label, filter, singleLine = false }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,15 +57,25 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
   }, [pollId, fetchVoters]);
 
   useEffect(() => {
-    if (refreshTrigger && pollId) {
-      fetchVoters();
-    }
-  }, [refreshTrigger, pollId, fetchVoters]);
+    if (!pollId) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
+      if (detail?.pollId === pollId) fetchVoters();
+    };
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+  }, [pollId, fetchVoters]);
 
   if (initialLoading) {
     return (
-      <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
-        <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>👥</span>
+      <div
+        className={`flex items-center gap-1.5 ${
+          singleLine ? 'overflow-hidden whitespace-nowrap' : 'flex-wrap justify-center'
+        } ${className}`}
+      >
+        {!singleLine && (
+          <span className="text-sm text-gray-500 dark:text-gray-400 mr-0.5" title={label || "Respondents"}>👥</span>
+        )}
         {[1, 2, 3].map((i) => (
           <div
             key={i}
@@ -79,7 +91,6 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
     return null;
   }
 
-  // Get current user's vote ID from localStorage
   const getUserVoteId = (): string | null => {
     if (typeof window === 'undefined') return null;
     try {
@@ -115,17 +126,29 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
 
   const getVoterColor = (index: number) => {
     const colors = [
-      'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-      'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
-      'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-      'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
-      'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+      'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+      'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+      'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+      'bg-pink-50 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+      'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+      'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+      'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+      'bg-teal-50 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
     ];
     return colors[index % colors.length];
   };
+
+  if (singleLine) {
+    return (
+      <SingleLineVoters
+        namedVoters={namedVoters}
+        currentUserVoteId={currentUserVote?.id ?? null}
+        adjustedAnonymousCount={adjustedAnonymousCount}
+        getVoterColor={getVoterColor}
+        className={className}
+      />
+    );
+  }
 
   return (
     <div className={`flex flex-wrap items-center justify-center gap-1.5 ${className}`}>
@@ -156,6 +179,109 @@ export default function VoterList({ pollId, className = "", refreshTrigger, labe
           {adjustedAnonymousCount} × Anon
         </span>
       )}
+    </div>
+  );
+}
+
+interface SingleLineVotersProps {
+  namedVoters: Voter[];
+  currentUserVoteId: string | null;
+  adjustedAnonymousCount: number;
+  getVoterColor: (index: number) => string;
+  className: string;
+}
+
+function SingleLineVoters({
+  namedVoters,
+  currentUserVoteId,
+  adjustedAnonymousCount,
+  getVoterColor,
+  className,
+}: SingleLineVotersProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const bubbleRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const anonRef = useRef<HTMLSpanElement | null>(null);
+  const plusRef = useRef<HTMLSpanElement | null>(null);
+  const [overflow, setOverflow] = useState(0);
+
+  const totalItems = namedVoters.length + (adjustedAnonymousCount > 0 ? 1 : 0);
+  const GAP = 6; // matches Tailwind gap-1.5
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const items: HTMLElement[] = [];
+      for (const ref of bubbleRefs.current) {
+        if (ref) items.push(ref);
+      }
+      if (anonRef.current) items.push(anonRef.current);
+      // Make every item visible before measuring; React controls the +N
+      // badge's own visibility via the `overflow` state / style prop.
+      for (const it of items) it.style.display = '';
+      const plusWidth = plusRef.current ? plusRef.current.offsetWidth : 0;
+      const containerWidth = el.clientWidth;
+      let used = 0;
+      let fit = 0;
+      for (let i = 0; i < items.length; i++) {
+        const w = items[i].offsetWidth + (i > 0 ? GAP : 0);
+        const remaining = items.length - (i + 1);
+        const reservePlus = remaining > 0 ? GAP + plusWidth : 0;
+        if (used + w + reservePlus <= containerWidth) {
+          used += w;
+          fit++;
+        } else {
+          break;
+        }
+      }
+      for (let i = 0; i < items.length; i++) {
+        items[i].style.display = i < fit ? '' : 'none';
+      }
+      setOverflow(items.length - fit);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [totalItems]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
+    >
+      {namedVoters.map((voter, index) => {
+        const isCurrentUser = currentUserVoteId && voter.id === currentUserVoteId;
+        const displayName = isCurrentUser
+          ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
+          : voter.voter_name;
+        return (
+          <span
+            key={voter.id}
+            ref={(el) => { bubbleRefs.current[index] = el; }}
+            className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs ${
+              isCurrentUser ? 'font-bold ring-2 ring-blue-500 dark:ring-blue-400' : 'font-medium'
+            } ${getVoterColor(index)}`}
+          >
+            {displayName}
+          </span>
+        );
+      })}
+      {adjustedAnonymousCount > 0 && (
+        <span
+          ref={anonRef}
+          className="inline-block shrink-0 px-2.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic"
+        >
+          {adjustedAnonymousCount} × Anon
+        </span>
+      )}
+      <span
+        ref={plusRef}
+        className="inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+        style={{ display: overflow > 0 ? undefined : 'none' }}
+      >
+        +{overflow}
+      </span>
     </div>
   );
 }

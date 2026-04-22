@@ -236,7 +236,7 @@ export default function SuggestionVotingInterface({
         {/* Suggestion respondents */}
         {!isPollClosed && !isLoadingVoteData && (
           <div className="mt-5">
-            <VoterList pollId={poll.id} refreshTrigger={0} label="Suggested" filter={hasSuggestions} />
+            <VoterList pollId={poll.id} label="Suggested" filter={hasSuggestions} />
           </div>
         )}
 

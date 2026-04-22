@@ -19,12 +19,20 @@ import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RespondentCircles from "@/components/RespondentCircles";
+import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
+import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
 import type { Thread } from "@/lib/threadUtils";
+
+// Stable filter: votes submitted during the suggestion phase (gave suggestions
+// or fully abstained from suggestions). Declared at module scope so VoterList
+// doesn't re-run its effect on every parent render.
+const suggestionPhaseRespondentFilter = (v: ApiVote) =>
+  !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
 interface ThreadContentProps {
   threadId: string;
@@ -667,17 +675,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     </div>
                   </div>
 
-                  {isOpen && (
+                  {isOpen && !isVoted && (
                     <div className="flex items-center justify-end gap-2 mt-1">
-                      {!isVoted && (
-                        <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
-                          Not voted
-                        </span>
-                      )}
-                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
-                        {(poll.response_count ?? 0) > 0
-                          ? `${poll.response_count} ${poll.response_count === 1 ? 'response' : 'responses'}`
-                          : 'No responses yet'}
+                      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                        Not voted
                       </span>
                     </div>
                   )}
@@ -711,6 +712,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">
+                  <ClientOnly fallback={null}>
+                    <VoterList
+                      pollId={poll.id}
+                      singleLine
+                      className="max-w-[75%]"
+                      filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
+                    />
+                  </ClientOnly>
                 </div>
               </div>
             );
