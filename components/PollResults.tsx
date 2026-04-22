@@ -88,7 +88,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   const noIsWinner = winner === 'no';
   const isTie = winner === 'tie';
 
-  const renderCard = (side: 'yes' | 'no') => {
+  const renderCardRow = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
     const count = isYes ? yesCount : noCount;
     const percentage = isYes ? yesPercentage : noPercentage;
@@ -127,52 +127,57 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
       : 'text-gray-500 dark:text-gray-400';
 
     const interactive = canChangeVote && !userVoted;
-    const cardClasses = `px-3 py-1.5 rounded-lg border-2 transition-all w-full text-left ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    // Fixed column widths keep % / label / count aligned between the two
+    // cards (both cards share this exact grid template, so digits + labels
+    // line up no matter what the values are). Card width stays content-sized.
+    const cardClasses = `grid grid-cols-[3.25rem_2rem_4rem] gap-2 items-baseline px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
 
-    // "Your Vote" pill sits flush-left; %, label, and vote count flush-right
-    // so the layout reads the same whether or not there's a pill.
-    const content = (
-      <div className="flex items-center gap-2">
-        {userVoted && (
-          <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full">
-            Your Vote
-          </span>
-        )}
-        <div className="ml-auto flex items-baseline gap-2">
-          <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
-            {percentage}%
-          </span>
-          <span className={`text-base ${labelClass}`}>
-            {label}
-          </span>
-          <span className={`text-xs ${countClass}`}>
-            {count} vote{count !== 1 ? 's' : ''}
-          </span>
-        </div>
-      </div>
+    const cardInner = (
+      <>
+        <span className={`text-right tabular-nums text-xl font-bold ${percentClass}`}>
+          {percentage}%
+        </span>
+        <span className={`text-center text-base ${labelClass}`}>
+          {label}
+        </span>
+        <span className={`text-left text-xs tabular-nums ${countClass}`}>
+          {count} vote{count !== 1 ? 's' : ''}
+        </span>
+      </>
     );
 
-    if (interactive) {
-      return (
-        <button
-          type="button"
-          onClick={() => onVoteChange!(side)}
-          className={cardClasses}
-        >
-          {content}
-        </button>
-      );
-    }
-    return <div className={cardClasses}>{content}</div>;
+    const card = interactive ? (
+      <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
+        {cardInner}
+      </button>
+    ) : (
+      <div className={cardClasses}>{cardInner}</div>
+    );
+
+    // The pill lives in a fixed-width slot to the LEFT of the card. The slot
+    // is reserved on every row (even without a pill) so both cards share the
+    // same horizontal position.
+    return (
+      <div className="flex items-center gap-2">
+        <div className="w-[4.5rem] shrink-0 flex justify-end">
+          {userVoted && (
+            <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap">
+              Your Vote
+            </span>
+          )}
+        </div>
+        {card}
+      </div>
+    );
   };
 
   // Winner on top. Tie → yes first (arbitrary but stable).
   const topSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
   const bottomSide: 'yes' | 'no' = topSide === 'yes' ? 'no' : 'yes';
 
-  // Abstain row — shown only once the viewer has voted (voteChoice != null).
-  // Already-abstained: informational gold text. Otherwise: tappable text that
-  // matches visual weight so cards + abstain feel like a single control set.
+  // Abstain row — shown only when the card is expanded (hideLoser=false), so
+  // the compact state stays focused on the winner. Already-abstained: gold
+  // info text. Otherwise: tappable gold link that triggers onVoteChange.
   const abstainRow = voteChoice == null ? null : userAbstained ? (
     <div className="mt-1.5 flex justify-end">
       <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -191,24 +196,21 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     </div>
   ) : null;
 
-  // The winner card stays in a stable DOM position; the loser is wrapped in
-  // a grid-rows [0fr↔1fr] clip so hideLoser toggles it smoothly without
-  // re-mounting the winner above it. The inner mt-1.5 gives the 6px gap when
-  // expanded and gets clipped to zero when collapsed. The abstain row sits
-  // outside the clip — users should see their abstain status even when the
-  // card is compact.
+  // The winner row stays in a stable DOM position; the loser row + abstain
+  // row are wrapped in a grid-rows [0fr↔1fr] clip so hideLoser smoothly
+  // collapses them together. w-fit + mx-auto centers the whole block.
   return (
-    <div>
-      {renderCard(topSide)}
+    <div className="w-fit mx-auto">
+      {renderCardRow(topSide)}
       <div
         className={`grid transition-[grid-template-rows] duration-300 ease-out ${hideLoser ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
         aria-hidden={hideLoser}
       >
         <div className="overflow-hidden">
-          <div className="mt-1.5">{renderCard(bottomSide)}</div>
+          <div className="mt-1.5">{renderCardRow(bottomSide)}</div>
+          {abstainRow}
         </div>
       </div>
-      {abstainRow}
     </div>
   );
 }
