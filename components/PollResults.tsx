@@ -210,28 +210,33 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   ) : null;
 
   return (
-    <div className="flex items-end justify-between gap-2">
-      <div className="whitespace-nowrap pb-0.5 ml-[1.125rem]">{abstainContent}</div>
-      <div className="grid grid-cols-2 gap-x-2 gap-y-0 items-stretch mr-3">
-        {renderCard('yes')}
-        {renderCard('no')}
-        {hasStats && (
-          <>
-            <div className={`text-center text-lg font-bold tabular-nums leading-tight pt-0.5 ${sidePercentClass('yes')}`}>
-              {yesPercentage}%
-            </div>
-            <div className={`text-center text-lg font-bold tabular-nums leading-tight pt-0.5 ${sidePercentClass('no')}`}>
-              {noPercentage}%
-            </div>
-            <div className={`text-center text-xs tabular-nums leading-tight ${sideCountClass('yes')}`}>
-              {yesCount} / {totalVotes}
-            </div>
-            <div className={`text-center text-xs tabular-nums leading-tight ${sideCountClass('no')}`}>
-              {noCount} / {totalVotes}
-            </div>
-          </>
-        )}
+    <div>
+      {/* Cards row — items-center vertically aligns the abstain text's
+          center with the cards' center. Stats render on their own row
+          below so they don't skew that alignment. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="whitespace-nowrap ml-[1.125rem]">{abstainContent}</div>
+        <div className="grid grid-cols-2 gap-x-2 items-stretch mr-3">
+          {renderCard('yes')}
+          {renderCard('no')}
+        </div>
       </div>
+      {hasStats && (
+        <div className="flex justify-end mr-3 mt-0.5">
+          <div className="grid grid-cols-2 gap-x-2">
+            <div className="w-24 text-center tabular-nums leading-tight">
+              <span className={`text-lg font-bold ${sidePercentClass('yes')}`}>{yesPercentage}%</span>
+              {' '}
+              <span className={`text-xs ${sideCountClass('yes')}`}>({yesCount})</span>
+            </div>
+            <div className="w-24 text-center tabular-nums leading-tight">
+              <span className={`text-lg font-bold ${sidePercentClass('no')}`}>{noPercentage}%</span>
+              {' '}
+              <span className={`text-xs ${sideCountClass('no')}`}>({noCount})</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
