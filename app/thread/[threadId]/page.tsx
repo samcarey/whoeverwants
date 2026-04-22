@@ -890,7 +890,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
-                    const showPrelim = !isClosed && !!poll.show_preliminary_results && r.total_votes > 0;
                     const userVote = userVoteMap.get(poll.id);
                     // Stop propagation so that tapping an option card or the
                     // Abstain link doesn't bubble up to the compact-header
@@ -914,7 +913,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                               ? undefined
                               : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
                           }
-                          compactLeftLabel={showPrelim ? 'PRELIMINARY' : undefined}
                         />
                       </div>
                     );

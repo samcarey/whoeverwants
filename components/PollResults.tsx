@@ -28,14 +28,11 @@ interface PollResultsProps {
   // tappable — clicking a different option fires onVoteChange(newChoice).
   userVoteChoice?: 'yes' | 'no' | 'abstain' | null;
   onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void;
-  // When the thread view wants to show "PRELIMINARY" inline at the left of
-  // the compact one-line summary (instead of stacked above the block).
-  compactLeftLabel?: string;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange, compactLeftLabel }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} compactLeftLabel={compactLeftLabel} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -53,7 +50,7 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange, compactLeftLabel }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void, compactLeftLabel?: string }) {
+function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -140,26 +137,18 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
+    if (!hasStats) return null;
     return (
-      <div className="flex items-center justify-between gap-2 min-h-[1.5rem]">
-        {compactLeftLabel ? (
-          <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide">
-            {compactLeftLabel}
-          </span>
-        ) : <span />}
-        {hasStats && (
-          <div className="flex items-center gap-2">
-            <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
-              {winnerLabel}
-            </span>
-            <span className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-200">
-              {winnerPct}%
-            </span>
-            <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
-              {winnerCount} / {totalVotes} votes
-            </span>
-          </div>
-        )}
+      <div className="flex items-center justify-end gap-2">
+        <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
+          {winnerLabel}
+        </span>
+        <span className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-200">
+          {winnerPct}%
+        </span>
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
+          {winnerCount} / {totalVotes} votes
+        </span>
       </div>
     );
   }
@@ -167,10 +156,10 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   // --- Expanded view ---
   //
   // The option cards are fixed-width (w-24) and right-justified in the
-  // thread card. The Your-Vote pill floats in a row ABOVE the chosen card,
-  // horizontally centered with it. Percentages and vote counts stack on
-  // their own rows under each card; Abstain sits on the left of the same
-  // flex row as the vote counts via items-end bottom-alignment.
+  // thread card. The Your-Vote pill lives INSIDE the chosen card, directly
+  // under the option title. Percentages and vote counts stack on their own
+  // rows under each card; Abstain sits on the left of the same flex row as
+  // the vote counts via items-end bottom-alignment.
   const renderCard = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
     const userVoted = isYes ? userVotedYes : userVotedNo;
@@ -178,8 +167,17 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const containerClass = sideContainer(side);
     const labelClass = sideLabelClass(side);
     const interactive = canVote && !userVoted;
-    const cardClasses = `w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
-    const cardInner = <span className={`text-base ${labelClass}`}>{label}</span>;
+    const cardClasses = `w-24 px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    const cardInner = (
+      <div className="flex flex-col items-center leading-tight">
+        <span className={`text-base ${labelClass}`}>{label}</span>
+        {userVoted && (
+          <span className="mt-1 inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap">
+            Your Vote
+          </span>
+        )}
+      </div>
+    );
     return interactive ? (
       <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
         {cardInner}
@@ -188,12 +186,6 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
       <div className={cardClasses}>{cardInner}</div>
     );
   };
-
-  const YourVotePill = (
-    <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full whitespace-nowrap">
-      Your Vote
-    </span>
-  );
 
   const abstainContent = userAbstained ? (
     <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -209,22 +201,10 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     </button>
   ) : null;
 
-  const showPillRow = userVotedYes || userVotedNo;
-
   return (
     <div className="flex items-end justify-between gap-2">
       <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
-      <div className="grid grid-cols-2 gap-x-2 gap-y-0">
-        {showPillRow && (
-          <>
-            <div className="flex justify-center pb-0.5">
-              {userVotedYes && YourVotePill}
-            </div>
-            <div className="flex justify-center pb-0.5">
-              {userVotedNo && YourVotePill}
-            </div>
-          </>
-        )}
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0 items-stretch">
         {renderCard('yes')}
         {renderCard('no')}
         {hasStats && (
