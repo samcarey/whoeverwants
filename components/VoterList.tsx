@@ -102,27 +102,24 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   };
 
   const currentUserVoteId = getUserVoteId();
-  const currentUserVote = currentUserVoteId
-    ? voters.find(v => v.id === currentUserVoteId)
-    : null;
 
-  let allNamedVoters = voters
+  // Exclude the current user from the respondents list — their poll card
+  // signals their vote state (golden border if they haven't voted).
+  const allNamedVoters = voters
     .filter(vote => vote.voter_name && vote.voter_name.trim() !== '')
     .sort((a, b) => (a.voter_name || '').toLowerCase().localeCompare((b.voter_name || '').toLowerCase()));
 
-  const currentUserIsNamed = currentUserVote && currentUserVote.voter_name && currentUserVote.voter_name.trim() !== '';
-
-  const otherVoters = currentUserIsNamed
-    ? allNamedVoters.filter(v => v.id !== currentUserVote.id)
+  const namedVoters = currentUserVoteId
+    ? allNamedVoters.filter(v => v.id !== currentUserVoteId)
     : allNamedVoters;
 
-  const namedVoters = currentUserVote
-    ? [currentUserVote, ...otherVoters]
-    : otherVoters;
-
-  const adjustedAnonymousCount = currentUserVote && !currentUserIsNamed
-    ? anonymousCount - 1
-    : anonymousCount;
+  const currentUserVote = currentUserVoteId
+    ? voters.find(v => v.id === currentUserVoteId)
+    : null;
+  const currentUserIsAnonymous = !!(
+    currentUserVote && (!currentUserVote.voter_name || currentUserVote.voter_name.trim() === '')
+  );
+  const adjustedAnonymousCount = currentUserIsAnonymous ? anonymousCount - 1 : anonymousCount;
 
   const getVoterColor = (index: number) => {
     const colors = [
@@ -142,7 +139,6 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     return (
       <SingleLineVoters
         namedVoters={namedVoters}
-        currentUserVoteId={currentUserVote?.id ?? null}
         adjustedAnonymousCount={adjustedAnonymousCount}
         getVoterColor={getVoterColor}
         className={className}
@@ -156,25 +152,14 @@ export default function VoterList({ pollId, className = "", label, filter, singl
         {voters.length} 👥
       </span>
 
-      {namedVoters.map((voter, index) => {
-        const isCurrentUser = currentUserVote && voter.id === currentUserVote.id;
-        const displayName = isCurrentUser
-          ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
-          : voter.voter_name;
-
-        return (
-          <span
-            key={voter.id}
-            className={`inline-block px-2.5 py-0.5 rounded-full text-xs ${
-              isCurrentUser
-                ? 'font-bold bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
-                : `font-medium ${getVoterColor(index)}`
-            }`}
-          >
-            {displayName}
-          </span>
-        );
-      })}
+      {namedVoters.map((voter, index) => (
+        <span
+          key={voter.id}
+          className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
+        >
+          {voter.voter_name}
+        </span>
+      ))}
 
       {adjustedAnonymousCount > 0 && (
         <span className="inline-block px-2.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic">
@@ -187,7 +172,6 @@ export default function VoterList({ pollId, className = "", label, filter, singl
 
 interface SingleLineVotersProps {
   namedVoters: Voter[];
-  currentUserVoteId: string | null;
   adjustedAnonymousCount: number;
   getVoterColor: (index: number) => string;
   className: string;
@@ -195,7 +179,6 @@ interface SingleLineVotersProps {
 
 function SingleLineVoters({
   namedVoters,
-  currentUserVoteId,
   adjustedAnonymousCount,
   getVoterColor,
   className,
@@ -252,25 +235,15 @@ function SingleLineVoters({
       ref={containerRef}
       className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
     >
-      {namedVoters.map((voter, index) => {
-        const isCurrentUser = currentUserVoteId && voter.id === currentUserVoteId;
-        const displayName = isCurrentUser
-          ? (voter.voter_name ? `You (${voter.voter_name})` : 'You')
-          : voter.voter_name;
-        return (
-          <span
-            key={voter.id}
-            ref={(el) => { bubbleRefs.current[index] = el; }}
-            className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs ${
-              isCurrentUser
-                ? 'font-bold bg-blue-500 text-white dark:bg-blue-600 dark:text-white'
-                : `font-medium ${getVoterColor(index)}`
-            }`}
-          >
-            {displayName}
-          </span>
-        );
-      })}
+      {namedVoters.map((voter, index) => (
+        <span
+          key={voter.id}
+          ref={(el) => { bubbleRefs.current[index] = el; }}
+          className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
+        >
+          {voter.voter_name}
+        </span>
+      ))}
       {adjustedAnonymousCount > 0 && (
         <span
           ref={anonRef}
