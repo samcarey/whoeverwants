@@ -731,14 +731,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         icon="💡"
                         label="Suggested"
                         filter={suggestionPhaseRespondentFilter}
-                        className="justify-start"
                       />
                     ) : (
                       <VoterList
                         pollId={poll.id}
                         icon="🗳️"
                         label="Voted"
-                        className="justify-start"
                       />
                     )}
                   </ClientOnly>
