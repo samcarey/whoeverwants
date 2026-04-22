@@ -870,8 +870,18 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     const showPrelim = !isClosed && !!poll.show_preliminary_results;
                     if (!isClosed && !showPrelim) return null;
                     const userVote = userVoteMap.get(poll.id);
+                    // Stop propagation so that tapping an option card or the
+                    // Abstain link doesn't bubble up to the compact-header
+                    // tap handler and toggle expand/collapse.
+                    const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
-                      <div className="mt-2">
+                      <div
+                        className="mt-2"
+                        onClick={stopBubble}
+                        onTouchStart={stopBubble}
+                        onTouchEnd={stopBubble}
+                        onTouchMove={stopBubble}
+                      >
                         {showPrelim && (
                           <div className="mb-1 text-[10px] text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
                             Preliminary

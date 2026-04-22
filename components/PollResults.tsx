@@ -129,22 +129,26 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const interactive = canChangeVote && !userVoted;
     const cardClasses = `px-3 py-1.5 rounded-lg border-2 transition-all w-full text-left ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
 
+    // "Your Vote" pill sits flush-left; %, label, and vote count flush-right
+    // so the layout reads the same whether or not there's a pill.
     const content = (
-      <div className="flex items-baseline justify-center gap-2">
-        <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
-          {percentage}%
-        </span>
-        <span className={`text-base ${labelClass}`}>
-          {label}
-        </span>
-        <span className={`text-xs ${countClass}`}>
-          {count} vote{count !== 1 ? 's' : ''}
-        </span>
+      <div className="flex items-center gap-2">
         {userVoted && (
           <span className="inline-block px-2 py-0.5 bg-blue-500 text-white text-[10px] font-medium rounded-full">
             Your Vote
           </span>
         )}
+        <div className="ml-auto flex items-baseline gap-2">
+          <span className={`text-xl font-bold tabular-nums ${percentClass}`}>
+            {percentage}%
+          </span>
+          <span className={`text-base ${labelClass}`}>
+            {label}
+          </span>
+          <span className={`text-xs ${countClass}`}>
+            {count} vote{count !== 1 ? 's' : ''}
+          </span>
+        </div>
       </div>
     );
 
