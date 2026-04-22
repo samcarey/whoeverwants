@@ -908,30 +908,40 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        Animates height via grid-template-rows 0fr ↔ 1fr with overflow
                        hidden on the child, so the natural expanded height is used
                        without JS measurement. */}
-                  {(visiblePollIds.has(poll.id) || isExpanded) && (
-                    <div
-                      data-poll-expand-grid=""
-                      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
-                      aria-hidden={!isExpanded}
-                    >
+                  {(visiblePollIds.has(poll.id) || isExpanded) && (() => {
+                    // For yes_no polls where the external results already
+                    // cover the whole state (voted or closed), PollPageClient
+                    // renders nothing — so drop the mt-3 wrapper gap that
+                    // would otherwise leave a visible empty strip under the
+                    // abstain row.
+                    const pollPageClientEmpty =
+                      poll.poll_type === 'yes_no' &&
+                      (userVoteMap.has(poll.id) || isClosed);
+                    return (
                       <div
-                        className="overflow-hidden"
-                        ref={(el) => {
-                          if (el) expandedWrapperRefs.current.set(poll.id, el);
-                          else expandedWrapperRefs.current.delete(poll.id);
-                        }}
+                        data-poll-expand-grid=""
+                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+                        aria-hidden={!isExpanded}
                       >
-                        <div className="mt-3">
-                          <PollPageClient
-                            poll={poll}
-                            createdDate={formatCreationTimestamp(poll.created_at)}
-                            pollId={poll.id}
-                            externalYesNoResults={poll.poll_type === 'yes_no'}
-                          />
+                        <div
+                          className="overflow-hidden"
+                          ref={(el) => {
+                            if (el) expandedWrapperRefs.current.set(poll.id, el);
+                            else expandedWrapperRefs.current.delete(poll.id);
+                          }}
+                        >
+                          <div className={pollPageClientEmpty ? '' : 'mt-3'}>
+                            <PollPageClient
+                              poll={poll}
+                              createdDate={formatCreationTimestamp(poll.created_at)}
+                              pollId={poll.id}
+                              externalYesNoResults={poll.poll_type === 'yes_no'}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">

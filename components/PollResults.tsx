@@ -127,21 +127,21 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
       : 'text-gray-500 dark:text-gray-400';
 
     const interactive = canChangeVote && !userVoted;
-    // Fixed column widths keep % / label / count aligned between the two
+    // Fixed column widths keep label / % / count aligned between the two
     // cards (both cards share this exact grid template, so digits + labels
     // line up no matter what the values are). Card width stays content-sized.
-    const cardClasses = `grid grid-cols-[3.25rem_2rem_4rem] gap-2 items-baseline px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    const cardClasses = `grid grid-cols-[1.75rem_3.25rem_5.25rem] gap-2 items-baseline px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
 
     const cardInner = (
       <>
+        <span className={`text-left text-base ${labelClass}`}>
+          {label}
+        </span>
         <span className={`text-right tabular-nums text-xl font-bold ${percentClass}`}>
           {percentage}%
         </span>
-        <span className={`text-center text-base ${labelClass}`}>
-          {label}
-        </span>
         <span className={`text-left text-xs tabular-nums ${countClass}`}>
-          {count} vote{count !== 1 ? 's' : ''}
+          {count} / {totalVotes} vote{totalVotes !== 1 ? 's' : ''}
         </span>
       </>
     );
@@ -198,9 +198,10 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
   // The winner row stays in a stable DOM position; the loser row + abstain
   // row are wrapped in a grid-rows [0fr↔1fr] clip so hideLoser smoothly
-  // collapses them together. w-fit + mx-auto centers the whole block.
+  // collapses them together. w-fit + ml-auto right-justifies the block so
+  // the cards sit flush with the right edge of the surrounding card.
   return (
-    <div className="w-fit mx-auto">
+    <div className="w-fit ml-auto">
       {renderCardRow(topSide)}
       <div
         className={`grid transition-[grid-template-rows] duration-300 ease-out ${hideLoser ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
