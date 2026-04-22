@@ -18,11 +18,21 @@ interface PollResultsProps {
   userVoteData?: any;
   onFollowUpClick?: () => void;
   optionsMetadata?: OptionsMetadata | null;
+  // For yes/no polls: keeps the winner card rendered in a stable DOM
+  // position and hides the losing card (via grid-rows animation) when true.
+  // Used by the thread view so the winner doesn't flicker across
+  // expand/collapse transitions.
+  hideLoser?: boolean;
+  // For yes/no polls: the current viewer's choice (if voted). When defined
+  // along with onVoteChange, the option cards + abstain row become
+  // tappable — clicking a different option fires onVoteChange(newChoice).
+  userVoteChoice?: 'yes' | 'no' | 'abstain' | null;
+  onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: PollResultsProps) {
+export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: PollResultsProps) {
   if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} />;
+    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
   }
 
   if (results.poll_type === 'participation') {
@@ -40,124 +50,180 @@ export default function PollResultsDisplay({ results, isPollClosed, userVoteData
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void }) {
+function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
   const noPercentage = results.no_percentage || 0;
   const winner = results.winner;
   const totalVotes = results.total_votes;
-  
-  // Check if user voted and what they voted for (only show on closed polls in development)
-  const userVotedYes = userVoteData?.yes_no_choice === 'yes';
-  const userVotedNo = userVoteData?.yes_no_choice === 'no';
 
-  if (totalVotes === 0) {
+  // Prefer the explicit userVoteChoice prop (used by the thread view) over
+  // the legacy userVoteData shape so callers can drive the badges + abstain
+  // row without needing the full vote object.
+  const voteChoice: 'yes' | 'no' | 'abstain' | null =
+    userVoteChoice !== undefined
+      ? userVoteChoice
+      : userVoteData?.is_abstain
+        ? 'abstain'
+        : userVoteData?.yes_no_choice === 'yes'
+          ? 'yes'
+          : userVoteData?.yes_no_choice === 'no'
+            ? 'no'
+            : null;
+  const userVotedYes = voteChoice === 'yes';
+  const userVotedNo = voteChoice === 'no';
+  const userAbstained = voteChoice === 'abstain';
+  // Cards/abstain are tappable whenever the poll is open and a vote handler
+  // was passed in — including the first-vote case (voteChoice === null).
+  const canVote = !isPollClosed && !!onVoteChange;
+
+  const yesIsWinner = winner === 'yes';
+  const noIsWinner = winner === 'no';
+  const isTie = winner === 'tie';
+
+  const hasStats = totalVotes > 0;
+
+  // Colors per side. When there are no votes yet, treat both sides as
+  // neutral (nobody's winning). Winner gets a colored surface; the loser
+  // stays neutral.
+  const sideContainer = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const isWinner = hasStats && (isYes ? yesIsWinner : noIsWinner);
+    if (isWinner) {
+      return isYes
+        ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-sm'
+        : 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-sm';
+    }
+    if (hasStats && isTie) {
+      return 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600';
+    }
+    return 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600';
+  };
+  const sidePercentClass = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const isWinner = hasStats && (isYes ? yesIsWinner : noIsWinner);
+    if (isWinner) return isYes ? 'text-green-800 dark:text-green-200' : 'text-red-800 dark:text-red-200';
+    if (hasStats && isTie) return 'text-yellow-800 dark:text-yellow-200';
+    return 'text-gray-700 dark:text-gray-300';
+  };
+  const sideLabelClass = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const isWinner = hasStats && (isYes ? yesIsWinner : noIsWinner);
+    if (isWinner) return isYes ? 'text-green-900 dark:text-green-100 font-bold' : 'text-red-900 dark:text-red-100 font-bold';
+    if (hasStats && isTie) return 'text-yellow-900 dark:text-yellow-100 font-bold';
+    return 'text-gray-800 dark:text-gray-200 font-medium';
+  };
+  const sideCountClass = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const isWinner = hasStats && (isYes ? yesIsWinner : noIsWinner);
+    if (isWinner) return isYes ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300';
+    return 'text-gray-500 dark:text-gray-400';
+  };
+
+  // Compact (collapsed) view: a single-line winner pill + stats. Renders
+  // nothing when no votes have been cast yet.
+  if (hideLoser) {
+    const winnerSide: 'yes' | 'no' = noIsWinner ? 'no' : 'yes';
+    const winnerLabel = winnerSide === 'yes' ? 'Yes' : 'No';
+    const winnerPct = winnerSide === 'yes' ? yesPercentage : noPercentage;
+    const winnerCount = winnerSide === 'yes' ? yesCount : noCount;
+    const winnerPillColors = yesIsWinner
+      ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100'
+      : noIsWinner
+        ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
+        : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
+
+    if (!hasStats) return null;
     return (
-      <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400">No Voters</p>
+      <div className="flex items-center justify-end gap-2">
+        <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
+          {winnerLabel}
+        </span>
+        <span className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-200">
+          {winnerPct}%
+        </span>
+        <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
+          {winnerCount} / {totalVotes} votes
+        </span>
       </div>
     );
   }
 
+  const renderCard = (side: 'yes' | 'no') => {
+    const isYes = side === 'yes';
+    const userVoted = isYes ? userVotedYes : userVotedNo;
+    const label = isYes ? 'Yes' : 'No';
+    const containerClass = sideContainer(side);
+    const labelClass = sideLabelClass(side);
+    const interactive = canVote && !userVoted;
+    const cardClasses = `relative w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    // Badge hugs the outer edge of its card so it can't overlap the
+    // neighboring card regardless of which side the viewer voted for.
+    const badgeCornerClass = isYes ? '-top-2 -left-2' : '-top-2 -right-2';
+    const cardInner = (
+      <>
+        {userVoted && (
+          <span className={`absolute ${badgeCornerClass} w-[1.625rem] h-[1.625rem] flex items-center justify-center rounded-full bg-blue-500 text-white shadow`}>
+            <svg className="w-[1.1rem] h-[1.1rem]" fill="none" stroke="currentColor" strokeWidth={4} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        )}
+        <span className={`text-base ${labelClass}`}>{label}</span>
+      </>
+    );
+    return interactive ? (
+      <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
+        {cardInner}
+      </button>
+    ) : (
+      <div className={cardClasses}>{cardInner}</div>
+    );
+  };
+
+  const abstainContent = userAbstained ? (
+    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+      You abstained
+    </span>
+  ) : canVote ? (
+    <button
+      type="button"
+      onClick={() => onVoteChange!('abstain')}
+      className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70"
+    >
+      Abstain
+    </button>
+  ) : null;
+
   return (
     <div>
-      <div className="text-center mb-6">
-        <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">Poll Results</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {totalVotes} total vote{totalVotes !== 1 ? "s" : ""}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {/* Yes Results */}
-        <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'yes' 
-            ? 'bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 shadow-lg' 
-            : winner === 'tie'
-            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
-            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
-        }`}>
-          <div className="text-center">
-            <div className={`text-2xl font-bold mb-1 ${
-              winner === 'yes' 
-                ? 'text-green-800 dark:text-green-200'
-                : winner === 'tie'
-                ? 'text-yellow-800 dark:text-yellow-200'
-                : 'text-gray-700 dark:text-gray-300'
-            }`}>
-              {yesPercentage}%
-            </div>
-            <div className={`text-lg mb-2 ${
-              winner === 'yes' 
-                ? 'text-green-900 dark:text-green-100 font-bold'
-                : winner === 'tie'
-                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
-                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
-            }`}>
-              Yes
-            </div>
-            <div className={`text-sm ${
-              winner === 'yes' 
-                ? 'text-green-700 dark:text-green-300' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>
-              {yesCount} vote{yesCount !== 1 ? "s" : ""}
-            </div>
-            {userVotedYes && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Vote
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* No Results */}
-        <div className={`p-4 rounded-lg border-2 transition-all ${
-          winner === 'no' 
-            ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 shadow-lg' 
-            : winner === 'tie'
-            ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600'
-            : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600'
-        }`}>
-          <div className="text-center">
-            <div className={`text-2xl font-bold mb-1 ${
-              winner === 'no' 
-                ? 'text-red-800 dark:text-red-200'
-                : winner === 'tie'
-                ? 'text-yellow-800 dark:text-yellow-200'
-                : 'text-gray-700 dark:text-gray-300'
-            }`}>
-              {noPercentage}%
-            </div>
-            <div className={`text-lg mb-2 ${
-              winner === 'no' 
-                ? 'text-red-900 dark:text-red-100 font-bold'
-                : winner === 'tie'
-                ? 'text-yellow-900 dark:text-yellow-100 font-bold'
-                : 'text-gray-600/70 dark:text-gray-400/70 font-medium'
-            }`}>
-              No
-            </div>
-            <div className={`text-sm ${
-              winner === 'no' 
-                ? 'text-red-700 dark:text-red-300' 
-                : 'text-gray-500 dark:text-gray-400'
-            }`}>
-              {noCount} vote{noCount !== 1 ? "s" : ""}
-            </div>
-            {userVotedNo && (
-              <div className="mt-2">
-                <span className="inline-block px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full">
-                  Your Vote
-                </span>
-              </div>
-            )}
-          </div>
+      {/* Cards row — items-center vertically aligns the abstain text's
+          center with the cards' center. Stats render on their own row
+          below so they don't skew that alignment. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="whitespace-nowrap ml-[1.125rem]">{abstainContent}</div>
+        <div className="grid grid-cols-2 gap-x-2 items-stretch mr-3">
+          {renderCard('yes')}
+          {renderCard('no')}
         </div>
       </div>
+      {hasStats && (
+        <div className="flex justify-end mr-3 mt-0.5">
+          <div className="grid grid-cols-2 gap-x-2">
+            <div className="w-24 text-center tabular-nums leading-tight">
+              <span className={`text-lg font-bold ${sidePercentClass('yes')}`}>{yesPercentage}%</span>
+              {' '}
+              <span className={`text-xs ${sideCountClass('yes')}`}>({yesCount})</span>
+            </div>
+            <div className="w-24 text-center tabular-nums leading-tight">
+              <span className={`text-lg font-bold ${sidePercentClass('no')}`}>{noPercentage}%</span>
+              {' '}
+              <span className={`text-xs ${sideCountClass('no')}`}>({noCount})</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,13 +6,15 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { getUserName } from "@/lib/userProfile";
+import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, invalidatePoll } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { loadVotedPolls } from "@/lib/votedPollsStorage";
+import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
@@ -23,6 +25,7 @@ import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import PollResultsDisplay from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
@@ -108,6 +111,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // Initialize with the pre-expanded poll (so its content mounts on first paint).
     return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
   });
+  // Per-poll results for the compact winner preview shown above the grid-rows
+  // clip. Fetched lazily when a card enters the viewport. Cache-backed so this
+  // is zero-cost after the first load per poll.
+  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => new Map());
+  // Current viewer's yes_no vote state per poll (resolved from the stored
+  // voteId in localStorage + the poll's vote list). Drives the Your-Vote
+  // badge + tap-to-change flow on the external YesNoResults. voterName is
+  // preserved so edits round-trip cleanly.
+  type UserYesNoVote = { choice: 'yes' | 'no' | 'abstain' | null; voteId: string; voterName: string | null };
+  const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(() => new Map());
+  // Pending vote change awaiting confirmation. { pollId, newChoice }.
+  const [pendingVoteChange, setPendingVoteChange] = useState<
+    { pollId: string; newChoice: 'yes' | 'no' | 'abstain' } | null
+  >(null);
+  const [voteChangeSubmitting, setVoteChangeSubmitting] = useState(false);
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -264,6 +282,126 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // (forget/reopen). Card ref callbacks attach each new card to the live
     // observer automatically.
   }, [!!thread]);
+
+  // Fetch results + viewer's own vote for every yes_no poll that has entered
+  // the viewport. Both calls are coalesced + cache-backed. Results drive the
+  // winner preview; the user's vote drives the Your-Vote badge + tap-to-
+  // change flow. The setState guards compare by field content (not identity)
+  // because apiGetPollResults always allocates a fresh result object even
+  // when the underlying data is unchanged.
+  useEffect(() => {
+    if (!thread) return;
+    let cancelled = false;
+
+    const maybeFetch = async (pollId: string, pollType: string) => {
+      if (pollType !== 'yes_no') return;
+      const voteId = getStoredVoteId(pollId);
+      const [results, votes] = await Promise.all([
+        apiGetPollResults(pollId).catch(() => null),
+        voteId ? apiGetVotes(pollId).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (cancelled) return;
+      if (results) {
+        setPollResultsMap((prev) => {
+          const existing = prev.get(pollId);
+          if (
+            existing &&
+            existing.total_votes === results.total_votes &&
+            existing.yes_count === results.yes_count &&
+            existing.no_count === results.no_count &&
+            existing.winner === results.winner
+          ) {
+            return prev;
+          }
+          const next = new Map(prev);
+          next.set(pollId, results);
+          return next;
+        });
+      }
+      if (voteId && votes) {
+        const mine = votes.find((v) => v.id === voteId);
+        if (!mine) return;
+        const choice = parseYesNoChoice(mine);
+        const voterName = mine.voter_name ?? null;
+        setUserVoteMap((prev) => {
+          const existing = prev.get(pollId);
+          if (existing && existing.voteId === voteId && existing.choice === choice && existing.voterName === voterName) {
+            return prev;
+          }
+          const next = new Map(prev);
+          next.set(pollId, { choice, voteId, voterName });
+          return next;
+        });
+      }
+    };
+
+    for (const poll of thread.polls) {
+      if (!visiblePollIds.has(poll.id)) continue;
+      void maybeFetch(poll.id, poll.poll_type);
+    }
+
+    const onVotesChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
+      const pollId = detail?.pollId;
+      if (!pollId) return;
+      const poll = thread.polls.find((p) => p.id === pollId);
+      if (!poll) return;
+      void maybeFetch(poll.id, poll.poll_type);
+    };
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
+    };
+  }, [thread, visiblePollIds]);
+
+  const confirmVoteChange = async () => {
+    if (!pendingVoteChange) return;
+    const { pollId, newChoice } = pendingVoteChange;
+    const current = userVoteMap.get(pollId);
+    setVoteChangeSubmitting(true);
+    try {
+      let resultVoteId: string;
+      let resultVoterName: string | null;
+      if (current) {
+        const updated = await apiEditVote(pollId, current.voteId, {
+          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+          is_abstain: newChoice === 'abstain',
+          voter_name: current.voterName,
+        });
+        resultVoteId = current.voteId;
+        resultVoterName = updated.voter_name ?? current.voterName;
+      } else {
+        const savedName = getUserName();
+        const submitted = await apiSubmitVote(pollId, {
+          vote_type: 'yes_no',
+          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+          is_abstain: newChoice === 'abstain',
+          voter_name: savedName && savedName.trim() ? savedName.trim() : null,
+        });
+        resultVoteId = submitted.id;
+        resultVoterName = submitted.voter_name ?? null;
+        setStoredVoteId(pollId, resultVoteId);
+      }
+      invalidatePoll(pollId);
+      setUserVoteMap((prev) => {
+        const next = new Map(prev);
+        next.set(pollId, { choice: newChoice, voteId: resultVoteId, voterName: resultVoterName });
+        return next;
+      });
+      setVotedPollFlag(pollId, newChoice === 'abstain' ? 'abstained' : true);
+      const fresh = loadVotedPolls();
+      setVotedPollIds(fresh.votedPollIds);
+      setAbstainedPollIds(fresh.abstainedPollIds);
+      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId } }));
+      setPendingVoteChange(null);
+    } catch (err) {
+      console.error('Vote submit/change failed:', err);
+    } finally {
+      setVoteChangeSubmitting(false);
+    }
+  };
 
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
@@ -705,6 +843,43 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       />
                     </div>
                   </div>
+                  {/* Yes/No results rendered here — above the expand clip —
+                       so the winner card stays in a stable DOM position
+                       across expand/collapse (no remount → no flicker). The
+                       YesNoResults component animates the loser's reveal via
+                       its own grid-rows transition when hideLoser toggles.
+                       PollPageClient below suppresses its own YesNoResults
+                       rendering (externalYesNoResults) to avoid duplication. */}
+                  {poll.poll_type === 'yes_no' && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    const userVote = userVoteMap.get(poll.id);
+                    // Stop propagation so that tapping an option card or the
+                    // Abstain link doesn't bubble up to the compact-header
+                    // tap handler and toggle expand/collapse.
+                    const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
+                    return (
+                      <div
+                        className="mt-2"
+                        onClick={stopBubble}
+                        onTouchStart={stopBubble}
+                        onTouchEnd={stopBubble}
+                        onTouchMove={stopBubble}
+                      >
+                        <PollResultsDisplay
+                          results={r}
+                          isPollClosed={isClosed}
+                          hideLoser={!isExpanded}
+                          userVoteChoice={userVote?.choice ?? null}
+                          onVoteChange={
+                            isClosed
+                              ? undefined
+                              : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
+                          }
+                        />
+                      </div>
+                    );
+                  })()}
                   </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
@@ -712,29 +887,38 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        Animates height via grid-template-rows 0fr ↔ 1fr with overflow
                        hidden on the child, so the natural expanded height is used
                        without JS measurement. */}
-                  {(visiblePollIds.has(poll.id) || isExpanded) && (
-                    <div
-                      data-poll-expand-grid=""
-                      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
-                      aria-hidden={!isExpanded}
-                    >
+                  {(visiblePollIds.has(poll.id) || isExpanded) && (() => {
+                    // For yes_no polls the thread view renders the whole
+                    // voting + results UI externally (via YesNoResults), so
+                    // PollPageClient returns null for its yes_no branch.
+                    // Drop the mt-3 wrapper gap here so nothing empty sits
+                    // under the external block.
+                    const pollPageClientEmpty = poll.poll_type === 'yes_no';
+                    return (
                       <div
-                        className="overflow-hidden"
-                        ref={(el) => {
-                          if (el) expandedWrapperRefs.current.set(poll.id, el);
-                          else expandedWrapperRefs.current.delete(poll.id);
-                        }}
+                        data-poll-expand-grid=""
+                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}
+                        aria-hidden={!isExpanded}
                       >
-                        <div className="mt-3">
-                          <PollPageClient
-                            poll={poll}
-                            createdDate={formatCreationTimestamp(poll.created_at)}
-                            pollId={poll.id}
-                          />
+                        <div
+                          className="overflow-hidden"
+                          ref={(el) => {
+                            if (el) expandedWrapperRefs.current.set(poll.id, el);
+                            else expandedWrapperRefs.current.delete(poll.id);
+                          }}
+                        >
+                          <div className={pollPageClientEmpty ? '' : 'mt-3'}>
+                            <PollPageClient
+                              poll={poll}
+                              createdDate={formatCreationTimestamp(poll.created_at)}
+                              pollId={poll.id}
+                              externalYesNoResults={poll.poll_type === 'yes_no'}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">
@@ -758,6 +942,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         <FollowUpModal
           isOpen={showModal}
           poll={modalPoll}
+          totalVotes={pollResultsMap.get(modalPoll.id)?.total_votes}
           onClose={() => setShowModal(false)}
           showForkButton={false}
           onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
@@ -828,6 +1013,28 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           }
         }}
         onCancel={() => setPendingAction(null)}
+      />
+
+      {/* Yes/No vote-change confirmation — triggered by tapping a non-chosen
+          option (or the Abstain link) on the external YesNoResults card. */}
+      <ConfirmationModal
+        isOpen={!!pendingVoteChange}
+        title="Change vote?"
+        message={
+          pendingVoteChange
+            ? (() => {
+                const current = userVoteMap.get(pendingVoteChange.pollId)?.choice;
+                const label = (c: 'yes' | 'no' | 'abstain' | null | undefined) =>
+                  c === 'abstain' ? 'Abstain' : c === 'yes' ? 'Yes' : c === 'no' ? 'No' : '';
+                return `Change your vote from ${label(current)} to ${label(pendingVoteChange.newChoice)}?`;
+              })()
+            : ''
+        }
+        confirmText={voteChangeSubmitting ? 'Saving…' : 'Change vote'}
+        cancelText="Cancel"
+        confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
+        onConfirm={confirmVoteChange}
+        onCancel={() => setPendingVoteChange(null)}
       />
     </>
   );

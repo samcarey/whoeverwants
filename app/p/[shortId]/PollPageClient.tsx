@@ -34,16 +34,20 @@ import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
-import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot, formatShortDateTime } from "@/lib/timeUtils";
+import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
 interface PollPageClientProps {
   poll: Poll;
   createdDate: string;
   pollId: string | null;
+  // When true, this component skips rendering YesNoResults itself — the
+  // caller (thread view) is rendering them in a stable DOM position above
+  // the expand clip to avoid winner-card flicker across expand/collapse.
+  externalYesNoResults?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults }: PollPageClientProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -1489,8 +1493,14 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
     </button>
   ) : null;
 
+  // When the thread view renders yes/no results externally (to keep the
+  // winner card DOM-stable across expand/collapse), the internal copies of
+  // PollResultsDisplay would duplicate them — so skip them entirely for
+  // yes_no polls in that context.
+  const suppressYesNoHere = !!externalYesNoResults && poll.poll_type === 'yes_no';
+
   const preliminaryResultsBlock = (className: string) => (
-    showPrelimResults && !isPollClosed ? (
+    showPrelimResults && !isPollClosed && !suppressYesNoHere ? (
       <div className={className}>
         <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
           Preliminary Results
@@ -1542,38 +1552,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           </div>
         )}
 
-        {/* Poll status card - show expired, expiring, or manually closed */}
+        {/* Poll status card — only renders deferred-deadline notices. Closed
+             states (max-capacity, manual, expired) are surfaced in the
+             long-press modal so the card body stays focused on results. */}
         {(() => {
           const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
           const now = currentTime || new Date();
           const isExpired = deadline && deadline <= now;
-          
-          // Case 1: Poll was automatically closed due to max capacity
-          if (pollClosed && poll.close_reason === 'max_capacity') {
-            return (
-              <div className="mb-3 text-center">
-                <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                  Poll auto-closed. Capacity reached.
-                </span>
-              </div>
-            );
-          }
 
-          // Case 2: Poll was manually closed (is_closed is true, but might not have reached deadline)
-          if (pollClosed && deadline && deadline > now) {
-            // Manually closed before deadline
-            const closedDate = new Date(); // We'd need to track when it was closed, for now use current
-            return (
-              <div className="mb-3 text-center">
-                <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                  Closed manually on {formatShortDateTime(closedDate)}
-                </span>
-              </div>
-            );
-          }
-
-          // Case 3 (expired + closed) renders nothing here — the
-          // "Expired on <date>" label is surfaced in the long-press modal.
+          // Case 1 (max_capacity), 2 (manual close), 3 (expired + closed) all
+          // render nothing here — the modal owns those labels now.
 
           // Case 4: Poll open, not expired. Live countdown is rendered
           // above the card in the thread view; only deferred-deadline
@@ -1616,11 +1604,11 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
         {/* For suggestion-phase polls, only show after user has submitted rankings, not just suggestions */}
-        {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("pt-2.5")}
+        {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("")}
 
         {/* For closed polls, show results first */}
-        {isPollClosed && (
-          <div className="pt-2.5">
+        {isPollClosed && !suppressYesNoHere && (
+          <div>
             {loadingResults ? (
               <div className="flex justify-center items-center py-3">
                 <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1650,92 +1638,24 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         )}
 
         {/* Show follow-up/fork header for closed polls */}
-        {isPollClosed && (
-          <div className="mt-4">
-            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
+        {isPollClosed && poll.fork_of && (
+          <div className="mt-2">
+            <ForkHeader forkOfPollId={poll.fork_of} />
           </div>
         )}
 
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
-              {isPollClosed ? (
-                <div className="py-6">
-                  {loadingResults ? (
-                    <div className="flex justify-center items-center py-8">
-                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    </div>
-                  ) : pollResults ? (
-                    <>
-                      {/* Results are now shown at the top, only show abstained bubble and button here */}
-                      {userVoteData?.is_abstain && (
-                        <div className="mt-4 flex justify-center">
-                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                              You Abstained
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                    </>
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
-                    </div>
-                  )}
-                </div>
+              {suppressYesNoHere ? (
+                // All yes_no UI (voting, changing, results) is rendered by
+                // the thread view's external YesNoResults — nothing to show
+                // here for any state.
+                null
+              ) : isPollClosed ? (
+                null
               ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-3">
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">Your vote:</h4>
-                      {editVoteButton}
-                    </div>
-                    {isLoadingVoteData ? (
-                      <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
-                          <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                        <span className="font-medium text-gray-600 dark:text-gray-400">Loading your vote...</span>
-                      </div>
-                    ) : (
-                      <div className={`flex items-center p-3 rounded-lg ${
-                        userVoteData?.is_abstain || isAbstaining
-                          ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
-                          : userVoteData?.yes_no_choice === 'yes'
-                            ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
-                            : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
-                      }`}>
-                        <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'bg-yellow-600 text-white'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'bg-green-600 text-white'
-                              : 'bg-red-600 text-white'
-                        }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
-                        </span>
-                        <span className={`font-medium ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'text-yellow-800 dark:text-yellow-200'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'text-green-800 dark:text-green-200'
-                              : 'text-red-800 dark:text-red-200'
-                        }`}>
-                          {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? 'Yes' : 'No'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                </div>
+                null
               ) : (
                 <>
                   <div className="p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">

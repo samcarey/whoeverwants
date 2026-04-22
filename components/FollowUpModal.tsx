@@ -47,8 +47,27 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
   };
 
   const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
-  const expiredText = deadline && deadline <= new Date()
-    ? `Expired on ${formatShortDateTime(deadline)}`
+  const now = new Date();
+  const isExpired = !!(deadline && deadline <= now);
+  const isClosed = !!poll.is_closed;
+
+  // Priority: max-capacity and manual-close messages take precedence over
+  // the plain "Expired on …" label. These used to render inline in the card
+  // status block; they live here now so the card stays focused on results.
+  let closedText: string | null = null;
+  if (isClosed && poll.close_reason === 'max_capacity') {
+    closedText = 'Poll auto-closed. Capacity reached.';
+  } else if (isClosed && poll.close_reason === 'manual') {
+    const closedAt = poll.updated_at ? new Date(poll.updated_at) : null;
+    closedText = closedAt
+      ? `Closed manually on ${formatShortDateTime(closedAt)}`
+      : 'Closed manually';
+  } else if (isExpired) {
+    closedText = `Expired on ${formatShortDateTime(deadline!)}`;
+  }
+
+  const totalVotesText = typeof totalVotes === 'number' && totalVotes > 0
+    ? `${totalVotes} total vote${totalVotes !== 1 ? 's' : ''}`
     : null;
 
   return (
@@ -62,11 +81,22 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
       {/* Modal */}
       <div className="fixed bottom-0 left-0 right-0 z-[110] animate-slide-up">
         <div className="bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl p-6 pb-8">
-          {expiredText && (
-            <div className="mb-4 text-center">
-              <span className="text-sm font-bold text-red-700 dark:text-red-300">
-                {expiredText}
-              </span>
+          {(closedText || totalVotesText) && (
+            <div className="mb-4 text-center space-y-0.5">
+              {closedText && (
+                <div>
+                  <span className="text-sm font-bold text-red-700 dark:text-red-300">
+                    {closedText}
+                  </span>
+                </div>
+              )}
+              {totalVotesText && (
+                <div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {totalVotesText}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           <div className="flex gap-3">
