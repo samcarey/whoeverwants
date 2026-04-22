@@ -166,12 +166,11 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
 
   // --- Expanded view ---
   //
-  // A 4-column grid keeps the two option cards narrow + centered in the
-  // thread card, with a fixed-width badge slot on each side (the Your-Vote
-  // pill sits on whichever side matches the viewer's choice — left slot for
-  // Yes, right slot for No). Row 2 carries percentages (centered under each
-  // card); row 3 carries vote counts with the Abstain button left-justified
-  // in the leftmost slot.
+  // The option cards are fixed-width (w-24) and right-justified in the
+  // thread card. The Your-Vote pill floats in a row ABOVE the chosen card,
+  // horizontally centered with it. Percentages and vote counts stack on
+  // their own rows under each card; Abstain sits on the left of the same
+  // flex row as the vote counts via items-end bottom-alignment.
   const renderCard = (side: 'yes' | 'no') => {
     const isYes = side === 'yes';
     const userVoted = isYes ? userVotedYes : userVotedNo;
@@ -179,7 +178,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const containerClass = sideContainer(side);
     const labelClass = sideLabelClass(side);
     const interactive = canVote && !userVoted;
-    const cardClasses = `w-full text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    const cardClasses = `w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
     const cardInner = <span className={`text-base ${labelClass}`}>{label}</span>;
     return interactive ? (
       <button type="button" onClick={() => onVoteChange!(side)} className={cardClasses}>
@@ -210,49 +209,41 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     </button>
   ) : null;
 
+  const showPillRow = userVotedYes || userVotedNo;
+
   return (
-    <div className="grid grid-cols-[4.5rem_5rem_5rem_4.5rem] gap-x-2 gap-y-1 w-fit mx-auto items-center">
-      {/* Row 1: left badge slot, Yes, No, right badge slot */}
-      <div className="flex justify-end">
-        {userVotedYes && YourVotePill}
-      </div>
-      {renderCard('yes')}
-      {renderCard('no')}
-      <div className="flex justify-start">
-        {userVotedNo && YourVotePill}
-      </div>
-
-      {/* Row 2: percentages under each card */}
-      {hasStats && (
-        <>
-          <div />
-          <div className={`text-center text-lg font-bold tabular-nums ${sidePercentClass('yes')}`}>
-            {yesPercentage}%
-          </div>
-          <div className={`text-center text-lg font-bold tabular-nums ${sidePercentClass('no')}`}>
-            {noPercentage}%
-          </div>
-          <div />
-        </>
-      )}
-
-      {/* Row 3: Abstain on the left, vote counts under each card */}
-      {(abstainContent || hasStats) && (
-        <>
-          <div className="text-left whitespace-nowrap">{abstainContent}</div>
-          {hasStats ? (
-            <div className={`text-center text-xs tabular-nums ${sideCountClass('yes')}`}>
+    <div className="flex items-end justify-between gap-2">
+      <div className="whitespace-nowrap pb-0.5">{abstainContent}</div>
+      <div className="grid grid-cols-2 gap-x-2 gap-y-0">
+        {showPillRow && (
+          <>
+            <div className="flex justify-center pb-0.5">
+              {userVotedYes && YourVotePill}
+            </div>
+            <div className="flex justify-center pb-0.5">
+              {userVotedNo && YourVotePill}
+            </div>
+          </>
+        )}
+        {renderCard('yes')}
+        {renderCard('no')}
+        {hasStats && (
+          <>
+            <div className={`text-center text-lg font-bold tabular-nums leading-tight pt-0.5 ${sidePercentClass('yes')}`}>
+              {yesPercentage}%
+            </div>
+            <div className={`text-center text-lg font-bold tabular-nums leading-tight pt-0.5 ${sidePercentClass('no')}`}>
+              {noPercentage}%
+            </div>
+            <div className={`text-center text-xs tabular-nums leading-tight ${sideCountClass('yes')}`}>
               {yesCount} / {totalVotes}
             </div>
-          ) : <div />}
-          {hasStats ? (
-            <div className={`text-center text-xs tabular-nums ${sideCountClass('no')}`}>
+            <div className={`text-center text-xs tabular-nums leading-tight ${sideCountClass('no')}`}>
               {noCount} / {totalVotes}
             </div>
-          ) : <div />}
-          <div />
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
