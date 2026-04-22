@@ -1403,6 +1403,16 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
         setOptionsMetadataLocal(prev => ({ ...prev, ...suggestionMetadata }));
       }
 
+      // Sync voted/abstained status to localStorage. Must happen BEFORE the
+      // POLL_VOTES_CHANGED_EVENT dispatch below so listeners that re-read
+      // localStorage (e.g. the thread page's awaiting-response border) see
+      // the updated value. Also runs on edits so abstain-via-edit transitions
+      // get recorded (the flag is a one-way set otherwise).
+      markPollAsVoted(poll.id, voteId, isAbstaining);
+      if (!isEditingVote) {
+        setHasPollDataState(true);
+      }
+
       window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: poll.id } }));
 
       // Start deferred availability deadline on first time poll availability submission
@@ -1428,13 +1438,7 @@ export default function PollPageClient({ poll, createdDate, pollId }: PollPageCl
           await fetchPollResults();
         }, 500);
       }
-      
-      // Save vote to localStorage so user can't vote again (only for new votes)
-      if (!isEditingVote) {
-        markPollAsVoted(poll.id, voteId, isAbstaining);
-        // Update hasPollData state
-        setHasPollDataState(true);
-      }
+
       // Record which options the user saw at vote/edit time so we can detect newly added
       // suggestions on future visits and show a "new options available" banner.
       if (hasSuggestionPhase && pollOptions.length > 0) {
