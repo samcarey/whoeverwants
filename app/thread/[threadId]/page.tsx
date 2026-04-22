@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef, Suspense, Fragment } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiReopenPoll } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
@@ -368,6 +368,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return () => window.removeEventListener('poll:updated', handler);
   }, []);
 
+  // Re-read votedPolls from localStorage when a vote is submitted anywhere in
+  // the app. The golden border on awaiting cards reads from these sets, so it
+  // disappears immediately after voting — but the sort order is pinned below
+  // (useMemo keyed on thread identity) so the card doesn't jump positions.
+  useEffect(() => {
+    const handler = () => {
+      const fresh = loadVotedPolls();
+      setVotedPollIds(fresh.votedPollIds);
+      setAbstainedPollIds(fresh.abstainedPollIds);
+    };
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+  }, []);
+
   // Dismiss the creation-time tooltip on any outside click/tap. Attachment is
   // deferred by one tick so the opening event doesn't close it immediately.
   useEffect(() => {
@@ -383,6 +397,33 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       document.removeEventListener('touchstart', close);
     };
   }, [tooltipPollId]);
+
+  // Polls the user hasn't responded to yet (open + not voted/abstained) get
+  // sorted to the bottom of the list and get a golden border. The border reads
+  // from the live voted/abstained state so it disappears immediately on vote,
+  // but the sort order is pinned to the thread's first load (useMemo below so
+  // voting inside a card doesn't re-sort the list underneath the user — the
+  // card stays put until the next refresh).
+  //
+  // Defined above the early returns so the hook call order is stable.
+  const threadPolls = useMemo(() => {
+    if (!thread) return [] as Poll[];
+    const now = new Date();
+    const isOpen = (p: Poll) =>
+      p.response_deadline ? new Date(p.response_deadline) > now && !p.is_closed : !p.is_closed;
+    const awaitingAtLoad = new Set(
+      thread.polls
+        .filter((p) => isOpen(p) && !votedPollIds.has(p.id) && !abstainedPollIds.has(p.id))
+        .map((p) => p.id),
+    );
+    return [...thread.polls].sort((a, b) => {
+      const aAwaiting = awaitingAtLoad.has(a.id);
+      const bAwaiting = awaitingAtLoad.has(b.id);
+      if (aAwaiting !== bAwaiting) return aAwaiting ? 1 : -1;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread]);
 
   // Sync the URL to reflect which card is expanded, using shallow history.replaceState
   // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
@@ -437,21 +478,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const isPollOpen = (poll: Poll) =>
     poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
 
-  // Polls the user hasn't responded to yet get grouped under an "Awaiting
-  // response" header at the bottom of the list, with a faint blue glow on each
-  // card. Closed polls are considered responded regardless of vote status —
-  // the user can't act on them anymore.
+  // Live-state awaiting check. Used only for the golden-border class; the sort
+  // order is pinned by the useMemo above (keyed on thread identity) so voting
+  // inside a card clears the border but doesn't reshuffle the list.
   const isAwaitingResponse = (poll: Poll) =>
     isPollOpen(poll) && !votedPollIds.has(poll.id) && !abstainedPollIds.has(poll.id);
-
-  const threadPolls = [...thread.polls].sort((a, b) => {
-    const aAwaiting = isAwaitingResponse(a);
-    const bAwaiting = isAwaitingResponse(b);
-    if (aAwaiting !== bAwaiting) return aAwaiting ? 1 : -1;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  });
-
-  const firstAwaitingIdx = threadPolls.findIndex(isAwaitingResponse);
 
   return (
     <>
@@ -502,11 +533,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        {threadPolls.map((poll, idx) => {
+        {threadPolls.map((poll) => {
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
             const isAwaiting = isAwaitingResponse(poll);
-            const showAwaitingHeader = idx === firstAwaitingIdx && firstAwaitingIdx !== -1;
 
             const handleTouchStart = (e: React.TouchEvent) => {
               isLongPress.current = false;
@@ -574,17 +604,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             const isExpanded = expandedPollId === poll.id;
 
             return (
-              <Fragment key={poll.id}>
-              {showAwaitingHeader && (
-                <div className="mt-4 mb-3 flex items-center gap-2 px-1">
-                  <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Awaiting response
-                  </span>
-                  <div className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
-                </div>
-              )}
               <div
+                key={poll.id}
                 ref={(el) => {
                   if (el) {
                     el.dataset.pollId = poll.id;
@@ -735,7 +756,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   </ClientOnly>
                 </div>
               </div>
-              </Fragment>
             );
           })}
       </div>
