@@ -239,7 +239,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
       {/* Row 3: Abstain on the left, vote counts under each card */}
       {(abstainContent || hasStats) && (
         <>
-          <div className="text-left">{abstainContent}</div>
+          <div className="text-left whitespace-nowrap">{abstainContent}</div>
           {hasStats ? (
             <div className={`text-center text-xs tabular-nums ${sideCountClass('yes')}`}>
               {yesCount} / {totalVotes}
