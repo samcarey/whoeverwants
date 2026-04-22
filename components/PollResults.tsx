@@ -169,10 +169,15 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     const labelClass = sideLabelClass(side);
     const interactive = canVote && !userVoted;
     const cardClasses = `relative w-24 text-center px-3 py-1.5 rounded-lg border-2 transition-all ${containerClass} ${interactive ? 'cursor-pointer hover:brightness-95 active:scale-[0.99]' : ''}`;
+    // Mirror the checkmark badge to whichever outer corner of the card
+    // hugs the edge of the cards block — upper-LEFT on the Yes (left)
+    // card, upper-RIGHT on the No (right) card — so it never collides
+    // with the neighboring card.
+    const badgeCornerClass = isYes ? '-top-2 -left-2' : '-top-2 -right-2';
     const cardInner = (
       <>
         {userVoted && (
-          <span className="absolute -top-2 -left-2 w-[1.625rem] h-[1.625rem] flex items-center justify-center rounded-full bg-blue-500 text-white shadow">
+          <span className={`absolute ${badgeCornerClass} w-[1.625rem] h-[1.625rem] flex items-center justify-center rounded-full bg-blue-500 text-white shadow`}>
             <svg className="w-[1.1rem] h-[1.1rem]" fill="none" stroke="currentColor" strokeWidth={4} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
