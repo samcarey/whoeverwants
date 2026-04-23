@@ -465,6 +465,11 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
     const poll = toPoll(d);
     if (d.results) {
       poll.results = toPollResults(d.results);
+      // Seed the per-poll results cache too — otherwise every consumer
+      // (thread page, etc.) re-fetches via apiGetPollResults despite the
+      // inline copy already being available, causing layout shift as the
+      // compact preview slot fills in late.
+      cachePollResults(poll.id, poll.results);
     }
     return poll;
   });

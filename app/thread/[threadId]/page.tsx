@@ -65,6 +65,13 @@ const PENDING_ACTION_COPY: Record<PendingActionKind, {
   },
 };
 
+// Min-height for the in-card compact preview slot. Matches the natural
+// height of a loaded pill (text-sm + py-0.5 + 1px border ≈ 26px) so the
+// slot reserves space while results are still loading — without it, the
+// slot mounts at 0px and pushes every card below down once the per-card
+// results fetch resolves (visible as the list "sliding down" on refresh).
+const COMPACT_PREVIEW_MIN_H_CLASS = 'min-h-[26px]';
+
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
 // with the heavy-content expand clip below. mt-2 lives inside the
@@ -77,7 +84,7 @@ function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; chi
       aria-hidden={isExpanded}
     >
       <div className="overflow-hidden">
-        <div className="mt-2">{children}</div>
+        <div className={`mt-2 ${COMPACT_PREVIEW_MIN_H_CLASS}`}>{children}</div>
       </div>
     </div>
   );
@@ -158,9 +165,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
   });
   // Per-poll results for the compact winner preview shown above the grid-rows
-  // clip. Fetched lazily when a card enters the viewport. Cache-backed so this
-  // is zero-cost after the first load per poll.
-  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => new Map());
+  // clip. Seeded synchronously from any inline poll.results that came back with
+  // the accessible-polls fetch (apiGetAccessiblePolls populates these), so the
+  // compact previews render on first paint. Without this seeding, the slot
+  // mounts empty and fills in once the per-card viewport-intersection fetch
+  // resolves — making every card grow ~24-32px and the list slide down on
+  // refresh. The viewport observer still runs to refresh stale entries.
+  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => {
+    const seed = new Map<string, PollResults>();
+    if (initialThread) {
+      for (const p of initialThread.polls) {
+        if (p.results) seed.set(p.id, p.results);
+      }
+    }
+    return seed;
+  });
   // Current viewer's yes_no vote state per poll (resolved from the stored
   // voteId in localStorage + the poll's vote list). Drives the Your-Vote
   // badge + tap-to-change flow on the external YesNoResults. voterName is
@@ -243,6 +262,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           return;
         }
 
+        // Seed inline results into the results map BEFORE swapping in the
+        // thread so the very first render with the loaded thread already has
+        // compact previews — otherwise the slot mounts empty and fills on the
+        // next intersection-observer fetch (slide-down on refresh).
+        setPollResultsMap((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const p of foundThread.polls) {
+            if (p.results && !next.has(p.id)) {
+              next.set(p.id, p.results);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
         setThread(foundThread);
       } catch (err) {
         console.error('Error loading thread:', err);
@@ -913,7 +947,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        rendering (externalYesNoResults) to avoid duplication. */}
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
+                    const expectsContent = (poll.response_count ?? 0) > 0;
+                    // While results are loading on first refresh, reserve
+                    // the slot for cards that will have a preview — keeps
+                    // the list from sliding down once results arrive.
+                    if (!r) {
+                      if (!expectsContent && !isExpanded) return null;
+                      return <div className={`mt-2 ${COMPACT_PREVIEW_MIN_H_CLASS}`} aria-hidden="true" />;
+                    }
                     // When collapsed with 0 voters the compact YesNoResults
                     // renders null (the "No voters" message lives below the
                     // card now); skip the mt-2 wrapper so it doesn't leave an
@@ -953,7 +994,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        Strips" in CLAUDE.md. */}
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
+                    const expectsContent = (poll.response_count ?? 0) > 0;
+                    // Reserve the slot while results load (see yes_no above).
+                    if (!r) {
+                      if (!expectsContent) return null;
+                      return <CompactPreviewClip isExpanded={isExpanded}>{null}</CompactPreviewClip>;
+                    }
                     const inSuggestions = isInSuggestionPhase(poll);
                     // Skip the clip entirely when the preview would be empty
                     // — the "No voters" / "No suggestions yet" message lives
@@ -977,7 +1023,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // card strip — skip the in-card strip entirely.
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
+                    const expectsContent = (poll.response_count ?? 0) > 0;
+                    // Reserve the slot while results load (see yes_no above).
+                    if (!r) {
+                      if (!expectsContent) return null;
+                      return <CompactPreviewClip isExpanded={isExpanded}>{null}</CompactPreviewClip>;
+                    }
                     // Skip the clip when empty — see ranked_choice branch above.
                     const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
                     if (!hasPreview) return null;
