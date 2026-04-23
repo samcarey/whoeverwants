@@ -904,23 +904,33 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {/* Compact preview strips for ranked_choice / suggestion
                        (ranked_choice with a suggestion phase) / time polls.
                        Rendered in the same slot as the yes/no hideLoser
-                       strip (lower-right of the compact card). Mounted
-                       regardless of expansion so the pill stays in a
-                       stable DOM position across expand/collapse — no
-                       remount flicker as the card animates. The full
-                       breakdown still renders below inside the grid-rows
-                       expand clip; the pill acts as a persistent header. */}
+                       strip (lower-right of the compact card). Wrapped in
+                       an INVERSE grid-rows clip that animates to 0 height
+                       as the card expands, in lockstep with the heavy-
+                       content expand clip's growth below. The pill stays
+                       mounted (no remount flicker) but smoothly hands off
+                       its vertical space to the full breakdown — so the
+                       header information isn't redundantly duplicated when
+                       expanded, and the title/copy row gets to use the
+                       reclaimed space cleanly. */}
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
                     return (
-                      <div className="mt-2">
-                        {inSuggestions ? (
-                          <CompactSuggestionPreview results={r} />
-                        ) : (
-                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
-                        )}
+                      <div
+                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
+                        aria-hidden={isExpanded}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="mt-2">
+                            {inSuggestions ? (
+                              <CompactSuggestionPreview results={r} />
+                            ) : (
+                              <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
@@ -931,8 +941,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     return (
-                      <div className="mt-2">
-                        <CompactTimePreview results={r} isPollClosed={isClosed} />
+                      <div
+                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
+                        aria-hidden={isExpanded}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="mt-2">
+                            <CompactTimePreview results={r} isPollClosed={isClosed} />
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
