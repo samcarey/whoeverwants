@@ -2074,7 +2074,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                   )}
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
-                <div className="text-center py-1">
+                <div className="text-center">
                   <button
                     type="button"
                     onClick={() => setIsEditingVote(true)}
