@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -841,7 +841,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
                     <ClientOnly fallback={null}>
                       {(() => {
-                        if (isClosed) return null;
+                        if (isClosed) {
+                          return (
+                            <span className="text-xs text-gray-400 dark:text-gray-500">
+                              Closed {compactDurationSince(poll.updated_at)} ago
+                            </span>
+                          );
+                        }
                         const inSuggestions = isInSuggestionPhase(poll);
                         if (inSuggestions && poll.suggestion_deadline) {
                           return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;

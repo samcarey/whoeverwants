@@ -44,6 +44,23 @@ export function relativeTime(dateStr: string): string {
   return `${years}y ago`;
 }
 
+// Compact single-unit duration string: promotes to the next larger unit only
+// when that unit's count would be at least 2 (e.g. 13d → "13d", 14d → "2w").
+export function compactDurationSince(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const seconds = Math.max(0, Math.floor(diffMs / 1000));
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 120) return `${minutes}m`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(seconds / 86400);
+  if (days < 14) return `${days}d`;
+  if (days < 60) return `${Math.floor(days / 7)}w`;
+  const months = Math.floor(days / 30);
+  if (months < 24) return `${months}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
 export function isInSuggestionPhase(poll: Poll): boolean {
   if (poll.poll_type !== 'ranked_choice') return false;
   if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
