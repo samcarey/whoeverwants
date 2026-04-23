@@ -12,16 +12,13 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 
-import PollManagementButtons from "@/components/PollManagementButtons";
-
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiCutoffSuggestions, apiCutoffAvailability, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
-import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
@@ -88,8 +85,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     return getCachedPollResults(poll.id) ?? null;
   });
   const [loadingResults, setLoadingResults] = useState(false);
-  const [isClosingPoll, setIsClosingPoll] = useState(false);
-  const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
   const [isCuttingOffAvailability, setIsCuttingOffAvailability] = useState(false);
@@ -102,8 +97,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const [manuallyReopened, setManuallyReopened] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
-  const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
-  const [showReopenConfirmModal, setShowReopenConfirmModal] = useState(false);
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
@@ -886,76 +879,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     }
   };
 
-  const handleCloseClick = () => {
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isClosingPoll || (!isCreator && !isDev)) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to close this poll.');
-      return;
-    }
-    
-    setShowCloseConfirmModal(true);
-  };
-
-  const handleReopenClick = () => {
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isReopeningPoll || !isDev) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to reopen this poll.');
-      return;
-    }
-    
-    setShowReopenConfirmModal(true);
-  };
-
-  const handleClosePoll = async () => {
-    setShowCloseConfirmModal(false);
-    
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isClosingPoll || (!isCreator && !isDev)) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to close this poll.');
-      return;
-    }
-    
-    setIsClosingPoll(true);
-    try {
-      // In development mode, use empty string if no creator secret
-      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const updatedPoll = await apiClosePoll(poll.id, secretToUse);
-      invalidatePoll(poll.id);
-      if (updatedPoll) {
-        setPollClosed(true);
-        setManuallyReopened(false); // Reset manually reopened flag when closing
-        // Notify any parent views (e.g. the thread card list) to refresh their
-        // poll state so things like the Reopen action in the long-press modal
-        // see the new is_closed value.
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('poll:updated', {
-            detail: { pollId: poll.id, updates: { is_closed: true, close_reason: 'manual' } },
-          }));
-        }
-        await fetchPollResults();
-      } else {
-        alert('Failed to close poll. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error closing poll:', error);
-      alert('Failed to close poll. Please try again.');
-    } finally {
-      setIsClosingPoll(false);
-    }
-  };
-
   const handleCutoffSuggestionsClick = () => {
     if (isCuttingOffSuggestions || !isCreator) return;
     const creatorSecret = getCreatorSecret(poll.id);
@@ -1027,45 +950,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       alert('Failed to end availability phase. Please try again.');
     } finally {
       setIsCuttingOffAvailability(false);
-    }
-  };
-
-  const handleReopenPoll = async () => {
-    setShowReopenConfirmModal(false);
-    
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isReopeningPoll || !isDev) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to reopen this poll.');
-      return;
-    }
-    
-    setIsReopeningPoll(true);
-    try {
-      // In development mode, use empty string if no creator secret
-      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const updatedPoll = await apiReopenPoll(poll.id, secretToUse);
-      invalidatePoll(poll.id);
-      if (updatedPoll) {
-        setPollClosed(false);
-        setManuallyReopened(true); // Set flag to override deadline expiration
-        setPollResults(null); // Clear results since poll is now open
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('poll:updated', {
-            detail: { pollId: poll.id, updates: { is_closed: false, close_reason: null } },
-          }));
-        }
-      } else {
-        alert('Failed to reopen poll. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error reopening poll:', error);
-      alert('Failed to reopen poll. Please try again.');
-    } finally {
-      setIsReopeningPoll(false);
     }
   };
 
@@ -1502,9 +1386,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const preliminaryResultsBlock = (className: string) => (
     showPrelimResults && !isPollClosed && !suppressYesNoHere ? (
       <div className={className}>
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-          Preliminary Results
-        </div>
         {loadingResults ? (
           <div className="flex justify-center items-center py-3">
             <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1570,22 +1451,17 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
           // "Taking Suggestions" label doesn't surface.
           if (!isPollClosed && !isExpired && deadline) {
             const mins = poll.suggestion_deadline_minutes;
-            const isDeferredSuggestion =
-              inSuggestionPhase && !poll.suggestion_deadline && mins;
             const isDeferredAvailability =
               poll.poll_type === 'time' &&
               inAvailabilityPhase &&
               !suggestionDeadlineOverride &&
               !poll.suggestion_deadline &&
               mins;
-            if (isDeferredSuggestion || isDeferredAvailability) {
-              const label = isDeferredSuggestion
-                ? `Suggestions cutoff ${formatDurationLabel(mins!)} after first suggestion`
-                : `Availability cutoff ${formatDurationLabel(mins!)} after first response`;
+            if (isDeferredAvailability) {
               return (
                 <div className="mb-3 text-center">
                   <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                    {label}
+                    {`Availability cutoff ${formatDurationLabel(mins!)} after first response`}
                   </span>
                 </div>
               );
@@ -2085,58 +1961,15 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                   )}
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
-                <div className="text-center py-3">
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
-                        {pollOptions.length === 2 && !isLoadingVoteData && (
-                          (userAbstainedFromRanking || isAbstaining) ? (
-                            <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
-                              Abstained
-                            </span>
-                          ) : rankedChoices[0] ? (
-                            <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
-                              {rankedChoices[0]}
-                            </span>
-                          ) : null
-                        )}
-                      </div>
-                      {editVoteButton}
-                    </div>
-                    {isLoadingVoteData ? (
-                      <div className="space-y-2">
-                        {[1, 2, 3].map((num) => (
-                          <div key={num} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
-                            <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-2">
-                              <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            </div>
-                            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
-                          </div>
-                        ))}
-                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
-                      </div>
-                    ) : pollOptions.length !== 2 ? (
-                      /* 2-option choice is shown inline in the header */
-                      <div className="space-y-2">
-                        {userAbstainedFromRanking || isAbstaining ? (
-                          <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                            </span>
-                            <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
-                          </div>
-                        ) : (
-                          <ReadOnlyTierCards
-                            tiers={rankedChoiceTiers && rankedChoiceTiers.length > 0 ? rankedChoiceTiers : rankedChoices.map(c => [c])}
-                            optionsMetadata={optionsMetadataLocal}
-                          />
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingVote(true)}
+                    disabled={isLoadingVoteData}
+                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
+                  >
+                    Your Ballot
+                  </button>
                 </div>
               ) : (
                 <>
@@ -2156,8 +1989,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                       isSubmitting={isSubmitting}
                       isPollClosed={!!isPollClosed}
                       isCreator={isCreator}
-                      handleCloseClick={handleCloseClick}
-                      isClosingPoll={isClosingPoll}
                       hasVoted={hasVoted}
                       isEditingVote={isEditingVote}
                       setIsEditingVote={setIsEditingVote}
@@ -2221,7 +2052,8 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
 
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
           {/* For suggestion-phase polls, hide until user has submitted rankings */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && preliminaryResultsBlock("mt-6")}
+          {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && poll.poll_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
@@ -2232,20 +2064,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
           )}
 
 
-          {/* Poll Management Buttons — Close + Cutoff only. Forget and Reopen
-              are both available via the long-press modal on the card. */}
-          {!isPollClosed && isCreator && (
-            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <PollManagementButtons
-                showCloseButton={true}
-                showReopenButton={false}
-                showForgetButton={false}
-                onCloseClick={handleCloseClick}
-                isClosingPoll={isClosingPoll}
-                isReopeningPoll={isReopeningPoll}
-              />
-            </div>
-          )}
       </div>
 
       <ConfirmationModal
@@ -2264,18 +2082,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
       />
-      
-      <ConfirmationModal
-        isOpen={showCloseConfirmModal}
-        onConfirm={handleClosePoll}
-        onCancel={() => setShowCloseConfirmModal(false)}
-        title="Close Poll"
-        message="Are you sure you want to close this poll? This action cannot be undone and voting will end immediately."
-        confirmText="Close Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
-      />
-      
+
       <ConfirmationModal
         isOpen={showCutoffConfirmModal}
         onConfirm={handleCutoffSuggestions}
@@ -2297,21 +2104,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         cancelText="Cancel"
         confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
       />
-
-      <ConfirmationModal
-        isOpen={showReopenConfirmModal}
-        onConfirm={handleReopenPoll}
-        onCancel={() => setShowReopenConfirmModal(false)}
-        title="Reopen Poll"
-        message="Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again."
-        confirmText="Reopen Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
-      />
-
-
-
-
     </>
   );
 }

@@ -6,7 +6,7 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -36,6 +36,34 @@ import type { Thread } from "@/lib/threadUtils";
 // doesn't re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
+
+type PendingActionKind = 'forget' | 'reopen' | 'close';
+
+const PENDING_ACTION_COPY: Record<PendingActionKind, {
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmButtonClass: string;
+}> = {
+  forget: {
+    title: 'Forget poll',
+    message: "This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link.",
+    confirmText: 'Forget Poll',
+    confirmButtonClass: 'bg-yellow-500 hover:bg-yellow-600 text-white',
+  },
+  reopen: {
+    title: 'Reopen Poll',
+    message: 'Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again.',
+    confirmText: 'Reopen Poll',
+    confirmButtonClass: 'bg-green-600 hover:bg-green-700 text-white',
+  },
+  close: {
+    title: 'Close Poll',
+    message: 'Are you sure you want to close this poll? This action cannot be undone and voting will end immediately.',
+    confirmText: 'Close Poll',
+    confirmButtonClass: 'bg-red-600 hover:bg-red-700 text-white',
+  },
+};
 
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
@@ -163,7 +191,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // (forget / reopen). Rendered by a single ConfirmationModal that varies its
   // title/message/handler based on `kind`.
   const [pendingAction, setPendingAction] = useState<
-    { kind: 'forget' | 'reopen'; poll: Poll } | null
+    { kind: PendingActionKind; poll: Poll } | null
   >(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
@@ -819,6 +847,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           // CompactRankedChoicePreview — skip the above-card
                           // badge to avoid duplicating it.
                           if (poll.poll_type === 'ranked_choice') return null;
+                          // Skip the above-card badge for polls with no voters;
+                          // the in-card preview already shows an empty state.
+                          if (poll.results && poll.results.total_votes === 0) return null;
                           const badge = getResultBadge(poll);
                           return (
                             <div className="flex items-center gap-1">
@@ -854,7 +885,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 pb-2 rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-0.5' : 'pb-2'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -1021,26 +1052,26 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               ? () => setPendingAction({ kind: 'reopen', poll: modalPoll })
               : undefined
           }
+          onClosePoll={
+            !modalPoll.is_closed &&
+            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+              ? () => setPendingAction({ kind: 'close', poll: modalPoll })
+              : undefined
+          }
         />
       )}
 
-      {/* Single confirmation for forget + reopen — the two share the same
-           lifecycle (tap → confirm/cancel → optimistic state update). */}
+      {/* Single confirmation for forget + reopen + close — all three share
+           the same lifecycle (tap → confirm/cancel → optimistic state update).
+           Per-kind copy lives in PENDING_ACTION_COPY above. */}
+      {pendingAction && (
       <ConfirmationModal
-        isOpen={!!pendingAction}
-        title={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget poll'}
-        message={
-          pendingAction?.kind === 'reopen'
-            ? 'Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again.'
-            : "This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link."
-        }
-        confirmText={pendingAction?.kind === 'reopen' ? 'Reopen Poll' : 'Forget Poll'}
+        isOpen={true}
+        title={PENDING_ACTION_COPY[pendingAction.kind].title}
+        message={PENDING_ACTION_COPY[pendingAction.kind].message}
+        confirmText={PENDING_ACTION_COPY[pendingAction.kind].confirmText}
         cancelText="Cancel"
-        confirmButtonClass={
-          pendingAction?.kind === 'reopen'
-            ? 'bg-green-600 hover:bg-green-700 text-white'
-            : 'bg-yellow-500 hover:bg-yellow-600 text-white'
-        }
+        confirmButtonClass={PENDING_ACTION_COPY[pendingAction.kind].confirmButtonClass}
         onConfirm={async () => {
           const action = pendingAction;
           if (!action) return;
@@ -1059,7 +1090,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               }
               return { ...prev, polls: remaining };
             });
-          } else {
+          } else if (action.kind === 'reopen') {
             try {
               const secret = getCreatorSecret(action.poll.id) || 'dev-override';
               const updated = await apiReopenPoll(action.poll.id, secret);
@@ -1079,10 +1110,31 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             } catch (err) {
               console.error('Failed to reopen poll:', err);
             }
+          } else {
+            try {
+              const secret = getCreatorSecret(action.poll.id) || '';
+              await apiClosePoll(action.poll.id, secret);
+              invalidatePoll(action.poll.id);
+              setThread((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      polls: prev.polls.map((p) =>
+                        p.id === action.poll.id
+                          ? { ...p, is_closed: true, close_reason: 'manual' }
+                          : p,
+                      ),
+                    }
+                  : prev,
+              );
+            } catch (err) {
+              console.error('Failed to close poll:', err);
+            }
           }
         }}
         onCancel={() => setPendingAction(null)}
       />
+      )}
 
       {/* Yes/No vote-change confirmation — triggered by tapping a non-chosen
           option (or the Abstain link) on the external YesNoResults card. */}

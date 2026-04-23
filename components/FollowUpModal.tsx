@@ -21,9 +21,12 @@ interface FollowUpModalProps {
   // poll is closed AND the caller deems reopening possible (e.g., creator in
   // dev mode).
   onReopen?: () => void;
+  // When provided, renders a Close Poll button on a new row. Only shown when
+  // the poll is open AND the caller deems closing possible (creator or dev).
+  onClosePoll?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete, onReopen }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete, onReopen, onClosePoll }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   // Ignore the synthetic click that fires immediately after the long-press
@@ -154,23 +157,37 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
           </div>
 
           {onReopen && (
-            <div className="flex gap-3 mt-3">
-              <button
-                onClick={() => {
-                  onReopen();
-                  onClose();
-                }}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
-                </svg>
-                Reopen
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                onReopen();
+                onClose();
+              }}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-green-600 hover:bg-green-700 active:bg-green-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v6h6" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20 20v-6h-6" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 9.5A7 7 0 0119 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.5 14.5A7 7 0 015 12" />
+              </svg>
+              Reopen
+            </button>
+          )}
+
+          {onClosePoll && (
+            <button
+              onClick={() => {
+                onClosePoll();
+                onClose();
+              }}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18 6L6 18" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
+              </svg>
+              Close Poll
+            </button>
           )}
 
           {/* Follow-up link — shown at the bottom of the modal when this poll
