@@ -12,8 +12,6 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import ForkHeader from "@/components/ForkHeader";
 import PollList from "@/components/PollList";
 
-import PollManagementButtons from "@/components/PollManagementButtons";
-
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
@@ -2180,20 +2178,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
           )}
 
 
-          {/* Poll Management Buttons — Close + Cutoff only. Forget and Reopen
-              are both available via the long-press modal on the card. */}
-          {!isPollClosed && isCreator && (
-            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <PollManagementButtons
-                showCloseButton={true}
-                showReopenButton={false}
-                showForgetButton={false}
-                onCloseClick={handleCloseClick}
-                isClosingPoll={isClosingPoll}
-                isReopeningPoll={isReopeningPoll}
-              />
-            </div>
-          )}
       </div>
 
       <ConfirmationModal
