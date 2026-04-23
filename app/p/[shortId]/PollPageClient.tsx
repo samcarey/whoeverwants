@@ -21,7 +21,6 @@ import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
 import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
-import ReadOnlyTierCards from "@/components/ReadOnlyTierCards";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
 import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
@@ -2083,57 +2082,14 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
                 <div className="text-center py-3">
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <h4 className="font-medium flex-shrink-0">{pollOptions.length === 2 ? 'Your choice:' : 'Your ranking:'}</h4>
-                        {pollOptions.length === 2 && !isLoadingVoteData && (
-                          (userAbstainedFromRanking || isAbstaining) ? (
-                            <span className="inline-flex items-center px-3 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 rounded-full text-sm font-medium">
-                              Abstained
-                            </span>
-                          ) : rankedChoices[0] ? (
-                            <span className="inline-flex items-center px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm font-medium truncate">
-                              {rankedChoices[0]}
-                            </span>
-                          ) : null
-                        )}
-                      </div>
-                      {editVoteButton}
-                    </div>
-                    {isLoadingVoteData ? (
-                      <div className="space-y-2">
-                        {[1, 2, 3].map((num) => (
-                          <div key={num} className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded animate-pulse">
-                            <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium mr-2">
-                              <svg className="animate-spin h-3 w-3 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                            </div>
-                            <div className="h-4 bg-gray-300 dark:bg-gray-600 rounded w-24"></div>
-                          </div>
-                        ))}
-                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">{pollOptions.length === 2 ? 'Loading your choice...' : 'Loading your ranking...'}</div>
-                      </div>
-                    ) : pollOptions.length !== 2 ? (
-                      /* 2-option choice is shown inline in the header */
-                      <div className="space-y-2">
-                        {userAbstainedFromRanking || isAbstaining ? (
-                          <div className="flex items-center p-3 bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <span className="w-8 h-8 flex-shrink-0 bg-yellow-600 text-white rounded-full flex items-center justify-center text-sm font-bold mr-3">
-                            </span>
-                            <span className="font-medium text-yellow-800 dark:text-yellow-200">Abstained</span>
-                          </div>
-                        ) : (
-                          <ReadOnlyTierCards
-                            tiers={rankedChoiceTiers && rankedChoiceTiers.length > 0 ? rankedChoiceTiers : rankedChoices.map(c => [c])}
-                            optionsMetadata={optionsMetadataLocal}
-                          />
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingVote(true)}
+                    disabled={isLoadingVoteData}
+                    className="text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300 font-medium text-base underline-offset-4 hover:underline transition-colors disabled:opacity-50"
+                  >
+                    Your Ballot
+                  </button>
                 </div>
               ) : (
                 <>
