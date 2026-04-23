@@ -37,6 +37,24 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
+// Inverse grid-rows clip for compact pills in the thread card header:
+// full height when collapsed, 0 when expanded, animating in lockstep
+// with the heavy-content expand clip below. mt-2 lives inside the
+// overflow-hidden child so the margin is clipped along with the pill —
+// moving it to the outer wrapper would leave an 8px gap when expanded.
+function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
+      aria-hidden={isExpanded}
+    >
+      <div className="overflow-hidden">
+        <div className="mt-2">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 interface ThreadContentProps {
   threadId: string;
   initialExpandedPollId?: string | null;
@@ -901,37 +919,22 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     );
                   })()}
-                  {/* Compact preview strips for ranked_choice / suggestion
-                       (ranked_choice with a suggestion phase) / time polls.
-                       Rendered in the same slot as the yes/no hideLoser
-                       strip (lower-right of the compact card). Wrapped in
-                       an INVERSE grid-rows clip that animates to 0 height
-                       as the card expands, in lockstep with the heavy-
-                       content expand clip's growth below. The pill stays
-                       mounted (no remount flicker) but smoothly hands off
-                       its vertical space to the full breakdown — so the
-                       header information isn't redundantly duplicated when
-                       expanded, and the title/copy row gets to use the
-                       reclaimed space cleanly. */}
+                  {/* Compact pill (lower-right of the compact card) wrapped
+                       in an inverse grid-rows clip that collapses to 0
+                       height as the card expands — see "Compact Preview
+                       Strips" in CLAUDE.md. */}
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
                     return (
-                      <div
-                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
-                        aria-hidden={isExpanded}
-                      >
-                        <div className="overflow-hidden">
-                          <div className="mt-2">
-                            {inSuggestions ? (
-                              <CompactSuggestionPreview results={r} />
-                            ) : (
-                              <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                      <CompactPreviewClip isExpanded={isExpanded}>
+                        {inSuggestions ? (
+                          <CompactSuggestionPreview results={r} />
+                        ) : (
+                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
+                        )}
+                      </CompactPreviewClip>
                     );
                   })()}
                   {poll.poll_type === 'time' && (() => {
@@ -941,16 +944,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     return (
-                      <div
-                        className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
-                        aria-hidden={isExpanded}
-                      >
-                        <div className="overflow-hidden">
-                          <div className="mt-2">
-                            <CompactTimePreview results={r} isPollClosed={isClosed} />
-                          </div>
-                        </div>
-                      </div>
+                      <CompactPreviewClip isExpanded={isExpanded}>
+                        <CompactTimePreview results={r} isPollClosed={isClosed} />
+                      </CompactPreviewClip>
                     );
                   })()}
                   </div>{/* /compact header */}
