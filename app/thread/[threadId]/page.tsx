@@ -914,6 +914,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    // When collapsed with 0 voters the compact YesNoResults
+                    // renders null (the "No voters" message lives below the
+                    // card now); skip the mt-2 wrapper so it doesn't leave an
+                    // 8px empty gap in the card.
+                    const hasStats = (r.total_votes || 0) > 0;
+                    if (!isExpanded && !hasStats) return null;
                     const userVote = userVoteMap.get(poll.id);
                     // Stop propagation so that tapping an option card or the
                     // Abstain link doesn't bubble up to the compact-header
@@ -949,6 +955,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
+                    // Skip the clip entirely when the preview would be empty
+                    // — the "No voters" / "No suggestions yet" message lives
+                    // in the respondents row below the card instead.
+                    const hasPreview = inSuggestions
+                      ? (r.suggestion_counts || []).length > 0
+                      : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
+                    if (!hasPreview) return null;
                     return (
                       <CompactPreviewClip isExpanded={isExpanded}>
                         {inSuggestions ? (
@@ -965,6 +978,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    // Skip the clip when empty — see ranked_choice branch above.
+                    const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
+                    if (!hasPreview) return null;
                     return (
                       <CompactPreviewClip isExpanded={isExpanded}>
                         <CompactTimePreview results={r} isPollClosed={isClosed} />
@@ -1019,6 +1035,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       singleLine
                       className="max-w-[75%]"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
+                      emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
                   </ClientOnly>
                 </div>

@@ -16,9 +16,14 @@ interface VoterListProps {
   /** Single-line overflow mode: hides icon + count, renders one row, and
    *  collapses overflow into a "+N" badge. Used under thread poll cards. */
   singleLine?: boolean;
+  /** In singleLine mode: text to render (at the same height as the voter
+   *  bubbles) when there are no voters, so the row doesn't collapse and
+   *  cause layout shift when the initial fetch completes. Ignored in
+   *  multi-line mode. */
+  emptyText?: string;
 }
 
-export default function VoterList({ pollId, className = "", label, filter, singleLine = false }: VoterListProps) {
+export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText }: VoterListProps) {
   const [voters, setVoters] = useState<Voter[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +92,21 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     );
   }
 
-  if (error || voters.length === 0) {
+  if (error) {
+    return null;
+  }
+
+  if (voters.length === 0) {
+    if (singleLine && emptyText) {
+      // Reserve the same vertical space the bubble row would occupy. py-0.5
+      // matches the bubble padding so loading skeletons → empty state →
+      // populated bubbles all render at the same height.
+      return (
+        <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
+          <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{emptyText}</span>
+        </div>
+      );
+    }
     return null;
   }
 
@@ -136,6 +155,16 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   };
 
   if (singleLine) {
+    // Nothing renders when the only voter is the current user (who's excluded
+    // since their state lives on the poll card itself). Fall back to the
+    // empty-text placeholder so the row keeps its height.
+    if (namedVoters.length === 0 && adjustedAnonymousCount === 0 && emptyText) {
+      return (
+        <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
+          <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{emptyText}</span>
+        </div>
+      );
+    }
     return (
       <SingleLineVoters
         namedVoters={namedVoters}

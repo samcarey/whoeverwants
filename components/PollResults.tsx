@@ -137,8 +137,10 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
+    // Empty state is rendered below the card (see the respondents row on the
+    // thread page) instead of here, so the compact header stays minimal.
     if (!hasStats) {
-      return <EmptyNote text="No voters" />;
+      return null;
     }
     return (
       <div className="flex items-center justify-end gap-2">
@@ -812,23 +814,12 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
 
 // Compact single-line previews rendered in the lower-right of the thread
 // card's compact header when collapsed. Mirror the yes/no hideLoser strip.
-
-// mr-[0.4rem] = ~80% beyond the card's px-2 padding so plain text doesn't
-// crowd the border. Pilled content keeps its own internal padding.
-const EMPTY_NOTE_CLASS = "flex items-center justify-end mr-[0.4rem]";
-const EMPTY_TEXT_CLASS = "text-xs text-gray-500 dark:text-gray-400";
+// Empty states (no voters / no suggestions yet) render below the card in the
+// respondents row, not here — see app/thread/[threadId]/page.tsx.
 
 const PILL_CLASS = "inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
 const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
-
-function EmptyNote({ text }: { text: string }) {
-  return (
-    <div className={EMPTY_NOTE_CLASS}>
-      <span className={EMPTY_TEXT_CLASS}>{text}</span>
-    </div>
-  );
-}
 
 // Short "Day 1 PM" / "Day 2:15 AM" label for the compact pill.
 function formatSlotCompact(slot: string): string {
@@ -852,8 +843,9 @@ export function CompactRankedChoicePreview({
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
+  // Empty state is rendered below the card by the respondents row.
   if (totalVotes === 0 || !winner || winner === "tie") {
-    return <EmptyNote text="No voters" />;
+    return null;
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
@@ -874,8 +866,9 @@ export function CompactSuggestionPreview({
   results: PollResults;
 }) {
   const suggestionCount = (results.suggestion_counts || []).length;
+  // Empty state is rendered below the card by the respondents row.
   if (suggestionCount === 0) {
-    return <EmptyNote text="No suggestions yet" />;
+    return null;
   }
   return (
     <div className="flex items-center justify-end gap-2">
@@ -895,8 +888,9 @@ export function CompactTimePreview({
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
+  // Empty state is rendered below the card by the respondents row.
   if (totalVotes === 0 || !winner) {
-    return <EmptyNote text="No voters" />;
+    return null;
   }
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
