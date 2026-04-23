@@ -10,6 +10,8 @@ import {
   formatTimeSlot,
   getBubbleLabel,
   groupSlotsByDay,
+  parseSlotDate,
+  parseSlotStart,
 } from "@/lib/timeUtils";
 
 
@@ -136,11 +138,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
     if (!hasStats) {
-      return (
-        <div className="flex items-center justify-end mr-[0.4rem]">
-          <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
-        </div>
-      );
+      return <EmptyNote text="No voters" />;
     }
     return (
       <div className="flex items-center justify-end gap-2">
@@ -812,30 +810,34 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
   );
 }
 
-// Compact single-line preview components rendered in the lower-right of the
-// thread card's compact header when collapsed. Mirror the shape of the
-// yes/no hideLoser strip: right-justified, text-sm pill + stats. Each
-// component handles its own "no voters yet" / phase-specific empty states.
+// Compact single-line previews rendered in the lower-right of the thread
+// card's compact header when collapsed. Mirror the yes/no hideLoser strip.
 
-// 80% more right-margin than the card's default px-2 (8px → ~14.4px) so the
-// text doesn't feel crowded against the card border. Only applies to
-// non-pill (plain text) messages; pilled content already has internal padding.
-const NO_VOTERS_NOTE = (
-  <div className="flex items-center justify-end mr-[0.4rem]">
-    <span className="text-xs text-gray-500 dark:text-gray-400">No voters</span>
-  </div>
-);
+// mr-[0.4rem] = ~80% beyond the card's px-2 padding so plain text doesn't
+// crowd the border. Pilled content keeps its own internal padding.
+const EMPTY_NOTE_CLASS = "flex items-center justify-end mr-[0.4rem]";
+const EMPTY_TEXT_CLASS = "text-xs text-gray-500 dark:text-gray-400";
 
-// Shortened slot label for the compact pill — day + start time only.
+const PILL_CLASS = "inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
+const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
+const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
+
+function EmptyNote({ text }: { text: string }) {
+  return (
+    <div className={EMPTY_NOTE_CLASS}>
+      <span className={EMPTY_TEXT_CLASS}>{text}</span>
+    </div>
+  );
+}
+
+// Short "Day 1 PM" / "Day 2:15 AM" label for the compact pill.
 function formatSlotCompact(slot: string): string {
   try {
-    const [datePart, timePart] = slot.split(" ");
-    const [startStr] = timePart.split("-");
-    const [h, m] = startStr.split(":").map(Number);
+    const { h, m } = parseSlotStart(slot);
     const ampm = h < 12 ? "AM" : "PM";
     const h12 = h % 12 === 0 ? 12 : h % 12;
     const minSuffix = m === 0 ? "" : `:${String(m).padStart(2, "0")}`;
-    return `${formatDayLabel(datePart)} ${h12}${minSuffix} ${ampm}`;
+    return `${formatDayLabel(parseSlotDate(slot))} ${h12}${minSuffix} ${ampm}`;
   } catch {
     return slot;
   }
@@ -851,16 +853,13 @@ export function CompactRankedChoicePreview({
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
   if (totalVotes === 0 || !winner || winner === "tie") {
-    return NO_VOTERS_NOTE;
+    return <EmptyNote text="No voters" />;
   }
-  const winnerPillColors = isPollClosed
-    ? "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100"
-    : "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className="text-xs shrink-0">🏆</span>
       <span
-        className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem] ${winnerPillColors}`}
+        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={winner}
       >
         {winner}
@@ -874,18 +873,13 @@ export function CompactSuggestionPreview({
 }: {
   results: PollResults;
 }) {
-  const counts = results.suggestion_counts || [];
-  const suggestionCount = counts.length;
+  const suggestionCount = (results.suggestion_counts || []).length;
   if (suggestionCount === 0) {
-    return (
-      <div className="flex items-center justify-end mr-[0.4rem]">
-        <span className="text-xs text-gray-500 dark:text-gray-400">No suggestions yet</span>
-      </div>
-    );
+    return <EmptyNote text="No suggestions yet" />;
   }
   return (
     <div className="flex items-center justify-end gap-2">
-      <span className="inline-block px-3 py-0.5 rounded-full border text-sm font-bold bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100">
+      <span className={`${PILL_CLASS} ${PILL_COLORS_OPEN}`}>
         {suggestionCount} {suggestionCount === 1 ? "suggestion" : "suggestions"}
       </span>
     </div>
@@ -902,16 +896,13 @@ export function CompactTimePreview({
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
   if (totalVotes === 0 || !winner) {
-    return NO_VOTERS_NOTE;
+    return <EmptyNote text="No voters" />;
   }
-  const pillColors = isPollClosed
-    ? "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100"
-    : "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
   return (
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className="text-xs shrink-0">📅</span>
       <span
-        className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem] ${pillColors}`}
+        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={formatTimeSlot(winner)}
       >
         {formatSlotCompact(winner)}
