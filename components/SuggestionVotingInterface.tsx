@@ -7,7 +7,6 @@ import type { ApiVote } from "@/lib/api";
 import SuggestionsList from "@/components/SuggestionsList";
 import CompactNameField from "@/components/CompactNameField";
 import OptionLabel from "@/components/OptionLabel";
-import PollManagementButtons from "@/components/PollManagementButtons";
 import VoterList from "@/components/VoterList";
 
 const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
@@ -27,8 +26,6 @@ interface SuggestionVotingInterfaceProps {
   isSubmitting: boolean;
   isPollClosed: boolean;
   isCreator: boolean;
-  handleCloseClick: () => void;
-  isClosingPoll: boolean;
   hasVoted: boolean;
   isEditingVote: boolean;
   setIsEditingVote: (editing: boolean) => void;
@@ -60,8 +57,6 @@ export default function SuggestionVotingInterface({
   isSubmitting,
   isPollClosed,
   isCreator,
-  handleCloseClick,
-  isClosingPoll,
   hasVoted,
   isEditingVote,
   setIsEditingVote,

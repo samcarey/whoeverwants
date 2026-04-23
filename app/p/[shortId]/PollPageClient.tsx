@@ -16,7 +16,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiClosePoll, apiCutoffSuggestions, apiCutoffAvailability, apiReopenPoll, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiCutoffSuggestions, apiCutoffAvailability, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -85,8 +85,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     return getCachedPollResults(poll.id) ?? null;
   });
   const [loadingResults, setLoadingResults] = useState(false);
-  const [isClosingPoll, setIsClosingPoll] = useState(false);
-  const [isReopeningPoll, setIsReopeningPoll] = useState(false);
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
   const [isCuttingOffAvailability, setIsCuttingOffAvailability] = useState(false);
@@ -99,8 +97,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const [manuallyReopened, setManuallyReopened] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
   const [showVoteConfirmModal, setShowVoteConfirmModal] = useState(false);
-  const [showCloseConfirmModal, setShowCloseConfirmModal] = useState(false);
-  const [showReopenConfirmModal, setShowReopenConfirmModal] = useState(false);
   const [userVoteId, setUserVoteId] = useState<string | null>(null);
   const [userVoteData, setUserVoteData] = useState<any>(null);
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
@@ -883,76 +879,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     }
   };
 
-  const handleCloseClick = () => {
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isClosingPoll || (!isCreator && !isDev)) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to close this poll.');
-      return;
-    }
-    
-    setShowCloseConfirmModal(true);
-  };
-
-  const handleReopenClick = () => {
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isReopeningPoll || !isDev) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to reopen this poll.');
-      return;
-    }
-    
-    setShowReopenConfirmModal(true);
-  };
-
-  const handleClosePoll = async () => {
-    setShowCloseConfirmModal(false);
-    
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isClosingPoll || (!isCreator && !isDev)) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to close this poll.');
-      return;
-    }
-    
-    setIsClosingPoll(true);
-    try {
-      // In development mode, use empty string if no creator secret
-      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const updatedPoll = await apiClosePoll(poll.id, secretToUse);
-      invalidatePoll(poll.id);
-      if (updatedPoll) {
-        setPollClosed(true);
-        setManuallyReopened(false); // Reset manually reopened flag when closing
-        // Notify any parent views (e.g. the thread card list) to refresh their
-        // poll state so things like the Reopen action in the long-press modal
-        // see the new is_closed value.
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('poll:updated', {
-            detail: { pollId: poll.id, updates: { is_closed: true, close_reason: 'manual' } },
-          }));
-        }
-        await fetchPollResults();
-      } else {
-        alert('Failed to close poll. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error closing poll:', error);
-      alert('Failed to close poll. Please try again.');
-    } finally {
-      setIsClosingPoll(false);
-    }
-  };
-
   const handleCutoffSuggestionsClick = () => {
     if (isCuttingOffSuggestions || !isCreator) return;
     const creatorSecret = getCreatorSecret(poll.id);
@@ -1024,45 +950,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       alert('Failed to end availability phase. Please try again.');
     } finally {
       setIsCuttingOffAvailability(false);
-    }
-  };
-
-  const handleReopenPoll = async () => {
-    setShowReopenConfirmModal(false);
-    
-    const isDev = process.env.NODE_ENV === 'development';
-    
-    if (isReopeningPoll || !isDev) return;
-    
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret && !isDev) {
-      alert('You do not have permission to reopen this poll.');
-      return;
-    }
-    
-    setIsReopeningPoll(true);
-    try {
-      // In development mode, use empty string if no creator secret
-      const secretToUse = isDev && !creatorSecret ? '' : creatorSecret || '';
-      const updatedPoll = await apiReopenPoll(poll.id, secretToUse);
-      invalidatePoll(poll.id);
-      if (updatedPoll) {
-        setPollClosed(false);
-        setManuallyReopened(true); // Set flag to override deadline expiration
-        setPollResults(null); // Clear results since poll is now open
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('poll:updated', {
-            detail: { pollId: poll.id, updates: { is_closed: false, close_reason: null } },
-          }));
-        }
-      } else {
-        alert('Failed to reopen poll. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error reopening poll:', error);
-      alert('Failed to reopen poll. Please try again.');
-    } finally {
-      setIsReopeningPoll(false);
     }
   };
 
@@ -2102,8 +1989,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                       isSubmitting={isSubmitting}
                       isPollClosed={!!isPollClosed}
                       isCreator={isCreator}
-                      handleCloseClick={handleCloseClick}
-                      isClosingPoll={isClosingPoll}
                       hasVoted={hasVoted}
                       isEditingVote={isEditingVote}
                       setIsEditingVote={setIsEditingVote}
@@ -2197,18 +2082,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
       />
-      
-      <ConfirmationModal
-        isOpen={showCloseConfirmModal}
-        onConfirm={handleClosePoll}
-        onCancel={() => setShowCloseConfirmModal(false)}
-        title="Close Poll"
-        message="Are you sure you want to close this poll? This action cannot be undone and voting will end immediately."
-        confirmText="Close Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-red-600 hover:bg-red-700 text-white"
-      />
-      
+
       <ConfirmationModal
         isOpen={showCutoffConfirmModal}
         onConfirm={handleCutoffSuggestions}
@@ -2230,21 +2104,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         cancelText="Cancel"
         confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
       />
-
-      <ConfirmationModal
-        isOpen={showReopenConfirmModal}
-        onConfirm={handleReopenPoll}
-        onCancel={() => setShowReopenConfirmModal(false)}
-        title="Reopen Poll"
-        message="Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again."
-        confirmText="Reopen Poll"
-        cancelText="Cancel"
-        confirmButtonClass="bg-green-600 hover:bg-green-700 text-white"
-      />
-
-
-
-
     </>
   );
 }
