@@ -1566,22 +1566,17 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
           // "Taking Suggestions" label doesn't surface.
           if (!isPollClosed && !isExpired && deadline) {
             const mins = poll.suggestion_deadline_minutes;
-            const isDeferredSuggestion =
-              inSuggestionPhase && !poll.suggestion_deadline && mins;
             const isDeferredAvailability =
               poll.poll_type === 'time' &&
               inAvailabilityPhase &&
               !suggestionDeadlineOverride &&
               !poll.suggestion_deadline &&
               mins;
-            if (isDeferredSuggestion || isDeferredAvailability) {
-              const label = isDeferredSuggestion
-                ? `Suggestions cutoff ${formatDurationLabel(mins!)} after first suggestion`
-                : `Availability cutoff ${formatDurationLabel(mins!)} after first response`;
+            if (isDeferredAvailability) {
               return (
                 <div className="mb-3 text-center">
                   <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                    {label}
+                    {`Availability cutoff ${formatDurationLabel(mins!)} after first response`}
                   </span>
                 </div>
               );
