@@ -819,6 +819,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           // CompactRankedChoicePreview — skip the above-card
                           // badge to avoid duplicating it.
                           if (poll.poll_type === 'ranked_choice') return null;
+                          // Skip the above-card badge for polls with no voters;
+                          // the in-card preview already shows an empty state.
+                          if (poll.results && poll.results.total_votes === 0) return null;
                           const badge = getResultBadge(poll);
                           return (
                             <div className="flex items-center gap-1">
