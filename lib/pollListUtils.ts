@@ -5,6 +5,7 @@ export const POLL_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '👍',
   ranked_choice: '🗳️',
   participation: '🙋',
+  time: '📅',
 };
 
 const CLOSED_YES_NO_SYMBOL = '🏆';
@@ -48,6 +49,11 @@ export function isInSuggestionPhase(poll: Poll): boolean {
   if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
   if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
   return false;
+}
+
+export function isInTimeAvailabilityPhase(poll: Poll): boolean {
+  if (poll.poll_type !== 'time') return false;
+  return !poll.options || poll.options.length === 0;
 }
 
 export interface ResultBadge {

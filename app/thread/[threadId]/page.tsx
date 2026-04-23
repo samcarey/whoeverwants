@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -25,7 +25,7 @@ import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
 import PollPageClient from "@/app/p/[shortId]/PollPageClient";
-import PollResultsDisplay from "@/components/PollResults";
+import PollResultsDisplay, { CompactRankedChoicePreview, CompactSuggestionPreview, CompactTimePreview } from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
 
@@ -294,8 +294,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     let cancelled = false;
 
     const maybeFetch = async (pollId: string, pollType: string) => {
-      if (pollType !== 'yes_no') return;
-      const voteId = getStoredVoteId(pollId);
+      // Fetch results for every type that has a compact preview (yes_no,
+      // ranked_choice, time). For ranked_choice the "suggestion phase"
+      // variant reuses the same results (suggestion_counts field populated
+      // pre-cutoff). User-vote fetching is yes_no-only; other types drive
+      // their compact strip off the shared results alone.
+      const wantsResults =
+        pollType === 'yes_no' ||
+        pollType === 'ranked_choice' ||
+        pollType === 'time';
+      if (!wantsResults) return;
+      const voteId = pollType === 'yes_no' ? getStoredVoteId(pollId) : null;
       const [results, votes] = await Promise.all([
         apiGetPollResults(pollId).catch(() => null),
         voteId ? apiGetVotes(pollId).catch(() => null) : Promise.resolve(null),
@@ -309,7 +318,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             existing.total_votes === results.total_votes &&
             existing.yes_count === results.yes_count &&
             existing.no_count === results.no_count &&
-            existing.winner === results.winner
+            existing.winner === results.winner &&
+            (existing.suggestion_counts?.length ?? 0) === (results.suggestion_counts?.length ?? 0)
           ) {
             return prev;
           }
@@ -749,12 +759,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* mt-[7px] splits the difference between the title line-box
-                     center (9px) and its cap-to-baseline center (5px) —
-                     emoji glyphs have varying visual weight, so neither pure
-                     reference reads right across all icons. Tweak this if
-                     icons feel off. */}
-                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[7px]">
+                {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
+                     than line-box centering (9px); emoji glyphs feel slightly
+                     low at the pure line-box center, so we bias upward. */}
+                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[4px]">
                   {getCategoryIcon(poll)}
                 </div>
 
@@ -788,6 +796,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <ClientOnly fallback={null}>
                       {(() => {
                         if (isClosed) {
+                          // Ranked choice (incl. suggestion polls after cutoff)
+                          // renders the winner inside the card via
+                          // CompactRankedChoicePreview — skip the above-card
+                          // badge to avoid duplicating it.
+                          if (poll.poll_type === 'ranked_choice') return null;
                           const badge = getResultBadge(poll);
                           return (
                             <div className="flex items-center gap-1">
@@ -804,6 +817,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         }
                         if (inSuggestions && poll.suggestion_deadline_minutes) {
                           return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                        }
+                        // Time polls in the availability phase get a label
+                        // in the same slot + format as "Taking Suggestions".
+                        if (isInTimeAvailabilityPhase(poll)) {
+                          if (poll.suggestion_deadline) {
+                            return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
+                          }
+                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
                         }
                         if (poll.response_deadline) {
                           return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
@@ -877,6 +898,38 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                               : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
                           }
                         />
+                      </div>
+                    );
+                  })()}
+                  {/* Compact preview strips for ranked_choice / suggestion
+                       (ranked_choice with a suggestion phase) / time polls.
+                       Rendered in the same slot as the yes/no hideLoser
+                       strip (lower-right of the compact card) and hidden
+                       when the card is expanded — the full breakdown then
+                       shows below inside the grid-rows expand clip. */}
+                  {!isExpanded && poll.poll_type === 'ranked_choice' && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    const inSuggestions = isInSuggestionPhase(poll);
+                    return (
+                      <div className="mt-2">
+                        {inSuggestions ? (
+                          <CompactSuggestionPreview results={r} />
+                        ) : (
+                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {!isExpanded && poll.poll_type === 'time' && (() => {
+                    // In availability phase the label lives in the above-
+                    // card strip — skip the in-card strip entirely.
+                    if (isInTimeAvailabilityPhase(poll)) return null;
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    return (
+                      <div className="mt-2">
+                        <CompactTimePreview results={r} isPollClosed={isClosed} />
                       </div>
                     );
                   })()}

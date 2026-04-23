@@ -5,10 +5,13 @@ import { PollResults, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, apiGetParticipants } from "@/lib/api";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import {
+  formatDayLabel,
   formatStackedDayLabel,
   formatTimeSlot,
   getBubbleLabel,
   groupSlotsByDay,
+  parseSlotDate,
+  parseSlotStart,
 } from "@/lib/timeUtils";
 
 
@@ -134,7 +137,9 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
-    if (!hasStats) return null;
+    if (!hasStats) {
+      return <EmptyNote text="No voters" />;
+    }
     return (
       <div className="flex items-center justify-end gap-2">
         <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
@@ -801,6 +806,107 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Compact single-line previews rendered in the lower-right of the thread
+// card's compact header when collapsed. Mirror the yes/no hideLoser strip.
+
+// mr-[0.4rem] = ~80% beyond the card's px-2 padding so plain text doesn't
+// crowd the border. Pilled content keeps its own internal padding.
+const EMPTY_NOTE_CLASS = "flex items-center justify-end mr-[0.4rem]";
+const EMPTY_TEXT_CLASS = "text-xs text-gray-500 dark:text-gray-400";
+
+const PILL_CLASS = "inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
+const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
+const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
+
+function EmptyNote({ text }: { text: string }) {
+  return (
+    <div className={EMPTY_NOTE_CLASS}>
+      <span className={EMPTY_TEXT_CLASS}>{text}</span>
+    </div>
+  );
+}
+
+// Short "Day 1 PM" / "Day 2:15 AM" label for the compact pill.
+function formatSlotCompact(slot: string): string {
+  try {
+    const { h, m } = parseSlotStart(slot);
+    const ampm = h < 12 ? "AM" : "PM";
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const minSuffix = m === 0 ? "" : `:${String(m).padStart(2, "0")}`;
+    return `${formatDayLabel(parseSlotDate(slot))} ${h12}${minSuffix} ${ampm}`;
+  } catch {
+    return slot;
+  }
+}
+
+export function CompactRankedChoicePreview({
+  results,
+  isPollClosed,
+}: {
+  results: PollResults;
+  isPollClosed?: boolean;
+}) {
+  const totalVotes = results.total_votes || 0;
+  const winner = results.winner;
+  if (totalVotes === 0 || !winner || winner === "tie") {
+    return <EmptyNote text="No voters" />;
+  }
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      <span className="text-xs shrink-0">🏆</span>
+      <span
+        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
+        title={winner}
+      >
+        {winner}
+      </span>
+    </div>
+  );
+}
+
+export function CompactSuggestionPreview({
+  results,
+}: {
+  results: PollResults;
+}) {
+  const suggestionCount = (results.suggestion_counts || []).length;
+  if (suggestionCount === 0) {
+    return <EmptyNote text="No suggestions yet" />;
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span className={`${PILL_CLASS} ${PILL_COLORS_OPEN}`}>
+        {suggestionCount} {suggestionCount === 1 ? "suggestion" : "suggestions"}
+      </span>
+    </div>
+  );
+}
+
+export function CompactTimePreview({
+  results,
+  isPollClosed,
+}: {
+  results: PollResults;
+  isPollClosed?: boolean;
+}) {
+  const totalVotes = results.total_votes || 0;
+  const winner = results.winner;
+  if (totalVotes === 0 || !winner) {
+    return <EmptyNote text="No voters" />;
+  }
+  return (
+    <div className="flex items-center justify-end gap-2 min-w-0">
+      <span className="text-xs shrink-0">📅</span>
+      <span
+        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
+        title={formatTimeSlot(winner)}
+      >
+        {formatSlotCompact(winner)}
+      </span>
     </div>
   );
 }
