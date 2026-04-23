@@ -1502,9 +1502,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const preliminaryResultsBlock = (className: string) => (
     showPrelimResults && !isPollClosed && !suppressYesNoHere ? (
       <div className={className}>
-        <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center font-medium uppercase tracking-wide">
-          Preliminary Results
-        </div>
         {loadingResults ? (
           <div className="flex justify-center items-center py-3">
             <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
