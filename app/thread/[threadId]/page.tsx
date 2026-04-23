@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, getResultBadge, BADGE_COLORS } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -842,22 +842,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <ClientOnly fallback={null}>
                       {(() => {
                         if (isClosed) {
-                          // Ranked choice (incl. suggestion polls after cutoff)
-                          // renders the winner inside the card via
-                          // CompactRankedChoicePreview — skip the above-card
-                          // badge to avoid duplicating it.
-                          if (poll.poll_type === 'ranked_choice') return null;
-                          // Skip the above-card badge for polls with no voters;
-                          // the in-card preview already shows an empty state.
-                          if (poll.results && poll.results.total_votes === 0) return null;
-                          const badge = getResultBadge(poll);
+                          const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
+                            ? poll.response_deadline
+                            : poll.updated_at;
                           return (
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs leading-none">{badge.emoji}</span>
-                              <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full truncate ${BADGE_COLORS[badge.color]}`}>
-                                {badge.text}
-                              </span>
-                            </div>
+                            <span className="text-xs text-gray-400 dark:text-gray-500">
+                              Closed {compactDurationSince(closedAt)} ago
+                            </span>
                           );
                         }
                         const inSuggestions = isInSuggestionPhase(poll);
