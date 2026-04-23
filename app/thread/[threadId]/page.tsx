@@ -904,10 +904,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {/* Compact preview strips for ranked_choice / suggestion
                        (ranked_choice with a suggestion phase) / time polls.
                        Rendered in the same slot as the yes/no hideLoser
-                       strip (lower-right of the compact card) and hidden
-                       when the card is expanded — the full breakdown then
-                       shows below inside the grid-rows expand clip. */}
-                  {!isExpanded && poll.poll_type === 'ranked_choice' && (() => {
+                       strip (lower-right of the compact card). Mounted
+                       regardless of expansion so the pill stays in a
+                       stable DOM position across expand/collapse — no
+                       remount flicker as the card animates. The full
+                       breakdown still renders below inside the grid-rows
+                       expand clip; the pill acts as a persistent header. */}
+                  {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
@@ -921,7 +924,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     );
                   })()}
-                  {!isExpanded && poll.poll_type === 'time' && (() => {
+                  {poll.poll_type === 'time' && (() => {
                     // In availability phase the label lives in the above-
                     // card strip — skip the in-card strip entirely.
                     if (isInTimeAvailabilityPhase(poll)) return null;
