@@ -2167,7 +2167,8 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
 
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
           {/* For suggestion-phase polls, hide until user has submitted rankings */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && preliminaryResultsBlock("mt-6")}
+          {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && poll.poll_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
 
           {/* Follow ups to this poll section */}
           {followUpPolls.length > 0 && (
