@@ -2074,12 +2074,12 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                   )}
                 </div>
               ) : hasVoted && !isEditingVote && !canSubmitSuggestions && hasCompletedRanking ? (
-                <div className="text-center py-3">
+                <div className="text-center py-1">
                   <button
                     type="button"
                     onClick={() => setIsEditingVote(true)}
                     disabled={isLoadingVoteData}
-                    className="text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300 font-medium text-base underline-offset-4 hover:underline transition-colors disabled:opacity-50"
+                    className="text-xs text-amber-600 dark:text-amber-400 font-medium hover:underline active:opacity-70 disabled:opacity-50"
                   >
                     Your Ballot
                   </button>
