@@ -842,9 +842,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <ClientOnly fallback={null}>
                       {(() => {
                         if (isClosed) {
+                          const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
+                            ? poll.response_deadline
+                            : poll.updated_at;
                           return (
                             <span className="text-xs text-gray-400 dark:text-gray-500">
-                              Closed {compactDurationSince(poll.updated_at)} ago
+                              Closed {compactDurationSince(closedAt)} ago
                             </span>
                           );
                         }

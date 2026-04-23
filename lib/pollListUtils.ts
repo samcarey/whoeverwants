@@ -44,13 +44,14 @@ export function relativeTime(dateStr: string): string {
   return `${years}y ago`;
 }
 
-// Compact single-unit duration string: promotes to the next larger unit only
-// when that unit's count would be at least 2 (e.g. 13d → "13d", 14d → "2w").
+// Promotes to the next larger unit only when that unit's count would be >= 2,
+// avoiding "1w" / "1mo" / "1y" readings that carry less precision than the
+// smaller unit (e.g. 13d stays "13d"; 14d becomes "2w").
 export function compactDurationSince(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const seconds = Math.max(0, Math.floor(diffMs / 1000));
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 120) return `${minutes}m`;
+  if (minutes < 120) return `${Math.max(1, minutes)}m`;
   const hours = Math.floor(seconds / 3600);
   if (hours < 48) return `${hours}h`;
   const days = Math.floor(seconds / 86400);
