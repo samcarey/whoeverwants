@@ -37,6 +37,24 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
+// Inverse grid-rows clip for compact pills in the thread card header:
+// full height when collapsed, 0 when expanded, animating in lockstep
+// with the heavy-content expand clip below. mt-2 lives inside the
+// overflow-hidden child so the margin is clipped along with the pill —
+// moving it to the outer wrapper would leave an 8px gap when expanded.
+function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
+      aria-hidden={isExpanded}
+    >
+      <div className="overflow-hidden">
+        <div className="mt-2">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 interface ThreadContentProps {
   threadId: string;
   initialExpandedPollId?: string | null;
@@ -901,36 +919,34 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     );
                   })()}
-                  {/* Compact preview strips for ranked_choice / suggestion
-                       (ranked_choice with a suggestion phase) / time polls.
-                       Rendered in the same slot as the yes/no hideLoser
-                       strip (lower-right of the compact card) and hidden
-                       when the card is expanded — the full breakdown then
-                       shows below inside the grid-rows expand clip. */}
-                  {!isExpanded && poll.poll_type === 'ranked_choice' && (() => {
+                  {/* Compact pill (lower-right of the compact card) wrapped
+                       in an inverse grid-rows clip that collapses to 0
+                       height as the card expands — see "Compact Preview
+                       Strips" in CLAUDE.md. */}
+                  {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
                     return (
-                      <div className="mt-2">
+                      <CompactPreviewClip isExpanded={isExpanded}>
                         {inSuggestions ? (
                           <CompactSuggestionPreview results={r} />
                         ) : (
                           <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
                         )}
-                      </div>
+                      </CompactPreviewClip>
                     );
                   })()}
-                  {!isExpanded && poll.poll_type === 'time' && (() => {
+                  {poll.poll_type === 'time' && (() => {
                     // In availability phase the label lives in the above-
                     // card strip — skip the in-card strip entirely.
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
                     return (
-                      <div className="mt-2">
+                      <CompactPreviewClip isExpanded={isExpanded}>
                         <CompactTimePreview results={r} isPollClosed={isClosed} />
-                      </div>
+                      </CompactPreviewClip>
                     );
                   })()}
                   </div>{/* /compact header */}
