@@ -65,13 +65,6 @@ const PENDING_ACTION_COPY: Record<PendingActionKind, {
   },
 };
 
-// Min-height for the in-card compact preview slot. Matches the natural
-// height of a loaded pill (text-sm + py-0.5 + 1px border ≈ 26px) so the
-// slot reserves space while results are still loading — without it, the
-// slot mounts at 0px and pushes every card below down once the per-card
-// results fetch resolves (visible as the list "sliding down" on refresh).
-const COMPACT_PREVIEW_MIN_H_CLASS = 'min-h-[26px]';
-
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
 // with the heavy-content expand clip below. mt-2 lives inside the
@@ -84,7 +77,7 @@ function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; chi
       aria-hidden={isExpanded}
     >
       <div className="overflow-hidden">
-        <div className={`mt-2 ${COMPACT_PREVIEW_MIN_H_CLASS}`}>{children}</div>
+        <div className="mt-2">{children}</div>
       </div>
     </div>
   );
@@ -947,14 +940,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        rendering (externalYesNoResults) to avoid duplication. */}
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
-                    const expectsContent = (poll.response_count ?? 0) > 0;
-                    // While results are loading on first refresh, reserve
-                    // the slot for cards that will have a preview — keeps
-                    // the list from sliding down once results arrive.
-                    if (!r) {
-                      if (!expectsContent && !isExpanded) return null;
-                      return <div className={`mt-2 ${COMPACT_PREVIEW_MIN_H_CLASS}`} aria-hidden="true" />;
-                    }
+                    if (!r) return null;
                     // When collapsed with 0 voters the compact YesNoResults
                     // renders null (the "No voters" message lives below the
                     // card now); skip the mt-2 wrapper so it doesn't leave an
@@ -994,12 +980,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        Strips" in CLAUDE.md. */}
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
-                    const expectsContent = (poll.response_count ?? 0) > 0;
-                    // Reserve the slot while results load (see yes_no above).
-                    if (!r) {
-                      if (!expectsContent) return null;
-                      return <CompactPreviewClip isExpanded={isExpanded}>{null}</CompactPreviewClip>;
-                    }
+                    if (!r) return null;
                     const inSuggestions = isInSuggestionPhase(poll);
                     // Skip the clip entirely when the preview would be empty
                     // — the "No voters" / "No suggestions yet" message lives
@@ -1023,12 +1004,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // card strip — skip the in-card strip entirely.
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
-                    const expectsContent = (poll.response_count ?? 0) > 0;
-                    // Reserve the slot while results load (see yes_no above).
-                    if (!r) {
-                      if (!expectsContent) return null;
-                      return <CompactPreviewClip isExpanded={isExpanded}>{null}</CompactPreviewClip>;
-                    }
+                    if (!r) return null;
                     // Skip the clip when empty — see ranked_choice branch above.
                     const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
                     if (!hasPreview) return null;
