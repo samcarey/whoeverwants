@@ -759,12 +759,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
-                {/* mt-[7px] splits the difference between the title line-box
-                     center (9px) and its cap-to-baseline center (5px) —
-                     emoji glyphs have varying visual weight, so neither pure
-                     reference reads right across all icons. Tweak this if
-                     icons feel off. */}
-                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[7px]">
+                {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
+                     than line-box centering (9px); emoji glyphs feel slightly
+                     low at the pure line-box center, so we bias upward. */}
+                <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[4px]">
                   {getCategoryIcon(poll)}
                 </div>
 
@@ -826,7 +824,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           if (poll.suggestion_deadline) {
                             return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
                           }
-                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting availability</span>;
+                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
                         }
                         if (poll.response_deadline) {
                           return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
