@@ -40,7 +40,7 @@ const HEADLESS = process.env.BENCH_HEADLESS !== '0';
 const CPU_THROTTLE = parseFloat(process.env.BENCH_CPU_THROTTLE || '1');
 const JSON_OUT = process.env.BENCH_JSON;
 const POLL_COUNT = 6;
-const NAV_READY_TIMEOUT = 10_000;
+const NAV_READY_TIMEOUT = 30_000;
 
 function rand() { return Math.random().toString(36).slice(2, 10); }
 
@@ -149,7 +149,7 @@ async function measureClickNav(page, clickSelector, targetPath) {
           obs.disconnect();
           clearInterval(urlPoll);
           reject(new Error(`Timed out waiting for ${target}; ready=${readyNow()} path=${pathNow()}`));
-        }, 10_000);
+        }, 30_000);
 
         const start = performance.now();
         el.click();
