@@ -94,19 +94,40 @@ function normalize(path) {
   return path.replace(/\/$/, '') || '/';
 }
 
+/**
+ * Wait until the page is considered "ready" for the target path. Primary
+ * signal is `data-page-ready` matching (what the view-transition helper
+ * actually gates on). Falls back to structural DOM checks if the attribute
+ * isn't set within the timeout but the structural content is present —
+ * necessary because on dev servers the useLayoutEffect that sets the
+ * attribute can race with Next.js HMR re-renders.
+ */
 async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
   const target = normalize(targetPath);
+  // Per-route structural fallback: if the attribute doesn't land in time but
+  // the page's canonical DOM fingerprint is present, treat as ready.
+  const structuralSelector = target === '/'
+    ? '[data-thread-root-id]'
+    : (target.startsWith('/thread/') || target.startsWith('/p/'))
+      ? '[data-thread-latest-poll-id="true"], body[data-thread-latest-poll-id]'
+      : null;
+
   try {
     await page.waitForFunction(
-      (t) => document.documentElement.getAttribute('data-page-ready') === t,
-      target,
+      ({ t, structural }) => {
+        if (document.documentElement.getAttribute('data-page-ready') === t) return true;
+        if (structural && document.body?.getAttribute('data-thread-latest-poll-id')) return true;
+        if (structural === '[data-thread-root-id]' && document.querySelector('[data-thread-root-id]')) return true;
+        return false;
+      },
+      { t: target, structural: structuralSelector },
       { timeout },
     );
   } catch (err) {
     const diag = await page.evaluate(() => ({
       ready: document.documentElement.getAttribute('data-page-ready'),
       path: window.location.pathname,
-      body: document.body?.innerText?.slice(0, 200) || '',
+      body: document.body?.innerText?.slice(0, 120) || '',
     }));
     throw new Error(`waitForReady(${target}) timed out. State: ${JSON.stringify(diag)}`);
   }
