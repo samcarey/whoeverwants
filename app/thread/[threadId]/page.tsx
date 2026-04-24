@@ -6,7 +6,7 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -37,7 +37,7 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
-type PendingActionKind = 'forget' | 'reopen' | 'close';
+type PendingActionKind = 'forget' | 'reopen' | 'close' | 'cutoff-availability';
 
 const PENDING_ACTION_COPY: Record<PendingActionKind, {
   title: string;
@@ -62,6 +62,12 @@ const PENDING_ACTION_COPY: Record<PendingActionKind, {
     message: 'Are you sure you want to close this poll? This action cannot be undone and voting will end immediately.',
     confirmText: 'Close Poll',
     confirmButtonClass: 'bg-red-600 hover:bg-red-700 text-white',
+  },
+  'cutoff-availability': {
+    title: 'End Availability Phase',
+    message: 'Are you sure you want to end the availability phase now? Time slots will be generated and preference ranking will begin immediately.',
+    confirmText: 'End Now',
+    confirmButtonClass: 'bg-amber-500 hover:bg-amber-600 text-white',
   },
 };
 
@@ -1091,6 +1097,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               ? () => setPendingAction({ kind: 'close', poll: modalPoll })
               : undefined
           }
+          onCutoffAvailability={
+            !modalPoll.is_closed &&
+            isInTimeAvailabilityPhase(modalPoll) &&
+            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+              ? () => setPendingAction({ kind: 'cutoff-availability', poll: modalPoll })
+              : undefined
+          }
         />
       )}
 
@@ -1143,7 +1156,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             } catch (err) {
               console.error('Failed to reopen poll:', err);
             }
-          } else {
+          } else if (action.kind === 'close') {
             try {
               const secret = getCreatorSecret(action.poll.id) || '';
               await apiClosePoll(action.poll.id, secret);
@@ -1162,6 +1175,44 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               );
             } catch (err) {
               console.error('Failed to close poll:', err);
+            }
+          } else {
+            try {
+              const secret = getCreatorSecret(action.poll.id);
+              if (!secret) {
+                console.error('Missing creator secret for cutoff-availability');
+                return;
+              }
+              const updated = await apiCutoffAvailability(action.poll.id, secret);
+              invalidatePoll(action.poll.id);
+              setThread((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      polls: prev.polls.map((p) =>
+                        p.id === action.poll.id
+                          ? {
+                              ...p,
+                              suggestion_deadline: updated.suggestion_deadline ?? p.suggestion_deadline,
+                              options: updated.options ?? p.options,
+                            }
+                          : p,
+                      ),
+                    }
+                  : prev,
+              );
+              // Refresh the compact preview — the availability phase just ended so
+              // time-slot results are now meaningful.
+              const refreshed = await apiGetPollResults(action.poll.id).catch(() => null);
+              if (refreshed) {
+                setPollResultsMap((prev) => {
+                  const next = new Map(prev);
+                  next.set(action.poll.id, refreshed);
+                  return next;
+                });
+              }
+            } catch (err) {
+              console.error('Failed to end availability phase:', err);
             }
           }
         }}
