@@ -137,8 +137,6 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
         ? 'bg-red-100 dark:bg-red-900 border-red-400 dark:border-red-600 text-red-900 dark:text-red-100'
         : 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-400 dark:border-yellow-600 text-yellow-900 dark:text-yellow-100';
 
-    // Empty state is rendered below the card (see the respondents row on the
-    // thread page) instead of here, so the compact header stays minimal.
     if (!hasStats) {
       return null;
     }
@@ -813,9 +811,8 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
 }
 
 // Compact single-line previews rendered in the lower-right of the thread
-// card's compact header when collapsed. Mirror the yes/no hideLoser strip.
-// Empty states (no voters / no suggestions yet) render below the card in the
-// respondents row, not here — see app/thread/[threadId]/page.tsx.
+// card's compact header when collapsed. Empty states render below the card in
+// the respondents row, so these all return null when there's no content.
 
 const PILL_CLASS = "inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
@@ -843,7 +840,6 @@ export function CompactRankedChoicePreview({
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
-  // Empty state is rendered below the card by the respondents row.
   if (totalVotes === 0 || !winner || winner === "tie") {
     return null;
   }
@@ -866,7 +862,6 @@ export function CompactSuggestionPreview({
   results: PollResults;
 }) {
   const suggestionCount = (results.suggestion_counts || []).length;
-  // Empty state is rendered below the card by the respondents row.
   if (suggestionCount === 0) {
     return null;
   }
@@ -888,7 +883,6 @@ export function CompactTimePreview({
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
-  // Empty state is rendered below the card by the respondents row.
   if (totalVotes === 0 || !winner) {
     return null;
   }

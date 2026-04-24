@@ -465,10 +465,8 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
     const poll = toPoll(d);
     if (d.results) {
       poll.results = toPollResults(d.results);
-      // Seed the per-poll results cache too — otherwise every consumer
-      // (thread page, etc.) re-fetches via apiGetPollResults despite the
-      // inline copy already being available, causing layout shift as the
-      // compact preview slot fills in late.
+      // Mirror inline results into the per-poll cache so apiGetPollResults
+      // hits it (avoids layout shift from a late per-card re-fetch).
       cachePollResults(poll.id, poll.results);
     }
     return poll;

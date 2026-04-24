@@ -17,30 +17,42 @@ interface VoterListProps {
   /** Single-line overflow mode: hides icon + count, renders one row, and
    *  collapses overflow into a "+N" badge. Used under thread poll cards. */
   singleLine?: boolean;
-  /** In singleLine mode: text to render (at the same height as the voter
-   *  bubbles) when there are no voters, so the row doesn't collapse and
-   *  cause layout shift when the initial fetch completes. Ignored in
+  /** In singleLine mode: text to render (at bubble height) when there are no
+   *  voters, so the row doesn't collapse and cause layout shift. Ignored in
    *  multi-line mode. */
   emptyText?: string;
 }
 
+// Shared derivation so the synchronous cache-seed and the async fetcher both
+// produce identical {voters, anonymousCount, key} shapes from a votes array.
+function deriveVoterState(votes: ApiVote[], filter?: (v: ApiVote) => boolean) {
+  const filtered = filter ? votes.filter(filter) : votes;
+  return {
+    voters: filtered.map(v => ({ id: v.id, voter_name: v.voter_name })),
+    anonymousCount: filtered.filter(v => !v.voter_name || v.voter_name.trim() === '').length,
+    key: filtered.map(v => `${v.id}:${v.voter_name ?? ''}`).join(','),
+  };
+}
+
+function EmptyPlaceholder({ text, className }: { text: string; className: string }) {
+  // Matches the bubble row's height (text-xs 16px + py-0.5 4px = 20px) so the
+  // skeleton → empty → populated transitions don't jitter.
+  return (
+    <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
+      <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{text}</span>
+    </div>
+  );
+}
+
 export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText }: VoterListProps) {
-  // Seed from the shared votes cache synchronously so warm navigations (home
-  // page, thread prefetch) render bubbles on the first paint instead of
-  // flashing the skeleton for one frame. The thread page also fires
-  // apiGetVotes in parallel with the thread load, so even on a cold refresh
-  // the cache is usually populated by the time the first VoterList mounts.
-  const seed = (() => {
+  // Seed from the shared votes cache so warm navigations render bubbles on
+  // the first paint instead of flashing the skeleton. useState lazy
+  // initializer runs exactly once at mount.
+  const [seed] = useState<ReturnType<typeof deriveVoterState> | null>(() => {
     if (typeof window === 'undefined') return null;
     const cached = getCachedVotes(pollId);
-    if (!cached) return null;
-    const filtered = filter ? cached.filter(filter) : cached;
-    return {
-      voters: filtered.map(v => ({ id: v.id, voter_name: v.voter_name })),
-      anonymousCount: filtered.filter(v => !v.voter_name || v.voter_name.trim() === '').length,
-      key: filtered.map(v => `${v.id}:${v.voter_name ?? ''}`).join(','),
-    };
-  })();
+    return cached ? deriveVoterState(cached, filter) : null;
+  });
 
   const [voters, setVoters] = useState<Voter[]>(seed?.voters ?? []);
   const [initialLoading, setInitialLoading] = useState(seed === null);
@@ -50,15 +62,12 @@ export default function VoterList({ pollId, className = "", label, filter, singl
 
   const fetchVoters = useCallback(async () => {
     try {
-      let votes = await apiGetVotes(pollId);
-      if (filter) votes = votes.filter(filter);
-      const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
-
-      const newKey = voterData.map(v => `${v.id}:${v.voter_name ?? ''}`).join(',');
-      if (newKey !== voterIdsRef.current) {
-        voterIdsRef.current = newKey;
-        setVoters(voterData);
-        setAnonymousCount(voterData.filter(v => !v.voter_name || v.voter_name.trim() === '').length);
+      const votes = await apiGetVotes(pollId);
+      const derived = deriveVoterState(votes, filter);
+      if (derived.key !== voterIdsRef.current) {
+        voterIdsRef.current = derived.key;
+        setVoters(derived.voters);
+        setAnonymousCount(derived.anonymousCount);
       }
       setError(null);
     } catch (err) {
@@ -103,9 +112,7 @@ export default function VoterList({ pollId, className = "", label, filter, singl
           <div
             key={i}
             className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
-            // 20px matches the loaded bubble height (text-xs line-height 16px
-            // + py-0.5 4px). Without this, skeleton → loaded transition
-            // shrinks the row by 4px and every card below jitters up.
+            // 20px matches loaded bubble height (text-xs 16px + py-0.5 4px).
             style={{ width: `${50 + (i * 12) % 30}px`, height: '20px' }}
           />
         ))}
@@ -118,16 +125,7 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   }
 
   if (voters.length === 0) {
-    if (singleLine && emptyText) {
-      // Reserve the same vertical space the bubble row would occupy. py-0.5
-      // matches the bubble padding so loading skeletons → empty state →
-      // populated bubbles all render at the same height.
-      return (
-        <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
-          <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{emptyText}</span>
-        </div>
-      );
-    }
+    if (singleLine && emptyText) return <EmptyPlaceholder text={emptyText} className={className} />;
     return null;
   }
 
@@ -176,15 +174,10 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   };
 
   if (singleLine) {
-    // Nothing renders when the only voter is the current user (who's excluded
-    // since their state lives on the poll card itself). Fall back to the
-    // empty-text placeholder so the row keeps its height.
+    // When the only voter is the current user (excluded since their state
+    // lives on the poll card itself), fall back to the empty placeholder.
     if (namedVoters.length === 0 && adjustedAnonymousCount === 0 && emptyText) {
-      return (
-        <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
-          <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{emptyText}</span>
-        </div>
-      );
+      return <EmptyPlaceholder text={emptyText} className={className} />;
     }
     return (
       <SingleLineVoters

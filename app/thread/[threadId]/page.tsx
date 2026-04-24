@@ -158,12 +158,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
   });
   // Per-poll results for the compact winner preview shown above the grid-rows
-  // clip. Seeded synchronously from any inline poll.results that came back with
-  // the accessible-polls fetch (apiGetAccessiblePolls populates these), so the
-  // compact previews render on first paint. Without this seeding, the slot
-  // mounts empty and fills in once the per-card viewport-intersection fetch
-  // resolves — making every card grow ~24-32px and the list slide down on
-  // refresh. The viewport observer still runs to refresh stale entries.
+  // clip. Seeded synchronously from inline poll.results so the previews render
+  // on first paint — without this, slots mount empty and fill in late when the
+  // viewport-intersection fetch resolves, making every card grow and the list
+  // slide down on refresh. The viewport observer still runs to refresh stale
+  // entries.
   const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => {
     const seed = new Map<string, PollResults>();
     if (initialThread) {
@@ -221,18 +220,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         if (!initialThread) setLoading(true);
         setError(false);
 
-        // Parallel prefetch: fire apiGetVotes for every id this browser
-        // already has access to (from localStorage) at the very start of the
-        // load, BEFORE awaiting anything. These run in parallel with the
-        // accessible-polls + discover round-trips, so by the time the thread
-        // is built and VoterList components mount the votes cache is already
-        // warm — bubbles render alongside the cards instead of ~100ms after.
-        // apiGetVotes is cache + in-flight coalesced, so a later VoterList
-        // mount hits either a cached result or the already-in-flight promise.
-        for (const id of getAccessiblePollIds()) {
-          void apiGetVotes(id).catch(() => null);
-        }
-
         // Step 1: Fetch the poll referenced in the URL and register access.
         // Check the in-memory cache first — the home page already fetched all accessible polls.
         let anchorPoll: Poll;
@@ -254,19 +241,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         }
 
         // Discover children (may add new poll IDs), then fetch the updated set.
+        // Votes prefetch fires in parallel with getAccessiblePolls so the votes
+        // cache is warm by the time VoterList mounts — bubbles render alongside
+        // the cards instead of ~100ms after. apiGetVotes is cache + in-flight
+        // coalesced, so the later per-card fetch hits the warm cache.
         try { await discoverRelatedPolls(); } catch {}
+        for (const id of getAccessiblePollIds()) {
+          void apiGetVotes(id).catch(() => null);
+        }
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
-
-        // Parallel prefetch: kick off votes fetches for every accessible poll
-        // immediately, in parallel with the React commit + browser paint
-        // pipeline below. apiGetVotes is cache + in-flight coalesced, so each
-        // VoterList hits a warm cache (or the already-in-flight promise) the
-        // moment it mounts — bubbles render alongside the cards instead of
-        // ~100ms after.
-        for (const p of polls) {
-          void apiGetVotes(p.id).catch(() => null);
-        }
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
@@ -277,20 +261,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           return;
         }
 
-        // Seed inline results into the results map BEFORE swapping in the
-        // thread so the very first render with the loaded thread already has
-        // compact previews — otherwise the slot mounts empty and fills on the
-        // next intersection-observer fetch (slide-down on refresh).
+        // Seed inline results BEFORE setThread so the first render with the
+        // loaded thread already has compact previews (no slide-down on refresh).
         setPollResultsMap((prev) => {
-          let changed = false;
+          const additions = foundThread.polls.filter(p => p.results && !prev.has(p.id));
+          if (additions.length === 0) return prev;
           const next = new Map(prev);
-          for (const p of foundThread.polls) {
-            if (p.results && !next.has(p.id)) {
-              next.set(p.id, p.results);
-              changed = true;
-            }
-          }
-          return changed ? next : prev;
+          for (const p of additions) next.set(p.id, p.results!);
+          return next;
         });
         setThread(foundThread);
       } catch (err) {
@@ -308,10 +286,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
-  // useLayoutEffect (not useEffect) so the measured header height is applied
-  // BEFORE the browser paints the first frame. With useEffect, the first paint
-  // had headerHeight=0 → content sat at y=0 → re-render shifted it down by
-  // ~100px (visible as a one-frame slide on refresh).
+  // useLayoutEffect so the measured header height is applied before the first
+  // paint — useEffect ran after paint and caused a one-frame ~100px slide.
   useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -967,10 +943,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
-                    // When collapsed with 0 voters the compact YesNoResults
-                    // renders null (the "No voters" message lives below the
-                    // card now); skip the mt-2 wrapper so it doesn't leave an
-                    // 8px empty gap in the card.
+                    // Collapsed + 0 votes: YesNoResults renders null, so skip
+                    // the mt-2 wrapper to avoid an 8px empty gap.
                     const hasStats = (r.total_votes || 0) > 0;
                     if (!isExpanded && !hasStats) return null;
                     const userVote = userVoteMap.get(poll.id);
@@ -1007,10 +981,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    // Empty state lives in the respondents row below the card.
                     const inSuggestions = isInSuggestionPhase(poll);
-                    // Skip the clip entirely when the preview would be empty
-                    // — the "No voters" / "No suggestions yet" message lives
-                    // in the respondents row below the card instead.
                     const hasPreview = inSuggestions
                       ? (r.suggestion_counts || []).length > 0
                       : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
@@ -1031,7 +1003,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
-                    // Skip the clip when empty — see ranked_choice branch above.
                     const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
                     if (!hasPreview) return null;
                     return (
