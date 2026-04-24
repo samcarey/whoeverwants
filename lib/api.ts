@@ -464,10 +464,14 @@ export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> 
   return data.map(d => {
     const poll = toPoll(d);
     if (d.results) {
-      poll.results = toPollResults(d.results);
+      const results = toPollResults(d.results);
+      poll.results = results;
       // Mirror inline results into the per-poll cache so apiGetPollResults
-      // hits it (avoids layout shift from a late per-card re-fetch).
-      cachePollResults(poll.id, poll.results);
+      // hits it (avoids layout shift from a late per-card re-fetch). Cache
+      // with the fuller Results type from toPollResults rather than the
+      // narrowed Poll.results (PollResults) so the ranked_choice_rounds
+      // augmentation is preserved.
+      cachePollResults(poll.id, results);
     }
     return poll;
   });
