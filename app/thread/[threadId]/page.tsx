@@ -1032,7 +1032,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      Creator/date takes its natural width (shrink-0) so the
                      respondent bubbles get the remainder of the row — replacing
                      the old fixed max-w-[75%] respondent cap. */}
-                <div className="col-start-2 row-start-3 mt-0 px-3 flex items-center gap-2 min-w-0">
+                <div className="col-start-2 row-start-3 mt-0 px-3 flex items-start gap-2 min-w-0">
                   <ClientOnly fallback={null}>
                     <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
                       {poll.creator_name && <>{poll.creator_name} &middot; </>}
@@ -1058,7 +1058,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <VoterList
                       pollId={poll.id}
                       singleLine
-                      className="flex-1 min-w-0 justify-end"
+                      className="flex-1 min-w-0 justify-end mt-2"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
                       emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
