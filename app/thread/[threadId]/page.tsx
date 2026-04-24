@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -847,35 +847,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {getCategoryIcon(poll)}
                 </div>
 
-                {/* Outside the card so taps on the header don't trigger the
-                     card's expand/long-press handlers. Closed polls render
-                     nothing here — creator + time live below the card. */}
-                <div className="col-start-2 row-start-1 flex items-center justify-end px-3 min-w-0 text-sm text-gray-500 dark:text-gray-400">
-                  <ClientOnly fallback={null}>
-                    {(() => {
-                      if (isClosed) return null;
-                      const inSuggestions = isInSuggestionPhase(poll);
-                      if (inSuggestions && poll.suggestion_deadline) {
-                        return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
-                      }
-                      if (inSuggestions && poll.suggestion_deadline_minutes) {
-                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
-                      }
-                      // Time polls in the availability phase get a label
-                      // in the same slot + format as "Taking Suggestions".
-                      if (isInTimeAvailabilityPhase(poll)) {
-                        if (poll.suggestion_deadline) {
-                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
-                        }
-                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
-                      }
-                      if (poll.response_deadline) {
-                        return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
-                      }
-                      return null;
-                    })()}
-                  </ClientOnly>
-                </div>
+                {/* Row 1 used to hold the above-card status label; the
+                     label now lives in the card's footer row (see below).
+                     Creator + date moved to row 3 alongside respondents
+                     (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div
                   className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-0.5' : 'pb-2'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
@@ -906,24 +881,130 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       />
                     </div>
                   </div>
-                  {/* Yes/No results rendered here — above the expand clip —
-                       so the winner card stays in a stable DOM position
-                       across expand/collapse (no remount → no flicker). The
-                       YesNoResults component animates the loser's reveal via
-                       its own grid-rows transition when hideLoser toggles.
-                       PollPageClient below suppresses its own YesNoResults
-                       rendering (externalYesNoResults) to avoid duplication. */}
-                  {poll.poll_type === 'yes_no' && (() => {
+                  {/* Footer row: status label on the left (countdown /
+                       "Closed X ago" / "Taking Suggestions" / "Collecting
+                       Availability" / etc.) and the poll-type-specific
+                       compact pill on the right. The pill collapses to 0
+                       height when the card is expanded (inverse grid-rows
+                       clip for ranked_choice / suggestion / time; the
+                       yes_no compact pill is simply not rendered when
+                       expanded since the full cards appear below). If the
+                       row would be empty (no status AND no pill) it's not
+                       rendered, so the gap doesn't appear. */}
+                  {(() => {
                     const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
-                    // Collapsed + 0 votes: YesNoResults renders null, so skip
-                    // the mt-2 wrapper to avoid an 8px empty gap.
-                    const hasStats = (r.total_votes || 0) > 0;
-                    if (!isExpanded && !hasStats) return null;
                     const userVote = userVoteMap.get(poll.id);
                     // Stop propagation so that tapping an option card or the
                     // Abstain link doesn't bubble up to the compact-header
                     // tap handler and toggle expand/collapse.
+                    const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
+
+                    const statusEl: React.ReactNode = (() => {
+                      if (isClosed) {
+                        const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
+                          ? poll.response_deadline
+                          : poll.updated_at;
+                        return (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            Closed {compactDurationSince(closedAt)} ago
+                          </span>
+                        );
+                      }
+                      const inSuggestions = isInSuggestionPhase(poll);
+                      if (inSuggestions && poll.suggestion_deadline) {
+                        return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                      }
+                      if (inSuggestions && poll.suggestion_deadline_minutes) {
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                      }
+                      if (isInTimeAvailabilityPhase(poll)) {
+                        if (poll.suggestion_deadline) {
+                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
+                        }
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
+                      }
+                      if (poll.response_deadline) {
+                        return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
+                      }
+                      return null;
+                    })();
+
+                    let pillEl: React.ReactNode = null;
+                    if (poll.poll_type === 'yes_no') {
+                      // Yes/no's compact pill is rendered by PollResultsDisplay
+                      // with hideLoser=true. When expanded we render the full
+                      // cards in their own row below, so the pill slot is
+                      // empty here.
+                      const hasStats = !!r && (r.total_votes || 0) > 0;
+                      if (!isExpanded && hasStats) {
+                        pillEl = (
+                          <div
+                            onClick={stopBubble}
+                            onTouchStart={stopBubble}
+                            onTouchEnd={stopBubble}
+                            onTouchMove={stopBubble}
+                          >
+                            <PollResultsDisplay
+                              results={r!}
+                              isPollClosed={isClosed}
+                              hideLoser={true}
+                              userVoteChoice={userVote?.choice ?? null}
+                              onVoteChange={
+                                isClosed
+                                  ? undefined
+                                  : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
+                              }
+                            />
+                          </div>
+                        );
+                      }
+                    } else if (poll.poll_type === 'ranked_choice' && r) {
+                      const inSuggestions = isInSuggestionPhase(poll);
+                      const hasPreview = inSuggestions
+                        ? (r.suggestion_counts || []).length > 0
+                        : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
+                      if (hasPreview) {
+                        pillEl = (
+                          <CompactPreviewClip isExpanded={isExpanded}>
+                            {inSuggestions ? (
+                              <CompactSuggestionPreview results={r} />
+                            ) : (
+                              <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
+                            )}
+                          </CompactPreviewClip>
+                        );
+                      }
+                    } else if (poll.poll_type === 'time' && r && !isInTimeAvailabilityPhase(poll)) {
+                      const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
+                      if (hasPreview) {
+                        pillEl = (
+                          <CompactPreviewClip isExpanded={isExpanded}>
+                            <CompactTimePreview results={r} isPollClosed={isClosed} />
+                          </CompactPreviewClip>
+                        );
+                      }
+                    }
+
+                    if (!statusEl && !pillEl) return null;
+                    return (
+                      <div className="mt-2 flex items-center gap-2 min-w-0">
+                        <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
+                          <ClientOnly fallback={null}>{statusEl}</ClientOnly>
+                        </div>
+                        <div className="flex-1 min-w-0 flex justify-end">
+                          {pillEl}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {/* Full yes/no cards — only when expanded. Kept outside the
+                       expand clip so the cards stay in a stable DOM position
+                       across expand/collapse and PollPageClient's internal
+                       yes_no branch is suppressed via externalYesNoResults. */}
+                  {poll.poll_type === 'yes_no' && isExpanded && (() => {
+                    const r = pollResultsMap.get(poll.id);
+                    if (!r) return null;
+                    const userVote = userVoteMap.get(poll.id);
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
                       <div
@@ -936,7 +1017,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         <PollResultsDisplay
                           results={r}
                           isPollClosed={isClosed}
-                          hideLoser={!isExpanded}
+                          hideLoser={false}
                           userVoteChoice={userVote?.choice ?? null}
                           onVoteChange={
                             isClosed
@@ -945,43 +1026,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           }
                         />
                       </div>
-                    );
-                  })()}
-                  {/* Compact pill (lower-right of the compact card) wrapped
-                       in an inverse grid-rows clip that collapses to 0
-                       height as the card expands — see "Compact Preview
-                       Strips" in CLAUDE.md. */}
-                  {poll.poll_type === 'ranked_choice' && (() => {
-                    const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
-                    // Empty state lives in the respondents row below the card.
-                    const inSuggestions = isInSuggestionPhase(poll);
-                    const hasPreview = inSuggestions
-                      ? (r.suggestion_counts || []).length > 0
-                      : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
-                    if (!hasPreview) return null;
-                    return (
-                      <CompactPreviewClip isExpanded={isExpanded}>
-                        {inSuggestions ? (
-                          <CompactSuggestionPreview results={r} />
-                        ) : (
-                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
-                        )}
-                      </CompactPreviewClip>
-                    );
-                  })()}
-                  {poll.poll_type === 'time' && (() => {
-                    // In availability phase the label lives in the above-
-                    // card strip — skip the in-card strip entirely.
-                    if (isInTimeAvailabilityPhase(poll)) return null;
-                    const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
-                    const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
-                    if (!hasPreview) return null;
-                    return (
-                      <CompactPreviewClip isExpanded={isExpanded}>
-                        <CompactTimePreview results={r} isPollClosed={isClosed} />
-                      </CompactPreviewClip>
                     );
                   })()}
                   </div>{/* /compact header */}

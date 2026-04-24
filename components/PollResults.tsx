@@ -814,7 +814,10 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
 // card's compact header when collapsed. Empty states render below the card in
 // the respondents row, so these all return null when there's no content.
 
-const PILL_CLASS = "inline-block px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
+// min-w-0 overrides the default `min-width: auto` on flex items so the pill
+// can shrink below its content width when the thread card's footer row is
+// tight, letting the internal `truncate` produce ellipsis on long winner names.
+const PILL_CLASS = "inline-block min-w-0 px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
 const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
 
