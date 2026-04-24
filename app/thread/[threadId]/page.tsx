@@ -9,7 +9,7 @@ import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadU
 import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
-import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
+import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
@@ -158,9 +158,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return initialExpandedPollId ? new Set([initialExpandedPollId]) : new Set();
   });
   // Per-poll results for the compact winner preview shown above the grid-rows
-  // clip. Fetched lazily when a card enters the viewport. Cache-backed so this
-  // is zero-cost after the first load per poll.
-  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => new Map());
+  // clip. Seeded synchronously from inline poll.results so the previews render
+  // on first paint — without this, slots mount empty and fill in late when the
+  // viewport-intersection fetch resolves, making every card grow and the list
+  // slide down on refresh. The viewport observer still runs to refresh stale
+  // entries.
+  const [pollResultsMap, setPollResultsMap] = useState<Map<string, PollResults>>(() => {
+    const seed = new Map<string, PollResults>();
+    if (initialThread) {
+      for (const p of initialThread.polls) {
+        if (p.results) seed.set(p.id, p.results);
+      }
+    }
+    return seed;
+  });
   // Current viewer's yes_no vote state per poll (resolved from the stored
   // voteId in localStorage + the poll's vote list). Drives the Your-Vote
   // badge + tap-to-change flow on the external YesNoResults. voterName is
@@ -230,7 +241,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         }
 
         // Discover children (may add new poll IDs), then fetch the updated set.
+        // Votes prefetch fires in parallel with getAccessiblePolls so the votes
+        // cache is warm by the time VoterList mounts — bubbles render alongside
+        // the cards instead of ~100ms after. apiGetVotes is cache + in-flight
+        // coalesced, so the later per-card fetch hits the warm cache.
         try { await discoverRelatedPolls(); } catch {}
+        for (const id of getAccessiblePollIds()) {
+          void apiGetVotes(id).catch(() => null);
+        }
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
 
@@ -243,6 +261,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           return;
         }
 
+        // Seed inline results BEFORE setThread so the first render with the
+        // loaded thread already has compact previews (no slide-down on refresh).
+        setPollResultsMap((prev) => {
+          const additions = foundThread.polls.filter(p => p.results && !prev.has(p.id));
+          if (additions.length === 0) return prev;
+          const next = new Map(prev);
+          for (const p of additions) next.set(p.id, p.results!);
+          return next;
+        });
         setThread(foundThread);
       } catch (err) {
         console.error('Error loading thread:', err);
@@ -259,7 +286,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
+  // useLayoutEffect so the measured header height is applied before the first
+  // paint — useEffect ran after paint and caused a one-frame ~100px slide.
+  useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el) return;
     const update = () => setHeaderHeight(el.offsetHeight);
@@ -914,6 +943,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'yes_no' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    // Collapsed + 0 votes: YesNoResults renders null, so skip
+                    // the mt-2 wrapper to avoid an 8px empty gap.
+                    const hasStats = (r.total_votes || 0) > 0;
+                    if (!isExpanded && !hasStats) return null;
                     const userVote = userVoteMap.get(poll.id);
                     // Stop propagation so that tapping an option card or the
                     // Abstain link doesn't bubble up to the compact-header
@@ -948,7 +981,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {poll.poll_type === 'ranked_choice' && (() => {
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    // Empty state lives in the respondents row below the card.
                     const inSuggestions = isInSuggestionPhase(poll);
+                    const hasPreview = inSuggestions
+                      ? (r.suggestion_counts || []).length > 0
+                      : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
+                    if (!hasPreview) return null;
                     return (
                       <CompactPreviewClip isExpanded={isExpanded}>
                         {inSuggestions ? (
@@ -965,6 +1003,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     if (isInTimeAvailabilityPhase(poll)) return null;
                     const r = pollResultsMap.get(poll.id);
                     if (!r) return null;
+                    const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
+                    if (!hasPreview) return null;
                     return (
                       <CompactPreviewClip isExpanded={isExpanded}>
                         <CompactTimePreview results={r} isPollClosed={isClosed} />
@@ -1019,6 +1059,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       singleLine
                       className="max-w-[75%]"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
+                      emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
                   </ClientOnly>
                 </div>

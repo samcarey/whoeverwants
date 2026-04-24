@@ -1438,14 +1438,16 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             for cr in count_rows:
                 response_counts[str(cr["poll_id"])] = cr["cnt"]
 
-        # Identify open polls that qualify for preliminary results
+        # Include inline results when show_preliminary_results is true AND
+        # (min_responses is unset OR met). Matches the per-poll /results
+        # endpoint, so the thread page doesn't need a follow-up per-card fetch.
         preliminary_poll_ids = []
         rows_by_id = {str(r["id"]): r for r in rows}
         for pid in open_poll_ids:
             r = rows_by_id[pid]
             min_resp = r.get("min_responses")
             show_prelim = r.get("show_preliminary_results", True)
-            if show_prelim and min_resp is not None and response_counts.get(pid, 0) >= min_resp:
+            if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
                 preliminary_poll_ids.append(pid)
 
         if preliminary_poll_ids:

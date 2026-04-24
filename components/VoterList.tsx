@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { apiGetVotes, ApiVote, POLL_VOTES_CHANGED_EVENT } from '@/lib/api';
+import { getCachedVotes } from '@/lib/pollCache';
 
 interface Voter {
   id: string;
@@ -16,26 +17,57 @@ interface VoterListProps {
   /** Single-line overflow mode: hides icon + count, renders one row, and
    *  collapses overflow into a "+N" badge. Used under thread poll cards. */
   singleLine?: boolean;
+  /** In singleLine mode: text to render (at bubble height) when there are no
+   *  voters, so the row doesn't collapse and cause layout shift. Ignored in
+   *  multi-line mode. */
+  emptyText?: string;
 }
 
-export default function VoterList({ pollId, className = "", label, filter, singleLine = false }: VoterListProps) {
-  const [voters, setVoters] = useState<Voter[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
+// Shared derivation so the synchronous cache-seed and the async fetcher both
+// produce identical {voters, anonymousCount, key} shapes from a votes array.
+function deriveVoterState(votes: ApiVote[], filter?: (v: ApiVote) => boolean) {
+  const filtered = filter ? votes.filter(filter) : votes;
+  return {
+    voters: filtered.map(v => ({ id: v.id, voter_name: v.voter_name })),
+    anonymousCount: filtered.filter(v => !v.voter_name || v.voter_name.trim() === '').length,
+    key: filtered.map(v => `${v.id}:${v.voter_name ?? ''}`).join(','),
+  };
+}
+
+function EmptyPlaceholder({ text, className }: { text: string; className: string }) {
+  // Matches the bubble row's height (text-xs 16px + py-0.5 4px = 20px) so the
+  // skeleton → empty → populated transitions don't jitter.
+  return (
+    <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
+      <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{text}</span>
+    </div>
+  );
+}
+
+export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText }: VoterListProps) {
+  // Seed from the shared votes cache so warm navigations render bubbles on
+  // the first paint instead of flashing the skeleton. useState lazy
+  // initializer runs exactly once at mount.
+  const [seed] = useState<ReturnType<typeof deriveVoterState> | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const cached = getCachedVotes(pollId);
+    return cached ? deriveVoterState(cached, filter) : null;
+  });
+
+  const [voters, setVoters] = useState<Voter[]>(seed?.voters ?? []);
+  const [initialLoading, setInitialLoading] = useState(seed === null);
   const [error, setError] = useState<string | null>(null);
-  const [anonymousCount, setAnonymousCount] = useState(0);
-  const voterIdsRef = useRef('');
+  const [anonymousCount, setAnonymousCount] = useState(seed?.anonymousCount ?? 0);
+  const voterIdsRef = useRef(seed?.key ?? '');
 
   const fetchVoters = useCallback(async () => {
     try {
-      let votes = await apiGetVotes(pollId);
-      if (filter) votes = votes.filter(filter);
-      const voterData: Voter[] = votes.map(v => ({ id: v.id, voter_name: v.voter_name }));
-
-      const newKey = voterData.map(v => `${v.id}:${v.voter_name ?? ''}`).join(',');
-      if (newKey !== voterIdsRef.current) {
-        voterIdsRef.current = newKey;
-        setVoters(voterData);
-        setAnonymousCount(voterData.filter(v => !v.voter_name || v.voter_name.trim() === '').length);
+      const votes = await apiGetVotes(pollId);
+      const derived = deriveVoterState(votes, filter);
+      if (derived.key !== voterIdsRef.current) {
+        voterIdsRef.current = derived.key;
+        setVoters(derived.voters);
+        setAnonymousCount(derived.anonymousCount);
       }
       setError(null);
     } catch (err) {
@@ -80,14 +112,20 @@ export default function VoterList({ pollId, className = "", label, filter, singl
           <div
             key={i}
             className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
-            style={{ width: `${50 + (i * 12) % 30}px`, height: '24px' }}
+            // 20px matches loaded bubble height (text-xs 16px + py-0.5 4px).
+            style={{ width: `${50 + (i * 12) % 30}px`, height: '20px' }}
           />
         ))}
       </div>
     );
   }
 
-  if (error || voters.length === 0) {
+  if (error) {
+    return null;
+  }
+
+  if (voters.length === 0) {
+    if (singleLine && emptyText) return <EmptyPlaceholder text={emptyText} className={className} />;
     return null;
   }
 
@@ -136,6 +174,11 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   };
 
   if (singleLine) {
+    // When the only voter is the current user (excluded since their state
+    // lives on the poll card itself), fall back to the empty placeholder.
+    if (namedVoters.length === 0 && adjustedAnonymousCount === 0 && emptyText) {
+      return <EmptyPlaceholder text={emptyText} className={className} />;
+    }
     return (
       <SingleLineVoters
         namedVoters={namedVoters}
