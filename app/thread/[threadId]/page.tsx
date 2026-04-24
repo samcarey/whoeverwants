@@ -851,32 +851,30 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      card's expand/long-press handlers. Closed polls render
                      nothing here — creator + time live below the card. */}
                 <div className="col-start-2 row-start-1 flex items-center justify-end px-3 min-w-0 text-sm text-gray-500 dark:text-gray-400">
-                  <div className="shrink-0">
-                    <ClientOnly fallback={null}>
-                      {(() => {
-                        if (isClosed) return null;
-                        const inSuggestions = isInSuggestionPhase(poll);
-                        if (inSuggestions && poll.suggestion_deadline) {
-                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                  <ClientOnly fallback={null}>
+                    {(() => {
+                      if (isClosed) return null;
+                      const inSuggestions = isInSuggestionPhase(poll);
+                      if (inSuggestions && poll.suggestion_deadline) {
+                        return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                      }
+                      if (inSuggestions && poll.suggestion_deadline_minutes) {
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                      }
+                      // Time polls in the availability phase get a label
+                      // in the same slot + format as "Taking Suggestions".
+                      if (isInTimeAvailabilityPhase(poll)) {
+                        if (poll.suggestion_deadline) {
+                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
                         }
-                        if (inSuggestions && poll.suggestion_deadline_minutes) {
-                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
-                        }
-                        // Time polls in the availability phase get a label
-                        // in the same slot + format as "Taking Suggestions".
-                        if (isInTimeAvailabilityPhase(poll)) {
-                          if (poll.suggestion_deadline) {
-                            return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
-                          }
-                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
-                        }
-                        if (poll.response_deadline) {
-                          return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
-                        }
-                        return null;
-                      })()}
-                    </ClientOnly>
-                  </div>
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
+                      }
+                      if (poll.response_deadline) {
+                        return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
+                      }
+                      return null;
+                    })()}
+                  </ClientOnly>
                 </div>
 
                 <div
