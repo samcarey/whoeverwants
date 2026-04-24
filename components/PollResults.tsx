@@ -149,7 +149,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
           {winnerPct}%
         </span>
         <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
-          {winnerCount} / {totalVotes} votes
+          ({winnerCount})
         </span>
       </div>
     );
