@@ -134,11 +134,15 @@ async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
 }
 
 /**
- * Measure click-to-ready inside the browser. Returns:
- *   - clickToReady: ms from click until data-page-ready matches target
- *   - clickToUrl:   ms from click until location.pathname matches target
- *   - readyAfterUrl: ms that "ready" lagged the URL flip. Large values on a
- *     well-behaved run mean the destination compiled/fetched slowly.
+ * Measure click-to-ready and click-to-transition-done inside the browser.
+ * Returns:
+ *   - clickToReady:       ms until data-page-ready matches target
+ *   - clickToUrl:          ms until location.pathname matches target
+ *   - readyAfterUrl:       how much "ready" lagged the URL flip
+ *   - clickToTransitionDone: ms until the view-transition wrapper's cleanup
+ *     runs, i.e. `data-nav-direction` attribute is removed from <html>.
+ *     That's when `ViewTransition.finished` resolves = when the slide
+ *     animation is complete and the user perceives the transition as over.
  */
 async function measureClickNav(page, clickSelector, targetPath) {
   const target = normalize(targetPath);
@@ -149,39 +153,69 @@ async function measureClickNav(page, clickSelector, targetPath) {
         if (!el) { reject(new Error('element not found: ' + clickSelector)); return; }
 
         let urlFlipAt = null;
+        let readyAt = null;
+        let transitionDoneAt = null;
         const pathNow = () => window.location.pathname.replace(/\/$/, '') || '/';
         const readyNow = () => document.documentElement.getAttribute('data-page-ready');
+        const directionNow = () => document.documentElement.getAttribute('data-nav-direction');
 
-        const tryResolve = () => {
-          if (readyNow() === target) {
+        const tryFinish = () => {
+          if (readyAt == null && readyNow() === target) {
+            readyAt = performance.now() - start;
+          }
+          if (urlFlipAt == null && pathNow() === target) {
+            urlFlipAt = performance.now() - start;
+          }
+          // Transition is "done" when:
+          //  (a) data-nav-direction is removed (normal path — cleanup fires
+          //      after ViewTransition.finished), OR
+          //  (b) the browser doesn't support view transitions (attr never
+          //      got set), in which case transitionDone === ready.
+          if (transitionDoneAt == null) {
+            if (sawDirection && !directionNow()) {
+              transitionDoneAt = performance.now() - start;
+            } else if (!sawDirection && readyAt != null) {
+              // No transition animation — treat as done at ready time.
+              transitionDoneAt = readyAt;
+            }
+          }
+          if (readyAt != null && transitionDoneAt != null) {
             obs.disconnect();
+            obsDir.disconnect();
             clearInterval(urlPoll);
             clearTimeout(timeoutId);
             resolve({
-              clickToReady: performance.now() - start,
+              clickToReady: readyAt,
               clickToUrl: urlFlipAt,
-              readyAfterUrl: urlFlipAt != null ? (performance.now() - start) - urlFlipAt : null,
+              readyAfterUrl: urlFlipAt != null ? readyAt - urlFlipAt : null,
+              clickToTransitionDone: transitionDoneAt,
             });
           }
         };
 
-        const obs = new MutationObserver(tryResolve);
+        const obs = new MutationObserver(tryFinish);
         obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
 
-        const urlPoll = setInterval(() => {
-          if (urlFlipAt == null && pathNow() === target) {
-            urlFlipAt = performance.now() - start;
-          }
-          tryResolve();
-        }, 5);
+        let sawDirection = false;
+        const obsDir = new MutationObserver(() => {
+          if (directionNow()) sawDirection = true;
+          tryFinish();
+        });
+        obsDir.observe(document.documentElement, { attributes: true, attributeFilter: ['data-nav-direction'] });
+
+        const urlPoll = setInterval(tryFinish, 5);
 
         const timeoutId = setTimeout(() => {
           obs.disconnect();
+          obsDir.disconnect();
           clearInterval(urlPoll);
-          reject(new Error(`Timed out waiting for ${target}; ready=${readyNow()} path=${pathNow()}`));
+          reject(new Error(`Timed out waiting for ${target}; ready=${readyNow()} path=${pathNow()} dir=${directionNow()}`));
         }, 30_000);
 
         const start = performance.now();
+        // Snapshot initial direction attr state so we know whether a
+        // transition even started (some clicks bypass the wrapper).
+        if (directionNow()) sawDirection = true;
         el.click();
       }),
     { clickSelector, target },
@@ -324,6 +358,7 @@ async function main() {
     const readySamples = [];
     const urlSamples = [];
     const readyLagSamples = [];
+    const transitionDoneSamples = [];
     for (let i = 0; i < RUNS; i++) {
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
@@ -334,10 +369,12 @@ async function main() {
       readySamples.push(m.clickToReady);
       urlSamples.push(m.clickToUrl ?? m.clickToReady);
       readyLagSamples.push(m.readyAfterUrl ?? 0);
+      transitionDoneSamples.push(m.clickToTransitionDone ?? m.clickToReady);
     }
     addResult(results, 'home → thread (warm)', 'click → ready', readySamples);
     addResult(results, 'home → thread (warm)', 'click → url', urlSamples);
     addResult(results, 'home → thread (warm)', 'ready after url', readyLagSamples);
+    addResult(results, 'home → thread (warm)', 'click → transition done', transitionDoneSamples);
   });
 
   // --- Scenario 3: Home → Thread (cold cache) ---
