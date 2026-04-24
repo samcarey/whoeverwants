@@ -269,11 +269,14 @@ async function main() {
   }
 
   // --- Scenario 3: Home → Thread (cold cache) ---
+  // `page.goto(BASE_URL)` fully tears down the page (cache, in-flight requests)
+  // on each run, simulating a first-time visitor. `reload()` alone would keep
+  // whatever URL we ended on from the previous scenario.
   console.log('Scenario 3: home → thread (cold)');
   {
     const readySamples = [];
     for (let i = 0; i < RUNS; i++) {
-      await page.reload();
+      await page.goto(BASE_URL);
       await waitForReady(page, '/');
       await page.waitForSelector(`[data-thread-root-id]`);
       const thread = polls[i % polls.length];
