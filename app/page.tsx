@@ -35,27 +35,18 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  // Seed polls synchronously from the in-memory cache so re-entering the home
-  // page from a thread renders the full list on first paint — no loading flash
-  // during the view transition slide.
-  const [polls, setPolls] = useState<Poll[]>(() => {
-    if (typeof window === "undefined") return [];
-    return getCachedAccessiblePolls() ?? [];
+  // Cache-seed avoids loading flash on view-transition return from a thread.
+  const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
+    const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
+    return { polls: cached ?? [], loading: cached === null };
   });
-  const [loading, setLoading] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return getCachedAccessiblePolls() === null;
-  });
+  const [polls, setPolls] = useState<Poll[]>(initialPolls);
+  const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
 
-  // Signal "page rendered" to the view-transition helper so the slide
-  // animation captures a fully-painted destination. The home page's outer
-  // chrome (title, settings gear) is always mounted; signal ready on mount
-  // so even the cache-miss case captures the spinner as the "new" state
-  // instead of falling back to the stale-DOM timeout.
   usePageReady(true);
 
   // Initialize and rotate phrases

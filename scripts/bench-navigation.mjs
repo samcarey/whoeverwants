@@ -147,7 +147,7 @@ async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
 async function measureClickNav(page, clickSelector, targetPath) {
   const target = normalize(targetPath);
   return page.evaluate(
-    ({ clickSelector, target }) =>
+    ({ clickSelector, target, timeoutMs }) =>
       new Promise((resolve, reject) => {
         const el = document.querySelector(clickSelector);
         if (!el) { reject(new Error('element not found: ' + clickSelector)); return; }
@@ -203,14 +203,14 @@ async function measureClickNav(page, clickSelector, targetPath) {
         });
         obsDir.observe(document.documentElement, { attributes: true, attributeFilter: ['data-nav-direction'] });
 
-        const urlPoll = setInterval(tryFinish, 5);
+        const urlPoll = setInterval(tryFinish, 50);
 
         const timeoutId = setTimeout(() => {
           obs.disconnect();
           obsDir.disconnect();
           clearInterval(urlPoll);
           reject(new Error(`Timed out waiting for ${target}; ready=${readyNow()} path=${pathNow()} dir=${directionNow()}`));
-        }, 30_000);
+        }, timeoutMs);
 
         const start = performance.now();
         // Snapshot initial direction attr state so we know whether a
@@ -218,7 +218,7 @@ async function measureClickNav(page, clickSelector, targetPath) {
         if (directionNow()) sawDirection = true;
         el.click();
       }),
-    { clickSelector, target },
+    { clickSelector, target, timeoutMs: NAV_READY_TIMEOUT },
   );
 }
 

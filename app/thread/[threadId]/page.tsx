@@ -203,13 +203,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
 
-  // Fetch the referenced poll, register access, discover children, build thread.
-  // If we already have a synchronous cache-built thread, this runs in the
-  // background to refresh with fresh data (discoverRelatedPolls, new votes, etc.)
-  // without showing a loading state. On cache hit, the refresh is scheduled
-  // via requestIdleCallback so it doesn't compete with initial React commit —
-  // saves ~50-150 ms off click→ready during a view transition. Cache-miss
-  // path runs immediately since the thread can't render without the fetch.
+  // On cache hit, defer the background refresh via requestIdleCallback so it
+  // doesn't compete with React commit during a view transition.
   useEffect(() => {
     async function fetchThread() {
       try {
@@ -276,16 +271,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     }
 
     if (initialThread) {
-      // Cache hit: defer the refresh so React can finish committing first.
-      // requestIdleCallback falls back to setTimeout(0) in Safari.
-      type IdleCaller = (cb: () => void) => number;
-      const ric: IdleCaller = (window as unknown as { requestIdleCallback?: IdleCaller })
-        .requestIdleCallback ?? ((cb) => setTimeout(cb, 0) as unknown as number);
-      const id = ric(() => { void fetchThread(); });
-      return () => {
-        const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
-        if (cic) cic(id); else clearTimeout(id as unknown as NodeJS.Timeout);
+      // `requestIdleCallback` is unsupported in Safari; fall back to setTimeout(0).
+      const w = window as Window & {
+        requestIdleCallback?: (cb: () => void) => number;
+        cancelIdleCallback?: (id: number) => void;
       };
+      const schedule = w.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 0) as unknown as number);
+      const cancel = w.cancelIdleCallback ?? ((id: number) => clearTimeout(id as unknown as NodeJS.Timeout));
+      const id = schedule(() => { void fetchThread(); });
+      return () => cancel(id);
     }
     fetchThread();
   }, [threadId]);

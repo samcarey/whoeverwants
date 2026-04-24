@@ -45,30 +45,28 @@ export default function ThreadList({ polls }: ThreadListProps) {
     prefetchBatch(hrefs, { priority: "low" });
   }, [threads, prefetchBatch]);
 
-  // Warm the per-poll votes + results caches for threads that scroll into
-  // view. Poll metadata is already cached via `getAccessiblePolls` on the
-  // home page, but per-poll votes are not — so tapping a thread would trigger
-  // a cache-miss fetch from inside the destination page. Prefetching here
-  // means the destination renders full respondent bubbles + results on first
-  // paint. apiGetVotes is cache + in-flight coalesced; repeated calls are cheap.
+  // Warm per-poll votes + results for visible threads so the destination
+  // renders from cache on first paint. apiGetVotes is coalesced; re-calls are cheap.
   const warmedThreadIdsRef = useRef<Set<string>>(new Set());
+  const threadsByRootId = useMemo(
+    () => new Map(threads.map((t) => [t.rootPollId, t])),
+    [threads],
+  );
   useEffect(() => {
     if (threads.length === 0 || typeof window === 'undefined') return;
     if (!('IntersectionObserver' in window)) return;
 
+    warmedThreadIdsRef.current = new Set();
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
         const rootPollId = entry.target.getAttribute('data-thread-root-id');
         if (!rootPollId || warmedThreadIdsRef.current.has(rootPollId)) continue;
         warmedThreadIdsRef.current.add(rootPollId);
-        const thread = threads.find(t => t.rootPollId === rootPollId);
+        const thread = threadsByRootId.get(rootPollId);
         if (!thread) continue;
         for (const poll of thread.polls) {
           void apiGetVotes(poll.id).catch(() => null);
-          // Results are served inline by getAccessiblePolls for most open
-          // polls, but closed polls and polls with min-response thresholds
-          // that haven't been met won't have them — warm those too.
           if (!poll.results) void apiGetPollResults(poll.id).catch(() => null);
         }
         observer.unobserve(entry.target);
@@ -76,9 +74,9 @@ export default function ThreadList({ polls }: ThreadListProps) {
     }, { rootMargin: '200px' });
 
     const els = document.querySelectorAll<HTMLElement>('[data-thread-root-id]');
-    els.forEach(el => observer.observe(el));
+    els.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [threads]);
+  }, [threads, threadsByRootId]);
 
   if (threads.length === 0) return null;
 
