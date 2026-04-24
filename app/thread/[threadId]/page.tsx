@@ -892,9 +892,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {(() => {
                     const r = pollResultsMap.get(poll.id);
                     const userVote = userVoteMap.get(poll.id);
-                    // Stop propagation so that tapping an option card or the
-                    // Abstain link doesn't bubble up to the compact-header
-                    // tap handler and toggle expand/collapse.
+                    const inSuggestions = isInSuggestionPhase(poll);
+                    const inTimeAvailability = isInTimeAvailabilityPhase(poll);
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
 
                     const statusEl: React.ReactNode = (() => {
@@ -908,14 +907,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           </span>
                         );
                       }
-                      const inSuggestions = isInSuggestionPhase(poll);
                       if (inSuggestions && poll.suggestion_deadline) {
                         return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
                       }
                       if (inSuggestions && poll.suggestion_deadline_minutes) {
                         return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                       }
-                      if (isInTimeAvailabilityPhase(poll)) {
+                      if (inTimeAvailability) {
                         if (poll.suggestion_deadline) {
                           return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
                         }
@@ -929,10 +927,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
                     let pillEl: React.ReactNode = null;
                     if (poll.poll_type === 'yes_no') {
-                      // Yes/no's compact pill is rendered by PollResultsDisplay
-                      // with hideLoser=true. When expanded we render the full
-                      // cards in their own row below, so the pill slot is
-                      // empty here.
+                      // When expanded, the full Yes/No cards render in their
+                      // own row below — leave the pill slot empty here.
                       const hasStats = !!r && (r.total_votes || 0) > 0;
                       if (!isExpanded && hasStats) {
                         pillEl = (
@@ -957,7 +953,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         );
                       }
                     } else if (poll.poll_type === 'ranked_choice' && r) {
-                      const inSuggestions = isInSuggestionPhase(poll);
                       const hasPreview = inSuggestions
                         ? (r.suggestion_counts || []).length > 0
                         : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
@@ -972,7 +967,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                           </CompactPreviewClip>
                         );
                       }
-                    } else if (poll.poll_type === 'time' && r && !isInTimeAvailabilityPhase(poll)) {
+                    } else if (poll.poll_type === 'time' && r && !inTimeAvailability) {
                       const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
                       if (hasPreview) {
                         pillEl = (
