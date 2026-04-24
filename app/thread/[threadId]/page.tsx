@@ -1034,7 +1034,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      the old fixed max-w-[75%] respondent cap. */}
                 <div className="col-start-2 row-start-3 mt-0 px-3 flex items-start gap-2 min-w-0">
                   <ClientOnly fallback={null}>
-                    <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500">
+                    <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500 mt-px">
                       {poll.creator_name && <>{poll.creator_name} &middot; </>}
                       <span
                         className="relative cursor-help"
@@ -1058,7 +1058,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <VoterList
                       pollId={poll.id}
                       singleLine
-                      className="flex-1 min-w-0 justify-end mt-1"
+                      className="flex-1 min-w-0 justify-end mt-[3px]"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
                       emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
