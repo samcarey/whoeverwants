@@ -141,7 +141,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
       return null;
     }
     return (
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-end gap-[0.3rem]">
         <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
           {winnerLabel}
         </span>
