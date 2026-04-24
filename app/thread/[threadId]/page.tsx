@@ -1176,7 +1176,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             } catch (err) {
               console.error('Failed to close poll:', err);
             }
-          } else {
+          } else if (action.kind === 'cutoff-availability') {
             try {
               const secret = getCreatorSecret(action.poll.id);
               if (!secret) {
@@ -1206,6 +1206,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               const refreshed = await apiGetPollResults(action.poll.id).catch(() => null);
               if (refreshed) {
                 setPollResultsMap((prev) => {
+                  const existing = prev.get(action.poll.id);
+                  if (
+                    existing &&
+                    existing.total_votes === refreshed.total_votes &&
+                    existing.yes_count === refreshed.yes_count &&
+                    existing.no_count === refreshed.no_count &&
+                    existing.winner === refreshed.winner &&
+                    (existing.suggestion_counts?.length ?? 0) === (refreshed.suggestion_counts?.length ?? 0)
+                  ) {
+                    return prev;
+                  }
                   const next = new Map(prev);
                   next.set(action.poll.id, refreshed);
                   return next;
