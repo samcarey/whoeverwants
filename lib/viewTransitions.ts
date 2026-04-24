@@ -43,14 +43,18 @@ const URL_CHANGE_EVENT = '__app:urlchange';
 if (typeof window !== 'undefined' && !(window as unknown as { __urlEventInstalled?: boolean }).__urlEventInstalled) {
   (window as unknown as { __urlEventInstalled: boolean }).__urlEventInstalled = true;
   const dispatch = () => window.dispatchEvent(new Event(URL_CHANGE_EVENT));
-  const wrap = <T extends (...args: unknown[]) => unknown>(fn: T): T =>
-    (function (this: unknown, ...args: unknown[]) {
-      const ret = fn.apply(this, args);
-      try { dispatch(); } catch {}
-      return ret;
-    }) as T;
-  window.history.pushState = wrap(window.history.pushState.bind(window.history));
-  window.history.replaceState = wrap(window.history.replaceState.bind(window.history));
+  const origPush = window.history.pushState.bind(window.history);
+  const origReplace = window.history.replaceState.bind(window.history);
+  window.history.pushState = function (...args) {
+    const ret = origPush(...(args as Parameters<typeof origPush>));
+    try { dispatch(); } catch {}
+    return ret;
+  };
+  window.history.replaceState = function (...args) {
+    const ret = origReplace(...(args as Parameters<typeof origReplace>));
+    try { dispatch(); } catch {}
+    return ret;
+  };
   window.addEventListener('popstate', dispatch);
 }
 
