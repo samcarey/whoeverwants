@@ -287,6 +287,29 @@ async function main() {
     addResult(results, 'home → thread (cold)', 'click → ready', readySamples);
   }
 
+  // Back nav (`navigateBackWithTransition` → `window.history.back`) can
+  // destroy the page.evaluate execution context mid-call, so scenarios 4/5
+  // use Node-side timing with Playwright's context-aware click + wait.
+  async function measureBackToHome() {
+    const t0 = Date.now();
+    const btn = page.locator('button[aria-label="Go back"]').first();
+    if (await btn.count() > 0) {
+      await btn.click();
+    } else {
+      await page.evaluate(() => window.history.back());
+    }
+    await waitForReady(page, '/');
+    return Date.now() - t0;
+  }
+
+  async function measureHomeToThread(thread) {
+    const threadPath = `/thread/${thread.short_id || thread.id}`;
+    const t0 = Date.now();
+    await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
+    await waitForReady(page, threadPath);
+    return Date.now() - t0;
+  }
+
   // --- Scenario 4: Thread → Home (back button) ---
   console.log('Scenario 4: thread → home (back)');
   {
@@ -299,19 +322,7 @@ async function main() {
       await page.waitForSelector(`[data-thread-root-id]`);
       await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
       await waitForReady(page, threadPath);
-      // Click the visible in-app back button. On the thread page this fires
-      // through navigateBackWithTransition / navigateWithTransition depending
-      // on in-app history.
-      const hasBack = await page.locator('button[aria-label="Go back"]').first().count() > 0;
-      const m = hasBack
-        ? await measureClickNav(page, 'button[aria-label="Go back"]', '/')
-        : { clickToReady: await (async () => {
-            const t0 = await page.evaluate(() => performance.now());
-            await page.evaluate(() => window.history.back());
-            await waitForReady(page, '/');
-            return (await page.evaluate(() => performance.now())) - t0;
-          })() };
-      samples.push(m.clickToReady);
+      samples.push(await measureBackToHome());
     }
     addResult(results, 'thread → home (back)', 'click → ready', samples);
   }
@@ -325,19 +336,8 @@ async function main() {
     await page.waitForSelector(`[data-thread-root-id]`);
     for (let i = 0; i < RUNS; i++) {
       const thread = polls[i % polls.length];
-      const threadPath = `/thread/${thread.short_id || thread.id}`;
-      const m1 = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
-      samples.push(m1.clickToReady);
-      const hasBack = await page.locator('button[aria-label="Go back"]').first().count() > 0;
-      const m2 = hasBack
-        ? await measureClickNav(page, 'button[aria-label="Go back"]', '/')
-        : await (async () => {
-            const t0 = await page.evaluate(() => performance.now());
-            await page.evaluate(() => window.history.back());
-            await waitForReady(page, '/');
-            return { clickToReady: (await page.evaluate(() => performance.now())) - t0 };
-          })();
-      samples.push(m2.clickToReady);
+      samples.push(await measureHomeToThread(thread));
+      samples.push(await measureBackToHome());
     }
     addResult(results, 'rapid home ⇄ thread', 'click → ready', samples);
   }
