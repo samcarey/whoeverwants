@@ -258,7 +258,7 @@ async function main() {
       await page.waitForSelector(`[data-thread-root-id]`);
       const thread = polls[i % polls.length];
       const threadPath = `/thread/${thread.short_id || thread.id}`;
-      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"]`, threadPath);
+      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
       readySamples.push(m.clickToReady);
       urlSamples.push(m.clickToUrl ?? m.clickToReady);
       readyLagSamples.push(m.readyAfterUrl ?? 0);
@@ -278,7 +278,7 @@ async function main() {
       await page.waitForSelector(`[data-thread-root-id]`);
       const thread = polls[i % polls.length];
       const threadPath = `/thread/${thread.short_id || thread.id}`;
-      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"]`, threadPath);
+      const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
       readySamples.push(m.clickToReady);
     }
     addResult(results, 'home → thread (cold)', 'click → ready', readySamples);
@@ -294,7 +294,7 @@ async function main() {
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
       await page.waitForSelector(`[data-thread-root-id]`);
-      await page.locator(`[data-thread-root-id="${thread.id}"]`).click();
+      await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
       await waitForReady(page, threadPath);
       // Click the visible in-app back button. On the thread page this fires
       // through navigateBackWithTransition / navigateWithTransition depending
@@ -323,7 +323,7 @@ async function main() {
     for (let i = 0; i < RUNS; i++) {
       const thread = polls[i % polls.length];
       const threadPath = `/thread/${thread.short_id || thread.id}`;
-      const m1 = await measureClickNav(page, `[data-thread-root-id="${thread.id}"]`, threadPath);
+      const m1 = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
       samples.push(m1.clickToReady);
       const hasBack = await page.locator('button[aria-label="Go back"]').first().count() > 0;
       const m2 = hasBack
