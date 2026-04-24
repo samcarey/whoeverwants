@@ -12,7 +12,7 @@ import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
-import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
+import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
@@ -848,66 +848,33 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 </div>
 
                 {/* Outside the card so taps on the header don't trigger the
-                     card's expand/long-press handlers. */}
-                <div className="col-start-2 row-start-1 flex items-center gap-2 px-3 min-w-0">
-                  <div className="flex items-center gap-1 min-w-0 flex-1 text-xs text-gray-400 dark:text-gray-500">
-                    <ClientOnly fallback={null}>
-                      <span className="truncate">
-                        {poll.creator_name && <>{poll.creator_name} &middot; </>}
-                        <span
-                          className="relative cursor-help"
-                          onClick={() => setTooltipPollId((prev) => (prev === poll.id ? null : poll.id))}
-                          onMouseEnter={() => setTooltipPollId(poll.id)}
-                          onMouseLeave={() => setTooltipPollId((prev) => (prev === poll.id ? null : prev))}
-                        >
-                          {relativeTime(poll.created_at)}
-                          {tooltipPollId === poll.id && (
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
-                            >
-                              {formatCreationTimestamp(poll.created_at)}
-                            </span>
-                          )}
-                        </span>
-                      </span>
-                    </ClientOnly>
-                  </div>
-                  <div className="shrink-0 text-sm text-gray-500 dark:text-gray-400">
-                    <ClientOnly fallback={null}>
-                      {(() => {
-                        if (isClosed) {
-                          const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
-                            ? poll.response_deadline
-                            : poll.updated_at;
-                          return (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">
-                              Closed {compactDurationSince(closedAt)} ago
-                            </span>
-                          );
+                     card's expand/long-press handlers. Closed polls render
+                     nothing here — creator + time live below the card. */}
+                <div className="col-start-2 row-start-1 flex items-center justify-end px-3 min-w-0 text-sm text-gray-500 dark:text-gray-400">
+                  <ClientOnly fallback={null}>
+                    {(() => {
+                      if (isClosed) return null;
+                      const inSuggestions = isInSuggestionPhase(poll);
+                      if (inSuggestions && poll.suggestion_deadline) {
+                        return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                      }
+                      if (inSuggestions && poll.suggestion_deadline_minutes) {
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
+                      }
+                      // Time polls in the availability phase get a label
+                      // in the same slot + format as "Taking Suggestions".
+                      if (isInTimeAvailabilityPhase(poll)) {
+                        if (poll.suggestion_deadline) {
+                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
                         }
-                        const inSuggestions = isInSuggestionPhase(poll);
-                        if (inSuggestions && poll.suggestion_deadline) {
-                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
-                        }
-                        if (inSuggestions && poll.suggestion_deadline_minutes) {
-                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
-                        }
-                        // Time polls in the availability phase get a label
-                        // in the same slot + format as "Taking Suggestions".
-                        if (isInTimeAvailabilityPhase(poll)) {
-                          if (poll.suggestion_deadline) {
-                            return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
-                          }
-                          return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
-                        }
-                        if (poll.response_deadline) {
-                          return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
-                        }
-                        return null;
-                      })()}
-                    </ClientOnly>
-                  </div>
+                        return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
+                      }
+                      if (poll.response_deadline) {
+                        return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
+                      }
+                      return null;
+                    })()}
+                  </ClientOnly>
                 </div>
 
                 <div
@@ -1059,12 +1026,37 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   })()}
                 </div>
 
-                <div className="col-start-2 row-start-3 mt-1.5 flex justify-end">
+                {/* Creator + pub date on the left, respondents on the right.
+                     Creator/date takes its natural width (shrink-0) so the
+                     respondent bubbles get the remainder of the row — replacing
+                     the old fixed max-w-[75%] respondent cap. */}
+                <div className="col-start-2 row-start-3 mt-0 px-3 flex items-start gap-2 min-w-0">
+                  <ClientOnly fallback={null}>
+                    <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500 mt-px">
+                      {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                      <span
+                        className="relative cursor-help"
+                        onClick={() => setTooltipPollId((prev) => (prev === poll.id ? null : poll.id))}
+                        onMouseEnter={() => setTooltipPollId(poll.id)}
+                        onMouseLeave={() => setTooltipPollId((prev) => (prev === poll.id ? null : prev))}
+                      >
+                        {relativeTime(poll.created_at)}
+                        {tooltipPollId === poll.id && (
+                          <span
+                            role="tooltip"
+                            className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-0.5 text-[10px] font-medium text-gray-100 shadow-lg dark:bg-gray-900"
+                          >
+                            {formatCreationTimestamp(poll.created_at)}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </ClientOnly>
                   <ClientOnly fallback={null}>
                     <VoterList
                       pollId={poll.id}
                       singleLine
-                      className="max-w-[75%]"
+                      className="flex-1 min-w-0 justify-end mt-[3px]"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
                       emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
