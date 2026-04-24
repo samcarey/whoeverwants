@@ -206,6 +206,10 @@ async function main() {
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext({ viewport: { width: 430, height: 932 } });
   const page = await context.newPage();
+  if (process.env.BENCH_VERBOSE === '1') {
+    page.on('console', msg => console.log(`[console:${msg.type()}]`, msg.text()));
+    page.on('pageerror', err => console.log('[pageerror]', err.message));
+  }
 
   if (CPU_THROTTLE > 1) {
     const cdp = await context.newCDPSession(page);
