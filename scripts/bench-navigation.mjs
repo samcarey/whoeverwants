@@ -229,6 +229,24 @@ async function main() {
   await page.waitForSelector(`[data-thread-root-id]`);
 
   const results = [];
+  const scenarioErrors = [];
+
+  // Wrap a scenario body so partial dev-server failures (502s under memory
+  // pressure, Next.js compile timeouts, stale page state) don't abort the
+  // whole run. Each scenario's results are appended independently.
+  async function scenario(name, fn) {
+    try {
+      await fn();
+    } catch (err) {
+      scenarioErrors.push({ scenario: name, error: err.message });
+      console.warn(`  ✗ ${name} failed: ${err.message.split('\n')[0]}`);
+      // Best-effort recovery: get us back to a known state before the next scenario.
+      try {
+        await page.goto(BASE_URL, { timeout: 60_000 });
+        await waitForReady(page, '/', 30_000);
+      } catch {}
+    }
+  }
 
   // --- Scenario 1: Cold home load ---
   // Each run creates a fresh browser context (no localStorage, no HTTP cache)
@@ -237,7 +255,7 @@ async function main() {
   // expect huge variance; cold compile can exceed 30s. Fewer runs here since
   // the context creation + goto is itself the expensive part.
   console.log('Scenario 1: cold home load');
-  {
+  await scenario('cold home load', async () => {
     const samples = [];
     const coldRuns = Math.min(RUNS, 3);
     for (let i = 0; i < coldRuns; i++) {
@@ -265,7 +283,7 @@ async function main() {
       }
     }
     addResult(results, 'cold home load', 'goto+ready', samples);
-  }
+  });
 
   // Pre-warm the thread route: on dev servers, the first hit of
   // `/thread/[id]` triggers Next.js on-demand compile (can exceed 30s).
@@ -281,7 +299,7 @@ async function main() {
 
   // --- Scenario 2: Home → Thread (warm cache) ---
   console.log('Scenario 2: home → thread (warm)');
-  {
+  await scenario('home → thread (warm)', async () => {
     const readySamples = [];
     const urlSamples = [];
     const readyLagSamples = [];
@@ -299,14 +317,14 @@ async function main() {
     addResult(results, 'home → thread (warm)', 'click → ready', readySamples);
     addResult(results, 'home → thread (warm)', 'click → url', urlSamples);
     addResult(results, 'home → thread (warm)', 'ready after url', readyLagSamples);
-  }
+  });
 
   // --- Scenario 3: Home → Thread (cold cache) ---
   // `page.goto(BASE_URL)` fully tears down the page (cache, in-flight requests)
   // on each run, simulating a first-time visitor. `reload()` alone would keep
   // whatever URL we ended on from the previous scenario.
   console.log('Scenario 3: home → thread (cold)');
-  {
+  await scenario('home → thread (cold)', async () => {
     const readySamples = [];
     for (let i = 0; i < RUNS; i++) {
       await page.goto(BASE_URL);
@@ -318,7 +336,7 @@ async function main() {
       readySamples.push(m.clickToReady);
     }
     addResult(results, 'home → thread (cold)', 'click → ready', readySamples);
-  }
+  });
 
   // Back nav (`navigateBackWithTransition` → `window.history.back`) can
   // destroy the page.evaluate execution context mid-call, so scenarios 4/5
@@ -345,7 +363,7 @@ async function main() {
 
   // --- Scenario 4: Thread → Home (back button) ---
   console.log('Scenario 4: thread → home (back)');
-  {
+  await scenario('thread → home (back)', async () => {
     const samples = [];
     for (let i = 0; i < RUNS; i++) {
       const thread = polls[i % polls.length];
@@ -358,11 +376,11 @@ async function main() {
       samples.push(await measureBackToHome());
     }
     addResult(results, 'thread → home (back)', 'click → ready', samples);
-  }
+  });
 
   // --- Scenario 5: Rapid Home ⇄ Thread ---
   console.log('Scenario 5: rapid home ⇄ thread');
-  {
+  await scenario('rapid home ⇄ thread', async () => {
     const samples = [];
     await page.goto(BASE_URL);
     await waitForReady(page, '/');
@@ -373,11 +391,15 @@ async function main() {
       samples.push(await measureBackToHome());
     }
     addResult(results, 'rapid home ⇄ thread', 'click → ready', samples);
-  }
+  });
 
   // --- Report ---
   console.log('\n=== Results (milliseconds) ===\n');
   printTable(results);
+  if (scenarioErrors.length > 0) {
+    console.log(`\nScenarios with failures (${scenarioErrors.length}):`);
+    for (const e of scenarioErrors) console.log(`  ${e.scenario}: ${e.error.split('\n')[0]}`);
+  }
 
   if (JSON_OUT) {
     writeFileSync(JSON_OUT, JSON.stringify({
@@ -386,6 +408,7 @@ async function main() {
       cpu_throttle: CPU_THROTTLE,
       timestamp: new Date().toISOString(),
       results,
+      errors: scenarioErrors,
     }, null, 2));
     console.log(`\nJSON written to ${JSON_OUT}`);
   }
