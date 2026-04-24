@@ -1044,6 +1044,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                               createdDate={formatCreationTimestamp(poll.created_at)}
                               pollId={poll.id}
                               externalYesNoResults={poll.poll_type === 'yes_no'}
+                              isExpanded={isExpanded}
                             />
                           </div>
                         </div>

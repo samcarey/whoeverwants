@@ -42,9 +42,13 @@ interface PollPageClientProps {
   // caller (thread view) is rendering them in a stable DOM position above
   // the expand clip to avoid winner-card flicker across expand/collapse.
   externalYesNoResults?: boolean;
+  // Thread-view cards pre-mount PollPageClient in a collapsed grid clip.
+  // When the card collapses while the ballot is being edited, we cancel
+  // the edit so it doesn't persist for the next expansion.
+  isExpanded?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true }: PollPageClientProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -102,6 +106,13 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const [isLoadingVoteData, setIsLoadingVoteData] = useState(false);
   const [isEditingVote, setIsEditingVote] = useState(false); // For suggestion editing
   const [isEditingRanking, setIsEditingRanking] = useState(false); // For ranking editing (independent)
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setIsEditingVote(false);
+      setIsEditingRanking(false);
+    }
+  }, [isExpanded]);
   const [hasPollDataState, setHasPollDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   // Options the user saw when they last voted — used to detect newly added suggestions
