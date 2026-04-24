@@ -981,10 +981,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     if (!statusEl && !pillEl) return null;
                     return (
                       // min-h-7 pins the row to the compact pill's natural
-                      // height (~26px) so the status text (anchored at the
-                      // top by items-start) stays at the same Y whether the
-                      // pill is showing or clipped to 0 by CompactPreviewClip.
-                      <div className="min-h-7 flex items-start gap-2 min-w-0">
+                      // height (~26px) so items-center keeps the status text
+                      // at the same Y whether the pill is showing or clipped
+                      // to 0 by CompactPreviewClip when the card expands.
+                      <div className="min-h-7 flex items-center gap-2 min-w-0">
                         <div className="shrink-0 pl-1 text-sm text-gray-500 dark:text-gray-400">
                           <ClientOnly fallback={null}>{statusEl}</ClientOnly>
                         </div>
