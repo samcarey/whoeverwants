@@ -246,6 +246,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         const polls = await getAccessiblePolls();
         if (!polls) { setError(true); return; }
 
+        // Parallel prefetch: kick off votes fetches for every accessible poll
+        // immediately, in parallel with the React commit + browser paint
+        // pipeline below. apiGetVotes is cache + in-flight coalesced, so each
+        // VoterList hits a warm cache (or the already-in-flight promise) the
+        // moment it mounts — bubbles render alongside the cards instead of
+        // ~100ms after.
+        for (const p of polls) {
+          void apiGetVotes(p.id).catch(() => null);
+        }
+
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
         const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);

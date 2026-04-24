@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { apiGetVotes, ApiVote, POLL_VOTES_CHANGED_EVENT } from '@/lib/api';
+import { getCachedVotes } from '@/lib/pollCache';
 
 interface Voter {
   id: string;
@@ -24,11 +25,28 @@ interface VoterListProps {
 }
 
 export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText }: VoterListProps) {
-  const [voters, setVoters] = useState<Voter[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
+  // Seed from the shared votes cache synchronously so warm navigations (home
+  // page, thread prefetch) render bubbles on the first paint instead of
+  // flashing the skeleton for one frame. The thread page also fires
+  // apiGetVotes in parallel with the thread load, so even on a cold refresh
+  // the cache is usually populated by the time the first VoterList mounts.
+  const seed = (() => {
+    if (typeof window === 'undefined') return null;
+    const cached = getCachedVotes(pollId);
+    if (!cached) return null;
+    const filtered = filter ? cached.filter(filter) : cached;
+    return {
+      voters: filtered.map(v => ({ id: v.id, voter_name: v.voter_name })),
+      anonymousCount: filtered.filter(v => !v.voter_name || v.voter_name.trim() === '').length,
+      key: filtered.map(v => `${v.id}:${v.voter_name ?? ''}`).join(','),
+    };
+  })();
+
+  const [voters, setVoters] = useState<Voter[]>(seed?.voters ?? []);
+  const [initialLoading, setInitialLoading] = useState(seed === null);
   const [error, setError] = useState<string | null>(null);
-  const [anonymousCount, setAnonymousCount] = useState(0);
-  const voterIdsRef = useRef('');
+  const [anonymousCount, setAnonymousCount] = useState(seed?.anonymousCount ?? 0);
+  const voterIdsRef = useRef(seed?.key ?? '');
 
   const fetchVoters = useCallback(async () => {
     try {
