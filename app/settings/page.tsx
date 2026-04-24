@@ -4,9 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
+import { usePageReady } from "@/lib/usePageReady";
 
 export default function SettingsPage() {
   const router = useRouter();
+  // Settings has no async data dependencies — everything renders synchronously
+  // from localStorage — so we can signal ready on mount.
+  usePageReady(true);
   const [name, setName] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);

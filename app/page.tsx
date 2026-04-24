@@ -6,6 +6,8 @@ import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { apiGetAllPollIds } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { getCachedAccessiblePolls } from "@/lib/pollCache";
+import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
 // Fun activity phrases (max 25 chars)
@@ -33,12 +35,28 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Seed polls synchronously from the in-memory cache so re-entering the home
+  // page from a thread renders the full list on first paint — no loading flash
+  // during the view transition slide.
+  const [polls, setPolls] = useState<Poll[]>(() => {
+    if (typeof window === "undefined") return [];
+    return getCachedAccessiblePolls() ?? [];
+  });
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return getCachedAccessiblePolls() === null;
+  });
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
+
+  // Signal "page rendered" to the view-transition helper so the slide
+  // animation captures a fully-painted destination. The home page's outer
+  // chrome (title, settings gear) is always mounted; signal ready on mount
+  // so even the cache-miss case captures the spinner as the "new" state
+  // instead of falling back to the stale-DOM timeout.
+  usePageReady(true);
 
   // Initialize and rotate phrases
   useEffect(() => {

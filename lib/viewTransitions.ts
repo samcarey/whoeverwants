@@ -31,7 +31,14 @@ export function supportsViewTransitions(): boolean {
   return typeof document !== 'undefined' && 'startViewTransition' in document;
 }
 
-async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
+/**
+ * Wait for the destination to commit. Returns `true` if BOTH the URL flipped
+ * AND the destination signaled `data-page-ready` before the deadline, `false`
+ * if either phase timed out. Callers use the boolean to decide whether to
+ * allow the view transition to animate (ready) or to abort it (not ready)
+ * so the browser skips the slide rather than animating a stale snapshot.
+ */
+async function waitForNavigation(targetPath: string, timeoutMs = 3000): Promise<boolean> {
   const target = normalizePath(targetPath);
   const deadline = Date.now() + timeoutMs;
 
@@ -39,32 +46,31 @@ async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<
   while (normalizePath(window.location.pathname) !== target && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10));
   }
+  if (normalizePath(window.location.pathname) !== target) return false;
 
   // Phase 2: wait for the destination page to render. Uses MutationObserver
   // on <html> attributes so we fire the instant `data-page-ready` is set.
-  const contentDeadline = Math.min(deadline, Date.now() + 1000);
-  const alreadyReady = document.documentElement.getAttribute('data-page-ready') === target;
-  if (!alreadyReady) {
-    await new Promise<void>((resolve) => {
-      const observer = new MutationObserver(() => {
-        if (document.documentElement.getAttribute('data-page-ready') === target) {
-          observer.disconnect();
-          resolve();
-        }
-      });
-      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
-      const timeoutId = setTimeout(() => {
-        observer.disconnect();
-        resolve();
-      }, Math.max(0, contentDeadline - Date.now()));
-      // In case attribute was set between our check and observer.observe
+  if (document.documentElement.getAttribute('data-page-ready') === target) return true;
+
+  return new Promise<boolean>((resolve) => {
+    const observer = new MutationObserver(() => {
       if (document.documentElement.getAttribute('data-page-ready') === target) {
-        clearTimeout(timeoutId);
         observer.disconnect();
-        resolve();
+        resolve(true);
       }
     });
-  }
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
+    const timeoutId = setTimeout(() => {
+      observer.disconnect();
+      resolve(false);
+    }, Math.max(0, deadline - Date.now()));
+    // In case attribute was set between our check and observer.observe
+    if (document.documentElement.getAttribute('data-page-ready') === target) {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      resolve(true);
+    }
+  });
 }
 
 type ViewTransition = { finished: Promise<void> };
@@ -81,6 +87,14 @@ export function navigateWithTransition(
   direction: NavDirection = 'forward',
   { mode = 'push' }: { mode?: 'push' | 'replace' } = {},
 ): void {
+  const targetPath = new URL(href, window.location.origin).pathname;
+  // Same-path early return: `router.push(currentPath)` is a no-op in App
+  // Router, but `startViewTransition` would still animate an identical
+  // old/new snapshot pair. Skip the whole thing. Also covers the case where
+  // `history.replaceState` (from card expand/collapse) has already put the
+  // URL at the target.
+  if (normalizePath(targetPath) === normalizePath(window.location.pathname)) return;
+
   const navigate = () => router[mode](href);
   const start = getStart();
   if (!start) {
@@ -93,13 +107,20 @@ export function navigateWithTransition(
 
   const cleanup = () => root.removeAttribute('data-nav-direction');
 
-  const targetPath = new URL(href, window.location.origin).pathname;
   try {
     const transition = start.call(document, async () => {
       navigate();
-      await waitForNavigation(targetPath);
+      const ready = await waitForNavigation(targetPath);
+      if (!ready) {
+        // Destination didn't commit in time — abort the transition by
+        // rejecting the callback promise. Per the View Transitions spec this
+        // skips the animation, so the browser does an instant page swap
+        // instead of capturing a stale DOM snapshot as the "new" state.
+        // The navigation itself still happens — we called navigate() above.
+        throw new Error('page-not-ready');
+      }
     });
-    transition.finished.finally(cleanup);
+    transition.finished.catch(() => {}).finally(cleanup);
   } catch {
     cleanup();
     navigate();

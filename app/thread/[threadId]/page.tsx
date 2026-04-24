@@ -11,7 +11,8 @@ import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
-import { isUuidLike, normalizePath } from "@/lib/pollId";
+import { isUuidLike } from "@/lib/pollId";
+import { usePageReady } from "@/lib/usePageReady";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
@@ -126,19 +127,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   }, [thread]);
 
   // Signal to the view transition helper that this page's content is rendered.
-  // Uses useLayoutEffect so the attribute is set before paint (and before the
-  // view transition callback detects it and captures the "new" snapshot).
-  useLayoutEffect(() => {
-    if (thread && !loading) {
-      const path = normalizePath(window.location.pathname);
-      document.documentElement.setAttribute('data-page-ready', path);
-      return () => {
-        if (document.documentElement.getAttribute('data-page-ready') === path) {
-          document.documentElement.removeAttribute('data-page-ready');
-        }
-      };
-    }
-  }, [thread, loading]);
+  usePageReady(!!thread && !loading);
 
   // Prefetch poll page routes for all polls in this thread
   useEffect(() => {
