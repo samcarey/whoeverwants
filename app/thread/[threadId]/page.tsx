@@ -9,7 +9,7 @@ import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadU
 import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
-import { addAccessiblePollId, getCreatorSecret } from "@/lib/browserPollAccess";
+import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike, normalizePath } from "@/lib/pollId";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
@@ -220,6 +220,18 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       try {
         if (!initialThread) setLoading(true);
         setError(false);
+
+        // Parallel prefetch: fire apiGetVotes for every id this browser
+        // already has access to (from localStorage) at the very start of the
+        // load, BEFORE awaiting anything. These run in parallel with the
+        // accessible-polls + discover round-trips, so by the time the thread
+        // is built and VoterList components mount the votes cache is already
+        // warm — bubbles render alongside the cards instead of ~100ms after.
+        // apiGetVotes is cache + in-flight coalesced, so a later VoterList
+        // mount hits either a cached result or the already-in-flight promise.
+        for (const id of getAccessiblePollIds()) {
+          void apiGetVotes(id).catch(() => null);
+        }
 
         // Step 1: Fetch the poll referenced in the URL and register access.
         // Check the in-memory cache first — the home page already fetched all accessible polls.
