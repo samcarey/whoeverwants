@@ -286,7 +286,11 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the measured header height is applied
+  // BEFORE the browser paints the first frame. With useEffect, the first paint
+  // had headerHeight=0 → content sat at y=0 → re-render shifted it down by
+  // ~100px (visible as a one-frame slide on refresh).
+  useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el) return;
     const update = () => setHeaderHeight(el.offsetHeight);
