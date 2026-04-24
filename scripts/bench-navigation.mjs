@@ -96,11 +96,20 @@ function normalize(path) {
 
 async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
   const target = normalize(targetPath);
-  await page.waitForFunction(
-    (t) => document.documentElement.getAttribute('data-page-ready') === t,
-    target,
-    { timeout },
-  );
+  try {
+    await page.waitForFunction(
+      (t) => document.documentElement.getAttribute('data-page-ready') === t,
+      target,
+      { timeout },
+    );
+  } catch (err) {
+    const diag = await page.evaluate(() => ({
+      ready: document.documentElement.getAttribute('data-page-ready'),
+      path: window.location.pathname,
+      body: document.body?.innerText?.slice(0, 200) || '',
+    }));
+    throw new Error(`waitForReady(${target}) timed out. State: ${JSON.stringify(diag)}`);
+  }
 }
 
 /**
