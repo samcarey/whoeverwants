@@ -65,6 +65,23 @@ async function waitForUrlChange(predicate: () => boolean, deadline: number): Pro
   });
 }
 
+/** Wait for `data-page-ready` on <html> to match `target` before `deadline`. */
+function waitForPageReady(target: string, deadline: number): Promise<boolean> {
+  const matches = () => document.documentElement.getAttribute('data-page-ready') === target;
+  if (matches()) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const cleanup = () => {
+      observer.disconnect();
+      clearTimeout(timeoutId);
+    };
+    const observer = new MutationObserver(() => {
+      if (matches()) { cleanup(); resolve(true); }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
+    const timeoutId = setTimeout(() => { cleanup(); resolve(false); }, Math.max(0, deadline - Date.now()));
+  });
+}
+
 /** Wait for the destination to commit. Returns true only if the URL flipped
  *  AND `data-page-ready` matches the target before the deadline. */
 async function waitForNavigation(targetPath: string, timeoutMs = 3000): Promise<boolean> {
@@ -77,26 +94,7 @@ async function waitForNavigation(targetPath: string, timeoutMs = 3000): Promise<
   );
   if (!urlOk) return false;
 
-  if (document.documentElement.getAttribute('data-page-ready') === target) return true;
-
-  return new Promise<boolean>((resolve) => {
-    const observer = new MutationObserver(() => {
-      if (document.documentElement.getAttribute('data-page-ready') === target) {
-        observer.disconnect();
-        resolve(true);
-      }
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
-    const timeoutId = setTimeout(() => {
-      observer.disconnect();
-      resolve(false);
-    }, Math.max(0, deadline - Date.now()));
-    if (document.documentElement.getAttribute('data-page-ready') === target) {
-      clearTimeout(timeoutId);
-      observer.disconnect();
-      resolve(true);
-    }
-  });
+  return waitForPageReady(target, deadline);
 }
 
 type ViewTransition = { finished: Promise<void> };
@@ -170,14 +168,18 @@ export function navigateBackWithTransition(): void {
   try {
     const previousPath = window.location.pathname;
     const transition = start.call(document, async () => {
+      const deadline = Date.now() + 3000;
       window.history.back();
-      await waitForUrlChange(
+      const urlOk = await waitForUrlChange(
         () => window.location.pathname !== previousPath,
-        Date.now() + 800,
+        deadline,
       );
-      await new Promise((r) => setTimeout(r, 120));
+      if (!urlOk) throw new Error('page-not-ready');
+      const target = normalizePath(window.location.pathname);
+      const ready = await waitForPageReady(target, deadline);
+      if (!ready) throw new Error('page-not-ready');
     });
-    transition.finished.finally(cleanup);
+    transition.finished.catch(() => {}).finally(cleanup);
   } catch {
     cleanup();
     window.history.back();
