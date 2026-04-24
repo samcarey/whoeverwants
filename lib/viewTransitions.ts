@@ -1,21 +1,10 @@
 /**
  * View Transitions API helpers for iOS-style slide navigation.
  *
- * Wraps `router.push()` in `document.startViewTransition()` with a direction
- * attribute on the HTML element so CSS applies the right animation.
- *
- * Waits for the destination page to signal `data-page-ready` on <html>
- * before letting the callback resolve, so the browser's "after" snapshot
- * contains a fully rendered page. Destination pages initialize their state
- * synchronously from the in-memory cache and set `data-page-ready` in a
- * `useLayoutEffect` as soon as they commit.
- *
- * Trade-off: a short pause (~100-300ms on mobile) between tap and slide
- * start, during which the old page is frozen while React commits the new
- * route. The alternative — starting the slide immediately — shows an
- * empty/partial new page during the animation on slower devices because
- * Next.js App Router's router.push is async internally (flushSync doesn't
- * force it to commit synchronously).
+ * `navigateWithTransition` wraps `router.push` in `document.startViewTransition`
+ * and waits for the destination to commit + signal `data-page-ready` before
+ * the callback resolves, so the browser's "new" snapshot is captured from a
+ * fully rendered page rather than a stale DOM.
  */
 
 import { normalizePath } from './pollId';
@@ -31,40 +20,83 @@ export function supportsViewTransitions(): boolean {
   return typeof document !== 'undefined' && 'startViewTransition' in document;
 }
 
-async function waitForNavigation(targetPath: string, timeoutMs = 1500): Promise<void> {
+// Next.js App Router calls `history.pushState` internally, which doesn't fire
+// `popstate`. We patch pushState/replaceState to dispatch a custom event so
+// waits can be event-driven instead of polling.
+const URL_CHANGE_EVENT = '__app:urlchange';
+declare global {
+  interface Window { __urlEventInstalled?: boolean }
+}
+if (typeof window !== 'undefined' && !window.__urlEventInstalled) {
+  window.__urlEventInstalled = true;
+  const dispatch = () => window.dispatchEvent(new Event(URL_CHANGE_EVENT));
+  const origPush = window.history.pushState.bind(window.history);
+  const origReplace = window.history.replaceState.bind(window.history);
+  window.history.pushState = function (...args) {
+    const ret = origPush(...(args as Parameters<typeof origPush>));
+    try { dispatch(); } catch {}
+    return ret;
+  };
+  window.history.replaceState = function (...args) {
+    const ret = origReplace(...(args as Parameters<typeof origReplace>));
+    try { dispatch(); } catch {}
+    return ret;
+  };
+  window.addEventListener('popstate', dispatch);
+}
+
+/** Await a URL-change predicate, with a 50 ms safety poll for URL mutations
+ *  that bypass history.*State, plus a deadline. Returns true on predicate pass. */
+async function waitForUrlChange(predicate: () => boolean, deadline: number): Promise<boolean> {
+  if (predicate()) return true;
+  return new Promise<boolean>((resolve) => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const cleanup = () => {
+      window.removeEventListener(URL_CHANGE_EVENT, check);
+      clearTimeout(timeoutId);
+    };
+    const check = () => {
+      if (predicate()) { cleanup(); resolve(true); }
+      else if (Date.now() >= deadline) { cleanup(); resolve(false); }
+      else { timeoutId = setTimeout(check, 50); }
+    };
+    window.addEventListener(URL_CHANGE_EVENT, check);
+    check();
+  });
+}
+
+/** Wait for the destination to commit. Returns true only if the URL flipped
+ *  AND `data-page-ready` matches the target before the deadline. */
+async function waitForNavigation(targetPath: string, timeoutMs = 3000): Promise<boolean> {
   const target = normalizePath(targetPath);
   const deadline = Date.now() + timeoutMs;
 
-  // Phase 1: wait for the URL to change.
-  while (normalizePath(window.location.pathname) !== target && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 10));
-  }
+  const urlOk = await waitForUrlChange(
+    () => normalizePath(window.location.pathname) === target,
+    deadline,
+  );
+  if (!urlOk) return false;
 
-  // Phase 2: wait for the destination page to render. Uses MutationObserver
-  // on <html> attributes so we fire the instant `data-page-ready` is set.
-  const contentDeadline = Math.min(deadline, Date.now() + 1000);
-  const alreadyReady = document.documentElement.getAttribute('data-page-ready') === target;
-  if (!alreadyReady) {
-    await new Promise<void>((resolve) => {
-      const observer = new MutationObserver(() => {
-        if (document.documentElement.getAttribute('data-page-ready') === target) {
-          observer.disconnect();
-          resolve();
-        }
-      });
-      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
-      const timeoutId = setTimeout(() => {
-        observer.disconnect();
-        resolve();
-      }, Math.max(0, contentDeadline - Date.now()));
-      // In case attribute was set between our check and observer.observe
+  if (document.documentElement.getAttribute('data-page-ready') === target) return true;
+
+  return new Promise<boolean>((resolve) => {
+    const observer = new MutationObserver(() => {
       if (document.documentElement.getAttribute('data-page-ready') === target) {
-        clearTimeout(timeoutId);
         observer.disconnect();
-        resolve();
+        resolve(true);
       }
     });
-  }
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-page-ready'] });
+    const timeoutId = setTimeout(() => {
+      observer.disconnect();
+      resolve(false);
+    }, Math.max(0, deadline - Date.now()));
+    if (document.documentElement.getAttribute('data-page-ready') === target) {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      resolve(true);
+    }
+  });
 }
 
 type ViewTransition = { finished: Promise<void> };
@@ -81,6 +113,11 @@ export function navigateWithTransition(
   direction: NavDirection = 'forward',
   { mode = 'push' }: { mode?: 'push' | 'replace' } = {},
 ): void {
+  const targetPath = new URL(href, window.location.origin).pathname;
+  // Same-path no-op: router.push(currentPath) won't change anything, but
+  // startViewTransition would still animate identical old/new snapshots.
+  if (normalizePath(targetPath) === normalizePath(window.location.pathname)) return;
+
   const navigate = () => router[mode](href);
   const start = getStart();
   if (!start) {
@@ -93,13 +130,15 @@ export function navigateWithTransition(
 
   const cleanup = () => root.removeAttribute('data-nav-direction');
 
-  const targetPath = new URL(href, window.location.origin).pathname;
   try {
     const transition = start.call(document, async () => {
       navigate();
-      await waitForNavigation(targetPath);
+      const ready = await waitForNavigation(targetPath);
+      // Throwing aborts the transition (per spec): the browser skips the
+      // animation rather than capturing a stale DOM as the "new" snapshot.
+      if (!ready) throw new Error('page-not-ready');
     });
-    transition.finished.finally(cleanup);
+    transition.finished.catch(() => {}).finally(cleanup);
   } catch {
     cleanup();
     navigate();
@@ -132,10 +171,10 @@ export function navigateBackWithTransition(): void {
     const previousPath = window.location.pathname;
     const transition = start.call(document, async () => {
       window.history.back();
-      const started = Date.now();
-      while (window.location.pathname === previousPath && Date.now() - started < 800) {
-        await new Promise((r) => setTimeout(r, 10));
-      }
+      await waitForUrlChange(
+        () => window.location.pathname !== previousPath,
+        Date.now() + 800,
+      );
       await new Promise((r) => setTimeout(r, 120));
     });
     transition.finished.finally(cleanup);

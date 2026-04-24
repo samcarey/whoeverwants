@@ -6,6 +6,8 @@ import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { apiGetAllPollIds } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
+import { getCachedAccessiblePolls } from "@/lib/pollCache";
+import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
 // Fun activity phrases (max 25 chars)
@@ -33,12 +35,19 @@ const activityPhrases = [
 ];
 
 export default function Home() {
-  const [polls, setPolls] = useState<Poll[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cache-seed avoids loading flash on view-transition return from a thread.
+  const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
+    const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
+    return { polls: cached ?? [], loading: cached === null };
+  });
+  const [polls, setPolls] = useState<Poll[]>(initialPolls);
+  const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
   const [displayedPhrase, setDisplayedPhrase] = useState<string>("");
   const [fontSize, setFontSize] = useState<string>("text-xl");
+
+  usePageReady(true);
 
   // Initialize and rotate phrases
   useEffect(() => {

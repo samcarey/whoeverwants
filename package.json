@@ -25,6 +25,7 @@
     "test:e2e:verbose": "playwright test --config=tests/e2e/config/playwright.config.ts --reporter=line",
     "test:e2e:report": "playwright show-report",
     "test:e2e:codegen": "playwright codegen http://localhost:3000",
+    "bench:nav": "node scripts/bench-navigation.mjs",
     "publish": "./scripts/publish.sh"
   },
   "dependencies": {

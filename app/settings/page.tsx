@@ -4,9 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getUserName, saveUserName, clearUserName, getUserLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/userProfile";
 import { apiGeocode } from "@/lib/api";
+import { usePageReady } from "@/lib/usePageReady";
 
 export default function SettingsPage() {
   const router = useRouter();
+  usePageReady(true);
   const [name, setName] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [savedLocation, setSavedLocation] = useState<UserLocation | null>(null);

@@ -9,7 +9,7 @@
  * + relationship-discovery path only when the cache miss occurs.
  */
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Poll } from "./types";
 import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
 import { getAccessiblePolls } from "./simplePollQueries";
@@ -17,8 +17,9 @@ import { discoverRelatedPolls } from "./pollDiscovery";
 import { apiGetPollById, apiGetPollByShortId } from "./api";
 import { addAccessiblePollId } from "./browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId } from "./pollCache";
-import { isUuidLike, normalizePath } from "./pollId";
+import { isUuidLike } from "./pollId";
 import { loadVotedPolls } from "./votedPollsStorage";
+import { usePageReady } from "./usePageReady";
 
 export interface UseThreadResult {
   thread: Thread | null;
@@ -38,17 +39,7 @@ export function useThread(threadId: string): UseThreadResult {
 
   // Signal "page rendered" to the view-transition helper so the slide
   // animation captures a fully-painted destination.
-  useLayoutEffect(() => {
-    if (thread && !loading) {
-      const path = normalizePath(window.location.pathname);
-      document.documentElement.setAttribute("data-page-ready", path);
-      return () => {
-        if (document.documentElement.getAttribute("data-page-ready") === path) {
-          document.documentElement.removeAttribute("data-page-ready");
-        }
-      };
-    }
-  }, [thread, loading]);
+  usePageReady(!!thread && !loading);
 
   useEffect(() => {
     // Cache hit: synchronous init already populated `thread`; skip the async

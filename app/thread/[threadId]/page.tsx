@@ -11,7 +11,8 @@ import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
-import { isUuidLike, normalizePath } from "@/lib/pollId";
+import { isUuidLike } from "@/lib/pollId";
+import { usePageReady } from "@/lib/usePageReady";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
@@ -126,19 +127,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   }, [thread]);
 
   // Signal to the view transition helper that this page's content is rendered.
-  // Uses useLayoutEffect so the attribute is set before paint (and before the
-  // view transition callback detects it and captures the "new" snapshot).
-  useLayoutEffect(() => {
-    if (thread && !loading) {
-      const path = normalizePath(window.location.pathname);
-      document.documentElement.setAttribute('data-page-ready', path);
-      return () => {
-        if (document.documentElement.getAttribute('data-page-ready') === path) {
-          document.documentElement.removeAttribute('data-page-ready');
-        }
-      };
-    }
-  }, [thread, loading]);
+  usePageReady(!!thread && !loading);
 
   // Prefetch poll page routes for all polls in this thread
   useEffect(() => {
@@ -214,10 +203,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const isScrolling = useRef(false);
   const [pressedPollId, setPressedPollId] = useState<string | null>(null);
 
-  // Fetch the referenced poll, register access, discover children, build thread.
-  // If we already have a synchronous cache-built thread, this runs in the
-  // background to refresh with fresh data (discoverRelatedPolls, new votes, etc.)
-  // without showing a loading state.
+  // On cache hit, defer the background refresh via requestIdleCallback so it
+  // doesn't compete with React commit during a view transition.
   useEffect(() => {
     async function fetchThread() {
       try {
@@ -283,6 +270,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       }
     }
 
+    if (initialThread) {
+      // `requestIdleCallback` is unsupported in Safari; fall back to setTimeout(0).
+      const w = window as Window & {
+        requestIdleCallback?: (cb: () => void) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      const schedule = w.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 0) as unknown as number);
+      const cancel = w.cancelIdleCallback ?? ((id: number) => clearTimeout(id as unknown as NodeJS.Timeout));
+      const id = schedule(() => { void fetchThread(); });
+      return () => cancel(id);
+    }
     fetchThread();
   }, [threadId]);
 

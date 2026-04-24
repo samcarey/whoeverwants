@@ -269,6 +269,7 @@ whoeverwants/
 │   ├── pollCache.ts                # In-memory LRU cache for polls/results/votes/participants
 │   ├── pollId.ts                   # isUuidLike + normalizePath helpers
 │   ├── viewTransitions.ts          # iOS-style slide transitions via View Transitions API
+│   ├── usePageReady.ts             # Hook writing data-page-ready for view transitions
 │   ├── instant-loading.ts          # Page load optimization
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
@@ -318,7 +319,8 @@ whoeverwants/
 │   ├── health-check.sh             # Production health monitoring
 │   ├── backup-db.sh                # Database backup (runs on droplet)
 │   ├── debug-console.cjs           # Playwright browser console capture
-│   └── debug-react-state.cjs       # React state debugging
+│   ├── debug-react-state.cjs       # React state debugging
+│   └── bench-navigation.mjs        # Playwright navigation-perf benchmark
 │
 ├── public/                         # Static assets
 │   ├── manifest.json               # PWA manifest
@@ -440,6 +442,9 @@ npm run test:e2e               # Playwright E2E tests
 # Debugging
 npm run debug:console [url]    # Capture browser console via Playwright
 npm run debug:react [id] [act] # Debug React component state
+
+# Benchmarking
+BENCH_URL=https://... npm run bench:nav  # Navigation performance benchmark
 
 # Deployment
 npm run publish                # Full workflow: commit, merge, push, migrate
@@ -1360,11 +1365,25 @@ For pixel-precise verification, use `page.evaluate()` with `getBoundingClientRec
 - **Production API rewrites ignore `PYTHON_API_URL`.** `next.config.ts: getApiRewriteDestination()` returns the external `api.whoeverwants.com` or branch-slug subdomain when `NODE_ENV === 'production'`. To test a production build on a dev droplet pointing at the local FastAPI, patch the function to check `PYTHON_API_URL` first before the prod branch.
 - **`document.startViewTransition` callback has no access to `requestAnimationFrame`.** The browser pauses rendering (including rAF) during the callback, so awaiting `requestAnimationFrame` creates a deadlock that fires the browser's 4-second view-transition timeout. Use `setTimeout`/`MutationObserver` instead.
 - **`router.push` is async in Next.js App Router — `flushSync` can't force it synchronous.** Wrapping `router.push` in `flushSync` inside a view transition callback looks plausible but doesn't actually commit the new route synchronously; the browser then captures "old" and "new" snapshots that are identical and optimizes the animation away. Don't do it.
-- **Destination pages must signal "ready" for the view transition to capture a full page.** The pattern: destination pages initialize state synchronously from an in-memory cache (so the first render has real content, not a loading spinner) AND set `data-page-ready` on `<html>` in a `useLayoutEffect`. The `navigateWithTransition` callback (`lib/viewTransitions.ts`) waits on `MutationObserver` for that attribute to match the expected pathname before resolving. Without this, the slide animates an empty snapshot and content pops in at the end.
+- **Destination pages must signal "ready" via `usePageReady` (`lib/usePageReady.ts`).** The hook writes `data-page-ready=<normalized-pathname>` on `<html>` in a `useLayoutEffect`. `navigateWithTransition` waits on a `MutationObserver` for that attribute to match the expected pathname before releasing the transition. Every client page that is a navigation destination must call it — otherwise `waitForNavigation` falls back to its 3000 ms timeout and the browser captures stale DOM as the "new" snapshot, producing the "slide plays but new page looks identical to old" bug. Pages using `useThread` (`lib/useThread.ts`) inherit the signal for free. Pass `true` as soon as the page can render something meaningful (a spinner is fine, beats stale content); don't wait for full data-load.
+- **`navigateWithTransition` fails closed when `data-page-ready` never lands.** If `waitForNavigation` times out, the transition callback throws `page-not-ready` and the browser skips the animation (per spec), doing an instant page swap. That's a better failure mode than animating stale→stale. Keep the `transition.finished.catch(() => {}).finally(cleanup)` dance — the catch is required because we deliberately throw.
+- **Same-path `router.push` is a no-op — don't wrap it in a transition.** `navigateWithTransition` early-returns when `normalizePath(targetPath) === normalizePath(location.pathname)` so `startViewTransition` never fires with identical old/new snapshots. Also covers the case where card-expand `history.replaceState` already moved the URL to the target.
+- **Next.js App Router uses `history.pushState` internally, which does NOT fire `popstate`.** `popstate` only fires on back/forward. `lib/viewTransitions.ts` monkey-patches `history.pushState`/`replaceState` at module load to dispatch a custom `__app:urlchange` event — lets `waitForNavigation` Phase 1 await a real event instead of polling. Idempotent via `window.__urlEventInstalled` flag. The patch runs on every route that imports the module; the guard makes re-imports free.
 - **Trailing slashes require normalization.** The app uses `trailingSlash: true`, so `router.push('/thread/xyz')` navigates to `/thread/xyz/`. Any pathname comparison must strip the trailing slash; `lib/pollId.ts: normalizePath()` is the canonical helper.
+- **Defer background refreshes on cache-hit to let React commit first.** On `app/thread/[threadId]/page.tsx` the destination mounts synchronously from `pollCache`; the `fetchThread` refresh (discoverRelatedPolls + getAccessiblePolls + votes prefetch) is scheduled via `requestIdleCallback` (with `setTimeout(0)` fallback for Safari) so it doesn't compete with the initial React commit during the transition. This collapses `ready-after-url` from ~300 ms to near-zero — remaining click→ready time is dominated by `router.push` internals, not user-code work.
 - **View transitions capture DOM snapshots — Playwright `.screenshot()` reads the live DOM, not the pseudo-elements.** During an animation, the underlying DOM is the destination page; Playwright shows that, not the sliding pseudo-elements. Verify animation visibility by checking CSS animation events (`transition.ready`, `transition.finished`) or by slowing `animation-duration` to capture mid-frames.
 - **`view-transition-name` on destination page headers makes them separate transition groups during EVERY navigation** — not just matching ones. If page A has `view-transition-name: hero` and page B doesn't, navigating A→B causes page A's hero to fade out independently while the root slides. If you want a hero-title morph, apply `view-transition-name` dynamically only during transitions where both source AND destination have the matching name; never set it statically on page headers.
 - **Shared-element hero morphs don't work well when destination title ≠ source title.** The browser animates the source element's content into the destination position, so users see `"Poll A"` sliding into where `"Thread A"` will be, then flashing to the correct text. For pages with conceptually different titles (poll → thread), skip the morph entirely and let the whole page slide as a single root snapshot.
+
+### Navigation Performance Benchmark (`scripts/bench-navigation.mjs`)
+
+- **`npm run bench:nav` drives a real Chromium via Playwright against any URL.** Set `BENCH_URL=https://<origin>`; optional `BENCH_RUNS` (default 8), `BENCH_HEADLESS=0` to watch, `BENCH_CPU_THROTTLE=4` for 4× slowdown via CDP, `BENCH_JSON=path.json` for machine-readable output, `BENCH_VERBOSE=1` for browser console + pageerrors.
+- **Core metric is `click → data-page-ready`.** All timing happens inside the browser via `performance.now()` to avoid Playwright CDP round-trip overhead. For `home → thread (warm)` the bench also reports `click → url flip`, `ready after url`, and `click → transition done` (when the `data-nav-direction` attribute clears, i.e. `ViewTransition.finished` resolved).
+- **Scenarios:** cold home load, home→thread (warm + cold), thread→home via back button, rapid home⇄thread. Each scenario is wrapped in `try/catch` so dev-server flakiness (502s under memory pressure, HMR races) yields partial results rather than aborting the run.
+- **Warm-up pass is built in.** On dev servers the first hit of `/thread/[id]` triggers Next.js on-demand compile (can exceed 30s), so the bench hits the thread route once before Scenario 2 to pay the compile cost outside measurement.
+- **Structural DOM fallback covers dev HMR races.** If `data-page-ready` doesn't land in time but the page's canonical fingerprint (`[data-thread-root-id]` on home, `body[data-thread-latest-poll-id]` on thread) is present, treat as ready. Only matters in dev; in prod the attribute always wins.
+- **Reference numbers** (prod-mode build on a dev droplet, 10 runs, for the main "home→thread (warm)" scenario): click→url p50 ~200-500ms, ready-after-url p50 ~0-320ms, click→ready p50 ~450-600ms, click→transition-done p50 ~1100-1200ms (final ~500ms is the CSS slide animation). Heavy run-to-run variance on the 1 GB droplet — repeat 2-3 times before drawing conclusions.
+- **Dev numbers are inflated 3-6× vs prod** (on-demand compile + React dev mode). For apples-to-apples comparisons build prod mode per `### Production build testing on dev droplet`.
 
 ### In-memory data cache for navigation
 
