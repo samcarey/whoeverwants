@@ -218,30 +218,38 @@ async function main() {
   const results = [];
 
   // --- Scenario 1: Cold home load ---
+  // Each run creates a fresh browser context (no localStorage, no HTTP cache)
+  // and measures goto + reload-with-populated-localStorage + ready. On dev
+  // servers the first hit of any route incurs Next.js on-demand compile —
+  // expect huge variance; cold compile can exceed 30s. Fewer runs here since
+  // the context creation + goto is itself the expensive part.
   console.log('Scenario 1: cold home load');
   {
     const samples = [];
-    for (let i = 0; i < RUNS; i++) {
+    const coldRuns = Math.min(RUNS, 3);
+    for (let i = 0; i < coldRuns; i++) {
       const c2 = await browser.newContext({ viewport: { width: 430, height: 932 } });
       const p2 = await c2.newPage();
       if (CPU_THROTTLE > 1) {
         const cdp = await c2.newCDPSession(p2);
         await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
       }
-      await p2.goto(BASE_URL);
-      await p2.evaluate(({ ids, secret }) => {
-        localStorage.setItem('accessible_poll_ids', JSON.stringify(ids));
-        const secrets = {};
-        for (const id of ids) secrets[id] = secret;
-        localStorage.setItem('poll_creator_secrets', JSON.stringify(secrets));
-      }, { ids: pollIds, secret: creatorSecret });
-      const t0 = await p2.evaluate(() => performance.now());
-      await p2.reload();
-      await waitForReady(p2, '/');
-      await p2.waitForSelector(`[data-thread-root-id]`);
-      const t1 = await p2.evaluate(() => performance.now());
-      samples.push(t1 - t0);
-      await c2.close();
+      try {
+        await p2.goto(BASE_URL, { timeout: 60_000 });
+        await p2.evaluate(({ ids, secret }) => {
+          localStorage.setItem('accessible_poll_ids', JSON.stringify(ids));
+          const secrets = {};
+          for (const id of ids) secrets[id] = secret;
+          localStorage.setItem('poll_creator_secrets', JSON.stringify(secrets));
+        }, { ids: pollIds, secret: creatorSecret });
+        const t0 = Date.now();
+        await p2.reload({ timeout: 60_000 });
+        await waitForReady(p2, '/', 60_000);
+        await p2.waitForSelector(`[data-thread-root-id]`, { timeout: 60_000 });
+        samples.push(Date.now() - t0);
+      } finally {
+        await c2.close();
+      }
     }
     addResult(results, 'cold home load', 'goto+ready', samples);
   }
