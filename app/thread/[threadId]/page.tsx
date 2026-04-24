@@ -73,18 +73,16 @@ const PENDING_ACTION_COPY: Record<PendingActionKind, {
 
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
-// with the heavy-content expand clip below. mt-2 lives inside the
-// overflow-hidden child so the margin is clipped along with the pill —
-// moving it to the outer wrapper would leave an 8px gap when expanded.
+// with the heavy-content expand clip below. The pill sits directly at the
+// top of the overflow-hidden child so its text center aligns with the
+// sibling status text via the parent flex row's items-center.
 function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; children: React.ReactNode }) {
   return (
     <div
       className={`grid transition-[grid-template-rows] duration-300 ease-out ${isExpanded ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'}`}
       aria-hidden={isExpanded}
     >
-      <div className="overflow-hidden">
-        <div className="mt-2">{children}</div>
-      </div>
+      <div className="overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -853,7 +851,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-0.5' : 'pb-2'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-0.5' : 'pb-1'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
