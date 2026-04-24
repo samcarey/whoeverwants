@@ -142,7 +142,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
     }
     return (
       <div className="flex items-center justify-end gap-[0.2rem]">
-        <span className={`inline-block px-3 py-0.5 rounded-full border text-sm font-bold ${winnerPillColors}`}>
+        <span className={`inline-block px-2 py-px rounded-full border text-sm font-bold ${winnerPillColors}`}>
           {winnerLabel}
         </span>
         <span className="text-sm font-bold tabular-nums text-gray-800 dark:text-gray-200">
@@ -817,7 +817,7 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
 // min-w-0 overrides the default `min-width: auto` on flex items so the pill
 // can shrink below its content width when the thread card's footer row is
 // tight, letting the internal `truncate` produce ellipsis on long winner names.
-const PILL_CLASS = "inline-block min-w-0 px-3 py-0.5 rounded-full border text-sm font-bold truncate max-w-[14rem]";
+const PILL_CLASS = "inline-block min-w-0 px-2 py-px rounded-full border text-sm font-bold truncate max-w-[14rem]";
 const PILL_COLORS_CLOSED = "bg-green-100 dark:bg-green-900 border-green-400 dark:border-green-600 text-green-900 dark:text-green-100";
 const PILL_COLORS_OPEN = "bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-blue-600 text-blue-900 dark:text-blue-100";
 
