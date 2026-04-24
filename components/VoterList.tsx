@@ -85,7 +85,10 @@ export default function VoterList({ pollId, className = "", label, filter, singl
           <div
             key={i}
             className="animate-pulse inline-block px-2.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700"
-            style={{ width: `${50 + (i * 12) % 30}px`, height: '24px' }}
+            // 20px matches the loaded bubble height (text-xs line-height 16px
+            // + py-0.5 4px). Without this, skeleton → loaded transition
+            // shrinks the row by 4px and every card below jitters up.
+            style={{ width: `${50 + (i * 12) % 30}px`, height: '20px' }}
           />
         ))}
       </div>
