@@ -1058,7 +1058,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     <VoterList
                       pollId={poll.id}
                       singleLine
-                      className="flex-1 min-w-0 justify-end mt-2"
+                      className="flex-1 min-w-0 justify-end mt-1"
                       filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
                       emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
                     />
