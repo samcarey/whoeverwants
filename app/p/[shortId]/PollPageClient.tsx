@@ -16,7 +16,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiCutoffSuggestions, apiCutoffAvailability, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiCutoffSuggestions, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -91,8 +91,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   const [loadingResults, setLoadingResults] = useState(false);
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
-  const [isCuttingOffAvailability, setIsCuttingOffAvailability] = useState(false);
-  const [showCutoffAvailabilityConfirmModal, setShowCutoffAvailabilityConfirmModal] = useState(false);
   const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
   const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
   const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
@@ -137,10 +135,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
   // Time poll phase helpers: availability phase while options haven't been generated yet
   const inAvailabilityPhase = poll.poll_type === 'time' && (!optionsOverride?.length) && (!poll.options || poll.options.length === 0);
   const availabilityTimerStarted = !!(suggestionDeadlineOverride || poll.suggestion_deadline);
-  const inActiveAvailabilityPhase = inAvailabilityPhase && (
-    !availabilityTimerStarted
-    || (currentTime ? currentTime < new Date((suggestionDeadlineOverride || poll.suggestion_deadline)!) : true)
-  );
   // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
@@ -925,42 +919,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       alert('Failed to cutoff suggestions. Please try again.');
     } finally {
       setIsCuttingOffSuggestions(false);
-    }
-  };
-
-  const handleCutoffAvailabilityClick = () => {
-    if (isCuttingOffAvailability || !isCreator) return;
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret) {
-      alert('You do not have permission to end the availability phase.');
-      return;
-    }
-    setShowCutoffAvailabilityConfirmModal(true);
-  };
-
-  const handleCutoffAvailability = async () => {
-    setShowCutoffAvailabilityConfirmModal(false);
-    if (isCuttingOffAvailability || !isCreator) return;
-    const creatorSecret = getCreatorSecret(poll.id);
-    if (!creatorSecret) return;
-
-    setIsCuttingOffAvailability(true);
-    try {
-      const updatedPoll = await apiCutoffAvailability(poll.id, creatorSecret);
-      invalidatePoll(poll.id);
-      if (updatedPoll) {
-        setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
-        if (updatedPoll.options) {
-          const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
-          setOptionsOverride(opts);
-        }
-        await fetchPollResults();
-      }
-    } catch (error) {
-      console.error('Error cutting off availability:', error);
-      alert('Failed to end availability phase. Please try again.');
-    } finally {
-      setIsCuttingOffAvailability(false);
     }
   };
 
@@ -1843,19 +1801,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
                         />
                       </div>
 
-                      {inActiveAvailabilityPhase && isCreator && (
-                        <div className="mb-3 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={handleCutoffAvailabilityClick}
-                            disabled={isCuttingOffAvailability}
-                            className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-md disabled:opacity-50"
-                          >
-                            {isCuttingOffAvailability ? 'Ending...' : 'End Availability Phase'}
-                          </button>
-                        </div>
-                      )}
-
                       <p className="mb-2 text-xs text-gray-500 dark:text-gray-400 text-center">
                         Select time slots to fine-tune
                       </p>
@@ -2105,16 +2050,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
       />
 
-      <ConfirmationModal
-        isOpen={showCutoffAvailabilityConfirmModal}
-        onConfirm={handleCutoffAvailability}
-        onCancel={() => setShowCutoffAvailabilityConfirmModal(false)}
-        title="End Availability Phase"
-        message="Are you sure you want to end the availability phase now? Time slots will be generated and preference ranking will begin immediately."
-        confirmText="End Now"
-        cancelText="Cancel"
-        confirmButtonClass="bg-amber-500 hover:bg-amber-600 text-white"
-      />
     </>
   );
 }

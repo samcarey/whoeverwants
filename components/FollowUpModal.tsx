@@ -24,9 +24,13 @@ interface FollowUpModalProps {
   // When provided, renders a Close Poll button on a new row. Only shown when
   // the poll is open AND the caller deems closing possible (creator or dev).
   onClosePoll?: () => void;
+  // When provided, renders an End Availability Phase button on a new row. Only
+  // shown when the poll is a time poll in the availability phase AND the caller
+  // deems ending possible (creator or dev).
+  onCutoffAvailability?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete, onReopen, onClosePoll }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showForkButton = true, onDelete, onReopen, onClosePoll, onCutoffAvailability }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   // Ignore the synthetic click that fires immediately after the long-press
@@ -187,6 +191,22 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, showF
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12" />
               </svg>
               Close Poll
+            </button>
+          )}
+
+          {onCutoffAvailability && (
+            <button
+              onClick={() => {
+                onCutoffAvailability();
+                onClose();
+              }}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <circle cx="12" cy="12" r="9" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
+              </svg>
+              End Availability Phase
             </button>
           )}
 
