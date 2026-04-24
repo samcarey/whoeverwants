@@ -247,7 +247,16 @@ function SingleLineVoters({
       // Make every item visible before measuring; React controls the +N
       // badge's own visibility via the `overflow` state / style prop.
       for (const it of items) it.style.display = '';
-      const plusWidth = plusRef.current ? plusRef.current.offsetWidth : 0;
+      // Temporarily force +N visible so we can read its real width even when
+      // React currently has it hidden (overflow starts at 0). Without this,
+      // offsetWidth returns 0 and reservePlus collapses to just GAP —
+      // under-reserving ~20px, which clips the leftmost visible bubble's
+      // left edge when justify-end aligns the row to the right edge.
+      const plusEl = plusRef.current;
+      const prevPlusDisplay = plusEl?.style.display;
+      if (plusEl) plusEl.style.display = '';
+      const plusWidth = plusEl ? plusEl.offsetWidth : 0;
+      if (plusEl) plusEl.style.display = prevPlusDisplay ?? '';
       const containerWidth = el.clientWidth;
       let used = 0;
       let fit = 0;
