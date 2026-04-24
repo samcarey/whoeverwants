@@ -35,11 +35,11 @@ function deriveVoterState(votes: ApiVote[], filter?: (v: ApiVote) => boolean) {
 }
 
 function EmptyPlaceholder({ text, className }: { text: string; className: string }) {
-  // Matches the bubble row's height (text-xs 16px + py-0.5 4px = 20px) so the
+  // Matches the bubble row's height (text-xs 16px, no vertical padding) so the
   // skeleton → empty → populated transitions don't jitter.
   return (
-    <div className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}>
-      <span className="text-xs text-gray-500 dark:text-gray-400 py-0.5">{text}</span>
+    <div className={`flex items-center gap-1 overflow-hidden whitespace-nowrap ${className}`}>
+      <span className="text-xs text-gray-500 dark:text-gray-400">{text}</span>
     </div>
   );
 }
@@ -233,7 +233,7 @@ function SingleLineVoters({
   const [overflow, setOverflow] = useState(0);
 
   const totalItems = namedVoters.length + (adjustedAnonymousCount > 0 ? 1 : 0);
-  const GAP = 6; // matches Tailwind gap-1.5
+  const GAP = 4; // matches Tailwind gap-1
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -276,13 +276,13 @@ function SingleLineVoters({
   return (
     <div
       ref={containerRef}
-      className={`flex items-center gap-1.5 overflow-hidden whitespace-nowrap ${className}`}
+      className={`flex items-center gap-1 overflow-hidden whitespace-nowrap ${className}`}
     >
       {namedVoters.map((voter, index) => (
         <span
           key={voter.id}
           ref={(el) => { bubbleRefs.current[index] = el; }}
-          className={`inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${getVoterColor(index)}`}
+          className={`inline-block shrink-0 px-2 rounded-full text-xs font-medium ${getVoterColor(index)}`}
         >
           {voter.voter_name}
         </span>
@@ -290,14 +290,14 @@ function SingleLineVoters({
       {adjustedAnonymousCount > 0 && (
         <span
           ref={anonRef}
-          className="inline-block shrink-0 px-2.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic"
+          className="inline-block shrink-0 px-2 bg-gray-100 dark:bg-gray-700 rounded-full border border-gray-300 dark:border-gray-600 text-xs text-gray-600 dark:text-gray-300 italic"
         >
           {adjustedAnonymousCount} × Anon
         </span>
       )}
       <span
         ref={plusRef}
-        className="inline-block shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
+        className="inline-block shrink-0 px-2 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400"
         style={{ display: overflow > 0 ? undefined : 'none' }}
       >
         +{overflow}
