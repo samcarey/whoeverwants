@@ -32,6 +32,29 @@ export function supportsViewTransitions(): boolean {
 }
 
 /**
+ * Next.js App Router's `router.push` calls `history.pushState` internally,
+ * which does NOT fire `popstate` (that only fires on back/forward). To turn
+ * URL flips into an event we can await, patch pushState/replaceState on
+ * first access and dispatch a custom event. Lets `waitForNavigation` Phase 1
+ * be event-driven instead of polling every 10 ms — cuts average 5 ms of
+ * jitter per forward nav. One-time monkey-patch; no-op after first call.
+ */
+const URL_CHANGE_EVENT = '__app:urlchange';
+if (typeof window !== 'undefined' && !(window as unknown as { __urlEventInstalled?: boolean }).__urlEventInstalled) {
+  (window as unknown as { __urlEventInstalled: boolean }).__urlEventInstalled = true;
+  const dispatch = () => window.dispatchEvent(new Event(URL_CHANGE_EVENT));
+  const wrap = <T extends (...args: unknown[]) => unknown>(fn: T): T =>
+    (function (this: unknown, ...args: unknown[]) {
+      const ret = fn.apply(this, args);
+      try { dispatch(); } catch {}
+      return ret;
+    }) as T;
+  window.history.pushState = wrap(window.history.pushState.bind(window.history));
+  window.history.replaceState = wrap(window.history.replaceState.bind(window.history));
+  window.addEventListener('popstate', dispatch);
+}
+
+/**
  * Wait for the destination to commit. Returns `true` if BOTH the URL flipped
  * AND the destination signaled `data-page-ready` before the deadline, `false`
  * if either phase timed out. Callers use the boolean to decide whether to
@@ -42,9 +65,28 @@ async function waitForNavigation(targetPath: string, timeoutMs = 3000): Promise<
   const target = normalizePath(targetPath);
   const deadline = Date.now() + timeoutMs;
 
-  // Phase 1: wait for the URL to change.
-  while (normalizePath(window.location.pathname) !== target && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 10));
+  // Phase 1: wait for the URL to change. Event-driven via the pushState
+  // patch above, with a 50 ms safety poll for anything that mutates the
+  // URL without going through history.*State.
+  if (normalizePath(window.location.pathname) !== target) {
+    await new Promise<void>((resolve) => {
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const check = () => {
+        if (normalizePath(window.location.pathname) === target) {
+          window.removeEventListener(URL_CHANGE_EVENT, check);
+          clearTimeout(timeoutId);
+          resolve();
+        } else if (Date.now() >= deadline) {
+          window.removeEventListener(URL_CHANGE_EVENT, check);
+          clearTimeout(timeoutId);
+          resolve();
+        } else {
+          timeoutId = setTimeout(check, 50);
+        }
+      };
+      window.addEventListener(URL_CHANGE_EVENT, check);
+      check();
+    });
   }
   if (normalizePath(window.location.pathname) !== target) return false;
 
@@ -153,10 +195,21 @@ export function navigateBackWithTransition(): void {
     const previousPath = window.location.pathname;
     const transition = start.call(document, async () => {
       window.history.back();
-      const started = Date.now();
-      while (window.location.pathname === previousPath && Date.now() - started < 800) {
-        await new Promise((r) => setTimeout(r, 10));
-      }
+      // Event-driven wait for the URL to flip (popstate fires after back()).
+      await new Promise<void>((resolve) => {
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const done = () => {
+          window.removeEventListener(URL_CHANGE_EVENT, check);
+          clearTimeout(timeoutId);
+          resolve();
+        };
+        const check = () => {
+          if (window.location.pathname !== previousPath) done();
+        };
+        window.addEventListener(URL_CHANGE_EVENT, check);
+        timeoutId = setTimeout(done, 800);
+        check();
+      });
       await new Promise((r) => setTimeout(r, 120));
     });
     transition.finished.finally(cleanup);
