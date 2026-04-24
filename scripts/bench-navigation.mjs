@@ -254,6 +254,18 @@ async function main() {
     addResult(results, 'cold home load', 'goto+ready', samples);
   }
 
+  // Pre-warm the thread route: on dev servers, the first hit of
+  // `/thread/[id]` triggers Next.js on-demand compile (can exceed 30s).
+  // Hitting it once here lets the real scenarios measure warm-compile
+  // timings; otherwise the first click in every scenario eats the compile.
+  console.log('Warming up thread route...');
+  {
+    const thread = polls[0];
+    const threadPath = `/thread/${thread.short_id || thread.id}`;
+    await page.goto(`${BASE_URL}${threadPath}`, { timeout: 60_000 });
+    await waitForReady(page, threadPath, 60_000);
+  }
+
   // --- Scenario 2: Home → Thread (warm cache) ---
   console.log('Scenario 2: home → thread (warm)');
   {
