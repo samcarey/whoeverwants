@@ -849,7 +849,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-0' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedPollId === poll.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -1050,7 +1050,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             else expandedWrapperRefs.current.delete(poll.id);
                           }}
                         >
-                          <div className={pollPageClientEmpty ? '' : 'mt-3'}>
+                          <div className={pollPageClientEmpty ? '' : 'mt-1.5'}>
                             <PollPageClient
                               poll={poll}
                               createdDate={formatCreationTimestamp(poll.created_at)}
