@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -13,6 +13,7 @@ import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/l
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike } from "@/lib/pollId";
 import { usePageReady } from "@/lib/usePageReady";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
@@ -350,19 +351,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  // useLayoutEffect so the measured header height is applied before the first
-  // paint — useEffect ran after paint and caused a one-frame ~100px slide.
-  useLayoutEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const update = () => setHeaderHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [thread]);
+  // Re-measure when `thread` flips loaded — the header is rendered behind a
+  // `if (loading) return <Spinner/>` early return, so the measured ref only
+  // exists once `thread` is non-null.
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
 
   // Auto-scroll to the bottom once on initial load so newest polls are visible.
   // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
@@ -1317,20 +1309,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
 function EmptyThreadView() {
   usePageReady(true);
-
-  // Mirror the real thread page's header-height measurement so the message
-  // sits flush below the fixed header regardless of the safe-area inset.
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  useLayoutEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const update = () => setHeaderHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   return (
     <>

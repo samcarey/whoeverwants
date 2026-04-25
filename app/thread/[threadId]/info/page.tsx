@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useThread } from "@/lib/useThread";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import RespondentCircles from "@/components/RespondentCircles";
 import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
@@ -19,17 +20,7 @@ function ThreadInfoInner() {
 
 function Info({ thread, threadId }: { thread: import("@/lib/threadUtils").Thread; threadId: string }) {
   const router = useRouter();
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const update = () => setHeaderHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
