@@ -12,6 +12,8 @@
 
 The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) are complete. The current architecture is: Vercel (frontend) + DigitalOcean droplet (FastAPI API + PostgreSQL).
 
+**Next major change: multipoll redesign.** Every poll becomes a multipoll wrapping one or more sub-polls. The What/When/Where button bar replaces the single "+" FAB on threads/home. Participation polls are explicitly excluded and being phased out (see "Participation Polls (Deprecated)" and "Multipoll System (In Progress)" below).
+
 ## DigitalOcean Droplet (Production Server)
 
 The production server is a DigitalOcean droplet that Claude manages remotely. **You have full control of this server.**
@@ -713,7 +715,19 @@ Replace `<api_port>` with the dev server's API port (8001-8005).
 
 ---
 
-## Participation Poll Philosophy: Maximizing Inclusion
+## Participation Polls (Deprecated)
+
+**Participation polls are being phased out.** Existing code is kept for reference only — do NOT extend, refactor, or integrate them into new features. The multipoll redesign explicitly excludes participation polls from its data model, UI flows, and migration. Eventually the participation poll type, its routes, components (`ParticipationConditions`, `MinMaxCounter`, voter conditions UI, sub-poll location/time fields), tables/columns, algorithms, and the inclusion-priority logic below will all be removed. Until then:
+
+- Don't add new features that interact with `poll_type='participation'`
+- Don't propose extending voter conditions or min/max participants to other poll types
+- Don't ask whether new features should handle participation polls — they shouldn't
+- Migration scripts and bulk operations should treat participation polls as a separate, untouched codepath
+- The multipoll system (below) does NOT wrap participation polls; they remain standalone for now
+
+The "Participation Poll Philosophy" subsections below document the existing inclusion-priority algorithm for reference only.
+
+## Participation Poll Philosophy: Maximizing Inclusion (Reference Only — Deprecated)
 
 ### Core Principle
 
@@ -766,6 +780,77 @@ The algorithm uses a **greedy selection with priority ordering**:
 - **All-or-nothing voters**: Those with restrictive maxes get lower priority
 - **Mixed constraints**: Algorithm finds optimal subset efficiently
 - **Empty result**: If no stable configuration exists, event doesn't happen (count=0)
+
+---
+
+## Multipoll System (In Progress)
+
+**Status**: design locked, not yet implemented. Branch: `claude/multi-poll-creation-redesign-l0UOz`. Captures the decisions from the design conversation so future sessions can reference them without re-asking.
+
+### Core paradigm
+
+- **Every poll is a multipoll** containing one or more sub-polls. Existing single polls migrate to 1-sub-poll multipolls (destructive DB migration). A 1-sub-poll multipoll renders the same as today's poll — the wrapper is invisible in the UI for that case.
+- **Participation polls are excluded** from the multipoll system entirely. They stay standalone with their existing routes/components and are slated for eventual removal (see "Participation Polls (Deprecated)").
+
+### Entities
+
+- **Multipoll**: top-level entity. Owns: optional context, voting cutoff, optional shared suggestion/availability cutoff, `follow_up_to`, `fork_of`, `is_closed`, `close_reason`, `creator_secret`, `short_id`. Target of `/p/<shortId>/` and `/thread/<id>/`.
+- **Sub-poll**: a category-specific ballot section inside a multipoll. Owns: category, options, optional context, `poll_type` (`yes_no`, `ranked_choice`, `suggestion`, `time`). Does NOT own: deadline, `is_closed`, `creator_secret` — all inherited from the parent multipoll.
+
+### Cutoffs and phases
+
+- A multipoll has ONE voting cutoff and AT MOST ONE shared suggestion/availability cutoff.
+- A sub-poll has a "prephase" (suggestion or availability collection) only if its category supports one — `yes_no` does not. When in prephase, the sub-poll uses the multipoll's shared prephase cutoff.
+- "In prephase" is a multipoll-level state, not a sub-poll-level state. All sub-polls open for voting at the same moment — once the shared prephase cutoff has passed (if any), every ballot opens together.
+- Cutoff actions (cutoff suggestions, end availability phase) operate at the multipoll level. The two cutoff buttons in the long-press modal merge into one shared "End Pre-Phase" action.
+- Close, Reopen, Forget all operate at the multipoll level. Long-press on the thread card opens the modal for the whole multipoll, not a single sub-poll.
+
+### Creation flow
+
+- Three "bubble" buttons replace the single "+" FAB on home and thread pages: **What**, **When**, **Where**, equally spaced along the bottom.
+- Tapping any of them opens TWO modals simultaneously:
+  - **Bottom modal**: shared multipoll fields (optional context, voting cutoff, shared prephase cutoff). Slides up only far enough to show its content, no further.
+  - **Top modal**: category + options for one sub-poll, plus optional per-sub-poll context. Has a checkmark in its top-right corner.
+- **What**: category dropdown shows all categories EXCEPT location, restaurant, time. Includes `yes/no` as a category (categories that map to a `yes_no` `poll_type` sub-poll). Plus arbitrary built-ins (Movie, Video Game, Pet Name, etc.) and custom-text.
+- **When**: hides the category field entirely (category is implicitly "time"); shows duration + time windows + min availability.
+- **Where**: category dropdown shows location and restaurant categories plus custom; includes the reference-location field.
+- Pressing the top modal's checkmark commits the sub-poll into a "draft slot" in the multipoll-in-progress (compact display in the poll list area, just above the bottom form). The What/When/Where buttons reappear above the bottom form. User can add more sub-polls.
+- Multiple sub-polls of any kind allowed (e.g., two Wheres) but each must have a distinct context to disambiguate.
+- Pressing Submit on the bottom form creates all sub-polls as one multipoll.
+- Backdrop / X tap closes the sheet but PRESERVES both top- and bottom-form state (reopening returns to the same state).
+- Drafts persist in `localStorage` (survives browser close). Per-tab/per-device only — no server-backed draft sync.
+
+### Title generation
+
+- The multipoll has NO title field — only optional context.
+- Title is auto-generated from sub-poll categories + multipoll context, in title case (e.g., "Restaurant and Time for Party"). Algorithm TBD during implementation; the user said "figure something out".
+
+### Per-sub-poll context
+
+- Each sub-poll has its own optional context field, surfaced in the top modal AND in the compact draft-slot display AND as a per-sub-poll label on the voting card.
+- Required when there are multiple sub-polls of the same kind (Where + Where), to disambiguate.
+
+### Voting
+
+- Single Submit button at the bottom of the unified card commits a vote across all sub-polls.
+- Each sub-poll section has its own per-sub-poll abstain control. Voters can abstain on individual sub-polls while voting on others.
+- Voting opens on every sub-poll simultaneously after the multipoll's shared prephase (if any) has ended.
+
+### Follow-up / fork / threads
+
+- `follow_up_to` and `fork_of` move to the multipoll level. Threads = chains of multipolls.
+- On thread pages, the What/When/Where buttons auto-set `follow_up_to` to the latest multipoll in the thread (same as today's FAB behavior reads `data-thread-latest-poll-id`).
+
+### URLs
+
+- Routes stay the same: `/p/<shortId>/` and `/thread/<id>/`. The `shortId` now belongs to the multipoll, not a single poll.
+- Single-sub-poll multipolls render identically to today's polls — the multipoll wrapper is invisible.
+
+### Migration
+
+- One destructive migration wraps every existing non-participation poll in a 1-sub-poll multipoll row.
+- `follow_up_to` and `fork_of` get rewritten to point multipoll → multipoll.
+- Participation polls are NOT touched by this migration; they continue to function on their existing standalone codepath.
 
 ---
 
