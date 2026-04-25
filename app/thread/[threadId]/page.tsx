@@ -17,7 +17,7 @@ import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilit
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
-import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -126,13 +126,7 @@ function ThreadHeader({ headerRef, title, participantNames, anonymousCount, subt
     >
       <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
         <button
-          onClick={() => {
-            if (hasAppHistory()) {
-              navigateBackWithTransition();
-            } else {
-              navigateWithTransition(router, '/', 'back');
-            }
-          }}
+          onClick={() => navigateWithTransition(router, '/', 'back')}
           className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
           aria-label="Go back"
         >
