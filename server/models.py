@@ -288,5 +288,79 @@ class RankedChoiceRoundResponse(BaseModel):
     tie_broken_by_borda: bool = False
 
 
+# -- Multipoll models (Phase 1 of multipoll redesign) --
+#
+# A multipoll wraps one or more sub-polls. Sub-poll rows live in the existing
+# `polls` table; wrapper-level fields (response_deadline, creator_secret, etc.)
+# live in `multipolls`. See docs/multipoll-phasing.md.
+
+
+class CreateSubPollRequest(BaseModel):
+    """A sub-poll within a multipoll create request.
+
+    Excludes wrapper-level fields (response_deadline, creator_secret,
+    follow_up_to, fork_of, thread_title, etc.) — those live on the multipoll.
+    Per-sub-poll `context` disambiguates multiple sub-polls of the same kind.
+    """
+
+    poll_type: PollType = PollType.yes_no
+    category: str | None = None
+    options: list[str] | None = None
+    options_metadata: dict | None = None
+    # Per-sub-poll context label (e.g. disambiguating two `Where` sub-polls).
+    # Stored on polls.details.
+    context: str | None = None
+    # Type-specific fields. The wrapper owns the `*_deadline` *value*; the
+    # *_minutes lives per-sub-poll because it's still type-specific (e.g. only
+    # ranked_choice + suggestion polls use suggestion_deadline_minutes).
+    suggestion_deadline_minutes: int | None = None
+    allow_pre_ranking: bool = True
+    min_responses: int | None = None
+    show_preliminary_results: bool = True
+    min_availability_percent: int = 95
+    day_time_windows: list[dict] | None = None
+    duration_window: dict | None = None
+    reference_latitude: float | None = None
+    reference_longitude: float | None = None
+    reference_location_label: str | None = None
+
+
+class CreateMultipollRequest(BaseModel):
+    creator_secret: str
+    creator_name: str | None = None
+    response_deadline: str | None = None
+    prephase_deadline: str | None = None
+    prephase_deadline_minutes: int | None = None
+    follow_up_to: str | None = None
+    fork_of: str | None = None
+    thread_title: str | None = None
+    context: str | None = None
+    # Optional explicit title; when absent, derived from sub-poll categories
+    # and `context` via algorithms.multipoll_title.generate_multipoll_title.
+    title: str | None = None
+    sub_polls: list[CreateSubPollRequest] = Field(..., min_length=1)
+
+
+class MultipollResponse(BaseModel):
+    id: str
+    short_id: str | None = None
+    creator_secret: str | None = None
+    creator_name: str | None = None
+    response_deadline: str | None = None
+    prephase_deadline: str | None = None
+    prephase_deadline_minutes: int | None = None
+    is_closed: bool = False
+    close_reason: str | None = None
+    follow_up_to: str | None = None
+    fork_of: str | None = None
+    thread_title: str | None = None
+    context: str | None = None
+    title: str
+    created_at: str
+    updated_at: str
+    sub_polls: list[PollResponse]
+
+
 # Resolve forward references (PollResponse.results -> PollResultsResponse)
 PollResponse.model_rebuild()
+MultipollResponse.model_rebuild()
