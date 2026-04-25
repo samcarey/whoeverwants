@@ -508,13 +508,21 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Floating "+" create-poll button — fixed bottom-right, home + thread-like pages only.
            Rendered via portal outside the scaling container so it positions against
            the viewport. `view-transition-name: floating-plus` keeps it fixed (no
-           slide) across home <-> thread navigation — see globals.css. */}
+           slide) across home <-> thread navigation — see globals.css.
+           On the home page the button navigates to /thread/new/ — a placeholder
+           page that hosts the FAB and a "create a poll and share the link"
+           prompt. The empty thread leaves no trace if the user navigates away
+           without creating a poll. */}
       {isMounted && (pathname === '/' || isThreadLikePage) && createPortal(
         <button
           onClick={() => {
+            if (pathname === '/') {
+              navigateWithTransition(router, '/thread/new', 'forward');
+              return;
+            }
             const params = new URLSearchParams(searchParams.toString());
             params.set('create', '1');
-            // When on a thread page, auto-set followUpTo for the latest poll
+            // When on an existing thread page, auto-set followUpTo for the latest poll
             const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
             if (threadLatestPollId) {
               params.set('followUpTo', threadLatestPollId);

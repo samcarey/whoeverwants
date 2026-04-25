@@ -11,8 +11,6 @@ import CompactNameField from "@/components/CompactNameField";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
-import FollowUpHeader from "@/components/FollowUpHeader";
-import ForkHeader from "@/components/ForkHeader";
 import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
@@ -983,40 +981,6 @@ export function CreatePollContent() {
       setHasFormChanged(hasChanged);
     }
   }, [title, pollType, options, creatorName, originalPollData, forkOf]);
-
-  // Handle removal of parent poll association
-  const handleRemoveAssociation = useCallback(() => {
-    // Clear the relationship states
-    setFollowUpTo(null);
-    setForkOf(null);
-    setDuplicateOf(null);
-    setOriginalPollData(null);
-    setHasFormChanged(false);
-
-    // Clear localStorage data
-    if (typeof window !== 'undefined') {
-      if (followUpTo) {
-        localStorage.removeItem(`duplicate-data-${followUpTo}`);
-      }
-      if (forkOf) {
-        localStorage.removeItem(`fork-data-${forkOf}`);
-      }
-      if (duplicateOf) {
-        localStorage.removeItem(`duplicate-data-${duplicateOf}`);
-      }
-      if (voteFromSuggestion) {
-        localStorage.removeItem(`vote-from-suggestion-${voteFromSuggestion}`);
-      }
-    }
-
-    // Update URL to remove query parameters
-    const url = new URL(window.location.href);
-    url.searchParams.delete('followUpTo');
-    url.searchParams.delete('fork');
-    url.searchParams.delete('duplicate');
-    url.searchParams.delete('voteFromSuggestion');
-    window.history.replaceState({}, '', url.toString());
-  }, [followUpTo, forkOf, duplicateOf, voteFromSuggestion]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -2009,37 +1973,9 @@ export function CreatePollContent() {
           <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
         </form>
 
-        {/* Show only one header, prioritizing in order: fork > duplicate > followUpTo */}
-        {forkOf ? (
-          <div className="mt-4">
-            <ForkHeader forkOfPollId={forkOf} onRemove={handleRemoveAssociation} />
-            {!hasFormChanged && (
-              <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  Make changes to create your fork. The submit button will be enabled once you modify the poll.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : duplicateOf ? (
-          <div className="mt-4">
-            <FollowUpHeader followUpToPollId={duplicateOf} onRemove={handleRemoveAssociation} />
-          </div>
-        ) : followUpTo ? (
-          <div className="mt-4">
-            <FollowUpHeader followUpToPollId={followUpTo} onRemove={handleRemoveAssociation} />
-          </div>
-        ) : null}
-
         {validationError && (
           <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
             {validationError}
-          </p>
-        )}
-
-        {!followUpTo && !forkOf && !duplicateOf && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-4">
-            Private until you share the link
           </p>
         )}
 

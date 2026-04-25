@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
@@ -13,11 +13,12 @@ import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/l
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
 import { isUuidLike } from "@/lib/pollId";
 import { usePageReady } from "@/lib/usePageReady";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
 import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
-import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
+import { navigateWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -91,6 +92,70 @@ function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; chi
 interface ThreadContentProps {
   threadId: string;
   initialExpandedPollId?: string | null;
+}
+
+interface ThreadHeaderProps {
+  headerRef: React.Ref<HTMLDivElement>;
+  title: string;
+  participantNames?: string[];
+  anonymousCount?: number;
+  subtitle?: string;
+  onTitleClick?: () => void;
+}
+
+// Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
+// the notch zone with the header background (otherwise items are visible
+// there when the document scrolls). headerRef is on the inner content
+// div so offsetHeight stays content-only; the sibling content below
+// reserves exactly that much padding-top.
+function ThreadHeader({ headerRef, title, participantNames, anonymousCount, subtitle, onTitleClick }: ThreadHeaderProps) {
+  const router = useRouter();
+  const titleBlock = (
+    <>
+      <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+        {title}
+      </h1>
+      {subtitle && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
+      )}
+    </>
+  );
+  return (
+    <div
+      className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+    >
+      <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+        <button
+          onClick={() => navigateWithTransition(router, '/', 'back')}
+          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
+          aria-label="Go back"
+        >
+          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        {participantNames && (
+          <RespondentCircles
+            names={participantNames}
+            anonymousCount={anonymousCount ?? 0}
+          />
+        )}
+        {onTitleClick ? (
+          <button
+            type="button"
+            onClick={onTitleClick}
+            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
+            aria-label="Thread details"
+          >
+            {titleBlock}
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1">{titleBlock}</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ThreadContent({ threadId, initialExpandedPollId = null }: ThreadContentProps) {
@@ -286,19 +351,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  // useLayoutEffect so the measured header height is applied before the first
-  // paint — useEffect ran after paint and caused a one-frame ~100px slide.
-  useLayoutEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const update = () => setHeaderHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [thread]);
+  // Re-measure when `thread` flips loaded — the header is rendered behind a
+  // `if (loading) return <Spinner/>` early return, so the measured ref only
+  // exists once `thread` is non-null.
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
 
   // Auto-scroll to the bottom once on initial load so newest polls are visible.
   // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
@@ -703,50 +759,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
   return (
     <>
-      {/* Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
-          the notch zone with the header background (otherwise items are visible
-          there when the document scrolls). headerRef is on the inner content
-          div so offsetHeight stays content-only; the sibling content below
-          reserves exactly that much padding-top. */}
-      <div
-        className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      >
-        <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
-          <button
-            onClick={() => {
-              if (hasAppHistory()) {
-                navigateBackWithTransition();
-              } else {
-                navigateWithTransition(router, '/', 'back');
-              }
-            }}
-            className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
-            aria-label="Go back"
-          >
-            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <RespondentCircles
-            names={thread.participantNames}
-            anonymousCount={thread.anonymousRespondentCount}
-          />
-          <button
-            type="button"
-            onClick={() => navigateWithTransition(router, `/thread/${threadId}/info`, 'forward')}
-            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
-            aria-label="Thread details"
-          >
-            <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-              {thread.title}
-            </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {thread.polls.length} {thread.polls.length === 1 ? 'poll' : 'polls'}
-            </p>
-          </button>
-        </div>
-      </div>
+      <ThreadHeader
+        headerRef={headerRef}
+        title={thread.title}
+        participantNames={thread.participantNames}
+        anonymousCount={thread.anonymousRespondentCount}
+        subtitle={`${thread.polls.length} ${thread.polls.length === 1 ? 'poll' : 'polls'}`}
+        onTitleClick={() => navigateWithTransition(router, `/thread/${threadId}/info`, 'forward')}
+      />
 
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
@@ -1287,9 +1307,33 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   );
 }
 
+function EmptyThreadView() {
+  usePageReady(true);
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
+
+  return (
+    <>
+      <ThreadHeader headerRef={headerRef} title="New Thread" />
+      <div
+        className="px-4 text-center"
+        style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}
+      >
+        <p className="text-base text-gray-700 dark:text-gray-300">
+          Create a poll and then share the link!
+        </p>
+      </div>
+    </>
+  );
+}
+
 function ThreadPageInner() {
   const params = useParams();
   const threadId = params.threadId as string;
+  // /thread/new/ is a placeholder route — same template as a real thread, but
+  // no polls, no fetch. The thread only materializes once the user creates a
+  // poll (the new poll becomes its own thread root); navigating away leaves
+  // nothing behind.
+  if (threadId === 'new') return <EmptyThreadView />;
   return <ThreadContent threadId={threadId} />;
 }
 

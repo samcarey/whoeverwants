@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiUpdateThreadTitle } from "@/lib/api";
 import { invalidatePoll } from "@/lib/pollCache";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useThread } from "@/lib/useThread";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import type { Thread } from "@/lib/threadUtils";
 import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
@@ -15,17 +16,7 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
   const [value, setValue] = useState<string>(latestPoll.thread_title ?? '');
   const [saving, setSaving] = useState(false);
 
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const update = () => setHeaderHeight(el.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
