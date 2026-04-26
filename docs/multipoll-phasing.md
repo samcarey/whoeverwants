@@ -15,7 +15,9 @@ The guiding principle: **every phase leaves `main` shippable**. Existing polls k
 | 4 — backfill existing polls | ✅ on this branch + applied to dev+prod | Migration 093. 151 prod polls wrapped, 21 follow_up_to + 2 fork_of rewrites. |
 | 2.5 — multi-sub-poll rendering | ✅ on this branch | Sibling sub-polls join the thread via `multipoll_id`; thread page renders one card per sub-poll, sorted by `sub_poll_index`. |
 | 2.4 — multi-sub-poll create UI | ✅ on this branch | `+ Add another section` stages yes_no/ranked_choice drafts; submit prepends them to the multipoll request. MVP scope per the "minimal path" below. |
-| 3 — multipoll-level operations + thread card aggregation | ⏳ not started | |
+| 3.1 — multipoll-level close/reopen/cutoff endpoints | ✅ on this branch | New `POST /api/multipolls/{id}/{close,reopen,cutoff-suggestions,cutoff-availability}` endpoints close/reopen/cutoff the wrapper + every sub-poll atomically. Thread page long-press handlers route to the multipoll endpoint when `poll.multipoll_id` is set, optimistically updating every sibling. |
+| 3.2 — thread card aggregation | ⏳ not started | Group sibling sub-polls under a single visual card group (auto-titled by category list). |
+| 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
 | 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
 
 ## What's next — concrete starting points
