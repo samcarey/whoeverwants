@@ -186,16 +186,11 @@ function TemplateInner({ children }: AppTemplateProps) {
   }, []);
 
   // Open the create-poll modal from the floating What/When/Where bubble bar.
-  // From home, navigate to /thread/new (with create + extras) so the modal
-  // auto-opens after the slide transition. From a thread / poll / empty-thread
-  // page, open the modal in place and auto-set followUpTo when the page
-  // exposes a thread-latest-poll-id on <body>.
+  // The bubble bar is only shown on thread-like pages, so we always open the
+  // modal in place (with auto-set followUpTo when the page exposes a
+  // thread-latest-poll-id on <body>). The home page uses the single "+" FAB
+  // below, which navigates to /thread/new/ as before.
   const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
-    if (pathname === '/') {
-      const qs = new URLSearchParams({ create: '1', ...extraParams }).toString();
-      navigateWithTransition(router, `/thread/new?${qs}`, 'forward');
-      return;
-    }
     const params = new URLSearchParams(searchParams.toString());
     params.set('create', '1');
     for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
@@ -526,27 +521,38 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Floating What/When/Where create-poll bubbles — fixed at the bottom,
-           home + thread-like pages only. Rendered via portal outside the
-           scaling container so they position against the viewport.
-           `view-transition-name: floating-plus` on the wrapper keeps the bubble
-           bar pinned (no slide) across home <-> thread navigation — see
-           globals.css.
+      {/* Floating "+" FAB — home page only. Navigates to /thread/new/ where
+           the user picks a What/When/Where bubble for what they want to create.
+           Rendered via portal outside the scaling container so it positions
+           against the viewport. `view-transition-name: floating-plus` keeps it
+           fixed (no slide) across home <-> thread navigation — see globals.css. */}
+      {isMounted && pathname === '/' && createPortal(
+        <button
+          onClick={() => navigateWithTransition(router, '/thread/new', 'forward')}
+          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
+          style={{
+            right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
+            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+          }}
+          aria-label="Create new poll"
+        >
+          <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>,
+        document.getElementById('floating-fab-portal')!
+      )}
 
-           Behavior on the home page: each bubble navigates to /thread/new with
-           the appropriate query params so the create modal auto-opens with
-           preselection (no two-tap detour through the empty placeholder).
-           On thread / poll / empty-thread pages: each bubble opens the create
-           modal in place, with auto-set followUpTo when a thread-latest-poll-id
-           is exposed on <body>.
-
-           Preselection mapping (Phase 2.3 of the multipoll redesign — see
-           docs/multipoll-phasing.md):
-             - What  → no preselection (defaults to whatever the form picks)
+      {/* Floating What/When/Where create-poll bubbles — thread-like pages only
+           (`/thread/<id>/`, `/p/<id>/`, `/thread/new/`). Each opens the create
+           modal in place with a different preselection:
+             - What  → no preselection
              - When  → ?mode=time
              - Where → ?category=restaurant (most common "where" type)
-           */}
-      {isMounted && (pathname === '/' || isThreadLikePage) && createPortal(
+           Auto-sets followUpTo when the page exposes data-thread-latest-poll-id.
+           `view-transition-name: floating-plus` on the wrapper keeps the bar
+           pinned across home <-> thread navigation — see globals.css. */}
+      {isMounted && isThreadLikePage && createPortal(
         <div
           className="fixed z-50 floating-plus-button left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
