@@ -20,6 +20,10 @@ class PollRelation:
     id: str
     follow_up_to: str | None
     fork_of: str | None
+    # Phase 2.5: multipoll wrapper this poll belongs to. Sibling sub-polls
+    # (sharing the same multipoll_id) are treated as related so visiting any
+    # one of them grants access to the whole group.
+    multipoll_id: str | None = None
 
 
 def get_all_related_poll_ids(
@@ -27,11 +31,13 @@ def get_all_related_poll_ids(
     all_polls: list[PollRelation],
     max_depth: int = 10,
 ) -> list[str]:
-    """Find all poll IDs related to the input set via follow-up/fork chains.
+    """Find all poll IDs related to the input set via follow-up/fork chains
+    and multipoll-sibling grouping.
 
     Searches bidirectionally:
     - Descendants: polls whose follow_up_to or fork_of points to a known poll
     - Ancestors: polls that a known poll's follow_up_to or fork_of points to
+    - Multipoll siblings: polls sharing a multipoll_id with a known poll
 
     Args:
         input_poll_ids: Starting set of poll IDs.
@@ -53,6 +59,11 @@ def get_all_related_poll_ids(
             children_by_parent.setdefault(p.follow_up_to, []).append(p.id)
         if p.fork_of:
             children_by_parent.setdefault(p.fork_of, []).append(p.id)
+    # Multipoll siblings: multipoll_id -> list of poll ids
+    siblings_by_multipoll: dict[str, list[str]] = {}
+    for p in all_polls:
+        if p.multipoll_id:
+            siblings_by_multipoll.setdefault(p.multipoll_id, []).append(p.id)
 
     discovered: set[str] = set(input_poll_ids)
     frontier: set[str] = set(input_poll_ids)
@@ -73,6 +84,11 @@ def get_all_related_poll_ids(
                     new_ids.add(poll.follow_up_to)
                 if poll.fork_of and poll.fork_of not in discovered:
                     new_ids.add(poll.fork_of)
+                # Multipoll siblings
+                if poll.multipoll_id:
+                    for sib_id in siblings_by_multipoll.get(poll.multipoll_id, []):
+                        if sib_id not in discovered:
+                            new_ids.add(sib_id)
 
         if not new_ids:
             break

@@ -159,6 +159,8 @@ function toPoll(data: any): Poll {
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
     thread_title: data.thread_title ?? null,
+    multipoll_id: data.multipoll_id ?? null,
+    sub_poll_index: data.sub_poll_index ?? null,
     voter_names: data.voter_names ?? undefined,
   };
 }

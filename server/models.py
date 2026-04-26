@@ -201,6 +201,11 @@ class PollResponse(BaseModel):
     response_count: int | None = None
     min_availability_percent: int | None = None
     thread_title: str | None = None
+    # Phase 2.5: multipoll wrapper this poll belongs to (NULL for participation
+    # polls and pre-Phase-4 legacy polls). Used by the FE to group sibling
+    # sub-polls when rendering threads.
+    multipoll_id: str | None = None
+    sub_poll_index: int | None = None
     results: "PollResultsResponse | None" = None
     voter_names: list[str] | None = None
 

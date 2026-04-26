@@ -70,6 +70,11 @@ export interface Poll {
   response_count?: number | null;
   min_availability_percent?: number | null;
   thread_title?: string | null;
+  // Phase 2.5: multipoll wrapper this sub-poll belongs to (NULL for
+  // participation polls and pre-Phase-4 legacy polls). Drives sibling-grouping
+  // in threadUtils so all sub-polls of a multipoll appear together in a thread.
+  multipoll_id?: string | null;
+  sub_poll_index?: number | null;
   results?: PollResults | null;
   voter_names?: string[] | null;
 }

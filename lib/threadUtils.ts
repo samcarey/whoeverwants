@@ -38,11 +38,18 @@ export interface Thread {
 /**
  * Build index maps and collect descendants via BFS from a set of start IDs.
  * Shared by buildThreads (multiple roots) and buildThreadFromPollDown (single anchor).
+ *
+ * Phase 2.5: when a poll has a multipoll_id, all sibling sub-polls of the same
+ * multipoll are also enqueued — they form one logical "card group" within the
+ * thread. This way visiting any sub-poll's URL pulls the whole multipoll into
+ * the thread view, regardless of which sub-poll the follow_up_to walk reached
+ * first.
  */
 function collectDescendants(
   startIds: string[],
   pollById: Map<string, Poll>,
   childrenOf: Map<string, string[]>,
+  siblingsOf: Map<string, string[]>,
   visited: Set<string>,
 ): Poll[] {
   const collected: Poll[] = [];
@@ -54,24 +61,44 @@ function collectDescendants(
     const poll = pollById.get(current);
     if (poll) {
       collected.push(poll);
+      // Follow_up_to children — direct descendants down the thread.
       const children = childrenOf.get(current) || [];
       for (const childId of children) {
         if (!visited.has(childId)) {
           queue.push(childId);
         }
       }
+      // Multipoll siblings — sub-polls sharing the same multipoll wrapper.
+      const siblings = siblingsOf.get(current) || [];
+      for (const siblingId of siblings) {
+        if (!visited.has(siblingId)) {
+          queue.push(siblingId);
+        }
+      }
     }
   }
-  collected.sort((a, b) =>
-    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
+  // Sort by (created_at, sub_poll_index). Within a multipoll all sub-polls
+  // share the same created_at, so sub_poll_index breaks the tie and preserves
+  // the order the creator added them in.
+  collected.sort((a, b) => {
+    const dt = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    if (dt !== 0) return dt;
+    return (a.sub_poll_index ?? 0) - (b.sub_poll_index ?? 0);
+  });
   return collected;
 }
 
-/** Build pollById and childrenOf maps from a flat list of polls. */
+/** Build pollById, childrenOf, and siblingsOf maps from a flat list of polls.
+ *
+ *  childrenOf walks polls.follow_up_to (legacy, still populated through Phase 5).
+ *  siblingsOf walks polls.multipoll_id — every sub-poll of a multipoll lists all
+ *  its sibling sub-polls (excluding itself), so collectDescendants can pull the
+ *  whole group whenever any of them is visited.
+ */
 function buildPollMaps(polls: Poll[]): {
   pollById: Map<string, Poll>;
   childrenOf: Map<string, string[]>;
+  siblingsOf: Map<string, string[]>;
 } {
   const pollById = new Map<string, Poll>();
   for (const poll of polls) {
@@ -85,7 +112,24 @@ function buildPollMaps(polls: Poll[]): {
       childrenOf.set(poll.follow_up_to, existing);
     }
   }
-  return { pollById, childrenOf };
+  // multipoll_id -> [pollId, ...]
+  const byMultipoll = new Map<string, string[]>();
+  for (const poll of polls) {
+    if (poll.multipoll_id) {
+      const existing = byMultipoll.get(poll.multipoll_id) || [];
+      existing.push(poll.id);
+      byMultipoll.set(poll.multipoll_id, existing);
+    }
+  }
+  // For each poll that's part of a multipoll, list its siblings (group minus self).
+  const siblingsOf = new Map<string, string[]>();
+  for (const [mpId, pollIds] of byMultipoll.entries()) {
+    if (pollIds.length < 2) continue; // 1-sub-poll multipoll: nothing to add
+    for (const id of pollIds) {
+      siblingsOf.set(id, pollIds.filter((p) => p !== id));
+    }
+  }
+  return { pollById, childrenOf, siblingsOf };
 }
 
 /**
@@ -99,7 +143,7 @@ export function buildThreads(
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread[] {
-  const { pollById, childrenOf } = buildPollMaps(polls);
+  const { pollById, childrenOf, siblingsOf } = buildPollMaps(polls);
 
   // Find root polls: polls whose follow_up_to is null or points to a poll
   // we don't have access to
@@ -117,7 +161,7 @@ export function buildThreads(
 
   for (const root of roots) {
     if (visited.has(root.id)) continue;
-    const threadPolls = collectDescendants([root.id], pollById, childrenOf, visited);
+    const threadPolls = collectDescendants([root.id], pollById, childrenOf, siblingsOf, visited);
     threads.push(buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds));
   }
 
@@ -271,10 +315,10 @@ export function buildThreadFromPollDown(
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread | null {
-  const { pollById, childrenOf } = buildPollMaps(allPolls);
+  const { pollById, childrenOf, siblingsOf } = buildPollMaps(allPolls);
   if (!pollById.has(anchorPollId)) return null;
 
-  const threadPolls = collectDescendants([anchorPollId], pollById, childrenOf, new Set());
+  const threadPolls = collectDescendants([anchorPollId], pollById, childrenOf, siblingsOf, new Set());
   return buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
 }
 
