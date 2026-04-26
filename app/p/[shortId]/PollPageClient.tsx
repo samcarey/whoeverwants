@@ -46,9 +46,13 @@ interface PollPageClientProps {
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
+  // True when this poll renders as one section of a multi-sub-poll group.
+  // The thread page already renders poll.details as the section label, so
+  // we suppress the inner <PollDetails> to avoid the duplicate.
+  partOfMultipollGroup?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false }: PollPageClientProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -1375,8 +1379,10 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         {/* Creation info lives on the compact card header (creator name + relative time);
              full timestamp is available via the tooltip on that time. */}
 
-        {/* Poll details (expandable) */}
-        {poll.details && <PollDetails details={poll.details} />}
+        {/* Poll details (expandable). Suppressed in multi-sub-poll groups
+             because the thread-page section label already renders
+             poll.details (used there as the disambiguating context). */}
+        {poll.details && !partOfMultipollGroup && <PollDetails details={poll.details} />}
 
         {showReferenceLocation && (
           <div className="mb-3 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">

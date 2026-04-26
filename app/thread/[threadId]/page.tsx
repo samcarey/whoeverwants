@@ -6,9 +6,11 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Multipoll } from "@/lib/types";
-import { getUserName } from "@/lib/userProfile";
+import type { MultipollVoteItem } from "@/lib/api";
+import { getUserName, saveUserName } from "@/lib/userProfile";
+import CompactNameField from "@/components/CompactNameField";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
 import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
@@ -255,6 +257,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     { pollId: string; newChoice: 'yes' | 'no' | 'abstain' } | null
   >(null);
   const [voteChangeSubmitting, setVoteChangeSubmitting] = useState(false);
+
+  // Staged yes/no choices, keyed by sub_poll_id. Taps on a multi-yes_no
+  // group's external card write here instead of firing apiSubmitVote
+  // immediately — the wrapper-level Submit commits them as one batch.
+  const [pendingMultipollChoices, setPendingMultipollChoices] = useState<Map<string, 'yes' | 'no' | 'abstain'>>(() => new Map());
+  const [multipollVoterNames, setMultipollVoterNames] = useState<Map<string, string>>(() => new Map());
+  // Snapshots subPolls at button-tap time so the modal's message + onConfirm
+  // stay stable even if groupedThreadPolls re-derives mid-confirmation.
+  const [pendingMultipollSubmit, setPendingMultipollSubmit] = useState<
+    { multipollId: string; subPolls: Poll[]; stagedCount: number } | null
+  >(null);
+  const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
+  const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(() => new Map());
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -532,6 +547,103 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       window.removeEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
     };
   }, [thread, visiblePollIds]);
+
+  const buildMultipollItems = (subPolls: Poll[]): MultipollVoteItem[] => {
+    const items: MultipollVoteItem[] = [];
+    for (const sp of subPolls) {
+      if (sp.poll_type !== 'yes_no') continue;
+      const staged = pendingMultipollChoices.get(sp.id);
+      if (!staged) continue;
+      const existing = userVoteMap.get(sp.id);
+      items.push({
+        sub_poll_id: sp.id,
+        vote_id: existing?.voteId ?? null,
+        vote_type: 'yes_no',
+        yes_no_choice: staged === 'abstain' ? null : staged,
+        is_abstain: staged === 'abstain',
+      });
+    }
+    return items;
+  };
+
+  // Atomic on the server: any item failure rolls back the whole batch.
+  const confirmMultipollSubmit = async (multipollId: string, subPolls: Poll[]) => {
+    setMultipollSubmitting((prev) => {
+      if (prev.has(multipollId)) return prev;
+      const next = new Set(prev);
+      next.add(multipollId);
+      return next;
+    });
+    setMultipollSubmitError((prev) => {
+      if (!prev.has(multipollId)) return prev;
+      const next = new Map(prev);
+      next.delete(multipollId);
+      return next;
+    });
+    try {
+      const items = buildMultipollItems(subPolls);
+      if (items.length === 0) {
+        setPendingMultipollSubmit(null);
+        return;
+      }
+      const voterNameRaw = multipollVoterNames.get(multipollId) ?? getUserName() ?? '';
+      const voter_name = voterNameRaw.trim() || null;
+      const returnedVotes = await apiSubmitMultipollVotes(multipollId, { voter_name, items });
+
+      const subPollById = new Map(subPolls.map((sp) => [sp.id, sp]));
+      setUserVoteMap((prev) => {
+        const next = new Map(prev);
+        for (const v of returnedVotes) {
+          const sp = subPollById.get(v.poll_id);
+          if (!sp || sp.poll_type !== 'yes_no') continue;
+          next.set(sp.id, {
+            choice: parseYesNoChoice(v),
+            voteId: v.id,
+            voterName: v.voter_name ?? null,
+          });
+        }
+        return next;
+      });
+
+      for (const v of returnedVotes) {
+        setStoredVoteId(v.poll_id, v.id);
+        setVotedPollFlag(v.poll_id, v.is_abstain ? 'abstained' : true);
+      }
+      const fresh = loadVotedPolls();
+      setVotedPollIds(fresh.votedPollIds);
+      setAbstainedPollIds(fresh.abstainedPollIds);
+
+      setPendingMultipollChoices((prev) => {
+        let mutated = false;
+        for (const sp of subPolls) {
+          if (prev.has(sp.id)) { mutated = true; break; }
+        }
+        if (!mutated) return prev;
+        const next = new Map(prev);
+        for (const sp of subPolls) next.delete(sp.id);
+        return next;
+      });
+
+      if (voter_name) saveUserName(voter_name);
+
+      for (const v of returnedVotes) {
+        window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: v.poll_id } }));
+      }
+
+      setPendingMultipollSubmit(null);
+    } catch (err: unknown) {
+      console.error('Multipoll vote submit failed:', err);
+      const message = err instanceof Error ? err.message : 'Submit failed.';
+      setMultipollSubmitError((prev) => { const next = new Map(prev); next.set(multipollId, message); return next; });
+    } finally {
+      setMultipollSubmitting((prev) => {
+        if (!prev.has(multipollId)) return prev;
+        const next = new Set(prev);
+        next.delete(multipollId);
+        return next;
+      });
+    }
+  };
 
   const confirmVoteChange = async () => {
     if (!pendingVoteChange) return;
@@ -1208,6 +1320,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // every sub-poll is yes_no so nothing empty sits under
                     // the external block.
                     const allYesNo = group.subPolls.every((sp) => sp.poll_type === 'yes_no');
+                    // All-yes_no multi-groups route taps to the wrapper-level
+                    // Submit; mixed-type multi-groups still use per-sub-poll
+                    // Submit (lifted in a follow-up PR).
+                    const useMultipollSubmit = isMultiGroup && allYesNo && !!group.multipollId;
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
                       <div
@@ -1222,7 +1338,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             else expandedWrapperRefs.current.delete(poll.id);
                           }}
                         >
-                          <div className={allYesNo ? '' : 'mt-1.5'}>
+                          <div className={allYesNo && !useMultipollSubmit ? '' : 'mt-1.5'}>
                             {group.subPolls.map((sp, idx) => {
                               // Phase 3.3: every yes_no sub-poll uses external
                               // rendering so non-anchor sub-polls also get the
@@ -1248,37 +1364,110 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       </span>
                                     </div>
                                   )}
-                                  {isYesNo && isExpanded && r && (
-                                    <div
-                                      className="mt-2"
-                                      onClick={stopBubble}
-                                      onTouchStart={stopBubble}
-                                      onTouchEnd={stopBubble}
-                                      onTouchMove={stopBubble}
-                                    >
-                                      <PollResultsDisplay
-                                        results={r}
-                                        isPollClosed={isClosed}
-                                        hideLoser={false}
-                                        userVoteChoice={userVote?.choice ?? null}
-                                        onVoteChange={
-                                          isClosed
-                                            ? undefined
-                                            : (newChoice) => setPendingVoteChange({ pollId: sp.id, newChoice })
-                                        }
-                                      />
-                                    </div>
-                                  )}
+                                  {isYesNo && isExpanded && r && (() => {
+                                    // For all-yes_no multi-groups, the displayed
+                                    // selection prefers a staged choice (taps
+                                    // queued for the wrapper-level Submit) over
+                                    // the persisted vote.
+                                    const stagedChoice = useMultipollSubmit
+                                      ? pendingMultipollChoices.get(sp.id) ?? null
+                                      : null;
+                                    const displayedChoice = stagedChoice ?? userVote?.choice ?? null;
+                                    return (
+                                      <div
+                                        className="mt-2"
+                                        onClick={stopBubble}
+                                        onTouchStart={stopBubble}
+                                        onTouchEnd={stopBubble}
+                                        onTouchMove={stopBubble}
+                                      >
+                                        <PollResultsDisplay
+                                          results={r}
+                                          isPollClosed={isClosed}
+                                          hideLoser={false}
+                                          userVoteChoice={displayedChoice}
+                                          onVoteChange={
+                                            isClosed
+                                              ? undefined
+                                              : (newChoice) => {
+                                                  if (useMultipollSubmit) {
+                                                    setPendingMultipollChoices((prev) => {
+                                                      if (prev.get(sp.id) === newChoice) return prev;
+                                                      const next = new Map(prev);
+                                                      next.set(sp.id, newChoice);
+                                                      return next;
+                                                    });
+                                                  } else {
+                                                    setPendingVoteChange({ pollId: sp.id, newChoice });
+                                                  }
+                                                }
+                                          }
+                                        />
+                                      </div>
+                                    );
+                                  })()}
                                   <PollPageClient
                                     poll={sp}
                                     createdDate={formatCreationTimestamp(sp.created_at)}
                                     pollId={sp.id}
                                     externalYesNoResults={isYesNo}
                                     isExpanded={isExpanded}
+                                    partOfMultipollGroup={isMultiGroup}
                                   />
                                 </div>
                               );
                             })}
+                            {useMultipollSubmit && group.multipollId && !isClosed && (() => {
+                              const multipollId = group.multipollId;
+                              const hasStagedChange = group.subPolls.some((sp) => pendingMultipollChoices.has(sp.id));
+                              const submitting = multipollSubmitting.has(multipollId);
+                              const submitError = multipollSubmitError.get(multipollId);
+                              const voterNameVal = multipollVoterNames.get(multipollId) ?? getUserName() ?? '';
+                              return (
+                                <div
+                                  className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-800"
+                                  onClick={stopBubble}
+                                  onTouchStart={stopBubble}
+                                  onTouchEnd={stopBubble}
+                                  onTouchMove={stopBubble}
+                                >
+                                  <div className="mb-3">
+                                    <CompactNameField
+                                      name={voterNameVal}
+                                      setName={(name: string) =>
+                                        setMultipollVoterNames((prev) => {
+                                          if (prev.get(multipollId) === name) return prev;
+                                          const next = new Map(prev);
+                                          next.set(multipollId, name);
+                                          return next;
+                                        })
+                                      }
+                                      disabled={submitting}
+                                      maxLength={30}
+                                    />
+                                  </div>
+                                  {submitError && (
+                                    <div className="mb-3 p-2 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 rounded text-sm">
+                                      {submitError}
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      let stagedCount = 0;
+                                      for (const sp of group.subPolls) {
+                                        if (pendingMultipollChoices.has(sp.id)) stagedCount++;
+                                      }
+                                      setPendingMultipollSubmit({ multipollId, subPolls: group.subPolls, stagedCount });
+                                    }}
+                                    disabled={submitting || !hasStagedChange}
+                                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                                  >
+                                    {submitting ? 'Submitting...' : 'Submit Vote'}
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -1499,7 +1688,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       )}
 
       {/* Yes/No vote-change confirmation — triggered by tapping a non-chosen
-          option (or the Abstain link) on the external YesNoResults card. */}
+          option (or the Abstain link) on the external YesNoResults card.
+          Only fires for non-multi-group cards; all-yes_no multi-groups stage
+          instead and confirm via the wrapper-level modal below. */}
       <ConfirmationModal
         isOpen={!!pendingVoteChange}
         title="Change vote?"
@@ -1518,6 +1709,29 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
         onConfirm={confirmVoteChange}
         onCancel={() => setPendingVoteChange(null)}
+      />
+
+      {/* Wrapper-level Submit confirmation. subPolls + stagedCount are
+          snapshotted at button-tap time so the modal stays consistent if
+          groupedThreadPolls re-derives mid-confirmation. */}
+      <ConfirmationModal
+        isOpen={!!pendingMultipollSubmit}
+        title="Submit vote"
+        message={
+          pendingMultipollSubmit
+            ? pendingMultipollSubmit.stagedCount === 1
+              ? 'Submit your vote on this poll?'
+              : `Submit your vote across ${pendingMultipollSubmit.stagedCount} sub-polls?`
+            : ''
+        }
+        confirmText={pendingMultipollSubmit && multipollSubmitting.has(pendingMultipollSubmit.multipollId) ? 'Submitting…' : 'Submit Vote'}
+        cancelText="Cancel"
+        confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
+        onConfirm={() => {
+          if (!pendingMultipollSubmit) return;
+          void confirmMultipollSubmit(pendingMultipollSubmit.multipollId, pendingMultipollSubmit.subPolls);
+        }}
+        onCancel={() => setPendingMultipollSubmit(null)}
       />
     </>
   );
