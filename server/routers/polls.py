@@ -226,6 +226,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         show_preliminary_results=row.get("show_preliminary_results", True),
         min_availability_percent=row.get("min_availability_percent"),
         thread_title=row.get("thread_title"),
+        multipoll_id=str(row["multipoll_id"]) if row.get("multipoll_id") else None,
+        sub_poll_index=row.get("sub_poll_index"),
     )
 
 
@@ -1512,11 +1514,14 @@ def get_related_polls(req: RelatedPollsRequest):
             all_related_ids=[], original_count=0, discovered_count=0
         )
     with get_db() as conn:
-        # Fetch all polls that have any relationship (or are in the input set)
+        # Fetch all polls that have any relationship (or are in the input set
+        # or share a multipoll_id with the input set). Phase 2.5 also tracks
+        # multipoll siblings so visiting one sub-poll discovers its peers.
         rows = conn.execute(
-            """SELECT id, follow_up_to, fork_of FROM polls
+            """SELECT id, follow_up_to, fork_of, multipoll_id FROM polls
                WHERE follow_up_to IS NOT NULL
                   OR fork_of IS NOT NULL
+                  OR multipoll_id IS NOT NULL
                   OR id = ANY(%(poll_ids)s)""",
             {"poll_ids": req.poll_ids},
         ).fetchall()
@@ -1526,6 +1531,7 @@ def get_related_polls(req: RelatedPollsRequest):
             id=str(r["id"]),
             follow_up_to=str(r["follow_up_to"]) if r["follow_up_to"] else None,
             fork_of=str(r["fork_of"]) if r["fork_of"] else None,
+            multipoll_id=str(r["multipoll_id"]) if r.get("multipoll_id") else None,
         )
         for r in rows
     ]
