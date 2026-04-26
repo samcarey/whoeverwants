@@ -10,7 +10,6 @@ import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import ForkHeader from "@/components/ForkHeader";
-import PollList from "@/components/PollList";
 
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
@@ -34,7 +33,7 @@ import { loadSubPollDraft, saveSubPollDraft, clearSubPollDraft, SubPollDraft } f
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
-interface PollPageClientProps {
+interface SubPollBallotProps {
   poll: Poll;
   createdDate: string;
   pollId: string | null;
@@ -42,7 +41,7 @@ interface PollPageClientProps {
   // caller (thread view) is rendering them in a stable DOM position above
   // the expand clip to avoid winner-card flicker across expand/collapse.
   externalYesNoResults?: boolean;
-  // Thread-view cards pre-mount PollPageClient in a collapsed grid clip.
+  // Thread-view cards pre-mount SubPollBallot in a collapsed grid clip.
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
@@ -52,7 +51,7 @@ interface PollPageClientProps {
   partOfMultipollGroup?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false }: PollPageClientProps) {
+export default function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false }: SubPollBallotProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -156,8 +155,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
     fn(`[${_logType}] ${message}`, data);
   };
-  const [followUpPolls, setFollowUpPolls] = useState<Poll[]>([]);
-  const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [voterName, setVoterName] = useState<string>("");
 
   const autoCloseTriggeredRef = useRef(false);
@@ -719,25 +716,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       setVoterName(savedName);
     }
   }, []);
-
-  // Fetch follow-up polls
-  useEffect(() => {
-    async function fetchFollowUpPolls() {
-      try {
-        setLoadingFollowUps(true);
-        // TODO Phase 2E: Add a dedicated endpoint for fetching follow-up polls
-        // For now, this feature is not available until the related polls API is built
-        setFollowUpPolls([]);
-      } catch (error) {
-        console.error('Unexpected error fetching follow-up polls:', error);
-      } finally {
-        setLoadingFollowUps(false);
-      }
-    }
-
-    fetchFollowUpPolls();
-  }, [poll.id]);
-
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -2059,15 +2037,6 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
           {/* For suggestion-phase polls, hide until user has submitted rankings */}
           {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}
           {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && poll.poll_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
-
-          {/* Follow ups to this poll section */}
-          {followUpPolls.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold mb-4 text-center text-gray-900 dark:text-white">Follow ups to this poll</h2>
-              <PollList polls={followUpPolls} showSections={false} />
-            </div>
-          )}
-
 
       </div>
 
