@@ -10,6 +10,7 @@ import {
   apiCreateMultipoll,
   apiFindDuplicatePoll,
   CreateMultipollParams,
+  CreateSubPollParams,
 } from "@/lib/api";
 import type { Multipoll, OptionsMetadata, Poll } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
@@ -58,7 +59,15 @@ function pollChainLookup() {
 // `context` carries today's `details` field; per-sub-poll `context` is
 // unused for 1-sub-poll multipolls and Phase 2.4 will start populating it
 // for disambiguation. Pydantic supplies defaults for omitted fields.
-function pollDataToMultipollRequest(pollData: any): CreateMultipollParams {
+//
+// Phase 2.4: `additionalSubPolls` are prepended to the sub_polls array so
+// staged drafts come first (display order) and the current form's sub-poll
+// is the last one. Server validates the combined list (≤1 time, no
+// participation, distinct contexts for same-kind sub-polls).
+function pollDataToMultipollRequest(
+  pollData: any,
+  additionalSubPolls: CreateSubPollParams[] = [],
+): CreateMultipollParams {
   return {
     creator_secret: pollData.creator_secret,
     creator_name: pollData.creator_name,
@@ -70,6 +79,7 @@ function pollDataToMultipollRequest(pollData: any): CreateMultipollParams {
     title: pollData.title,
     context: pollData.details,
     sub_polls: [
+      ...additionalSubPolls,
       {
         poll_type: pollData.poll_type,
         category: pollData.category,
@@ -218,6 +228,12 @@ export function CreatePollContent() {
   const [searchRadius, setSearchRadius] = useState(25);
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
+
+  // Phase 2.4: previously-committed sub-polls awaiting submit. The current
+  // form represents the *last* sub-poll; on submit we prepend these to the
+  // multipoll request. MVP only stages yes_no/ranked_choice (server enforces
+  // ≤1 time and rejects participation entirely).
+  const [stagedSubPolls, setStagedSubPolls] = useState<CreateSubPollParams[]>([]);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -465,10 +481,11 @@ export function CreatePollContent() {
         dayTimeWindows,
         minResponses,
         showPreliminaryResults,
+        stagedSubPolls,
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedSubPolls]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -519,6 +536,7 @@ export function CreatePollContent() {
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
+          if (Array.isArray(formState.stagedSubPolls)) setStagedSubPolls(formState.stagedSubPolls);
 
           return formState;
         } catch (error) {
@@ -704,6 +722,121 @@ export function CreatePollContent() {
 
   const isFormValid = (): boolean => {
     return getValidationError() === null;
+  };
+
+  // Phase 2.4: subset of getValidationError that only checks per-sub-poll
+  // fields (options shape, deduplication, length). Skips title (multipoll-
+  // level), deadline (multipoll-level), and per-poll-type fields that aren't
+  // stageable in MVP (time / participation). Returns null when the current
+  // form is in a state that can be pushed onto stagedSubPolls.
+  const getSubPollValidationError = (): string | null => {
+    const dbPollType = getPollType();
+    if (dbPollType !== 'yes_no' && dbPollType !== 'ranked_choice') {
+      return "Only yes/no and preference polls can be added as additional sections.";
+    }
+    if (dbPollType === 'ranked_choice') {
+      const filledOptions = options.filter(opt => opt.trim() !== '');
+      const maxOptionLength = category === 'custom' ? 35 : 200;
+      const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
+      if (longOptions.length > 0) {
+        return `Poll options must be ${maxOptionLength} characters or less.`;
+      }
+      if (filledOptions.length > 0) {
+        let lastFilledIndex = -1;
+        for (let i = options.length - 1; i >= 0; i--) {
+          if (options[i].trim() !== '') { lastFilledIndex = i; break; }
+        }
+        for (let i = 0; i <= lastFilledIndex; i++) {
+          if (options[i].trim() === '') {
+            return "Please fill in all option fields or remove empty ones.";
+          }
+        }
+      }
+      if (filledOptions.length === 1) {
+        return "Add at least one more option, or leave all options blank to ask for suggestions.";
+      }
+      const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
+      if (uniqueOptions.size !== filledOptions.length) {
+        return "All poll options must be unique (no duplicates).";
+      }
+    }
+    return null;
+  };
+
+  // Build a CreateSubPollParams from the current per-sub-poll form state.
+  // Mirrors the per-sub-poll branch of pollDataToMultipollRequest. Caller
+  // must run getSubPollValidationError() first.
+  const buildSubPollFromState = (): CreateSubPollParams => {
+    const dbPollType = getPollType() as 'yes_no' | 'ranked_choice';
+    const filledOptions = options.filter(opt => opt.trim() !== '');
+    const sub: CreateSubPollParams = {
+      poll_type: dbPollType,
+      is_auto_title: isAutoTitle,
+    };
+    if (dbPollType === 'ranked_choice' && category !== 'custom') {
+      sub.category = category;
+    }
+    if (dbPollType === 'ranked_choice' && filledOptions.length > 0) {
+      sub.options = filledOptions;
+    }
+    if (Object.keys(optionsMetadata).length > 0) {
+      sub.options_metadata = optionsMetadata;
+    }
+    if (refLatitude !== undefined && refLongitude !== undefined) {
+      sub.reference_latitude = refLatitude;
+      sub.reference_longitude = refLongitude;
+      sub.reference_location_label = refLocationLabel;
+    }
+    if (dbPollType === 'ranked_choice') {
+      sub.min_responses = minResponses;
+      sub.show_preliminary_results = showPreliminaryResults;
+    }
+    // Suggestion mode (ranked_choice with no pre-filled options): defer the
+    // prephase deadline to the multipoll level; sub_poll-level minutes still
+    // travels along since the legacy poll columns are duplicated server-side.
+    if (dbPollType === 'ranked_choice' && filledOptions.length === 0) {
+      const cutoffMinutes = getSuggestionCutoffMinutes();
+      sub.suggestion_deadline_minutes =
+        cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
+      sub.allow_pre_ranking = allowPreRanking;
+    }
+    return sub;
+  };
+
+  // "+ Add another section" handler. Validates current sub-poll, pushes it
+  // onto stagedSubPolls, and resets per-sub-poll state so the form is ready
+  // for the next one. Shared multipoll fields (creator name, deadline,
+  // details, suggestion cutoff, follow_up_to/fork_of) are preserved.
+  const handleAddSection = () => {
+    const subErr = getSubPollValidationError();
+    if (subErr) { setError(subErr); return; }
+    setError(null);
+    setStagedSubPolls(prev => [...prev, buildSubPollFromState()]);
+    // Reset per-sub-poll state. Don't reset shared fields.
+    setTitle('');
+    setIsAutoTitle(true);
+    setOptions(['']);
+    setOptionsMetadata({});
+    setCategory('custom');
+    setForField('');
+    setRefLatitude(undefined);
+    setRefLongitude(undefined);
+    setRefLocationLabel('');
+    setMinResponses(1);
+    setShowPreliminaryResults(true);
+  };
+
+  const handleRemoveStagedSubPoll = (index: number) => {
+    setStagedSubPolls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Compact summary string for a staged sub-poll (used by the staged-list UI).
+  const summarizeStagedSubPoll = (sub: CreateSubPollParams): string => {
+    if (sub.poll_type === 'yes_no') return 'Yes / No';
+    const filled = (sub.options ?? []).filter(o => o.trim() !== '');
+    if (filled.length === 0) return 'Suggestions';
+    if (filled.length === 1) return filled[0];
+    return `${filled[0]} or ${filled.length - 1} more`;
   };
 
   // Portal targets in the modal header (rendered by template.tsx)
@@ -1019,7 +1152,7 @@ export function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -1206,8 +1339,15 @@ export function CreatePollContent() {
       
       // Prepare poll data
       const dbPollType = getPollType();
+      // Phase 2.4: when there are staged sub-polls, the wrapper's title isn't
+      // a meaningful description of the current form alone. Drop it so the
+      // server's `generate_multipoll_title()` builds a title from all sub-poll
+      // categories (e.g. "Yes/No and Restaurant"). User-edited titles
+      // (isAutoTitle === false) still pass through as the explicit override.
+      const wrapperTitle =
+        stagedSubPolls.length > 0 && isAutoTitle ? null : title;
       const pollData: any = {
-        title,
+        title: wrapperTitle,
         poll_type: dbPollType,
         response_deadline: responseDeadline,
         creator_secret: creatorSecret,
@@ -1377,12 +1517,27 @@ export function CreatePollContent() {
       // the legacy path — see CLAUDE.md "Participation Polls (Deprecated)".
       const useMultipollPath = dbPollType !== 'participation';
 
+      // Phase 2.4: participation polls can't be wrapped in a multipoll, so
+      // they're incompatible with staged sub-polls. The +Add button is
+      // hidden for participation/time, but a user could stage on a poll
+      // form and then switch to participation — bail with a clear error.
+      if (!useMultipollPath && stagedSubPolls.length > 0) {
+        setError("Remove the staged sections before switching to a participation poll.");
+        setIsLoading(false);
+        isSubmittingRef.current = false;
+        reEnableForm(form);
+        return;
+      }
+
       let createdPoll: Poll;
       let createdMultipoll: Multipoll | null = null;
       try {
         if (useMultipollPath) {
-          createdMultipoll = await apiCreateMultipoll(pollDataToMultipollRequest(pollData));
-          createdPoll = createdMultipoll.sub_polls[0];
+          createdMultipoll = await apiCreateMultipoll(
+            pollDataToMultipollRequest(pollData, stagedSubPolls),
+          );
+          // The current form's sub-poll is the LAST one (staged are prepended).
+          createdPoll = createdMultipoll.sub_polls[createdMultipoll.sub_polls.length - 1];
         } else {
           createdPoll = await apiCreatePoll(pollData);
         }
@@ -1395,8 +1550,17 @@ export function CreatePollContent() {
         return;
       }
 
-      // Record poll creation in browser storage
-      recordPollCreation(createdPoll.id, creatorSecret);
+      // Record creation for every sub-poll so the creator gets access +
+      // creator_secret for all of them. The wrapper's secret is shared across
+      // sub-polls server-side; recordPollCreation just persists the mapping
+      // locally per poll id (used by FollowUp/Close/Reopen actions).
+      if (createdMultipoll) {
+        for (const sp of createdMultipoll.sub_polls) {
+          recordPollCreation(sp.id, creatorSecret);
+        }
+      } else {
+        recordPollCreation(createdPoll.id, creatorSecret);
+      }
 
       // For suggestion polls, creators vote after creation like any other participant
       // No initial vote is created
@@ -1537,6 +1701,41 @@ export function CreatePollContent() {
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
         </div>
+      )}
+
+      {/* Phase 2.4: staged sub-polls — committed sections that will be sent
+          alongside the current form on submit. */}
+      {stagedSubPolls.length > 0 && (
+        <ul className="mb-4 space-y-1.5">
+          {stagedSubPolls.map((sub, i) => {
+            const builtIn = sub.category ? getBuiltInType(sub.category) : undefined;
+            const icon = builtIn?.icon || (sub.poll_type === 'yes_no' ? '👍' : '🗳️');
+            const label = builtIn?.label || (sub.category && sub.category !== 'custom' ? sub.category : 'Section');
+            return (
+              <li
+                key={i}
+                className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+              >
+                <span className="text-lg leading-none" aria-hidden>{icon}</span>
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
+                  {summarizeStagedSubPoll(sub)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveStagedSubPoll(i)}
+                  disabled={isLoading}
+                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
+                  aria-label={`Remove ${label} section`}
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       <form onSubmit={(e) => {
@@ -1990,6 +2189,23 @@ export function CreatePollContent() {
 
           {/* Title for participation/time polls - rendered below close after */}
           {pollType !== 'poll' && titleField}
+
+          {/* Phase 2.4: stage the current section and start a new one. Hidden
+              when the current form is participation (excluded from multipolls)
+              or time (≤1 time sub-poll allowed; user submits with just the
+              current time form). */}
+          {pollType === 'poll' && category !== 'time' && (
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                onClick={handleAddSection}
+                disabled={isLoading || !!getSubPollValidationError()}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                + Add another section
+              </button>
+            </div>
+          )}
 
           {/* Optional details field */}
           <div>
