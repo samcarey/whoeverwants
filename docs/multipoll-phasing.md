@@ -142,17 +142,19 @@ Smallest meaningful first step. Pure additive plumbing on the frontend:
 
 Done criteria: helpers exist, are typed, build cleanly. No behavior change visible to users. Can be exercised manually via browser devtools (`window.__apiCreateMultipoll = ...` for ad-hoc curl-like testing) or by writing a one-off test page.
 
-### Phase 2.2 — Single-button "+" routes through `POST /api/multipolls`
+### Phase 2.2 — Single-button "+" routes through `POST /api/multipolls` ✅
 
-Switch the existing create-poll flow to write multipolls under the hood — but UI stays exactly the same (one big create form, one Submit button → one sub-poll wrapped in one multipoll).
+Switched the existing create-poll flow to write multipolls under the hood — UI stays exactly the same (one big create form, one Submit button → one sub-poll wrapped in one multipoll).
 
-- `app/create-poll/page.tsx` submit handler: build a `CreateMultipollRequest` with exactly one `CreateSubPollRequest` and call `apiCreateMultipoll`. On success navigate to `/p/<multipoll.short_id>/`.
-- `app/p/[shortId]/page.tsx` loader: try `apiGetMultipollByShortId` first; if 404 fall back to `apiGetPollByShortId`. For 1-sub-poll multipolls, render the single sub-poll exactly as today (effectively unwrap the multipoll for display).
-- `app/thread/[threadId]/page.tsx` and `lib/threadUtils.ts`: keep walking the polls table for now — the polls row still has all the wrapper-level fields duplicated by `_insert_sub_poll`. **No multipoll-aware thread aggregation in this sub-phase.**
-- **Caveat**: when the new multipoll has `follow_up_to`/`fork_of` set on the multipoll level, the polls row also needs `follow_up_to`/`fork_of` set so legacy thread aggregation still finds the chain. This requires a server-side change in `_insert_sub_poll`: look up the parent multipoll's first sub-poll and store its id on the new poll's `follow_up_to`. Same for `fork_of`. Track this in the server PR for 2.2.
-- All existing entry points (Follow-Up, Fork, Duplicate, "Vote on it") flow through the same updated submit handler — no per-button changes needed since they all funnel into `app/create-poll/page.tsx`.
+- `app/create-poll/page.tsx` submit handler: builds a `CreateMultipollRequest` with exactly one `CreateSubPollRequest` (`pollDataToMultipollRequest()`) and calls `apiCreateMultipoll`. Participation polls keep using `apiCreatePoll`. On success navigate to `/p/<multipoll.short_id>/`.
+- `app/p/[shortId]/page.tsx` loader: tries `apiGetMultipollByShortId` / `apiGetMultipollById` first; on 404 falls back to `apiGetPollByShortId` / `apiGetPollById`. For 1-sub-poll multipolls, the single sub-poll is fed into `ThreadContent` as `initialExpandedPollId` exactly like today. Cache lookups (`getCachedMultipoll*`) are tried synchronously first so warm hits render on first paint.
+- `app/thread/[threadId]/page.tsx` and `lib/threadUtils.ts`: unchanged — they still walk the polls table. The polls row gets `follow_up_to` / `fork_of` written by `_insert_sub_poll`, so legacy thread aggregation finds the chain transparently.
+- Server resolution: `CreateMultipollRequest.follow_up_to` / `fork_of` are POLL ids (matching the legacy single-poll API). `_resolve_parent_multipoll_id` looks up the parent poll's `multipoll_id` for the multipolls row; legacy parents resolve to `NULL`. `_insert_sub_poll` writes the original poll_id onto each sub-poll's `polls.follow_up_to` / `polls.fork_of`. `_insert_multipoll` falls back to the legacy parent poll's `thread_title` via a second `COALESCE` branch.
+- `is_auto_title` is now part of `CreateSubPollRequest` so subsequent fork/duplicate flows preserve auto-title state.
+- `next.config.ts` rewrites: `/api/multipolls`, `/api/multipolls/`, and `/api/multipolls/:path*` proxy to the backend so the FE same-origin fetches work.
+- Six new server tests cover the chain propagation (followup→multipoll, followup→legacy, fork_of→multipoll, thread_title inheritance from both kinds of parent, explicit-title-wins).
 
-Done criteria: creating a poll (regular, follow-up, fork, duplicate) writes a multipoll wrapper + 1 sub-poll. URL is the multipoll's short_id. Existing thread / poll pages render the new poll identically to before. Existing legacy polls (no `multipoll_id`) keep working.
+Done: creating a poll (regular, follow-up, fork, duplicate) writes a multipoll wrapper + 1 sub-poll. URL is the multipoll's short_id. Existing thread / poll pages render the new poll identically to before. Existing legacy polls (no `multipoll_id`) keep working.
 
 ### Phase 2.3 — What/When/Where FAB on home + thread (still single sub-poll)
 
