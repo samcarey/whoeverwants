@@ -785,6 +785,18 @@ The algorithm uses a **greedy selection with priority ordering**:
 
 ## Multipoll System (In Progress)
 
+### Submission paradigm (READ FIRST, alongside Addressability)
+
+**Sub-polls cannot exist or be submitted by themselves.** A sub-poll is always a section of a multipoll. The multipoll is the unit of identity, sharing, voting, and submission. This is non-negotiable architecture, not a UX nicety.
+
+- **Multipoll-level state lives on a multipoll wrapper component.** The wrapper owns: voter name input, Submit button, confirmation modal, "you voted / Edit" overall state, vote-changed event dispatch, cache invalidation. None of these belong inside a sub-poll component. Today (mid-rollout) the wrapper for multi-sub-poll groups is rendered inside the thread-page card group; for 1-sub-poll multipolls the legacy per-sub-poll `PollPageClient` Submit still exists but is being lifted (Phase 3.4 follow-up B).
+- **Sub-poll-level state lives on the sub-poll component** (`PollPageClient` today, to be renamed `SubPollBallot`). Owns: category-specific ballot UI (yes/no buttons, RankableOptions, TimeSlotBubbles, suggestion entry), per-sub-poll abstain control, per-sub-poll ranking/preferences state, section label / context display.
+- **Abstaining is per-sub-ballot, not per-multipoll.** A voter can abstain on one sub-poll while voting on others. There is no single "abstain from this whole multipoll" toggle. Each sub-poll's abstain control is rendered inside that sub-poll's section.
+- **Ballot draft is per-multipoll** (one localStorage entry keyed by multipoll_id holding `{voter_name, sub_polls: { [sub_poll_id]: SubPollDraft } }`). Voter name is shared across the multipoll; per-sub-poll state is keyed by sub-poll id inside the entry. Today's `lib/ballotDraft.ts` is per-sub-poll keyed; re-keyed in Phase 3.4 follow-up B.
+- **Vote submission is always atomic across the multipoll.** Every vote write goes through `POST /api/multipolls/{id}/votes`. The per-poll `apiSubmitVote` / `apiEditVote` callsites are legacy — used by the yes/no external-rendering carve-out and by 1-sub-poll PollPageClient until Phase 3.4 follow-up B; removed entirely in Phase 5.
+
+When designing any vote/submission feature, the rule is: **does this belong on the multipoll wrapper or inside a sub-poll's section?** Anything to do with identity, sharing, the act of submitting, or aggregate state goes on the wrapper. Anything specific to a category's ballot interaction goes inside the section.
+
 ### Addressability paradigm (READ FIRST)
 
 **The multipoll is the addressable unit. Sub-polls are internal-only.** This shapes every Phase 2+ decision:
