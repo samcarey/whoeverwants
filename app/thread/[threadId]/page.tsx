@@ -1193,37 +1193,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       </div>
                     );
                   })()}
-                  {/* Full yes/no cards — only when expanded. Kept outside the
-                       expand clip so the cards stay in a stable DOM position
-                       across expand/collapse and PollPageClient's internal
-                       yes_no branch is suppressed via externalYesNoResults. */}
-                  {poll.poll_type === 'yes_no' && isExpanded && (() => {
-                    const r = pollResultsMap.get(poll.id);
-                    if (!r) return null;
-                    const userVote = userVoteMap.get(poll.id);
-                    const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
-                    return (
-                      <div
-                        className="mt-2"
-                        onClick={stopBubble}
-                        onTouchStart={stopBubble}
-                        onTouchEnd={stopBubble}
-                        onTouchMove={stopBubble}
-                      >
-                        <PollResultsDisplay
-                          results={r}
-                          isPollClosed={isClosed}
-                          hideLoser={false}
-                          userVoteChoice={userVote?.choice ?? null}
-                          onVoteChange={
-                            isClosed
-                              ? undefined
-                              : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
-                          }
-                        />
-                      </div>
-                    );
-                  })()}
                   </div>{/* /compact header */}
 
                   {/* Expanded full-poll content — pre-mounted (clipped) once the card
@@ -1233,11 +1202,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        without JS measurement. */}
                   {(visiblePollIds.has(poll.id) || isExpanded) && (() => {
                     // For yes_no polls the thread view renders the whole
-                    // voting + results UI externally (via YesNoResults), so
-                    // PollPageClient returns null for its yes_no branch.
-                    // Drop the mt-3 wrapper gap here so nothing empty sits
-                    // under the external block.
+                    // voting + results UI externally (via YesNoResults inline
+                    // before PollPageClient), so PollPageClient returns null
+                    // for its yes_no branch. Drop the mt-1.5 wrapper gap when
+                    // every sub-poll is yes_no so nothing empty sits under
+                    // the external block.
                     const allYesNo = group.subPolls.every((sp) => sp.poll_type === 'yes_no');
+                    const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
                       <div
                         data-poll-expand-grid=""
@@ -1251,17 +1222,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             else expandedWrapperRefs.current.delete(poll.id);
                           }}
                         >
-                          <div className={allYesNo && !isMultiGroup ? '' : 'mt-1.5'}>
+                          <div className={allYesNo ? '' : 'mt-1.5'}>
                             {group.subPolls.map((sp, idx) => {
-                              // The thread page's external yes_no card lives
-                              // outside the expand clip and only renders for
-                              // the ANCHOR poll. For non-anchor yes_no
-                              // sub-polls in a multi-group, fall back to
-                              // PollPageClient's internal yes_no UI so they
-                              // still render (we don't get the thread-page
-                              // tap-to-change flow on those — acceptable
-                              // until Phase 3.3 unifies vote submission).
-                              const useExternalYesNo = sp.poll_type === 'yes_no' && (!isMultiGroup || idx === 0);
+                              // Phase 3.3: every yes_no sub-poll uses external
+                              // rendering so non-anchor sub-polls also get the
+                              // thread-page tap-to-change flow.
+                              const isYesNo = sp.poll_type === 'yes_no';
+                              const r = isYesNo ? pollResultsMap.get(sp.id) : undefined;
+                              const userVote = isYesNo ? userVoteMap.get(sp.id) : undefined;
                               return (
                                 <div
                                   key={sp.id}
@@ -1280,11 +1248,32 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       </span>
                                     </div>
                                   )}
+                                  {isYesNo && isExpanded && r && (
+                                    <div
+                                      className="mt-2"
+                                      onClick={stopBubble}
+                                      onTouchStart={stopBubble}
+                                      onTouchEnd={stopBubble}
+                                      onTouchMove={stopBubble}
+                                    >
+                                      <PollResultsDisplay
+                                        results={r}
+                                        isPollClosed={isClosed}
+                                        hideLoser={false}
+                                        userVoteChoice={userVote?.choice ?? null}
+                                        onVoteChange={
+                                          isClosed
+                                            ? undefined
+                                            : (newChoice) => setPendingVoteChange({ pollId: sp.id, newChoice })
+                                        }
+                                      />
+                                    </div>
+                                  )}
                                   <PollPageClient
                                     poll={sp}
                                     createdDate={formatCreationTimestamp(sp.created_at)}
                                     pollId={sp.id}
-                                    externalYesNoResults={useExternalYesNo}
+                                    externalYesNoResults={isYesNo}
                                     isExpanded={isExpanded}
                                   />
                                 </div>
