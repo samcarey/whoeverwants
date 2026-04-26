@@ -14,7 +14,7 @@ The guiding principle: **every phase leaves `main` shippable**. Existing polls k
 | 2.3 — What/When/Where bubble bar (thread-like pages only) | ✅ on this branch | Home keeps single + FAB; bubbles render on `isThreadLikePage`. |
 | 4 — backfill existing polls | ✅ on this branch + applied to dev+prod | Migration 093. 151 prod polls wrapped, 21 follow_up_to + 2 fork_of rewrites. |
 | 2.5 — multi-sub-poll rendering | ✅ on this branch | Sibling sub-polls join the thread via `multipoll_id`; thread page renders one card per sub-poll, sorted by `sub_poll_index`. |
-| 2.4 — multi-sub-poll create UI | ⏳ not started | Phase plan below; the API supports it (multi-sub-poll multipolls can be POSTed today), but the create-poll modal still emits 1-sub-poll multipolls. |
+| 2.4 — multi-sub-poll create UI | ✅ on this branch | `+ Add another section` stages yes_no/ranked_choice drafts; submit prepends them to the multipoll request. MVP scope per the "minimal path" below. |
 | 3 — multipoll-level operations + thread card aggregation | ⏳ not started | |
 | 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
 

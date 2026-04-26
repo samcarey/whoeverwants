@@ -106,6 +106,38 @@ function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
 // For locations, take just the name (first comma segment) then apply shortenOption
 function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
 
+// Shared between full-form validation and the per-sub-poll staging validator.
+// Returns null when ranked_choice options are valid (or empty — suggestion mode).
+function validateRankedChoiceOptions(
+  options: string[],
+  category: string,
+): string | null {
+  const filledOptions = options.filter(opt => opt.trim() !== '');
+  const maxOptionLength = category === 'custom' ? 35 : 200;
+  if (filledOptions.some(opt => opt.length > maxOptionLength)) {
+    return `Poll options must be ${maxOptionLength} characters or less.`;
+  }
+  if (filledOptions.length > 0) {
+    let lastFilledIndex = -1;
+    for (let i = options.length - 1; i >= 0; i--) {
+      if (options[i].trim() !== '') { lastFilledIndex = i; break; }
+    }
+    for (let i = 0; i <= lastFilledIndex; i++) {
+      if (options[i].trim() === '') {
+        return "Please fill in all option fields or remove empty ones.";
+      }
+    }
+  }
+  if (filledOptions.length === 1) {
+    return "Add at least one more option, or leave all options blank to ask for suggestions.";
+  }
+  const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
+  if (uniqueOptions.size !== filledOptions.length) {
+    return "All poll options must be unique (no duplicates).";
+  }
+  return null;
+}
+
 const BASE_DEADLINE_OPTIONS = [
   { value: "5min", label: "5 min", minutes: 5 },
   { value: "10min", label: "10 min", minutes: 10 },
@@ -605,43 +637,9 @@ export function CreatePollContent() {
 
     const dbPollType = getPollType();
 
-    // Options validation only applies to ranked_choice — yes_no, suggestion,
-    // and participation polls don't use the options array.
     if (dbPollType === 'ranked_choice') {
-      const filledOptions = options.filter(opt => opt.trim() !== '');
-
-      // Check for options that exceed character limit (relaxed for autocomplete types)
-      const maxOptionLength = category === 'custom' ? 35 : 200;
-      const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
-      if (longOptions.length > 0) {
-        return `Poll options must be ${maxOptionLength} characters or less.`;
-      }
-
-      // If we have any filled options, check that there are no empty fields in between
-      if (filledOptions.length > 0) {
-        let lastFilledIndex = -1;
-        for (let i = options.length - 1; i >= 0; i--) {
-          if (options[i].trim() !== '') {
-            lastFilledIndex = i;
-            break;
-          }
-        }
-
-        for (let i = 0; i <= lastFilledIndex; i++) {
-          if (options[i].trim() === '') {
-            return "Please fill in all option fields or remove empty ones.";
-          }
-        }
-      }
-
-      if (filledOptions.length === 1) {
-        return "Add at least one more option, or leave all options blank to ask for suggestions.";
-      }
-
-      const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
-      if (uniqueOptions.size !== filledOptions.length) {
-        return "All poll options must be unique (no duplicates).";
-      }
+      const optErr = validateRankedChoiceOptions(options, category);
+      if (optErr) return optErr;
     }
 
     // Participation poll: must have days selected, and every day needs a time slot
@@ -724,41 +722,16 @@ export function CreatePollContent() {
     return getValidationError() === null;
   };
 
-  // Phase 2.4: subset of getValidationError that only checks per-sub-poll
-  // fields (options shape, deduplication, length). Skips title (multipoll-
-  // level), deadline (multipoll-level), and per-poll-type fields that aren't
-  // stageable in MVP (time / participation). Returns null when the current
-  // form is in a state that can be pushed onto stagedSubPolls.
+  // Subset of getValidationError that only checks per-sub-poll fields. Skips
+  // title (multipoll-level), deadline (multipoll-level), and time / participation
+  // shapes (those types can't be staged in MVP).
   const getSubPollValidationError = (): string | null => {
     const dbPollType = getPollType();
     if (dbPollType !== 'yes_no' && dbPollType !== 'ranked_choice') {
       return "Only yes/no and preference polls can be added as additional sections.";
     }
     if (dbPollType === 'ranked_choice') {
-      const filledOptions = options.filter(opt => opt.trim() !== '');
-      const maxOptionLength = category === 'custom' ? 35 : 200;
-      const longOptions = filledOptions.filter(opt => opt.length > maxOptionLength);
-      if (longOptions.length > 0) {
-        return `Poll options must be ${maxOptionLength} characters or less.`;
-      }
-      if (filledOptions.length > 0) {
-        let lastFilledIndex = -1;
-        for (let i = options.length - 1; i >= 0; i--) {
-          if (options[i].trim() !== '') { lastFilledIndex = i; break; }
-        }
-        for (let i = 0; i <= lastFilledIndex; i++) {
-          if (options[i].trim() === '') {
-            return "Please fill in all option fields or remove empty ones.";
-          }
-        }
-      }
-      if (filledOptions.length === 1) {
-        return "Add at least one more option, or leave all options blank to ask for suggestions.";
-      }
-      const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
-      if (uniqueOptions.size !== filledOptions.length) {
-        return "All poll options must be unique (no duplicates).";
-      }
+      return validateRankedChoiceOptions(options, category);
     }
     return null;
   };
@@ -812,7 +785,6 @@ export function CreatePollContent() {
     if (subErr) { setError(subErr); return; }
     setError(null);
     setStagedSubPolls(prev => [...prev, buildSubPollFromState()]);
-    // Reset per-sub-poll state. Don't reset shared fields.
     setTitle('');
     setIsAutoTitle(true);
     setOptions(['']);
@@ -830,7 +802,6 @@ export function CreatePollContent() {
     setStagedSubPolls(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Compact summary string for a staged sub-poll (used by the staged-list UI).
   const summarizeStagedSubPoll = (sub: CreateSubPollParams): string => {
     if (sub.poll_type === 'yes_no') return 'Yes / No';
     const filled = (sub.options ?? []).filter(o => o.trim() !== '');
@@ -1703,8 +1674,6 @@ export function CreatePollContent() {
         </div>
       )}
 
-      {/* Phase 2.4: staged sub-polls — committed sections that will be sent
-          alongside the current form on submit. */}
       {stagedSubPolls.length > 0 && (
         <ul className="mb-4 space-y-1.5">
           {stagedSubPolls.map((sub, i) => {
