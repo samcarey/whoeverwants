@@ -672,123 +672,215 @@ def _enforce_suggestion_phase_timing(poll: dict, suggestions, ranked_choices) ->
     return has_suggestion_phase
 
 
+def _submit_vote_to_poll(conn, poll_id: str, req: SubmitVoteRequest, now: datetime) -> dict:
+    """Insert a vote row inside an existing transaction. Shared by the per-poll
+    `submit_vote` endpoint and the multipoll batch-vote endpoint. Returns the
+    inserted row. Raises HTTPException on validation failures."""
+    poll = conn.execute(
+        "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking, response_deadline FROM polls WHERE id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()
+    if not poll:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    if poll["is_closed"]:
+        raise HTTPException(status_code=400, detail="Poll is closed")
+
+    has_deferred_deadline = (
+        poll.get("suggestion_deadline_minutes")
+        and not poll.get("suggestion_deadline")
+        and (
+            req.suggestions
+            or (poll["poll_type"] == "time" and req.voter_day_time_windows)
+        )
+    )
+    if has_deferred_deadline:
+        new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
+        if poll.get("response_deadline"):
+            response_dt = poll["response_deadline"]
+            if not response_dt.tzinfo:
+                response_dt = response_dt.replace(tzinfo=timezone.utc)
+            if new_deadline >= response_dt:
+                new_deadline = response_dt - timedelta(minutes=1)
+        conn.execute(
+            "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
+            {"deadline": new_deadline, "now": now, "poll_id": poll_id},
+        )
+        poll = dict(poll)
+        poll["suggestion_deadline"] = new_deadline
+
+    has_suggestion_phase = _enforce_suggestion_phase_timing(
+        poll, req.suggestions, req.ranked_choices
+    )
+
+    try:
+        validate_vote(
+            poll_type=poll["poll_type"],
+            vote_type=req.vote_type,
+            yes_no_choice=req.yes_no_choice,
+            ranked_choices=req.ranked_choices,
+            ranked_choice_tiers=req.ranked_choice_tiers,
+            suggestions=req.suggestions,
+            is_abstain=req.is_abstain,
+            is_ranking_abstain=req.is_ranking_abstain,
+            has_suggestion_phase=has_suggestion_phase,
+        )
+    except VoteValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    import json
+    row = conn.execute(
+        """
+        INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
+                           ranked_choice_tiers,
+                           suggestions, is_abstain, is_ranking_abstain, voter_name,
+                           min_participants, max_participants,
+                           voter_day_time_windows, voter_duration,
+                           liked_slots, disliked_slots,
+                           created_at, updated_at)
+        VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
+                %(ranked_choice_tiers)s::jsonb,
+                %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
+                %(min_participants)s, %(max_participants)s,
+                %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
+                %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb,
+                %(now)s, %(now)s)
+        RETURNING *
+        """,
+        {
+            "poll_id": poll_id,
+            "vote_type": req.vote_type,
+            "yes_no_choice": req.yes_no_choice,
+            "ranked_choices": req.ranked_choices,
+            "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
+            "suggestions": req.suggestions,
+            "is_abstain": req.is_abstain,
+            "is_ranking_abstain": req.is_ranking_abstain,
+            "voter_name": req.voter_name,
+            "min_participants": req.min_participants,
+            "max_participants": req.max_participants,
+            "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
+            "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+            "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
+            "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
+            "now": now,
+        },
+    ).fetchone()
+
+    if req.options_metadata and req.suggestions:
+        conn.execute(
+            """
+            UPDATE polls
+            SET options_metadata = COALESCE(options_metadata, '{}'::jsonb) || %(new_metadata)s::jsonb
+            WHERE id = %(poll_id)s
+            """,
+            {
+                "poll_id": poll_id,
+                "new_metadata": json.dumps(req.options_metadata),
+            },
+        )
+
+    _check_auto_close(conn, poll_id)
+    return row
+
+
+def _edit_vote_on_poll(conn, poll_id: str, vote_id: str, req: EditVoteRequest, now: datetime) -> dict:
+    """Update a vote row inside an existing transaction. Shared by the per-poll
+    `edit_vote` endpoint and the multipoll batch-vote endpoint. Returns the
+    updated row. Raises HTTPException on validation failures."""
+    existing = conn.execute(
+        "SELECT id FROM votes WHERE id = %(vote_id)s AND poll_id = %(poll_id)s",
+        {"vote_id": vote_id, "poll_id": poll_id},
+    ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Vote not found")
+
+    poll = conn.execute(
+        "SELECT is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()
+    if poll and poll["is_closed"]:
+        raise HTTPException(status_code=400, detail="Poll is closed")
+
+    has_suggestion_phase = _enforce_suggestion_phase_timing(
+        poll, req.suggestions, req.ranked_choices
+    )
+    if has_suggestion_phase and poll.get("suggestion_deadline"):
+        in_suggestion_phase = datetime.now(timezone.utc) < poll["suggestion_deadline"]
+
+        if in_suggestion_phase and req.suggestions is not None:
+            old_vote = conn.execute(
+                "SELECT suggestions FROM votes WHERE id = %(vote_id)s",
+                {"vote_id": vote_id},
+            ).fetchone()
+            if old_vote and old_vote["suggestions"]:
+                removed = set(old_vote["suggestions"]) - set(req.suggestions)
+                if removed:
+                    ranked_by_others = conn.execute(
+                        """SELECT DISTINCT unnest(ranked_choices) as opt
+                           FROM votes
+                           WHERE poll_id = %(poll_id)s
+                             AND id != %(vote_id)s
+                             AND ranked_choices IS NOT NULL""",
+                        {"poll_id": poll_id, "vote_id": vote_id},
+                    ).fetchall()
+                    ranked_set = {r["opt"] for r in ranked_by_others}
+                    blocked = removed & ranked_set
+                    if blocked:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Cannot remove suggestions that others have ranked: {', '.join(sorted(blocked))}",
+                        )
+
+    import json
+    row = conn.execute(
+        """
+        UPDATE votes
+        SET yes_no_choice = %(yes_no_choice)s,
+            ranked_choices = %(ranked_choices)s,
+            ranked_choice_tiers = %(ranked_choice_tiers)s::jsonb,
+            suggestions = COALESCE(%(suggestions)s, suggestions),
+            is_abstain = %(is_abstain)s,
+            is_ranking_abstain = %(is_ranking_abstain)s,
+            voter_name = %(voter_name)s,
+            min_participants = %(min_participants)s,
+            max_participants = %(max_participants)s,
+            voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
+            voter_duration = %(voter_duration)s::jsonb,
+            liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
+            disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
+            updated_at = %(now)s
+        WHERE id = %(vote_id)s AND poll_id = %(poll_id)s
+        RETURNING *
+        """,
+        {
+            "yes_no_choice": req.yes_no_choice,
+            "ranked_choices": req.ranked_choices,
+            "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
+            "suggestions": req.suggestions,
+            "is_abstain": req.is_abstain,
+            "is_ranking_abstain": req.is_ranking_abstain,
+            "voter_name": req.voter_name,
+            "min_participants": req.min_participants,
+            "max_participants": req.max_participants,
+            "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
+            "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
+            "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
+            "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
+            "now": now,
+            "vote_id": vote_id,
+            "poll_id": poll_id,
+        },
+    ).fetchone()
+    _check_auto_close(conn, poll_id)
+    return row
+
+
 @router.post("/{poll_id}/votes", response_model=VoteResponse, status_code=201)
 def submit_vote(poll_id: str, req: SubmitVoteRequest):
     """Submit a vote on a poll."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        # Verify poll exists and is open
-        poll = conn.execute(
-            "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking, response_deadline FROM polls WHERE id = %(poll_id)s",
-            {"poll_id": poll_id},
-        ).fetchone()
-        if not poll:
-            raise HTTPException(status_code=404, detail="Poll not found")
-        if poll["is_closed"]:
-            raise HTTPException(status_code=400, detail="Poll is closed")
-
-        # Deferred suggestion/availability deadline: start timer on first submission
-        # For ranked_choice polls: triggered by first suggestion
-        # For time polls: triggered by first availability entry (voter_day_time_windows)
-        has_deferred_deadline = (
-            poll.get("suggestion_deadline_minutes")
-            and not poll.get("suggestion_deadline")
-            and (
-                req.suggestions
-                or (poll["poll_type"] == "time" and req.voter_day_time_windows)
-            )
-        )
-        if has_deferred_deadline:
-            new_deadline = now + timedelta(minutes=poll["suggestion_deadline_minutes"])
-            # Cap at response_deadline to ensure suggestions close before voting
-            if poll.get("response_deadline"):
-                response_dt = poll["response_deadline"]
-                if not response_dt.tzinfo:
-                    response_dt = response_dt.replace(tzinfo=timezone.utc)
-                if new_deadline >= response_dt:
-                    new_deadline = response_dt - timedelta(minutes=1)
-            conn.execute(
-                "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
-                {"deadline": new_deadline, "now": now, "poll_id": poll_id},
-            )
-            # Update local poll dict so downstream checks use the new deadline
-            poll = dict(poll)
-            poll["suggestion_deadline"] = new_deadline
-
-        has_suggestion_phase = _enforce_suggestion_phase_timing(
-            poll, req.suggestions, req.ranked_choices
-        )
-
-        # Validate vote structure
-        try:
-            validate_vote(
-                poll_type=poll["poll_type"],
-                vote_type=req.vote_type,
-                yes_no_choice=req.yes_no_choice,
-                ranked_choices=req.ranked_choices,
-                ranked_choice_tiers=req.ranked_choice_tiers,
-                suggestions=req.suggestions,
-                is_abstain=req.is_abstain,
-                is_ranking_abstain=req.is_ranking_abstain,
-                has_suggestion_phase=has_suggestion_phase,
-            )
-        except VoteValidationError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        import json
-        row = conn.execute(
-            """
-            INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
-                               ranked_choice_tiers,
-                               suggestions, is_abstain, is_ranking_abstain, voter_name,
-                               min_participants, max_participants,
-                               voter_day_time_windows, voter_duration,
-                               liked_slots, disliked_slots,
-                               created_at, updated_at)
-            VALUES (%(poll_id)s, %(vote_type)s, %(yes_no_choice)s, %(ranked_choices)s,
-                    %(ranked_choice_tiers)s::jsonb,
-                    %(suggestions)s, %(is_abstain)s, %(is_ranking_abstain)s, %(voter_name)s,
-                    %(min_participants)s, %(max_participants)s,
-                    %(voter_day_time_windows)s::jsonb, %(voter_duration)s::jsonb,
-                    %(liked_slots)s::jsonb, %(disliked_slots)s::jsonb,
-                    %(now)s, %(now)s)
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "vote_type": req.vote_type,
-                "yes_no_choice": req.yes_no_choice,
-                "ranked_choices": req.ranked_choices,
-                "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
-                "suggestions": req.suggestions,
-                "is_abstain": req.is_abstain,
-                "is_ranking_abstain": req.is_ranking_abstain,
-                "voter_name": req.voter_name,
-                "min_participants": req.min_participants,
-                "max_participants": req.max_participants,
-                "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
-                "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
-                "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
-                "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
-                "now": now,
-            },
-        ).fetchone()
-
-        # Merge suggestion metadata into poll's options_metadata
-        if req.options_metadata and req.suggestions:
-            conn.execute(
-                """
-                UPDATE polls
-                SET options_metadata = COALESCE(options_metadata, '{}'::jsonb) || %(new_metadata)s::jsonb
-                WHERE id = %(poll_id)s
-                """,
-                {
-                    "poll_id": poll_id,
-                    "new_metadata": json.dumps(req.options_metadata),
-                },
-            )
-
-        _check_auto_close(conn, poll_id)
+        row = _submit_vote_to_poll(conn, poll_id, req, now)
     return _row_to_vote(row)
 
 
@@ -816,95 +908,7 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
     """Edit an existing vote."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        # Verify vote exists and belongs to this poll
-        existing = conn.execute(
-            "SELECT id FROM votes WHERE id = %(vote_id)s AND poll_id = %(poll_id)s",
-            {"vote_id": vote_id, "poll_id": poll_id},
-        ).fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail="Vote not found")
-
-        # Check poll is still open and get suggestion phase info
-        poll = conn.execute(
-            "SELECT is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
-            {"poll_id": poll_id},
-        ).fetchone()
-        if poll and poll["is_closed"]:
-            raise HTTPException(status_code=400, detail="Poll is closed")
-
-        has_suggestion_phase = _enforce_suggestion_phase_timing(
-            poll, req.suggestions, req.ranked_choices
-        )
-        if has_suggestion_phase and poll.get("suggestion_deadline"):
-            in_suggestion_phase = datetime.now(timezone.utc) < poll["suggestion_deadline"]
-
-            # Prevent unsuggesting options that others have ranked
-            if in_suggestion_phase and req.suggestions is not None:
-                old_vote = conn.execute(
-                    "SELECT suggestions FROM votes WHERE id = %(vote_id)s",
-                    {"vote_id": vote_id},
-                ).fetchone()
-                if old_vote and old_vote["suggestions"]:
-                    removed = set(old_vote["suggestions"]) - set(req.suggestions)
-                    if removed:
-                        # Check if any other voter has ranked any of the removed suggestions
-                        ranked_by_others = conn.execute(
-                            """SELECT DISTINCT unnest(ranked_choices) as opt
-                               FROM votes
-                               WHERE poll_id = %(poll_id)s
-                                 AND id != %(vote_id)s
-                                 AND ranked_choices IS NOT NULL""",
-                            {"poll_id": poll_id, "vote_id": vote_id},
-                        ).fetchall()
-                        ranked_set = {r["opt"] for r in ranked_by_others}
-                        blocked = removed & ranked_set
-                        if blocked:
-                            raise HTTPException(
-                                status_code=400,
-                                detail=f"Cannot remove suggestions that others have ranked: {', '.join(sorted(blocked))}",
-                            )
-
-        import json
-        row = conn.execute(
-            """
-            UPDATE votes
-            SET yes_no_choice = %(yes_no_choice)s,
-                ranked_choices = %(ranked_choices)s,
-                ranked_choice_tiers = %(ranked_choice_tiers)s::jsonb,
-                suggestions = COALESCE(%(suggestions)s, suggestions),
-                is_abstain = %(is_abstain)s,
-                is_ranking_abstain = %(is_ranking_abstain)s,
-                voter_name = %(voter_name)s,
-                min_participants = %(min_participants)s,
-                max_participants = %(max_participants)s,
-                voter_day_time_windows = %(voter_day_time_windows)s::jsonb,
-                voter_duration = %(voter_duration)s::jsonb,
-                liked_slots = COALESCE(%(liked_slots)s::jsonb, liked_slots),
-                disliked_slots = COALESCE(%(disliked_slots)s::jsonb, disliked_slots),
-                updated_at = %(now)s
-            WHERE id = %(vote_id)s AND poll_id = %(poll_id)s
-            RETURNING *
-            """,
-            {
-                "yes_no_choice": req.yes_no_choice,
-                "ranked_choices": req.ranked_choices,
-                "ranked_choice_tiers": json.dumps(req.ranked_choice_tiers) if req.ranked_choice_tiers is not None else None,
-                "suggestions": req.suggestions,
-                "is_abstain": req.is_abstain,
-                "is_ranking_abstain": req.is_ranking_abstain,
-                "voter_name": req.voter_name,
-                "min_participants": req.min_participants,
-                "max_participants": req.max_participants,
-                "voter_day_time_windows": json.dumps(req.voter_day_time_windows) if req.voter_day_time_windows else None,
-                "voter_duration": json.dumps(req.voter_duration) if req.voter_duration else None,
-                "liked_slots": json.dumps(req.liked_slots) if req.liked_slots is not None else None,
-                "disliked_slots": json.dumps(req.disliked_slots) if req.disliked_slots is not None else None,
-                "now": now,
-                "vote_id": vote_id,
-                "poll_id": poll_id,
-            },
-        ).fetchone()
-        _check_auto_close(conn, poll_id)
+        row = _edit_vote_on_poll(conn, poll_id, vote_id, req, now)
     return _row_to_vote(row)
 
 

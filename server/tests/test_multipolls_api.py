@@ -678,3 +678,281 @@ class TestMultipollVoterAggregation:
         multi = self._make_two_yes_no_multi(client, creator_secret)
         assert multi["voter_names"] == []
         assert multi["anonymous_count"] == 0
+
+
+class TestMultipollUnifiedVoting:
+    """POST /api/multipolls/{id}/votes — atomic batch vote across siblings.
+
+    Per the Addressability paradigm, this is the multipoll-level entry point:
+    one transaction, one voter_name, many sub-poll ballots. Validation runs
+    per-sub-poll inside the same transaction; any item failure rolls back the
+    whole batch.
+    """
+
+    def _make_multi(self, client, creator_secret, sub_polls=None):
+        resp = client.post(
+            "/api/multipolls",
+            json={
+                "creator_secret": creator_secret,
+                "context": "Voting",
+                "sub_polls": sub_polls
+                or [_yes_no_sub_poll(context="A"), _yes_no_sub_poll(context="B")],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    def test_submits_votes_across_two_sub_polls_atomically(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                    {
+                        "sub_poll_id": sp_b["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        rows = resp.json()
+        assert len(rows) == 2
+        assert {r["poll_id"] for r in rows} == {sp_a["id"], sp_b["id"]}
+        assert all(r["voter_name"] == "Alice" for r in rows)
+
+        # Aggregation reflects the new votes.
+        agg = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
+        assert agg["voter_names"] == ["Alice"]
+
+    def test_edits_existing_votes_when_vote_id_set(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        first = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                    {
+                        "sub_poll_id": sp_b["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                ],
+            },
+        ).json()
+        vote_a, vote_b = first[0], first[1]
+        # Same voter changes both votes from yes → no via vote_id.
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_id": vote_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    },
+                    {
+                        "sub_poll_id": sp_b["id"],
+                        "vote_id": vote_b["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        rows = resp.json()
+        assert all(r["yes_no_choice"] == "no" for r in rows)
+        # Only one vote per sub-poll (the existing rows were updated, not appended).
+        for sub in multi["sub_polls"]:
+            votes = client.get(f"/api/polls/{sub['id']}/votes").json()
+            assert len(votes) == 1
+
+    def test_mixed_insert_and_update_in_one_request(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        # Existing vote on A.
+        existing_a = client.post(
+            f"/api/polls/{sp_a['id']}/votes",
+            json={"vote_type": "yes_no", "yes_no_choice": "yes", "voter_name": "Bob"},
+        ).json()
+        # Now batch: edit A + insert B.
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Bob",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_id": existing_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    },
+                    {
+                        "sub_poll_id": sp_b["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        votes_a = client.get(f"/api/polls/{sp_a['id']}/votes").json()
+        assert len(votes_a) == 1
+        assert votes_a[0]["yes_no_choice"] == "no"  # was 'yes', edited
+        votes_b = client.get(f"/api/polls/{sp_b['id']}/votes").json()
+        assert len(votes_b) == 1
+        assert votes_b[0]["yes_no_choice"] == "yes"
+
+    def test_rolls_back_on_any_item_failure(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        # Item 0 valid; item 1 has invalid yes_no_choice → 400, no row should
+        # be inserted into either sub-poll.
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                    {
+                        "sub_poll_id": sp_b["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "maybe",  # invalid
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 400, resp.text
+        # Neither sub-poll should have any vote rows.
+        assert client.get(f"/api/polls/{sp_a['id']}/votes").json() == []
+        assert client.get(f"/api/polls/{sp_b['id']}/votes").json() == []
+
+    def test_404_on_unknown_multipoll(self, client):
+        resp = client.post(
+            f"/api/multipolls/{uuid.uuid4()}/votes",
+            json={
+                "voter_name": "x",
+                "items": [
+                    {
+                        "sub_poll_id": str(uuid.uuid4()),
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 404
+
+    def test_400_when_sub_poll_doesnt_belong_to_multipoll(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        # Use a sub_poll_id that exists but on a different multipoll.
+        other = self._make_multi(client, creator_secret)
+        foreign_sp = other["sub_polls"][0]
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": foreign_sp["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_400_on_duplicate_sub_poll_ids(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a = multi["sub_polls"][0]
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    },
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "no",
+                    },
+                ],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_400_when_multipoll_is_closed(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        )
+        sp_a = multi["sub_polls"][0]
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Alice",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_422_on_empty_items(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={"voter_name": "Alice", "items": []},
+        )
+        # Pydantic min_length=1 rejection.
+        assert resp.status_code == 422
+
+    def test_anonymous_voter_name(self, client, creator_secret):
+        multi = self._make_multi(client, creator_secret)
+        sp_a = multi["sub_polls"][0]
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
+        )
+        assert resp.status_code == 201
+        rows = resp.json()
+        assert rows[0]["voter_name"] is None
