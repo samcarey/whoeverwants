@@ -69,7 +69,7 @@ export interface ApiVote {
 
 // --- Helper ---
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
@@ -332,6 +332,7 @@ export interface CreateSubPollParams {
   reference_latitude?: number | null;
   reference_longitude?: number | null;
   reference_location_label?: string | null;
+  is_auto_title?: boolean;
 }
 
 export interface CreateMultipollParams {

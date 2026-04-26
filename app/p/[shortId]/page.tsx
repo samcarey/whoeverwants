@@ -1,11 +1,23 @@
 "use client";
 
 import { Poll } from "@/lib/types";
-import { apiGetPollById, apiGetPollByShortId } from "@/lib/api";
+import {
+  apiGetMultipollById,
+  apiGetMultipollByShortId,
+  apiGetPollById,
+  apiGetPollByShortId,
+  ApiError,
+} from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
-import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from "@/lib/pollCache";
+import {
+  getCachedAccessiblePolls,
+  getCachedMultipollById,
+  getCachedMultipollByShortId,
+  getCachedPollById,
+  getCachedPollByShortId,
+} from "@/lib/pollCache";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import { isUuidLike } from "@/lib/pollId";
 import { useEffect, useState, Suspense } from "react";
@@ -18,13 +30,20 @@ function PollContent() {
   const params = useParams();
 
   // Resolve synchronously from cache when possible so the thread view renders on first paint.
-  // Walk up the follow_up_to chain using both the direct cache and the accessible-polls list
-  // (which includes polls not yet fetched individually) to find the thread root.
+  // Phase 2.2: short ids in /p/[shortId]/ may belong to a multipoll wrapper.
+  // Try the multipoll cache first; for 1-sub-poll multipolls the wrapper is
+  // invisible — we render the sub-poll exactly as today. Multi-sub-poll
+  // wrappers fall through to the same path (Phase 2.5 will replace this with
+  // a stacked render), expanding the first sub-poll for now.
   const resolvedInitial = (() => {
     if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    const poll = isUuidLike(raw) ? getCachedPollById(raw) : getCachedPollByShortId(raw);
+    const byEither = <T,>(byId: (s: string) => T, byShort: (s: string) => T) =>
+      isUuidLike(raw) ? byId(raw) : byShort(raw);
+    const cachedMultipoll = byEither(getCachedMultipollById, getCachedMultipollByShortId);
+    const poll = cachedMultipoll?.sub_polls[0]
+      ?? byEither(getCachedPollById, getCachedPollByShortId);
     if (!poll) return null;
     const accessible = getCachedAccessiblePolls();
     const byId = new Map<string, Poll>();
@@ -55,9 +74,21 @@ function PollContent() {
     (async () => {
       try {
         const isUuid = isUuidLike(shortId);
-        const poll = isUuid
-          ? await apiGetPollById(shortId).catch(() => null)
-          : await apiGetPollByShortId(shortId).catch(() => null);
+        // Phase 2.2: try the multipoll endpoint first. A 404 means this is a
+        // legacy single-poll url (or a poll-id url for a poll inside a
+        // multipoll); fall back to the single-poll endpoint.
+        const multipoll = await (isUuid
+          ? apiGetMultipollById(shortId)
+          : apiGetMultipollByShortId(shortId)
+        ).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null;
+          throw err;
+        });
+        const poll = multipoll
+          ? multipoll.sub_polls[0] ?? null
+          : isUuid
+            ? await apiGetPollById(shortId).catch(() => null)
+            : await apiGetPollByShortId(shortId).catch(() => null);
         if (!poll) {
           if (!cancelled) setError(true);
           return;

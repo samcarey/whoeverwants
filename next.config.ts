@@ -59,6 +59,18 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
         destination: `${apiDest}/api/polls/:path*`,
       },
       {
+        source: '/api/multipolls',
+        destination: `${apiDest}/api/multipolls`,
+      },
+      {
+        source: '/api/multipolls/',
+        destination: `${apiDest}/api/multipolls`,
+      },
+      {
+        source: '/api/multipolls/:path*',
+        destination: `${apiDest}/api/multipolls/:path*`,
+      },
+      {
         source: '/api/search/:path*',
         destination: `${apiDest}/api/search/:path*`,
       },

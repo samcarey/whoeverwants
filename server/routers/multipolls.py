@@ -83,10 +83,30 @@ def _validate_request(req: CreateMultipollRequest) -> None:
             )
 
 
+def _resolve_parent_multipoll_id(conn, parent_poll_id: str | None) -> str | None:
+    """Look up a parent poll_id and return its multipoll_id, or None if the
+    parent is a legacy (pre-Phase-4) poll with no wrapper. Returns None when
+    the parent doesn't exist or has no multipoll_id."""
+    if not parent_poll_id:
+        return None
+    row = conn.execute(
+        "SELECT multipoll_id FROM polls WHERE id = %(id)s",
+        {"id": parent_poll_id},
+    ).fetchone()
+    if not row or not row.get("multipoll_id"):
+        return None
+    return str(row["multipoll_id"])
+
+
 def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
-    # Explicit titles are persisted to thread_title; absent titles are
-    # computed at read time so re-arranging sub-polls re-titles for free.
-    # The COALESCE inherits the parent multipoll's thread_title on follow-ups.
+    # follow_up_to / fork_of in the request are *poll ids* (matching the legacy
+    # single-poll create API). Resolve to the parent's multipoll_id for the
+    # multipolls row; the original poll_id is also written onto each sub-poll's
+    # polls.follow_up_to / polls.fork_of so legacy thread aggregation keeps
+    # working until Phase 5. thread_title falls back through both kinds of
+    # parent so threads with mixed-mode parents inherit titles correctly.
+    parent_followup_multipoll_id = _resolve_parent_multipoll_id(conn, req.follow_up_to)
+    parent_fork_multipoll_id = _resolve_parent_multipoll_id(conn, req.fork_of)
     explicit_title = req.title if req.title is not None else req.thread_title
     return conn.execute(
         """
@@ -100,10 +120,11 @@ def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
         VALUES (
             %(creator_secret)s, %(creator_name)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
-            %(follow_up_to)s, %(fork_of)s, %(context)s,
+            %(follow_up_multipoll_id)s, %(fork_multipoll_id)s, %(context)s,
             COALESCE(
                 %(explicit_title)s,
-                (SELECT thread_title FROM multipolls WHERE id = %(follow_up_to)s)
+                (SELECT thread_title FROM multipolls WHERE id = %(follow_up_multipoll_id)s),
+                (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
             ),
             %(now)s, %(now)s
         )
@@ -120,8 +141,9 @@ def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
                 None if req.prephase_deadline_minutes else req.prephase_deadline
             ),
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
-            "follow_up_to": req.follow_up_to,
-            "fork_of": req.fork_of,
+            "follow_up_multipoll_id": parent_followup_multipoll_id,
+            "fork_multipoll_id": parent_fork_multipoll_id,
+            "follow_up_poll_id": req.follow_up_to,
             "context": req.context,
             "explicit_title": explicit_title,
             "now": now,
@@ -149,6 +171,7 @@ def _insert_sub_poll(
         INSERT INTO polls (
             title, poll_type, options, response_deadline,
             creator_secret, creator_name,
+            follow_up_to, fork_of,
             suggestion_deadline, suggestion_deadline_minutes,
             allow_pre_ranking,
             details,
@@ -158,12 +181,14 @@ def _insert_sub_poll(
             reference_location_label,
             min_responses, show_preliminary_results,
             min_availability_percent,
+            is_auto_title,
             multipoll_id, sub_poll_index,
             created_at, updated_at
         )
         VALUES (
             %(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
             %(creator_secret)s, %(creator_name)s,
+            %(follow_up_to)s, %(fork_of)s,
             %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
             %(allow_pre_ranking)s,
             %(details)s,
@@ -173,6 +198,7 @@ def _insert_sub_poll(
             %(reference_location_label)s,
             %(min_responses)s, %(show_preliminary_results)s,
             %(min_availability_percent)s,
+            %(is_auto_title)s,
             %(multipoll_id)s, %(sub_poll_index)s,
             %(now)s, %(now)s
         )
@@ -185,6 +211,11 @@ def _insert_sub_poll(
             "response_deadline": req.response_deadline,
             "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
+            # Mirror the request's poll-id refs onto the polls row so legacy
+            # thread aggregation keeps walking until Phase 5 (see
+            # CreateMultipollRequest docstring for the full semantics).
+            "follow_up_to": req.follow_up_to,
+            "fork_of": req.fork_of,
             "suggestion_deadline": suggestion_deadline_value,
             "suggestion_deadline_minutes": sub.suggestion_deadline_minutes,
             "allow_pre_ranking": sub.allow_pre_ranking,
@@ -201,6 +232,7 @@ def _insert_sub_poll(
             "min_availability_percent": (
                 sub.min_availability_percent if sub.poll_type == PollType.time else None
             ),
+            "is_auto_title": sub.is_auto_title,
             "multipoll_id": str(multipoll_row["id"]),
             "sub_poll_index": sub_poll_index,
             "now": now,

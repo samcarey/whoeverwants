@@ -312,6 +312,9 @@ class CreateSubPollRequest(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    # Whether the title was auto-generated. Stored on the polls row so that
+    # subsequent fork/duplicate flows know whether to retain or regenerate.
+    is_auto_title: bool = False
 
 
 class CreateMultipollRequest(BaseModel):
@@ -320,6 +323,11 @@ class CreateMultipollRequest(BaseModel):
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
+    # follow_up_to / fork_of are POLL ids (matching the legacy single-poll
+    # create API). The server resolves them to the parent's multipoll_id for
+    # multipolls.follow_up_to / multipolls.fork_of, and writes the original
+    # poll_id onto each sub-poll's polls.follow_up_to / polls.fork_of so the
+    # existing thread-walking aggregation keeps working until Phase 5.
     follow_up_to: str | None = None
     fork_of: str | None = None
     thread_title: str | None = None
