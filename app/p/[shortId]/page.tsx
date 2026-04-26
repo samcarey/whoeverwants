@@ -39,11 +39,11 @@ function PollContent() {
     if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    const isUuid = isUuidLike(raw);
-    const multipoll = isUuid ? getCachedMultipollById(raw) : getCachedMultipollByShortId(raw);
-    const poll = multipoll
-      ? multipoll.sub_polls[0] ?? null
-      : (isUuid ? getCachedPollById(raw) : getCachedPollByShortId(raw));
+    const byEither = <T,>(byId: (s: string) => T, byShort: (s: string) => T) =>
+      isUuidLike(raw) ? byId(raw) : byShort(raw);
+    const cachedMultipoll = byEither(getCachedMultipollById, getCachedMultipollByShortId);
+    const poll = cachedMultipoll?.sub_polls[0]
+      ?? byEither(getCachedPollById, getCachedPollByShortId);
     if (!poll) return null;
     const accessible = getCachedAccessiblePolls();
     const byId = new Map<string, Poll>();

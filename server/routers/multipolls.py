@@ -98,18 +98,15 @@ def _resolve_parent_multipoll_id(conn, parent_poll_id: str | None) -> str | None
     return str(row["multipoll_id"])
 
 
-def _insert_multipoll(
-    conn,
-    req: CreateMultipollRequest,
-    parent_followup_multipoll_id: str | None,
-    parent_fork_multipoll_id: str | None,
-    now: datetime,
-) -> dict:
-    # Explicit titles are persisted to thread_title; absent titles are
-    # computed at read time so re-arranging sub-polls re-titles for free.
-    # thread_title inherits from the parent multipoll's thread_title on
-    # follow-ups; falls back to the legacy parent poll's thread_title when
-    # the parent has no multipoll wrapper yet (pre-Phase-4).
+def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
+    # follow_up_to / fork_of in the request are *poll ids* (matching the legacy
+    # single-poll create API). Resolve to the parent's multipoll_id for the
+    # multipolls row; the original poll_id is also written onto each sub-poll's
+    # polls.follow_up_to / polls.fork_of so legacy thread aggregation keeps
+    # working until Phase 5. thread_title falls back through both kinds of
+    # parent so threads with mixed-mode parents inherit titles correctly.
+    parent_followup_multipoll_id = _resolve_parent_multipoll_id(conn, req.follow_up_to)
+    parent_fork_multipoll_id = _resolve_parent_multipoll_id(conn, req.fork_of)
     explicit_title = req.title if req.title is not None else req.thread_title
     return conn.execute(
         """
@@ -214,12 +211,9 @@ def _insert_sub_poll(
             "response_deadline": req.response_deadline,
             "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
-            # follow_up_to/fork_of on the polls row keep legacy thread
-            # aggregation (which walks the polls table) working until
-            # Phase 5 retires those columns. The request's follow_up_to is a
-            # *poll* id (legacy parent or another multipoll's sub-poll); the
-            # multipoll-level reference is resolved separately in
-            # _resolve_parent_multipoll_id.
+            # Mirror the request's poll-id refs onto the polls row so legacy
+            # thread aggregation keeps walking until Phase 5 (see
+            # CreateMultipollRequest docstring for the full semantics).
             "follow_up_to": req.follow_up_to,
             "fork_of": req.fork_of,
             "suggestion_deadline": suggestion_deadline_value,
@@ -302,21 +296,7 @@ def create_multipoll(req: CreateMultipollRequest):
     now = datetime.now(timezone.utc)
 
     with get_db() as conn:
-        # follow_up_to / fork_of in the request are *poll ids* (matching the
-        # legacy single-poll create API). Resolve to the parent's multipoll_id
-        # for the multipolls row; the original poll_id is also written onto
-        # each sub-poll's polls.follow_up_to/fork_of so legacy thread
-        # aggregation keeps working until Phase 5.
-        parent_followup_multipoll_id = _resolve_parent_multipoll_id(conn, req.follow_up_to)
-        parent_fork_multipoll_id = _resolve_parent_multipoll_id(conn, req.fork_of)
-
-        multipoll_row = _insert_multipoll(
-            conn,
-            req,
-            parent_followup_multipoll_id,
-            parent_fork_multipoll_id,
-            now,
-        )
+        multipoll_row = _insert_multipoll(conn, req, now)
         sub_poll_rows = [
             _insert_sub_poll(conn, multipoll_row, req, sub, index, sub_poll_title, now)
             for index, sub in enumerate(req.sub_polls)

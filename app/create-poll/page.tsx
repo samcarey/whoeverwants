@@ -52,41 +52,40 @@ function pollChainLookup() {
 // Phase 2.2: translate the existing flat pollData object into a
 // CreateMultipollRequest with one sub-poll. Wrapper-level fields
 // (creator_secret, response_deadline, follow_up_to/fork_of, title, voting
-// cutoff, prephase deadlines) live on the multipoll; everything ballot-
-// shaped stays on the sub-poll. follow_up_to/fork_of are POLL ids — the
-// server resolves them to the parent's multipoll_id automatically (see
-// docs/multipoll-phasing.md → Phase 2.2). Wrapper-level `context` carries
-// today's `details` field; per-sub-poll `context` is unused for 1-sub-poll
-// multipolls and Phase 2.4 will start populating it for disambiguation.
+// cutoff, prephase deadlines) live on the multipoll; everything ballot-shaped
+// stays on the sub-poll. follow_up_to/fork_of are POLL ids — the server
+// resolves them to the parent's multipoll_id automatically. Wrapper-level
+// `context` carries today's `details` field; per-sub-poll `context` is
+// unused for 1-sub-poll multipolls and Phase 2.4 will start populating it
+// for disambiguation. Pydantic supplies defaults for omitted fields.
 function pollDataToMultipollRequest(pollData: any): CreateMultipollParams {
   return {
     creator_secret: pollData.creator_secret,
-    creator_name: pollData.creator_name ?? null,
-    response_deadline: pollData.response_deadline ?? null,
-    prephase_deadline: pollData.suggestion_deadline ?? null,
-    prephase_deadline_minutes: pollData.suggestion_deadline_minutes ?? null,
-    follow_up_to: pollData.follow_up_to ?? null,
-    fork_of: pollData.fork_of ?? null,
+    creator_name: pollData.creator_name,
+    response_deadline: pollData.response_deadline,
+    prephase_deadline: pollData.suggestion_deadline,
+    prephase_deadline_minutes: pollData.suggestion_deadline_minutes,
+    follow_up_to: pollData.follow_up_to,
+    fork_of: pollData.fork_of,
     title: pollData.title,
-    context: pollData.details ?? null,
+    context: pollData.details,
     sub_polls: [
       {
         poll_type: pollData.poll_type,
-        category: pollData.category ?? null,
-        options: pollData.options ?? null,
-        options_metadata: pollData.options_metadata ?? null,
-        context: null,
-        suggestion_deadline_minutes: pollData.suggestion_deadline_minutes ?? null,
-        allow_pre_ranking: pollData.allow_pre_ranking ?? true,
-        min_responses: pollData.min_responses ?? null,
-        show_preliminary_results: pollData.show_preliminary_results ?? true,
-        min_availability_percent: pollData.min_availability_percent ?? 95,
-        day_time_windows: pollData.day_time_windows ?? null,
-        duration_window: pollData.duration_window ?? null,
-        reference_latitude: pollData.reference_latitude ?? null,
-        reference_longitude: pollData.reference_longitude ?? null,
-        reference_location_label: pollData.reference_location_label ?? null,
-        is_auto_title: pollData.is_auto_title ?? false,
+        category: pollData.category,
+        options: pollData.options,
+        options_metadata: pollData.options_metadata,
+        suggestion_deadline_minutes: pollData.suggestion_deadline_minutes,
+        allow_pre_ranking: pollData.allow_pre_ranking,
+        min_responses: pollData.min_responses,
+        show_preliminary_results: pollData.show_preliminary_results,
+        min_availability_percent: pollData.min_availability_percent,
+        day_time_windows: pollData.day_time_windows,
+        duration_window: pollData.duration_window,
+        reference_latitude: pollData.reference_latitude,
+        reference_longitude: pollData.reference_longitude,
+        reference_location_label: pollData.reference_location_label,
+        is_auto_title: pollData.is_auto_title,
       },
     ],
   };
