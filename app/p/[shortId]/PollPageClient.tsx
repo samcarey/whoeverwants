@@ -30,7 +30,7 @@ import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
 import SubPollField from "@/components/SubPollField";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
-import { loadBallotDraft, saveBallotDraft, clearBallotDraft, BallotDraft } from "@/lib/ballotDraft";
+import { loadSubPollDraft, saveSubPollDraft, clearSubPollDraft, SubPollDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
@@ -184,7 +184,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       if (votedPolls[poll.id]) return;
     } catch { /* ignore */ }
-    const draft = loadBallotDraft(poll.id);
+    const draft = loadSubPollDraft(poll.multipoll_id ?? null, poll.id);
     if (!draft) return;
     if (draft.yesNoChoice !== undefined) setYesNoChoice(draft.yesNoChoice ?? null);
     if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
@@ -196,7 +196,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
-  }, [poll.id, poll.poll_type]);
+  }, [poll.id, poll.multipoll_id, poll.poll_type]);
 
   // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,7 +204,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
     if ((poll.poll_type !== 'participation' && poll.poll_type !== 'time') || hasVoted) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
-      saveBallotDraft(poll.id, {
+      saveSubPollDraft(poll.multipoll_id ?? null, poll.id, {
         yesNoChoice, isAbstaining,
         voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
         voterDayTimeWindows,
@@ -212,7 +212,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       });
     }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [poll.id, poll.poll_type, hasVoted, yesNoChoice, isAbstaining,
+  }, [poll.id, poll.multipoll_id, poll.poll_type, hasVoted, yesNoChoice, isAbstaining,
       voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
       voterDayTimeWindows, durationMinValue, durationMaxValue,
       durationMinEnabled, durationMaxEnabled]);
@@ -1350,7 +1350,7 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         setSeenPollOptions(pollOptions);
       }
       // Clear ballot draft now that vote is saved to the database
-      clearBallotDraft(poll.id);
+      clearSubPollDraft(poll.multipoll_id ?? null, poll.id);
       
       // Save the user's name if they provided one
       if (voterName.trim()) {
