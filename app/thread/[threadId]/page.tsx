@@ -1474,17 +1474,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     return (
                                       <SubPollBallot
                                         ref={(handle) => {
-                                          if (handle) {
-                                            subPollBallotRefs.current.set(sp.id, handle);
-                                          } else {
-                                            subPollBallotRefs.current.delete(sp.id);
-                                            setWrapperSubmitState((prev) => {
-                                              if (!prev.has(sp.id)) return prev;
-                                              const next = new Map(prev);
-                                              next.delete(sp.id);
-                                              return next;
-                                            });
-                                          }
+                                          if (handle) subPollBallotRefs.current.set(sp.id, handle);
+                                          else subPollBallotRefs.current.delete(sp.id);
                                         }}
                                         poll={sp}
                                         createdDate={formatCreationTimestamp(sp.created_at)}
