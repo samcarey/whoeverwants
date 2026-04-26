@@ -184,6 +184,7 @@ def _insert_sub_poll(
             reference_location_label,
             min_responses, show_preliminary_results,
             min_availability_percent,
+            is_auto_title,
             multipoll_id, sub_poll_index,
             created_at, updated_at
         )
@@ -200,6 +201,7 @@ def _insert_sub_poll(
             %(reference_location_label)s,
             %(min_responses)s, %(show_preliminary_results)s,
             %(min_availability_percent)s,
+            %(is_auto_title)s,
             %(multipoll_id)s, %(sub_poll_index)s,
             %(now)s, %(now)s
         )
@@ -236,6 +238,7 @@ def _insert_sub_poll(
             "min_availability_percent": (
                 sub.min_availability_percent if sub.poll_type == PollType.time else None
             ),
+            "is_auto_title": sub.is_auto_title,
             "multipoll_id": str(multipoll_row["id"]),
             "sub_poll_index": sub_poll_index,
             "now": now,

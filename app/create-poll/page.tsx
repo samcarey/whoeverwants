@@ -5,8 +5,13 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
 import Link from "next/link";
-import { apiCreatePoll, apiFindDuplicatePoll } from "@/lib/api";
-import type { OptionsMetadata } from "@/lib/types";
+import {
+  apiCreatePoll,
+  apiCreateMultipoll,
+  apiFindDuplicatePoll,
+  CreateMultipollParams,
+} from "@/lib/api";
+import type { Multipoll, OptionsMetadata, Poll } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -42,6 +47,49 @@ function pollChainLookup() {
   const accessible = getCachedAccessiblePolls() ?? [];
   const byId = new Map(accessible.map(p => [p.id, p]));
   return (id: string) => byId.get(id) ?? getCachedPollById(id);
+}
+
+// Phase 2.2: translate the existing flat pollData object into a
+// CreateMultipollRequest with one sub-poll. Wrapper-level fields
+// (creator_secret, response_deadline, follow_up_to/fork_of, title, voting
+// cutoff, prephase deadlines) live on the multipoll; everything ballot-
+// shaped stays on the sub-poll. follow_up_to/fork_of are POLL ids — the
+// server resolves them to the parent's multipoll_id automatically (see
+// docs/multipoll-phasing.md → Phase 2.2). Wrapper-level `context` carries
+// today's `details` field; per-sub-poll `context` is unused for 1-sub-poll
+// multipolls and Phase 2.4 will start populating it for disambiguation.
+function pollDataToMultipollRequest(pollData: any): CreateMultipollParams {
+  return {
+    creator_secret: pollData.creator_secret,
+    creator_name: pollData.creator_name ?? null,
+    response_deadline: pollData.response_deadline ?? null,
+    prephase_deadline: pollData.suggestion_deadline ?? null,
+    prephase_deadline_minutes: pollData.suggestion_deadline_minutes ?? null,
+    follow_up_to: pollData.follow_up_to ?? null,
+    fork_of: pollData.fork_of ?? null,
+    title: pollData.title,
+    context: pollData.details ?? null,
+    sub_polls: [
+      {
+        poll_type: pollData.poll_type,
+        category: pollData.category ?? null,
+        options: pollData.options ?? null,
+        options_metadata: pollData.options_metadata ?? null,
+        context: null,
+        suggestion_deadline_minutes: pollData.suggestion_deadline_minutes ?? null,
+        allow_pre_ranking: pollData.allow_pre_ranking ?? true,
+        min_responses: pollData.min_responses ?? null,
+        show_preliminary_results: pollData.show_preliminary_results ?? true,
+        min_availability_percent: pollData.min_availability_percent ?? 95,
+        day_time_windows: pollData.day_time_windows ?? null,
+        duration_window: pollData.duration_window ?? null,
+        reference_latitude: pollData.reference_latitude ?? null,
+        reference_longitude: pollData.reference_longitude ?? null,
+        reference_location_label: pollData.reference_location_label ?? null,
+        is_auto_title: pollData.is_auto_title ?? false,
+      },
+    ],
+  };
 }
 
 // Strip parenthesized suffixes and colon suffixes from option text for titles
@@ -1319,9 +1367,21 @@ export function CreatePollContent() {
         }
       }
 
-      let createdPoll;
+      // Phase 2.2: route non-participation polls through the multipoll API.
+      // The wrapper is invisible for 1-sub-poll multipolls; voting/results
+      // continue to use the per-poll endpoints. Participation polls stay on
+      // the legacy path — see CLAUDE.md "Participation Polls (Deprecated)".
+      const useMultipollPath = dbPollType !== 'participation';
+
+      let createdPoll: Poll;
+      let createdMultipoll: Multipoll | null = null;
       try {
-        createdPoll = await apiCreatePoll(pollData);
+        if (useMultipollPath) {
+          createdMultipoll = await apiCreateMultipoll(pollDataToMultipollRequest(pollData));
+          createdPoll = createdMultipoll.sub_polls[0];
+        } else {
+          createdPoll = await apiCreatePoll(pollData);
+        }
       } catch (apiError: any) {
         console.error("Error creating poll:", apiError);
         setError(apiError.message || "Failed to create poll. Please try again.");
@@ -1360,7 +1420,12 @@ export function CreatePollContent() {
       // Navigate to the new poll. `pollBackTarget.set` records the thread
       // URL so the poll page's back button leads to the thread containing
       // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      const redirectId = createdPoll.short_id || createdPoll.id;
+      // Phase 2.2: when we created via the multipoll path, the URL targets
+      // the multipoll's short_id, not the sub-poll's. The thread back-target
+      // still uses poll-level walking (legacy follow_up_to chain), which
+      // works because every sub-poll has polls.follow_up_to set.
+      const redirectId =
+        createdMultipoll?.short_id ?? createdPoll.short_id ?? createdPoll.id;
       pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollChainLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {

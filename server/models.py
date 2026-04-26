@@ -312,6 +312,9 @@ class CreateSubPollRequest(BaseModel):
     reference_latitude: float | None = None
     reference_longitude: float | None = None
     reference_location_label: str | None = None
+    # Whether the title was auto-generated. Stored on the polls row so that
+    # subsequent fork/duplicate flows know whether to retain or regenerate.
+    is_auto_title: bool = False
 
 
 class CreateMultipollRequest(BaseModel):
