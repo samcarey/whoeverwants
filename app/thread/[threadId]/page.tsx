@@ -271,16 +271,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
   const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(() => new Map());
   // Phase 3.4 follow-up B: per-sub-poll signal from SubPollBallot telling
-  // the wrapper whether to render its Submit button (visible during
-  // initial-vote + edit modes, hidden in the voted/not-editing steady
-  // state). Defaults to false; SubPollBallot fires the callback once on
-  // mount and on every subsequent visibility change.
-  const [wrapperSubmitVisibility, setWrapperSubmitVisibility] = useState<Map<string, boolean>>(() => new Map());
-  const handleWrapperSubmitVisibilityChange = useRef((pollId: string, visible: boolean) => {
-    setWrapperSubmitVisibility((prev) => {
-      if (prev.get(pollId) === visible) return prev;
+  // the wrapper whether to render its Submit button + which label to
+  // show ("Submit Vote" / "Submit Availability" / "Submit Preferences").
+  // SubPollBallot fires the callback once on mount and on every change.
+  type WrapperSubmitState = { visible: boolean; label: string };
+  const [wrapperSubmitState, setWrapperSubmitState] = useState<Map<string, WrapperSubmitState>>(() => new Map());
+  const handleWrapperSubmitStateChange = useRef((pollId: string, state: WrapperSubmitState) => {
+    setWrapperSubmitState((prev) => {
+      const cur = prev.get(pollId);
+      if (cur && cur.visible === state.visible && cur.label === state.label) return prev;
       const next = new Map(prev);
-      next.set(pollId, visible);
+      next.set(pollId, state);
       return next;
     });
   }).current;
@@ -1490,9 +1491,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                           })
                                         : undefined
                                     }
-                                    onWrapperSubmitVisibilityChange={
+                                    onWrapperSubmitStateChange={
                                       useWrapperSubmit && !isYesNo
-                                        ? handleWrapperSubmitVisibilityChange
+                                        ? handleWrapperSubmitStateChange
                                         : undefined
                                     }
                                   />
@@ -1553,7 +1554,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             {useWrapperSubmit && group.multipollId && !isClosed && (() => {
                               const multipollId = group.multipollId;
                               const sp = group.subPolls[0]!;
-                              if (!wrapperSubmitVisibility.get(sp.id)) return null;
+                              const submitState = wrapperSubmitState.get(sp.id);
+                              if (!submitState?.visible) return null;
                               const voterNameVal = multipollVoterNames.get(multipollId) ?? getUserName() ?? '';
                               return (
                                 <div
@@ -1584,7 +1586,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     }}
                                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                                   >
-                                    Submit Vote
+                                    {submitState.label}
                                   </button>
                                 </div>
                               );

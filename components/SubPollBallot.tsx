@@ -61,13 +61,14 @@ interface SubPollBallotProps {
   // the wrapper-controlled name.
   externalVoterName?: string;
   setExternalVoterName?: (name: string) => void;
-  // Reactive visibility signal for the wrapper-level Submit button.
-  // SubPollBallot fires this whenever its internal "should show Submit"
-  // state changes (initial-vote → voted → Edit-mode → re-submit). The
-  // wrapper renders its Submit button conditionally based on this signal
-  // so the button doesn't sit visible-but-no-op when the user has voted
-  // and isn't editing.
-  onWrapperSubmitVisibilityChange?: (pollId: string, visible: boolean) => void;
+  // Reactive state signal for the wrapper-level Submit button.
+  // SubPollBallot fires this whenever its internal "should show Submit /
+  // what should the label say" changes (initial-vote → voted → Edit-mode
+  // → re-submit). The wrapper renders its Submit button conditionally
+  // based on `visible` and uses `label` so type-specific copy ("Submit
+  // Availability" / "Submit Preferences" / "Submit Vote") survives the
+  // lift from per-sub-poll to wrapper rendering.
+  onWrapperSubmitStateChange?: (pollId: string, state: { visible: boolean; label: string }) => void;
 }
 
 export interface SubPollBallotHandle {
@@ -77,7 +78,7 @@ export interface SubPollBallotHandle {
   triggerSubmit: () => void;
 }
 
-const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitVisibilityChange }: SubPollBallotProps, ref) {
+const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: SubPollBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -1418,25 +1419,32 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     triggerSubmit: () => { void handleVoteClickRef.current(); },
   }), []);
 
-  // Mirror "should the wrapper render a Submit button" to the parent so
-  // its Submit button visibility tracks the same lifecycle as the (now
-  // hidden) internal one would have: visible during initial vote AND
-  // during edit-mode, hidden in the "voted, not editing" steady state.
+  // Mirror "should the wrapper render a Submit button + what should its
+  // label say" to the parent. Visibility tracks the same lifecycle as
+  // the (now hidden) internal Submit would have — visible during initial
+  // vote AND during edit-mode, hidden in the "voted, not editing" steady
+  // state. Label preserves the type-specific copy ("Submit Availability"
+  // / "Submit Preferences" / "Submit Vote") that the inline Submit used
+  // to show.
   const wrapperShouldShowSubmit = useMemo(() => {
     if (!wrapperHandlesSubmit) return false;
     if (isPollClosed) return false;
     if (poll.poll_type === 'yes_no') return false; // external rendering uses tap-to-change
-    // Initial-vote state: SubPollBallot would render its own Submit.
-    // Editing state: same. Voted-and-not-editing: SubPollBallot shows
-    // "Your Ballot" / vote summary instead and the Submit hides.
     if (hasVoted && !isEditingVote && !isEditingRanking) return false;
     return true;
   }, [wrapperHandlesSubmit, isPollClosed, poll.poll_type, hasVoted, isEditingVote, isEditingRanking]);
 
+  const wrapperSubmitLabel = useMemo(() => {
+    if (poll.poll_type === 'time') {
+      return inAvailabilityPhase ? 'Submit Availability' : 'Submit Preferences';
+    }
+    return 'Submit Vote';
+  }, [poll.poll_type, inAvailabilityPhase]);
+
   useEffect(() => {
-    if (!wrapperHandlesSubmit || !onWrapperSubmitVisibilityChange) return;
-    onWrapperSubmitVisibilityChange(poll.id, wrapperShouldShowSubmit);
-  }, [poll.id, wrapperShouldShowSubmit, wrapperHandlesSubmit, onWrapperSubmitVisibilityChange]);
+    if (!wrapperHandlesSubmit || !onWrapperSubmitStateChange) return;
+    onWrapperSubmitStateChange(poll.id, { visible: wrapperShouldShowSubmit, label: wrapperSubmitLabel });
+  }, [poll.id, wrapperShouldShowSubmit, wrapperSubmitLabel, wrapperHandlesSubmit, onWrapperSubmitStateChange]);
 
   const editVoteButton = !isPollClosed && !isLoadingVoteData ? (
     <button
