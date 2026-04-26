@@ -4,6 +4,20 @@ This document breaks the multipoll redesign (see CLAUDE.md → "Multipoll System
 
 The guiding principle: **every phase leaves `main` shippable**. Existing polls keep working through every step. The destructive cutover (migrating existing polls into multipoll wrappers) happens late, only after the new code paths have been exercised on freshly-created multipolls in production.
 
+## Status snapshot
+
+| Phase | Status | Notes |
+|---|---|---|
+| 1 — schema + create API | ✅ shipped (#198) | |
+| 2.1 — FE plumbing | ✅ shipped (#199) | |
+| 2.2 — single-poll create routes through multipolls | ✅ shipped (#200) | |
+| 2.3 — What/When/Where bubble bar (thread-like pages only) | ✅ on this branch | Home keeps single + FAB; bubbles render on `isThreadLikePage`. |
+| 4 — backfill existing polls | ✅ on this branch + applied to dev+prod | Migration 093. 151 prod polls wrapped, 21 follow_up_to + 2 fork_of rewrites. |
+| 2.5 — multi-sub-poll rendering | ✅ on this branch | Sibling sub-polls join the thread via `multipoll_id`; thread page renders one card per sub-poll, sorted by `sub_poll_index`. |
+| 2.4 — multi-sub-poll create UI | ⏳ not started | Phase plan below; the API supports it (multi-sub-poll multipolls can be POSTed today), but the create-poll modal still emits 1-sub-poll multipolls. |
+| 3 — multipoll-level operations + thread card aggregation | ⏳ not started | |
+| 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
+
 ---
 
 ## Schema strategy (applies across phases)
@@ -185,17 +199,26 @@ The big UI change: the top sheet stages a single sub-poll, the bottom sheet hold
 
 Done criteria: user can create 2+ sub-poll multipolls. Reopening the modal mid-create preserves the draft. Server returns 201 and the URL navigates to a multi-sub-poll multipoll page (rendered in 2.5).
 
-### Phase 2.5 — Render multi-sub-poll multipolls (read-only display, per-sub-poll voting)
+### Phase 2.5 — Render multi-sub-poll multipolls (read-only display, per-sub-poll voting) ✅
 
-Make the `/p/<short_id>/` page handle multipolls with multiple sub-polls. Voting/results stay per-sub-poll until Phase 3.
+Sibling sub-polls (sharing a `multipoll_id`) now join the thread automatically.
 
-- `app/p/[shortId]/page.tsx`: when the multipoll has 2+ sub-polls, render a stacked list of `PollPageClient` instances — one per sub-poll, each labeled with the sub-poll's `context` (or category fallback). Above the stack: the multipoll title + multipoll-level context.
-- Single-sub-poll multipolls keep rendering exactly as today (no nested wrapper visual).
-- Each sub-poll uses its own existing per-poll endpoints for vote / results / VoterList / etc. — that's all unchanged.
-- **No multipoll-level Submit, no multipoll-level abstain** — each sub-poll keeps its own Submit. Phase 3 unifies these.
-- Thread card aggregation (one card per multipoll) is **not** in this sub-phase. Until Phase 3, a multi-sub-poll multipoll appears as N rows in the thread (one per sub-poll). Acceptable while the feature is new and rare; revisit if it becomes confusing in production.
+- `lib/threadUtils.ts`: `buildPollMaps` builds a `siblingsOf` map from `multipoll_id`. `collectDescendants` enqueues siblings when visiting a poll. Sort breaks shared-`created_at` ties via `sub_poll_index` so sub-polls render in the order the creator added them.
+- `lib/types.ts`, `lib/api.ts`: `Poll` carries `multipoll_id` + `sub_poll_index`; `toPoll` maps both.
+- `server/models.py`, `server/routers/polls.py`: `PollResponse` exposes both fields; `_row_to_poll` maps from the DB.
+- `server/algorithms/related_polls.py`, `server/routers/polls.py:/related`: discovery walks `multipoll_id` so visiting one sub-poll grants access to its siblings.
+- `app/p/[shortId]/page.tsx` is unchanged: it still picks `multipoll.sub_polls[0]` as the anchor for `findThreadRootRouteId`. With siblings now in the thread, that's enough — the rendered thread includes every sub-poll.
 
-Done criteria: a multi-sub-poll multipoll page displays all sub-polls in order, each independently voteable. 1-sub-poll multipolls + legacy polls are visually identical to today.
+Single-sub-poll multipolls (the post-Phase-4 norm) are unaffected — `siblingsOf` has no entry for them, behavior is identical to the legacy follow_up_to walk.
+
+Voting/results remain per-sub-poll. Each sub-poll's card still has its own Submit. Phase 3 unifies these.
+
+The rendering DOES result in a few cosmetic quirks worth flagging for Phase 3 polish:
+- All sub-polls share the same auto-generated multipoll title (e.g. `"Yes/No and Restaurant for Birthday"`), so each card's title is identical. The per-sub-poll `context` IS displayed inside the card (it's the `details` field on the sub-poll), but the `<h3>` header still shows the wrapper title.
+- The thread card respondent row + footer pill render per-sub-poll, not multipoll-aggregated.
+- Long-press → close/reopen still hits per-sub-poll endpoints, so a "close multipoll" needs N taps for N sub-polls.
+
+These are intentionally deferred to Phase 3.
 
 ### Cross-cutting concerns for Phase 2
 
