@@ -785,7 +785,9 @@ The algorithm uses a **greedy selection with priority ordering**:
 
 ## Multipoll System (In Progress)
 
-**Status**: design locked, not yet implemented. Branch: `claude/multi-poll-creation-redesign-l0UOz`. Captures the decisions from the design conversation so future sessions can reference them without re-asking.
+**Status**: phasing plan in `docs/multipoll-phasing.md`. **Phase 1 (schema + new API) is implemented** on `claude/multipoll-implementation-2fXmI` — migration 092 creates the `multipolls` table and adds nullable `multipoll_id` + `sub_poll_index` to `polls`; new endpoints `POST /api/multipolls`, `GET /api/multipolls/{short_id}`, `GET /api/multipolls/by-id/{id}` create + read wrapper-and-sub-polls atomically. Validation rejects participation sub-polls, multiple `time` sub-polls, and same-kind sub-polls without distinct `context`. Auto-title is computed at read time from sub-poll categories + multipoll context (rules in `server/algorithms/multipoll_title.py`); explicit titles persist to `thread_title`. **No frontend changes yet** — single-poll codepaths and the existing `POST /api/polls` endpoint are untouched, and existing polls keep `multipoll_id IS NULL` indefinitely. Phases 2–5 are sketched in the doc.
+
+This section captures the design decisions from the original conversation so future sessions can reference them without re-asking.
 
 ### Core paradigm
 
@@ -1071,9 +1073,11 @@ SQL migration files live in `database/migrations/` (001-064, up + down). All 64 
 # Apply a new migration on the droplet
 bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants whoeverwants < /root/whoeverwants/database/migrations/065_description_up.sql" /root/whoeverwants
 
-# Verify migration applied
-bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c 'SELECT * FROM _migrations ORDER BY id DESC LIMIT 5;'"
+# Verify migration applied — query by FILENAME, not by `_migrations.id`
+bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"SELECT id, filename FROM _migrations WHERE filename LIKE '065_%'\""
 ```
+
+- **`_migrations.id` is a serial row counter, not the migration number.** `SELECT id FROM _migrations` returns sequence values like `1, 2, ..., 104` that have nothing to do with the `NNN_` prefix on the filename. Querying for "is migration 092 applied?" by `WHERE id = 92` is wrong (and will silently mislead — there *is* always an `id=92` once enough migrations have run). Always check `filename LIKE 'NNN_%'`. The only correct use of `_migrations.id` is `ORDER BY id DESC` to see recently-applied filenames.
 
 ### Writing New Migrations
 
