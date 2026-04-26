@@ -16,7 +16,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiCutoffSuggestions, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiSubmitMultipollVotes, apiCutoffSuggestions, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -1184,44 +1184,87 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
       let voteId: string | undefined;
       let error: any; // eslint-disable-line
 
+      const isEditing = (isEditingVote || isEditingRanking) && !!userVoteId;
+      const multipollId = poll.multipoll_id ?? null;
+      const trimmedVoterName = voterName.trim() || null;
 
-      if ((isEditingVote || isEditingRanking) && userVoteId) {
-
-        // Create update data with only the vote choice (don't update vote_type or poll_id)
-        // Use the same filtered data that was prepared in voteData to ensure consistency
-        const updateData = poll.poll_type === 'yes_no'
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null }
-          : poll.poll_type === 'participation'
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: voterName.trim() || null, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
-          : poll.poll_type === 'time'
-          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: voterName.trim() || null }
-          : { ranked_choices: voteData.ranked_choices, ranked_choice_tiers: voteData.ranked_choice_tiers, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: voterName.trim() || null };
-        
-        
-        
-        // Update existing vote via API
+      if (multipollId) {
+        // Route through the unified multipoll endpoint per the architectural
+        // rule that vote submission is always atomic across the multipoll
+        // (see CLAUDE.md → Multipoll System). Single-item batch from this
+        // ballot — the multipoll has only one sub-poll being touched here.
+        const item: MultipollVoteItem = {
+          sub_poll_id: poll.id,
+          vote_id: isEditing ? userVoteId : null,
+          vote_type: voteData.vote_type,
+          yes_no_choice: voteData.yes_no_choice ?? null,
+          ranked_choices: voteData.ranked_choices ?? null,
+          ranked_choice_tiers: voteData.ranked_choice_tiers ?? null,
+          is_abstain: voteData.is_abstain ?? false,
+          is_ranking_abstain: voteData.is_ranking_abstain ?? false,
+          options_metadata: voteData.options_metadata ?? null,
+          voter_day_time_windows: voteData.voter_day_time_windows ?? null,
+          voter_duration: voteData.voter_duration ?? null,
+          min_participants: voteData.min_participants ?? null,
+          max_participants: voteData.max_participants ?? null,
+          liked_slots: voteData.liked_slots ?? null,
+          disliked_slots: voteData.disliked_slots ?? null,
+        };
+        // Past the suggestion-phase deadline, omit suggestions on edits so the
+        // server's COALESCE leaves the existing column alone. On inserts (and
+        // during the suggestion phase), pass them through.
+        if (!(isEditing && poll.poll_type === 'ranked_choice' && !canSubmitSuggestions)) {
+          item.suggestions = voteData.suggestions ?? null;
+        }
         try {
-          const returnedVote = await apiEditVote(poll.id, userVoteId, updateData);
-          voteId = userVoteId;
-
-          await logToServer('suggestion-vote', 'info', 'Vote update response', {
-            returnedVote
+          const returned = await apiSubmitMultipollVotes(multipollId, {
+            voter_name: trimmedVoterName,
+            items: [item],
           });
+          const v = returned.find(r => r.poll_id === poll.id);
+          if (!v) throw new Error('Vote response missing for sub-poll');
+          voteId = v.id;
+          if (isEditing) setUserVoteData(v);
+          await logToServer('suggestion-vote', 'info', 'Multipoll vote response', { vote: v });
+        } catch (submitErr: any) {
+          error = submitErr;
+          console.error('Multipoll vote submit error:', submitErr);
+          await logToServer('suggestion-vote', 'error', 'Multipoll vote submit error', {
+            message: submitErr.message
+          });
+          if (isEditing) voteId = userVoteId;
+          setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
+        }
+      } else if (isEditing) {
+        // Legacy per-poll edit path. Reachable only for participation polls
+        // (which keep multipoll_id IS NULL forever) and for any non-backfilled
+        // legacy polls. After Phase 4's backfill, every non-participation poll
+        // has a multipoll wrapper, so this branch is effectively
+        // participation-only.
+        const updateData = poll.poll_type === 'yes_no'
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: trimmedVoterName }
+          : poll.poll_type === 'participation'
+          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: trimmedVoterName, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
+          : poll.poll_type === 'time'
+          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: trimmedVoterName }
+          : { ranked_choices: voteData.ranked_choices, ranked_choice_tiers: voteData.ranked_choice_tiers, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: trimmedVoterName };
 
+        try {
+          const returnedVote = await apiEditVote(poll.id, userVoteId!, updateData);
+          voteId = userVoteId!;
+          await logToServer('suggestion-vote', 'info', 'Vote update response', { returnedVote });
           setUserVoteData(returnedVote);
         } catch (updateErr: any) {
           error = updateErr;
-          voteId = userVoteId;
+          voteId = userVoteId!;
           setVoteError("Failed to update vote. Please try again.");
         }
       } else {
+        // Legacy per-poll insert path. Same scope as the edit fallback above.
         await logToServer('suggestion-vote', 'info', 'Attempting to insert new vote', { voteData });
-
-        // Insert new vote via API
         try {
           const insertedVote = await apiSubmitVote(poll.id, voteData);
           voteId = insertedVote.id;
-
           await logToServer('suggestion-vote', 'info', 'Vote insert successful', { voteId });
         } catch (insertErr: any) {
           error = insertErr;
