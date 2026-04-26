@@ -1540,8 +1540,8 @@ def get_related_polls(req: RelatedPollsRequest):
 # --- Helpers ---
 
 
-def _json_or_none(val: list[str] | None) -> str | None:
-    """Convert a list to a JSON string for JSONB column, or None."""
+def _json_or_none(val) -> str | None:
+    """Serialize a JSON-compatible value for a JSONB column, or None."""
     if val is None:
         return None
     import json
