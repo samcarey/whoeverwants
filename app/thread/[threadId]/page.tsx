@@ -6,7 +6,7 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -1190,40 +1190,75 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           } else if (action.kind === 'reopen') {
             try {
               const secret = getCreatorSecret(action.poll.id) || 'dev-override';
-              const updated = await apiReopenPoll(action.poll.id, secret);
-              invalidatePoll(action.poll.id);
-              setThread((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      polls: prev.polls.map((p) =>
-                        p.id === action.poll.id
-                          ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
-                          : p,
-                      ),
-                    }
-                  : prev,
-              );
+              const multipollId = action.poll.multipoll_id;
+              if (multipollId) {
+                const updated = await apiReopenMultipoll(multipollId, secret);
+                const updatedDeadline = updated.response_deadline ?? null;
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.multipoll_id === multipollId
+                            ? { ...p, is_closed: false, response_deadline: updatedDeadline ?? p.response_deadline }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              } else {
+                const updated = await apiReopenPoll(action.poll.id, secret);
+                invalidatePoll(action.poll.id);
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.id === action.poll.id
+                            ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              }
             } catch (err) {
               console.error('Failed to reopen poll:', err);
             }
           } else if (action.kind === 'close') {
             try {
               const secret = getCreatorSecret(action.poll.id) || '';
-              await apiClosePoll(action.poll.id, secret);
-              invalidatePoll(action.poll.id);
-              setThread((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      polls: prev.polls.map((p) =>
-                        p.id === action.poll.id
-                          ? { ...p, is_closed: true, close_reason: 'manual' }
-                          : p,
-                      ),
-                    }
-                  : prev,
-              );
+              const multipollId = action.poll.multipoll_id;
+              if (multipollId) {
+                await apiCloseMultipoll(multipollId, secret);
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.multipoll_id === multipollId
+                            ? { ...p, is_closed: true, close_reason: 'manual' }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              } else {
+                await apiClosePoll(action.poll.id, secret);
+                invalidatePoll(action.poll.id);
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.id === action.poll.id
+                            ? { ...p, is_closed: true, close_reason: 'manual' }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              }
             } catch (err) {
               console.error('Failed to close poll:', err);
             }
@@ -1234,24 +1269,46 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 console.error('Missing creator secret for cutoff-availability');
                 return;
               }
-              const updated = await apiCutoffAvailability(action.poll.id, secret);
-              invalidatePoll(action.poll.id);
-              setThread((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      polls: prev.polls.map((p) =>
-                        p.id === action.poll.id
-                          ? {
-                              ...p,
-                              suggestion_deadline: updated.suggestion_deadline ?? p.suggestion_deadline,
-                              options: updated.options ?? p.options,
-                            }
-                          : p,
-                      ),
-                    }
-                  : prev,
-              );
+              const multipollId = action.poll.multipoll_id;
+              if (multipollId) {
+                const wrapper = await apiCutoffMultipollAvailability(multipollId, secret);
+                const updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.id === action.poll.id
+                            ? {
+                                ...p,
+                                suggestion_deadline: updated?.suggestion_deadline ?? p.suggestion_deadline,
+                                options: updated?.options ?? p.options,
+                              }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              } else {
+                const updated = await apiCutoffAvailability(action.poll.id, secret);
+                invalidatePoll(action.poll.id);
+                setThread((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        polls: prev.polls.map((p) =>
+                          p.id === action.poll.id
+                            ? {
+                                ...p,
+                                suggestion_deadline: updated.suggestion_deadline ?? p.suggestion_deadline,
+                                options: updated.options ?? p.options,
+                              }
+                            : p,
+                        ),
+                      }
+                    : prev,
+                );
+              }
               // Refresh the compact preview — the availability phase just ended so
               // time-slot results are now meaningful.
               const refreshed = await apiGetPollResults(action.poll.id).catch(() => null);

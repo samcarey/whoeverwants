@@ -474,3 +474,107 @@ class TestChainPropagation:
             },
         )
         assert child.json()["thread_title"] == "New Title"
+
+
+class TestMultipollOperations:
+    """Multipoll-level close/reopen/cutoff endpoints (Phase 3)."""
+
+    def _create_multi(self, client, creator_secret, sub_polls=None):
+        resp = client.post(
+            "/api/multipolls",
+            json={
+                "creator_secret": creator_secret,
+                "sub_polls": sub_polls or [_yes_no_sub_poll(), _restaurant_sub_poll()],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    def test_close_multipoll_closes_wrapper_and_all_sub_polls(self, client, creator_secret):
+        multi = self._create_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["is_closed"] is True
+        assert data["close_reason"] == "manual"
+        assert all(sp["is_closed"] is True for sp in data["sub_polls"])
+        assert all(sp["close_reason"] == "manual" for sp in data["sub_polls"])
+
+    def test_close_rejects_wrong_secret(self, client, creator_secret):
+        multi = self._create_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": "wrong-secret", "close_reason": "manual"},
+        )
+        assert resp.status_code == 403
+
+    def test_close_404_on_unknown_id(self, client, creator_secret):
+        resp = client.post(
+            f"/api/multipolls/{uuid.uuid4()}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        )
+        assert resp.status_code == 404
+
+    def test_reopen_multipoll_reopens_wrapper_and_all_sub_polls(self, client, creator_secret):
+        multi = self._create_multi(client, creator_secret)
+        client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        )
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/reopen",
+            json={"creator_secret": creator_secret},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["is_closed"] is False
+        assert data["close_reason"] is None
+        assert all(sp["is_closed"] is False for sp in data["sub_polls"])
+        assert all(sp["close_reason"] is None for sp in data["sub_polls"])
+
+    def test_reopen_rejects_wrong_secret(self, client, creator_secret):
+        multi = self._create_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/reopen",
+            json={"creator_secret": "wrong"},
+        )
+        assert resp.status_code == 403
+
+    def test_cutoff_suggestions_400_when_nothing_to_cutoff(self, client, creator_secret):
+        # Default sub-polls don't have suggestion_deadline / no votes — nothing
+        # is in a suggestion phase to begin with.
+        multi = self._create_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/cutoff-suggestions",
+            json={"creator_secret": creator_secret},
+        )
+        assert resp.status_code == 400
+
+    def test_cutoff_availability_400_when_no_time_sub_poll(self, client, creator_secret):
+        multi = self._create_multi(client, creator_secret)
+        resp = client.post(
+            f"/api/multipolls/{multi['id']}/cutoff-availability",
+            json={"creator_secret": creator_secret},
+        )
+        assert resp.status_code == 400
+
+    def test_close_then_reopen_round_trip(self, client, creator_secret):
+        multi = self._create_multi(
+            client,
+            creator_secret,
+            sub_polls=[_yes_no_sub_poll(), _restaurant_sub_poll(), _yes_no_sub_poll(category="custom")],
+        )
+        client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        )
+        reopened = client.post(
+            f"/api/multipolls/{multi['id']}/reopen",
+            json={"creator_secret": creator_secret},
+        ).json()
+        assert reopened["is_closed"] is False
+        assert len(reopened["sub_polls"]) == 3
+        assert all(sp["is_closed"] is False for sp in reopened["sub_polls"])
