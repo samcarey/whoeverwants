@@ -1045,13 +1045,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                        row would be empty (no status AND no pill) it's not
                        rendered, so the gap doesn't appear. */}
                   {(() => {
-                    const r = pollResultsMap.get(poll.id);
-                    const userVote = userVoteMap.get(poll.id);
-                    const inSuggestions = isInSuggestionPhase(poll);
-                    const inTimeAvailability = isInTimeAvailabilityPhase(poll);
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
 
+                    // Status label is anchor-based: the multipoll's voting
+                    // and prephase deadlines are shared across sub-polls
+                    // (per the multipoll design), and `isClosed` is enforced
+                    // multipoll-atomically by Phase 3.1 close/reopen.
                     const statusEl: React.ReactNode = (() => {
+                      const inSuggestions = isInSuggestionPhase(poll);
+                      const inTimeAvailability = isInTimeAvailabilityPhase(poll);
                       if (isClosed) {
                         const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
                           ? poll.response_deadline
@@ -1080,13 +1082,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       return null;
                     })();
 
-                    let pillEl: React.ReactNode = null;
-                    if (poll.poll_type === 'yes_no') {
-                      // When expanded, the full Yes/No cards render in their
-                      // own row below — leave the pill slot empty here.
-                      const hasStats = !!r && (r.total_votes || 0) > 0;
-                      if (!isExpanded && hasStats) {
-                        pillEl = (
+                    // Returns the type-specific compact pill JSX for one sub-poll,
+                    // or null when there's nothing to show yet (no votes, no
+                    // suggestions, etc.). Yes/No pills wrap in a stopBubble
+                    // div because their option cards are tappable; the other
+                    // pill types are display-only and bubble taps to the
+                    // card's expand handler.
+                    const pillForSubPoll = (sp: Poll): React.ReactNode => {
+                      const r = pollResultsMap.get(sp.id);
+                      const inSuggestions = isInSuggestionPhase(sp);
+                      const inTimeAvailability = isInTimeAvailabilityPhase(sp);
+                      if (sp.poll_type === 'yes_no') {
+                        const hasStats = !!r && (r.total_votes || 0) > 0;
+                        if (!hasStats) return null;
+                        const userVote = userVoteMap.get(sp.id);
+                        return (
                           <div
                             onClick={stopBubble}
                             onTouchStart={stopBubble}
@@ -1101,33 +1111,67 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                               onVoteChange={
                                 isClosed
                                   ? undefined
-                                  : (newChoice) => setPendingVoteChange({ pollId: poll.id, newChoice })
+                                  : (newChoice) => setPendingVoteChange({ pollId: sp.id, newChoice })
                               }
                             />
                           </div>
                         );
                       }
-                    } else if (poll.poll_type === 'ranked_choice' && r) {
-                      const hasPreview = inSuggestions
-                        ? (r.suggestion_counts || []).length > 0
-                        : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
-                      if (hasPreview) {
-                        pillEl = (
-                          <CompactPreviewClip isExpanded={isExpanded}>
-                            {inSuggestions ? (
-                              <CompactSuggestionPreview results={r} />
-                            ) : (
-                              <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
-                            )}
-                          </CompactPreviewClip>
+                      if (sp.poll_type === 'ranked_choice' && r) {
+                        const hasPreview = inSuggestions
+                          ? (r.suggestion_counts || []).length > 0
+                          : (r.total_votes || 0) > 0 && !!r.winner && r.winner !== 'tie';
+                        if (!hasPreview) return null;
+                        return inSuggestions ? (
+                          <CompactSuggestionPreview results={r} />
+                        ) : (
+                          <CompactRankedChoicePreview results={r} isPollClosed={isClosed} />
                         );
                       }
-                    } else if (poll.poll_type === 'time' && r && !inTimeAvailability) {
-                      const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
-                      if (hasPreview) {
+                      if (sp.poll_type === 'time' && r && !inTimeAvailability) {
+                        const hasPreview = (r.total_votes || 0) > 0 && !!r.winner;
+                        if (!hasPreview) return null;
+                        return <CompactTimePreview results={r} isPollClosed={isClosed} />;
+                      }
+                      return null;
+                    };
+
+                    let pillEl: React.ReactNode = null;
+                    if (!isMultiGroup) {
+                      // Single-sub-poll group: preserve the existing
+                      // per-type clip behavior. yes_no has no clip — the
+                      // pill is simply omitted when expanded because the
+                      // full cards take over below the row.
+                      const anchorPill = pillForSubPoll(poll);
+                      if (anchorPill) {
+                        if (poll.poll_type === 'yes_no') {
+                          pillEl = !isExpanded ? anchorPill : null;
+                        } else {
+                          pillEl = (
+                            <CompactPreviewClip isExpanded={isExpanded}>
+                              {anchorPill}
+                            </CompactPreviewClip>
+                          );
+                        }
+                      }
+                    } else {
+                      // Multi-sub-poll group: stack one pill per sub-poll
+                      // vertically inside a single CompactPreviewClip so
+                      // the whole column animates to 0 in lockstep with
+                      // the heavy expand clip below. Sub-polls without
+                      // any data yet (no votes / no suggestions) drop
+                      // their row so the column stays compact.
+                      const subPills = group.subPolls.map((sp) => {
+                        const node = pillForSubPoll(sp);
+                        if (!node) return null;
+                        return <div key={sp.id}>{node}</div>;
+                      }).filter((n): n is React.ReactElement => n !== null);
+                      if (subPills.length > 0) {
                         pillEl = (
                           <CompactPreviewClip isExpanded={isExpanded}>
-                            <CompactTimePreview results={r} isPollClosed={isClosed} />
+                            <div className="flex flex-col items-end gap-1">
+                              {subPills}
+                            </div>
                           </CompactPreviewClip>
                         );
                       }
