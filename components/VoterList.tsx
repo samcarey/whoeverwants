@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { apiGetVotes, ApiVote, POLL_VOTES_CHANGED_EVENT } from '@/lib/api';
 import { getCachedVotes } from '@/lib/pollCache';
+import { getUserName } from '@/lib/userProfile';
 
 interface Voter {
   id: string;
@@ -10,7 +11,7 @@ interface Voter {
 }
 
 interface VoterListProps {
-  pollId: string;
+  pollId?: string;
   className?: string;
   label?: string;
   filter?: (vote: ApiVote) => boolean;
@@ -21,6 +22,15 @@ interface VoterListProps {
    *  voters, so the row doesn't collapse and cause layout shift. Ignored in
    *  multi-line mode. */
   emptyText?: string;
+  /** Static / pre-resolved mode (Phase 3.2 multipoll-level rendering). When
+   *  set, VoterList skips `apiGetVotes` entirely and renders from these
+   *  props. Use for multipoll-level participation displays — the parent
+   *  has already fetched the multipoll wrapper (which carries
+   *  `voter_names` + `anonymous_count`) and just needs the bubble row. The
+   *  current viewer is excluded by `getUserName()` from localStorage,
+   *  since there's no per-poll voteId to disambiguate by here. */
+  staticVoterNames?: string[];
+  staticAnonymousCount?: number;
 }
 
 // Shared derivation so the synchronous cache-seed and the async fetcher both
@@ -44,12 +54,26 @@ function EmptyPlaceholder({ text, className }: { text: string; className: string
   );
 }
 
-export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText }: VoterListProps) {
-  // Seed from the shared votes cache so warm navigations render bubbles on
-  // the first paint instead of flashing the skeleton. useState lazy
-  // initializer runs exactly once at mount.
+export default function VoterList({ pollId, className = "", label, filter, singleLine = false, emptyText, staticVoterNames, staticAnonymousCount }: VoterListProps) {
+  const isStatic = !!staticVoterNames;
+
+  // Seed from the shared votes cache (or from static props) so warm
+  // navigations render bubbles on the first paint instead of flashing
+  // the skeleton. useState lazy initializer runs exactly once at mount.
   const [seed] = useState<ReturnType<typeof deriveVoterState> | null>(() => {
     if (typeof window === 'undefined') return null;
+    if (isStatic) {
+      // In static mode the parent has already fetched the multipoll
+      // wrapper. Fabricate a seed from the names so the rendering path
+      // stays identical to the fetched path.
+      const names = staticVoterNames ?? [];
+      return {
+        voters: names.map((n, i) => ({ id: `static-${i}-${n}`, voter_name: n })),
+        anonymousCount: staticAnonymousCount ?? 0,
+        key: names.join(',') + `|${staticAnonymousCount ?? 0}`,
+      };
+    }
+    if (!pollId) return null;
     const cached = getCachedVotes(pollId);
     return cached ? deriveVoterState(cached, filter) : null;
   });
@@ -61,6 +85,7 @@ export default function VoterList({ pollId, className = "", label, filter, singl
   const voterIdsRef = useRef(seed?.key ?? '');
 
   const fetchVoters = useCallback(async () => {
+    if (!pollId) return;
     try {
       const votes = await apiGetVotes(pollId);
       const derived = deriveVoterState(votes, filter);
@@ -80,23 +105,36 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     }
   }, [pollId, filter]);
 
+  // In static mode, sync local state when the props change so a parent
+  // re-fetch (e.g. after vote propagation) updates the bubbles.
   useEffect(() => {
-    if (pollId) {
-      fetchVoters();
-      const interval = setInterval(fetchVoters, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [pollId, fetchVoters]);
+    if (!isStatic) return;
+    const names = staticVoterNames ?? [];
+    const anon = staticAnonymousCount ?? 0;
+    const key = names.join(',') + `|${anon}`;
+    if (key === voterIdsRef.current) return;
+    voterIdsRef.current = key;
+    setVoters(names.map((n, i) => ({ id: `static-${i}-${n}`, voter_name: n })));
+    setAnonymousCount(anon);
+    setInitialLoading(false);
+  }, [isStatic, staticVoterNames, staticAnonymousCount]);
 
   useEffect(() => {
-    if (!pollId) return;
+    if (isStatic || !pollId) return;
+    fetchVoters();
+    const interval = setInterval(fetchVoters, 10000);
+    return () => clearInterval(interval);
+  }, [isStatic, pollId, fetchVoters]);
+
+  useEffect(() => {
+    if (isStatic || !pollId) return;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
       if (detail?.pollId === pollId) fetchVoters();
     };
     window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
     return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
-  }, [pollId, fetchVoters]);
+  }, [isStatic, pollId, fetchVoters]);
 
   if (initialLoading) {
     return (
@@ -129,8 +167,12 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     return null;
   }
 
+  // Single-poll mode: look up the user's voteId by pollId. Static
+  // (multipoll-level) mode: there's no per-poll voteId here, so fall back
+  // to the saved profile name. Keep the voteId path primary for
+  // single-poll because it stays correct across rename / inline edits.
   const getUserVoteId = (): string | null => {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined' || !pollId) return null;
     try {
       const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
       return pollVoteIds[pollId] || null;
@@ -139,7 +181,7 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     }
   };
 
-  const currentUserVoteId = getUserVoteId();
+  const currentUserVoteId = isStatic ? null : getUserVoteId();
 
   // Exclude the current user from the respondents list — their poll card
   // signals their vote state (golden border if they haven't voted).
@@ -147,16 +189,24 @@ export default function VoterList({ pollId, className = "", label, filter, singl
     .filter(vote => vote.voter_name && vote.voter_name.trim() !== '')
     .sort((a, b) => (a.voter_name || '').toLowerCase().localeCompare((b.voter_name || '').toLowerCase()));
 
-  const namedVoters = currentUserVoteId
+  let namedVoters = currentUserVoteId
     ? allNamedVoters.filter(v => v.id !== currentUserVoteId)
     : allNamedVoters;
 
-  const currentUserVote = currentUserVoteId
-    ? voters.find(v => v.id === currentUserVoteId)
-    : null;
-  const currentUserIsAnonymous = !!(
-    currentUserVote && (!currentUserVote.voter_name || currentUserVote.voter_name.trim() === '')
-  );
+  let currentUserIsAnonymous = false;
+  if (isStatic) {
+    const savedName = (getUserName() || '').trim().toLowerCase();
+    if (savedName) {
+      namedVoters = namedVoters.filter(v => (v.voter_name || '').trim().toLowerCase() !== savedName);
+    }
+  } else {
+    const currentUserVote = currentUserVoteId
+      ? voters.find(v => v.id === currentUserVoteId)
+      : null;
+    currentUserIsAnonymous = !!(
+      currentUserVote && (!currentUserVote.voter_name || currentUserVote.voter_name.trim() === '')
+    );
+  }
   const adjustedAnonymousCount = currentUserIsAnonymous ? anonymousCount - 1 : anonymousCount;
 
   const getVoterColor = (index: number) => {

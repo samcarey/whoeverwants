@@ -257,7 +257,12 @@ def _compute_display_title(row: dict, sub_poll_rows: list[dict]) -> str:
     return generate_multipoll_title(categories, row.get("context"))
 
 
-def _row_to_multipoll(row: dict, sub_poll_rows: list[dict]) -> MultipollResponse:
+def _row_to_multipoll(
+    row: dict,
+    sub_poll_rows: list[dict],
+    voter_names: list[str] | None = None,
+    anonymous_count: int = 0,
+) -> MultipollResponse:
     return MultipollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
@@ -276,6 +281,8 @@ def _row_to_multipoll(row: dict, sub_poll_rows: list[dict]) -> MultipollResponse
         created_at=_iso_or_none(row["created_at"]) or "",
         updated_at=_iso_or_none(row["updated_at"]) or "",
         sub_polls=[_row_to_poll(sp) for sp in sub_poll_rows],
+        voter_names=voter_names or [],
+        anonymous_count=anonymous_count,
     )
 
 
@@ -288,6 +295,41 @@ def _fetch_sub_polls(conn, multipoll_id: str) -> list[dict]:
         """,
         {"multipoll_id": multipoll_id},
     ).fetchall()
+
+
+def _compute_multipoll_voter_data(conn, multipoll_id: str) -> tuple[list[str], int]:
+    """Multipoll-level participation aggregation. Per the addressability
+    paradigm, the FE never sums per-sub-poll vote rows — it consumes these
+    server-computed fields instead. Named voters are deduped (case-sensitive,
+    matching the per-poll `voter_names` aggregation in get_accessible_polls);
+    anon count is `MAX(per-sub-poll anon)` — assumes anon people typically
+    participate in each sibling, which is closer to reality than `SUM`."""
+    row = conn.execute(
+        """
+        WITH all_votes AS (
+            SELECT v.poll_id, v.voter_name
+            FROM votes v
+            JOIN polls p ON v.poll_id = p.id
+            WHERE p.multipoll_id = %(mid)s
+        ),
+        anon_per_poll AS (
+            SELECT poll_id, COUNT(*) AS c
+            FROM all_votes
+            WHERE voter_name IS NULL OR voter_name = ''
+            GROUP BY poll_id
+        )
+        SELECT
+            COALESCE(
+                (SELECT array_agg(DISTINCT voter_name ORDER BY voter_name)
+                 FROM all_votes
+                 WHERE voter_name IS NOT NULL AND voter_name != ''),
+                ARRAY[]::text[]
+            ) AS voter_names,
+            COALESCE((SELECT MAX(c) FROM anon_per_poll), 0) AS anonymous_count
+        """,
+        {"mid": multipoll_id},
+    ).fetchone()
+    return list(row["voter_names"] or []), int(row["anonymous_count"] or 0)
 
 
 @router.post("", response_model=MultipollResponse, status_code=201)
@@ -311,6 +353,7 @@ def create_multipoll(req: CreateMultipollRequest):
             for index, sub in enumerate(req.sub_polls)
         ]
 
+    # Newly-created multipoll has no votes yet — skip the voter aggregation.
     return _row_to_multipoll(multipoll_row, sub_poll_rows)
 
 
@@ -324,7 +367,8 @@ def get_multipoll_by_id(multipoll_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Multipoll not found")
         sub_poll_rows = _fetch_sub_polls(conn, str(row["id"]))
-    return _row_to_multipoll(row, sub_poll_rows)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, str(row["id"]))
+    return _row_to_multipoll(row, sub_poll_rows, voter_names, anonymous_count)
 
 
 @router.get("/{short_id}", response_model=MultipollResponse)
@@ -337,7 +381,8 @@ def get_multipoll(short_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Multipoll not found")
         sub_poll_rows = _fetch_sub_polls(conn, str(row["id"]))
-    return _row_to_multipoll(row, sub_poll_rows)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, str(row["id"]))
+    return _row_to_multipoll(row, sub_poll_rows, voter_names, anonymous_count)
 
 
 # ---------------------------------------------------------------------------
@@ -417,8 +462,9 @@ def close_multipoll(multipoll_id: str, req: ClosePollRequest):
             {"id": multipoll_id},
         ).fetchone()
         sub_poll_rows = _fetch_sub_polls(conn, multipoll_id)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
-    return _row_to_multipoll(multipoll_row, sub_poll_rows)
+    return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)
 
 
 @router.post("/{multipoll_id}/reopen", response_model=MultipollResponse)
@@ -452,8 +498,9 @@ def reopen_multipoll(multipoll_id: str, req: ReopenPollRequest):
             {"id": multipoll_id},
         ).fetchone()
         sub_poll_rows = _fetch_sub_polls(conn, multipoll_id)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
-    return _row_to_multipoll(multipoll_row, sub_poll_rows)
+    return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)
 
 
 @router.post("/{multipoll_id}/cutoff-suggestions", response_model=MultipollResponse)
@@ -503,8 +550,9 @@ def cutoff_multipoll_suggestions(multipoll_id: str, req: CutoffSuggestionsReques
             {"id": multipoll_id},
         ).fetchone()
         sub_poll_rows = _fetch_sub_polls(conn, multipoll_id)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
-    return _row_to_multipoll(multipoll_row, sub_poll_rows)
+    return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)
 
 
 @router.post("/{multipoll_id}/cutoff-availability", response_model=MultipollResponse)
@@ -547,5 +595,6 @@ def cutoff_multipoll_availability(multipoll_id: str, req: CutoffSuggestionsReque
             {"id": multipoll_id},
         ).fetchone()
         sub_poll_rows = _fetch_sub_polls(conn, multipoll_id)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
-    return _row_to_multipoll(multipoll_row, sub_poll_rows)
+    return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)

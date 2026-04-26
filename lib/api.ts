@@ -371,6 +371,8 @@ function toMultipoll(data: any): Multipoll {
     created_at: data.created_at,
     updated_at: data.updated_at,
     sub_polls: Array.isArray(data.sub_polls) ? data.sub_polls.map(toPoll) : [],
+    voter_names: Array.isArray(data.voter_names) ? data.voter_names : [],
+    anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,
   };
 }
 

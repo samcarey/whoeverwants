@@ -16,7 +16,7 @@ The guiding principle: **every phase leaves `main` shippable**. Existing polls k
 | 2.5 — multi-sub-poll rendering | ✅ on this branch | Sibling sub-polls join the thread via `multipoll_id`; thread page renders one card per sub-poll, sorted by `sub_poll_index`. |
 | 2.4 — multi-sub-poll create UI | ✅ on this branch | `+ Add another section` stages yes_no/ranked_choice drafts; submit prepends them to the multipoll request. MVP scope per the "minimal path" below. |
 | 3.1 — multipoll-level close/reopen/cutoff endpoints | ✅ on this branch | New `POST /api/multipolls/{id}/{close,reopen,cutoff-suggestions,cutoff-availability}` endpoints close/reopen/cutoff the wrapper + every sub-poll atomically. Thread page long-press handlers route to the multipoll endpoint when `poll.multipoll_id` is set, optimistically updating every sibling. |
-| 3.2 — thread card aggregation | ⏳ not started | Group sibling sub-polls under a single visual card group (auto-titled by category list). |
+| 3.2 — thread card aggregation | ✅ on this branch | Sibling sub-polls render in one card with stacked sub-poll sections; respondent row + copy-link route through the multipoll. Server adds `voter_names` + `anonymous_count` to `MultipollResponse` so the FE never aggregates sub-poll vote rows. Stacked compact pills per sub-poll inside the collapsed footer + per-sub-poll preview pills are deferred (Phase 3.2 follow-up). Multi-yes_no group external rendering is deferred to Phase 3.3 (unified Submit). |
 | 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
 
 ## What's next — concrete starting points
@@ -69,6 +69,17 @@ This is the riskiest phase because dropping columns from `polls` requires every 
 Recommended deferral: do this as a series of small PRs after Phase 2.4 + 3 land and the new code paths have been exercised on production for a couple of weeks. Risks include: broken share links (if `short_id` migration mishandles), broken creator authentication (if `creator_secret` removed prematurely), broken thread pages (if `follow_up_to` stops being populated on `polls`).
 
 ---
+
+## Addressability paradigm (applies across all phases)
+
+**The multipoll is the addressable unit. Sub-polls are internal-only.**
+
+- **URLs reference multipolls, never sub-polls.** Multipolls own `id` + `short_id` and are the targets of `/p/<short_id>/` and `/thread/<id>/`. Sub-poll uuids exist for foreign-key plumbing inside the DB but are not URL-able. Any "share this", "copy link", "navigate to", or "related thread" computation routes through the multipoll, never a sub-poll uuid.
+- **Multipoll-level state lives at the multipoll level — no client-side aggregation.** Voter participation list, total respondent count, "is this poll closed", deadline, creator, follow-up/fork chain, vote-submission unit (Phase 3+), close/reopen/cutoff target — all these are multipoll-level concepts. They MUST be sourced from a multipoll-level endpoint or field on `MultipollResponse`. The FE never iterates `multipoll.sub_polls` to compute multipoll-level state. If the data doesn't exist at the multipoll level today, the right fix is to surface it at that level (server field or new endpoint), not to aggregate on the client.
+- **Per-sub-poll state still flows per-sub-poll.** Ballots, options, suggestions, time slots, ranking interactions, sub-poll results — all continue to use `/api/polls/<sub-poll-id>` endpoints. The paradigm is about MULTIPOLL-LEVEL aggregates, not about deprecating sub-poll plumbing.
+- **Internal client identifiers can still use sub-poll ids freely.** Refs, cache keys, DOM `key=` props, expand state — these are not URLs and not API contracts. Sub-poll ids work fine here.
+
+When designing any feature in this rollout, ask: *"is this a multipoll-level concept?"* If yes → route through a multipoll endpoint/field. Never sum/dedupe across sub-polls in the browser.
 
 ## Schema strategy (applies across phases)
 
