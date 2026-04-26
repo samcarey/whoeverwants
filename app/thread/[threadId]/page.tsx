@@ -6,7 +6,8 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import type { Multipoll } from "@/lib/types";
 import { getUserName } from "@/lib/userProfile";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
@@ -491,8 +492,28 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       }
     };
 
+    // For multi-sub-poll groups, anchor visibility implies the whole
+    // group is on-screen — fetch results for every sibling so each
+    // sub-poll's preview is populated, not just the anchor's. Compute
+    // anchor ids per multipoll once.
+    const anchorByMultipoll = new Map<string, string>();
     for (const poll of thread.polls) {
-      if (!visiblePollIds.has(poll.id)) continue;
+      if (!poll.multipoll_id) continue;
+      const cur = anchorByMultipoll.get(poll.multipoll_id);
+      if (!cur) {
+        anchorByMultipoll.set(poll.multipoll_id, poll.id);
+        continue;
+      }
+      const curPoll = thread.polls.find((p) => p.id === cur);
+      if ((poll.sub_poll_index ?? 0) < (curPoll?.sub_poll_index ?? 0)) {
+        anchorByMultipoll.set(poll.multipoll_id, poll.id);
+      }
+    }
+    for (const poll of thread.polls) {
+      const anchorId = poll.multipoll_id
+        ? (anchorByMultipoll.get(poll.multipoll_id) ?? poll.id)
+        : poll.id;
+      if (!visiblePollIds.has(anchorId)) continue;
       void maybeFetch(poll.id, poll.poll_type);
     }
 
@@ -721,6 +742,92 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread]);
 
+  // Phase 3.2: group sibling sub-polls of a multipoll into a single visual
+  // card group. 1-sub-poll wrappers (the post-Phase-4 norm everywhere on
+  // prod) render identically to today — anchor === only sub-poll, no
+  // section labels, no aggregation. Multi-sub-poll wrappers render one
+  // card with stacked sub-poll sections inside the expand clip and a
+  // multipoll-level respondent row below.
+  const groupedThreadPolls = useMemo(() => {
+    type Group = { key: string; multipollId: string | null; subPolls: Poll[]; anchor: Poll };
+    const groups: Group[] = [];
+    const seen = new Set<string>();
+    for (const poll of threadPolls) {
+      const groupKey = poll.multipoll_id ?? `solo-${poll.id}`;
+      if (seen.has(groupKey)) continue;
+      seen.add(groupKey);
+      const subPolls = poll.multipoll_id
+        ? threadPolls
+            .filter((p) => p.multipoll_id === poll.multipoll_id)
+            .sort((a, b) => (a.sub_poll_index ?? 0) - (b.sub_poll_index ?? 0))
+        : [poll];
+      groups.push({
+        key: groupKey,
+        multipollId: poll.multipoll_id ?? null,
+        subPolls,
+        anchor: subPolls[0],
+      });
+    }
+    return groups;
+  }, [threadPolls]);
+
+  // Multipoll wrapper cache for groups with 2+ sub-polls. Per the
+  // addressability paradigm, multipoll-level state (voter_names,
+  // anonymous_count, ...) comes from the multipoll endpoint — never
+  // from aggregating per-sub-poll fetches client-side. Lazy-fetched on
+  // viewport intersection (via the existing per-card observer +
+  // visiblePollIds), keyed by multipoll_id.
+  const [multipollWrapperMap, setMultipollWrapperMap] = useState<Map<string, Multipoll>>(() => new Map());
+
+  // Set of multipoll_ids we've already kicked off a fetch for (so the
+  // viewport effect doesn't re-trigger on every visiblePollIds change).
+  const multipollFetchedRef = useRef<Set<string>>(new Set());
+
+  // Refetch on vote-change events: when any sub-poll's votes change, the
+  // wrapper's voter_names may have shifted. Refresh affected multipoll
+  // wrappers — cheap because the request is small and cached.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
+      if (!detail?.pollId || !thread) return;
+      const poll = thread.polls.find((p) => p.id === detail.pollId);
+      const mid = poll?.multipoll_id;
+      if (!mid || !multipollFetchedRef.current.has(mid)) return;
+      void apiGetMultipollById(mid).then((wrapper) => {
+        setMultipollWrapperMap((prev) => {
+          const next = new Map(prev);
+          next.set(mid, wrapper);
+          return next;
+        });
+      }).catch(() => null);
+    };
+    window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
+  }, [thread]);
+
+  // Lazy-fetch each multi-sub-poll group's wrapper when its anchor card
+  // enters the viewport. visiblePollIds tracks anchor poll ids (the same
+  // ids the IntersectionObserver populates), so we just iterate groups
+  // and fire fetches for ones we haven't seen yet.
+  useEffect(() => {
+    for (const group of groupedThreadPolls) {
+      if (!group.multipollId || group.subPolls.length < 2) continue;
+      if (!visiblePollIds.has(group.anchor.id)) continue;
+      const mid = group.multipollId;
+      if (multipollFetchedRef.current.has(mid)) continue;
+      multipollFetchedRef.current.add(mid);
+      void apiGetMultipollById(mid).then((wrapper) => {
+        setMultipollWrapperMap((prev) => {
+          const next = new Map(prev);
+          next.set(mid, wrapper);
+          return next;
+        });
+      }).catch(() => {
+        multipollFetchedRef.current.delete(mid);
+      });
+    }
+  }, [groupedThreadPolls, visiblePollIds]);
+
   // Sync the URL to reflect which card is expanded, using shallow history.replaceState
   // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
   // same expanded card.
@@ -783,7 +890,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
-        {threadPolls.map((poll) => {
+        {groupedThreadPolls.map((group) => {
+            const poll = group.anchor;
+            const isMultiGroup = group.subPolls.length > 1;
+            const wrapper = group.multipollId ? multipollWrapperMap.get(group.multipollId) : null;
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
             const isAwaiting = isAwaitingResponse(poll);
@@ -906,7 +1016,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       onTouchMove={(e) => e.stopPropagation()}
                     >
                       <FloatingCopyLinkButton
-                        url={typeof window !== 'undefined' ? `${window.location.origin}/p/${poll.short_id || poll.id}/` : ''}
+                        url={(() => {
+                          if (typeof window === 'undefined') return '';
+                          // For multi-sub-poll groups: route through the
+                          // multipoll's short_id (sub-poll uuids aren't
+                          // URL-able per the Addressability paradigm).
+                          // The wrapper is fetched lazily; until it lands,
+                          // fall back to the anchor's short_id (which for
+                          // any post-Phase-4 multipoll equals the
+                          // multipoll's short_id anyway, since the backfill
+                          // copies it).
+                          const shortId = (isMultiGroup && wrapper?.short_id)
+                            || poll.short_id
+                            || poll.id;
+                          return `${window.location.origin}/p/${shortId}/`;
+                        })()}
                       />
                     </div>
                   </div>
@@ -1069,7 +1193,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // PollPageClient returns null for its yes_no branch.
                     // Drop the mt-3 wrapper gap here so nothing empty sits
                     // under the external block.
-                    const pollPageClientEmpty = poll.poll_type === 'yes_no';
+                    const allYesNo = group.subPolls.every((sp) => sp.poll_type === 'yes_no');
                     return (
                       <div
                         data-poll-expand-grid=""
@@ -1083,14 +1207,45 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             else expandedWrapperRefs.current.delete(poll.id);
                           }}
                         >
-                          <div className={pollPageClientEmpty ? '' : 'mt-1.5'}>
-                            <PollPageClient
-                              poll={poll}
-                              createdDate={formatCreationTimestamp(poll.created_at)}
-                              pollId={poll.id}
-                              externalYesNoResults={poll.poll_type === 'yes_no'}
-                              isExpanded={isExpanded}
-                            />
+                          <div className={allYesNo && !isMultiGroup ? '' : 'mt-1.5'}>
+                            {group.subPolls.map((sp, idx) => {
+                              // The thread page's external yes_no card lives
+                              // outside the expand clip and only renders for
+                              // the ANCHOR poll. For non-anchor yes_no
+                              // sub-polls in a multi-group, fall back to
+                              // PollPageClient's internal yes_no UI so they
+                              // still render (we don't get the thread-page
+                              // tap-to-change flow on those — acceptable
+                              // until Phase 3.3 unifies vote submission).
+                              const useExternalYesNo = sp.poll_type === 'yes_no' && (!isMultiGroup || idx === 0);
+                              return (
+                                <div
+                                  key={sp.id}
+                                  className={isMultiGroup && idx > 0 ? 'mt-4 pt-3 border-t border-gray-200 dark:border-gray-800' : ''}
+                                >
+                                  {isMultiGroup && (
+                                    // Per-sub-poll section label inside the
+                                    // grouped card. Shows the category icon
+                                    // + the sub-poll's `details` (its
+                                    // disambiguation context); falls back to
+                                    // category when details is empty.
+                                    <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                      <span className="text-base leading-none">{getCategoryIcon(sp)}</span>
+                                      <span className="truncate">
+                                        {(sp.details && sp.details.trim()) || sp.category || sp.poll_type.replace('_', '/')}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <PollPageClient
+                                    poll={sp}
+                                    createdDate={formatCreationTimestamp(sp.created_at)}
+                                    pollId={sp.id}
+                                    externalYesNoResults={useExternalYesNo}
+                                    isExpanded={isExpanded}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -1125,13 +1280,28 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     </span>
                   </ClientOnly>
                   <ClientOnly fallback={null}>
-                    <VoterList
-                      pollId={poll.id}
-                      singleLine
-                      className="flex-1 min-w-0 justify-end mt-[3px]"
-                      filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
-                      emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
-                    />
+                    {isMultiGroup ? (
+                      // Multipoll-level respondent row. Sourced from the
+                      // multipoll wrapper (voter_names + anonymous_count) per
+                      // the Addressability paradigm — never aggregated from
+                      // sub-poll vote fetches client-side. Falls back to
+                      // empty placeholder until the wrapper resolves.
+                      <VoterList
+                        singleLine
+                        className="flex-1 min-w-0 justify-end mt-[3px]"
+                        staticVoterNames={wrapper?.voter_names ?? []}
+                        staticAnonymousCount={wrapper?.anonymous_count ?? 0}
+                        emptyText="No voters"
+                      />
+                    ) : (
+                      <VoterList
+                        pollId={poll.id}
+                        singleLine
+                        className="flex-1 min-w-0 justify-end mt-[3px]"
+                        filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
+                        emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
+                      />
+                    )}
                   </ClientOnly>
                 </div>
               </div>

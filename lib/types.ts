@@ -187,4 +187,8 @@ export interface Multipoll {
   created_at: string;
   updated_at: string;
   sub_polls: Poll[];
+  // Multipoll-level participation aggregates (Phase 3.2). Use these instead
+  // of iterating sub_polls — see CLAUDE.md → "Addressability paradigm".
+  voter_names: string[];
+  anonymous_count: number;
 }
