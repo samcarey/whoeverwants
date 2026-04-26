@@ -263,6 +263,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // immediately — the wrapper-level Submit commits them as one batch.
   const [pendingMultipollChoices, setPendingMultipollChoices] = useState<Map<string, 'yes' | 'no' | 'abstain'>>(() => new Map());
   const [multipollVoterNames, setMultipollVoterNames] = useState<Map<string, string>>(() => new Map());
+  // Single setter that callers (the all-yes_no Submit row + Phase 3.4
+  // follow-up B's wrapper Submit) share — same-value guard avoids no-op
+  // re-renders.
+  const setMultipollVoterName = useRef((id: string, name: string) => {
+    setMultipollVoterNames((prev) => (prev.get(id) === name ? prev : new Map(prev).set(id, name)));
+  }).current;
   // Snapshots subPolls at button-tap time so the modal's message + onConfirm
   // stay stable even if groupedThreadPolls re-derives mid-confirmation.
   const [pendingMultipollSubmit, setPendingMultipollSubmit] = useState<
@@ -270,10 +276,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   >(null);
   const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
   const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(() => new Map());
-  // Phase 3.4 follow-up B: per-sub-poll signal from SubPollBallot telling
-  // the wrapper whether to render its Submit button + which label to
-  // show ("Submit Vote" / "Submit Availability" / "Submit Preferences").
-  // SubPollBallot fires the callback once on mount and on every change.
+  // Phase 3.4 follow-up B: SubPollBallot signals visibility + label for the
+  // wrapper-rendered Submit button. Same-value guard avoids re-render churn.
   type WrapperSubmitState = { visible: boolean; label: string };
   const [wrapperSubmitState, setWrapperSubmitState] = useState<Map<string, WrapperSubmitState>>(() => new Map());
   const handleWrapperSubmitStateChange = useRef((pollId: string, state: WrapperSubmitState) => {
@@ -1369,15 +1373,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // Submit (follow-up A); mixed-type multi-groups still use
                     // per-sub-poll Submit (lifted in a follow-up PR).
                     const useMultipollSubmit = isMultiGroup && allYesNo && !!group.multipollId;
-                    // Phase 3.4 follow-up B: 1-sub-poll multipolls of any
-                    // non-yes_no type use a wrapper-level Submit + voter
-                    // name input. SubPollBallot exposes triggerSubmit via
-                    // ref; the wrapper Submit calls it, which routes through
-                    // SubPollBallot's existing handleVoteClick →
-                    // confirmation modal → submitVote flow. yes_no in a
-                    // 1-sub-poll multipoll is already wrapper-driven via
-                    // the external PollResultsDisplay tap-to-change →
-                    // confirmVoteChange flow above.
+                    // Phase 3.4 follow-up B: 1-sub-poll non-yes_no
+                    // multipolls render Submit + voter name at the
+                    // wrapper level (yes_no uses tap-to-change above).
                     const useWrapperSubmit = !isMultiGroup && !!group.multipollId && group.subPolls[0]?.poll_type !== 'yes_no';
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
@@ -1461,42 +1459,46 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       </div>
                                     );
                                   })()}
-                                  <SubPollBallot
-                                    ref={(handle) => {
-                                      if (handle) subPollBallotRefs.current.set(sp.id, handle);
-                                      else subPollBallotRefs.current.delete(sp.id);
-                                    }}
-                                    poll={sp}
-                                    createdDate={formatCreationTimestamp(sp.created_at)}
-                                    pollId={sp.id}
-                                    externalYesNoResults={isYesNo}
-                                    isExpanded={isExpanded}
-                                    partOfMultipollGroup={isMultiGroup}
-                                    wrapperHandlesSubmit={useWrapperSubmit && !isYesNo}
-                                    externalVoterName={
-                                      useWrapperSubmit && !isYesNo && group.multipollId
-                                        ? (multipollVoterNames.get(group.multipollId) ?? getUserName() ?? '')
-                                        : undefined
-                                    }
-                                    setExternalVoterName={
-                                      useWrapperSubmit && !isYesNo && group.multipollId
-                                        ? ((name: string) => {
-                                            const id = group.multipollId!;
-                                            setMultipollVoterNames((prev) => {
-                                              if (prev.get(id) === name) return prev;
+                                  {(() => {
+                                    // useWrapperSubmit already implies !isMultiGroup AND
+                                    // sub_polls[0]?.poll_type !== 'yes_no'; sp === group.subPolls[0]
+                                    // here so the !isYesNo check is redundant. Hoist into one
+                                    // local so the SubPollBallot prop block stays flat.
+                                    const wrapperOwnsSubmit = useWrapperSubmit && !!group.multipollId;
+                                    const wrapperVoterName = wrapperOwnsSubmit
+                                      ? (multipollVoterNames.get(group.multipollId!) ?? getUserName() ?? '')
+                                      : undefined;
+                                    const setWrapperVoterName = wrapperOwnsSubmit
+                                      ? ((name: string) => setMultipollVoterName(group.multipollId!, name))
+                                      : undefined;
+                                    return (
+                                      <SubPollBallot
+                                        ref={(handle) => {
+                                          if (handle) {
+                                            subPollBallotRefs.current.set(sp.id, handle);
+                                          } else {
+                                            subPollBallotRefs.current.delete(sp.id);
+                                            setWrapperSubmitState((prev) => {
+                                              if (!prev.has(sp.id)) return prev;
                                               const next = new Map(prev);
-                                              next.set(id, name);
+                                              next.delete(sp.id);
                                               return next;
                                             });
-                                          })
-                                        : undefined
-                                    }
-                                    onWrapperSubmitStateChange={
-                                      useWrapperSubmit && !isYesNo
-                                        ? handleWrapperSubmitStateChange
-                                        : undefined
-                                    }
-                                  />
+                                          }
+                                        }}
+                                        poll={sp}
+                                        createdDate={formatCreationTimestamp(sp.created_at)}
+                                        pollId={sp.id}
+                                        externalYesNoResults={isYesNo}
+                                        isExpanded={isExpanded}
+                                        partOfMultipollGroup={isMultiGroup}
+                                        wrapperHandlesSubmit={wrapperOwnsSubmit}
+                                        externalVoterName={wrapperVoterName}
+                                        setExternalVoterName={setWrapperVoterName}
+                                        onWrapperSubmitStateChange={wrapperOwnsSubmit ? handleWrapperSubmitStateChange : undefined}
+                                      />
+                                    );
+                                  })()}
                                 </div>
                               );
                             })}
@@ -1517,14 +1519,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                   <div className="mb-3">
                                     <CompactNameField
                                       name={voterNameVal}
-                                      setName={(name: string) =>
-                                        setMultipollVoterNames((prev) => {
-                                          if (prev.get(multipollId) === name) return prev;
-                                          const next = new Map(prev);
-                                          next.set(multipollId, name);
-                                          return next;
-                                        })
-                                      }
+                                      setName={(name: string) => setMultipollVoterName(multipollId, name)}
                                       disabled={submitting}
                                       maxLength={30}
                                     />
@@ -1568,14 +1563,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                   <div className="mb-3">
                                     <CompactNameField
                                       name={voterNameVal}
-                                      setName={(name: string) =>
-                                        setMultipollVoterNames((prev) => {
-                                          if (prev.get(multipollId) === name) return prev;
-                                          const next = new Map(prev);
-                                          next.set(multipollId, name);
-                                          return next;
-                                        })
-                                      }
+                                      setName={(name: string) => setMultipollVoterName(multipollId, name)}
                                       maxLength={30}
                                     />
                                   </div>
