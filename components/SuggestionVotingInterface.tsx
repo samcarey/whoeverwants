@@ -41,6 +41,10 @@ interface SuggestionVotingInterfaceProps {
   onCutoffClick?: () => void;
   isCuttingOff?: boolean;
   searchRadius?: number;
+  // Phase 3.4 follow-up B: when the parent multipoll wrapper renders the
+  // Submit button + voter name input externally, suppress the per-sub-poll
+  // Submit/voter-name UI here.
+  wrapperHandlesSubmit?: boolean;
 }
 
 export default function SuggestionVotingInterface({
@@ -72,6 +76,7 @@ export default function SuggestionVotingInterface({
   onCutoffClick,
   isCuttingOff = false,
   searchRadius = 25,
+  wrapperHandlesSubmit = false,
 }: SuggestionVotingInterfaceProps) {
   const [newSuggestions, setNewSuggestions] = useState<string[]>([""]);
   const [filteredExistingSuggestions, setFilteredExistingSuggestions] = useState<string[]>([]);
@@ -329,28 +334,32 @@ export default function SuggestionVotingInterface({
         )}
       </div>
 
-      {/* Voter Name Input */}
-      <div className="mb-3">
-        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
-      </div>
+      {!wrapperHandlesSubmit && (
+        <>
+          {/* Voter Name Input */}
+          <div className="mb-3">
+            <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} />
+          </div>
 
-      {/* Submit Button */}
-      <button
-        onClick={handleVoteClick}
-        disabled={isSubmitting}
-        className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
-          suggestionChoices.length === 0 && !isSubmitting
-            ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
-            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-400 text-white'
-        }`}
-      >
-        {isSubmitting
-          ? 'Submitting...'
-          : suggestionChoices.length === 0
-            ? 'Submit (Abstain)'
-            : 'Submit Vote'
-        }
-      </button>
+          {/* Submit Button */}
+          <button
+            onClick={handleVoteClick}
+            disabled={isSubmitting}
+            className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:active:scale-100 ${
+              suggestionChoices.length === 0 && !isSubmitting
+                ? 'bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 active:bg-yellow-300 dark:active:bg-yellow-700 text-yellow-800 dark:text-yellow-200 border-2 border-yellow-300 dark:border-yellow-700'
+                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-400 text-white'
+            }`}
+          >
+            {isSubmitting
+              ? 'Submitting...'
+              : suggestionChoices.length === 0
+                ? 'Submit (Abstain)'
+                : 'Submit Vote'
+            }
+          </button>
+        </>
+      )}
 
       {/* Show fork header after submit button.
            (Follow-up-to info now lives in the long-press modal.) */}

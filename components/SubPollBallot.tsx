@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
@@ -49,9 +49,35 @@ interface SubPollBallotProps {
   // The thread page already renders poll.details as the section label, so
   // we suppress the inner <PollDetails> to avoid the duplicate.
   partOfMultipollGroup?: boolean;
+  // Phase 3.4 follow-up B: when true, the parent multipoll wrapper renders
+  // the Submit button + voter name input + confirmation modal externally.
+  // SubPollBallot suppresses its own per-sub-poll Submit/voter-name/modal
+  // and the wrapper drives submission through the imperative ref API
+  // (`triggerSubmit()`), keeping the existing submitVote logic in place.
+  wrapperHandlesSubmit?: boolean;
+  // When the wrapper owns the voter name input, it passes the live value
+  // through these props. SubPollBallot treats these as the source of truth
+  // (overriding its internal voterName state) so submitVote always reads
+  // the wrapper-controlled name.
+  externalVoterName?: string;
+  setExternalVoterName?: (name: string) => void;
+  // Reactive visibility signal for the wrapper-level Submit button.
+  // SubPollBallot fires this whenever its internal "should show Submit"
+  // state changes (initial-vote → voted → Edit-mode → re-submit). The
+  // wrapper renders its Submit button conditionally based on this signal
+  // so the button doesn't sit visible-but-no-op when the user has voted
+  // and isn't editing.
+  onWrapperSubmitVisibilityChange?: (pollId: string, visible: boolean) => void;
 }
 
-export default function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false }: SubPollBallotProps) {
+export interface SubPollBallotHandle {
+  // Trigger the same flow as the internal Submit button: validate the
+  // current ballot state and open the confirmation modal (or submit
+  // immediately if no modal applies). The wrapper Submit calls this.
+  triggerSubmit: () => void;
+}
+
+const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitVisibilityChange }: SubPollBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -155,7 +181,16 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
     const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
     fn(`[${_logType}] ${message}`, data);
   };
-  const [voterName, setVoterName] = useState<string>("");
+  const [internalVoterName, setInternalVoterName] = useState<string>("");
+  // When the wrapper owns the voter name input (Phase 3.4 follow-up B),
+  // prefer its value so submitVote always reads the wrapper-controlled
+  // name. Otherwise fall back to internal state. setVoterName routes to
+  // the wrapper's setter when it owns the field; otherwise to local
+  // state — call sites are unaware of which mode is active.
+  const voterName = wrapperHandlesSubmit && externalVoterName !== undefined ? externalVoterName : internalVoterName;
+  const setVoterName: (name: string) => void = wrapperHandlesSubmit && setExternalVoterName
+    ? setExternalVoterName
+    : setInternalVoterName;
 
   const autoCloseTriggeredRef = useRef(false);
   const fetchResultsInFlight = useRef(false);
@@ -709,13 +744,17 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
     }
   }, [pollClosed, poll.response_deadline, poll.poll_type, hasVoted, fetchPollResults, inAvailabilityPhase]);
 
-  // Load saved user name
+  // Load saved user name. Skip when the wrapper owns the voter name input
+  // (Phase 3.4 follow-up B) — the wrapper seeds its own state from
+  // getUserName() and we don't want to fire its setter from inside the
+  // child component on mount.
   useEffect(() => {
+    if (wrapperHandlesSubmit) return;
     const savedName = getUserName();
     if (savedName) {
       setVoterName(savedName);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
@@ -1362,6 +1401,43 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
     }
   };
 
+  // Phase 3.4 follow-up B: expose handleVoteClick to the parent multipoll
+  // wrapper. The wrapper renders Submit + voter name externally (since
+  // "sub-polls cannot be submitted by themselves" — the multipoll is the
+  // unit of submission); its Submit button calls triggerSubmit() which
+  // routes through the same validation + confirmation modal flow the
+  // per-sub-poll button used to invoke. The internal ConfirmationModal
+  // still mounts and provides the per-sub-poll confirmation copy.
+  // Stash handleVoteClick in a ref so the imperative handle stays stable
+  // across renders while still invoking the latest closure (handleVoteClick
+  // closes over a lot of state and would otherwise re-create the handle on
+  // every render).
+  const handleVoteClickRef = useRef(handleVoteClick);
+  handleVoteClickRef.current = handleVoteClick;
+  useImperativeHandle(ref, () => ({
+    triggerSubmit: () => { void handleVoteClickRef.current(); },
+  }), []);
+
+  // Mirror "should the wrapper render a Submit button" to the parent so
+  // its Submit button visibility tracks the same lifecycle as the (now
+  // hidden) internal one would have: visible during initial vote AND
+  // during edit-mode, hidden in the "voted, not editing" steady state.
+  const wrapperShouldShowSubmit = useMemo(() => {
+    if (!wrapperHandlesSubmit) return false;
+    if (isPollClosed) return false;
+    if (poll.poll_type === 'yes_no') return false; // external rendering uses tap-to-change
+    // Initial-vote state: SubPollBallot would render its own Submit.
+    // Editing state: same. Voted-and-not-editing: SubPollBallot shows
+    // "Your Ballot" / vote summary instead and the Submit hides.
+    if (hasVoted && !isEditingVote && !isEditingRanking) return false;
+    return true;
+  }, [wrapperHandlesSubmit, isPollClosed, poll.poll_type, hasVoted, isEditingVote, isEditingRanking]);
+
+  useEffect(() => {
+    if (!wrapperHandlesSubmit || !onWrapperSubmitVisibilityChange) return;
+    onWrapperSubmitVisibilityChange(poll.id, wrapperShouldShowSubmit);
+  }, [poll.id, wrapperShouldShowSubmit, wrapperHandlesSubmit, onWrapperSubmitVisibilityChange]);
+
   const editVoteButton = !isPollClosed && !isLoadingVoteData ? (
     <button
       onClick={() => setIsEditingVote(true)}
@@ -1841,18 +1917,22 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
                         </div>
                       )}
 
-                      <div className="mb-4">
-                        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                      </div>
+                      {!wrapperHandlesSubmit && (
+                        <>
+                          <div className="mb-4">
+                            <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
+                          </div>
 
-                      <button
-                        type="button"
-                        onClick={handleVoteClick}
-                        disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
-                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                      >
-                        {isSubmitting ? 'Submitting...' : 'Submit Availability'}
-                      </button>
+                          <button
+                            type="button"
+                            onClick={handleVoteClick}
+                            disabled={isSubmitting || (!isAbstaining && voterDayTimeWindows.filter(d => d.windows.length > 0).length === 0)}
+                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                          >
+                            {isSubmitting ? 'Submitting...' : 'Submit Availability'}
+                          </button>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1891,18 +1971,22 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
                         </div>
                       )}
 
-                      <div className="mb-4">
-                        <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                      </div>
+                      {!wrapperHandlesSubmit && (
+                        <>
+                          <div className="mb-4">
+                            <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
+                          </div>
 
-                      <button
-                        type="button"
-                        onClick={handleVoteClick}
-                        disabled={isSubmitting}
-                        className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
-                      >
-                        {isSubmitting ? 'Submitting...' : 'Submit Preferences'}
-                      </button>
+                          <button
+                            type="button"
+                            onClick={handleVoteClick}
+                            disabled={isSubmitting}
+                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                          >
+                            {isSubmitting ? 'Submitting...' : 'Submit Preferences'}
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -1987,6 +2071,7 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
                       onCutoffClick={handleCutoffSuggestionsClick}
                       isCuttingOff={isCuttingOffSuggestions}
                       searchRadius={searchRadius}
+                      wrapperHandlesSubmit={wrapperHandlesSubmit}
                     />
                   )}
 
@@ -2020,6 +2105,7 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
                     twoOptionDisplayOrder={twoOptionDisplayOrder}
                     isEditingSuggestions={isEditingVote}
                     newOptions={newOptions}
+                    wrapperHandlesSubmit={wrapperHandlesSubmit}
                   />
 
                   {/* Show follow-up/fork header after submit button */}
@@ -2068,4 +2154,6 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
 
     </>
   );
-}
+});
+
+export default SubPollBallot;
