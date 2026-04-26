@@ -39,6 +39,12 @@ interface RankingSectionProps {
   twoOptionDisplayOrder: string[];
   isEditingSuggestions: boolean;
   newOptions?: string[];
+  // Phase 3.4 follow-up B: when the parent multipoll wrapper renders the
+  // Submit button + voter name input externally, suppress the per-sub-poll
+  // Submit/voter-name UI here. The wrapper calls SubPollBallot's
+  // imperative `submit()` ref method, which routes through the same
+  // submitVote flow this Submit button used to trigger.
+  wrapperHandlesSubmit?: boolean;
 }
 
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
@@ -72,6 +78,7 @@ export default function RankingSection({
   twoOptionDisplayOrder,
   isEditingSuggestions,
   newOptions,
+  wrapperHandlesSubmit = false,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
   // For suggestion polls, is_abstain means "abstained from suggestions" not "abstained from ranking".
@@ -253,7 +260,7 @@ export default function RankingSection({
         </div>
       )}
 
-      {showBallot && (
+      {showBallot && !wrapperHandlesSubmit && (
         <>
           <div className="mt-4">
             <CompactNameField name={voterName} setName={setVoterName} />
