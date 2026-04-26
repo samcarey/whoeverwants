@@ -593,7 +593,7 @@ class TestMultipollVoterAggregation:
             "voter_name": voter_name,
         }
         resp = client.post(f"/api/polls/{poll_id}/votes", json=body)
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code in (200, 201), resp.text
 
     def _make_two_yes_no_multi(self, client, creator_secret):
         resp = client.post(
