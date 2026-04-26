@@ -288,31 +288,20 @@ class RankedChoiceRoundResponse(BaseModel):
     tie_broken_by_borda: bool = False
 
 
-# -- Multipoll models (Phase 1 of multipoll redesign) --
-#
-# A multipoll wraps one or more sub-polls. Sub-poll rows live in the existing
-# `polls` table; wrapper-level fields (response_deadline, creator_secret, etc.)
-# live in `multipolls`. See docs/multipoll-phasing.md.
+# -- Multipoll models. See docs/multipoll-phasing.md. --
 
 
 class CreateSubPollRequest(BaseModel):
-    """A sub-poll within a multipoll create request.
-
-    Excludes wrapper-level fields (response_deadline, creator_secret,
-    follow_up_to, fork_of, thread_title, etc.) — those live on the multipoll.
-    Per-sub-poll `context` disambiguates multiple sub-polls of the same kind.
-    """
+    """A sub-poll inside a multipoll create request. Wrapper-level fields
+    (response_deadline, creator_secret, follow_up_to, etc.) live on the
+    multipoll, not here. `context` disambiguates same-kind sub-polls and is
+    stored on polls.details."""
 
     poll_type: PollType = PollType.yes_no
     category: str | None = None
     options: list[str] | None = None
     options_metadata: dict | None = None
-    # Per-sub-poll context label (e.g. disambiguating two `Where` sub-polls).
-    # Stored on polls.details.
     context: str | None = None
-    # Type-specific fields. The wrapper owns the `*_deadline` *value*; the
-    # *_minutes lives per-sub-poll because it's still type-specific (e.g. only
-    # ranked_choice + suggestion polls use suggestion_deadline_minutes).
     suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     min_responses: int | None = None

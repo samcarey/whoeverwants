@@ -1,15 +1,10 @@
-"""Auto-title generator for multipolls.
-
-Pure function so it can be unit-tested independently. Mirrors the rules
-documented in docs/multipoll-phasing.md "Auto-title rules".
-"""
+"""Auto-title generator for multipolls. See docs/multipoll-phasing.md."""
 
 from __future__ import annotations
 
 
-# Display labels for built-in categories. Mirrors the labels exposed by
-# components/TypeFieldInput.tsx on the frontend; unknown categories fall back
-# to a title-cased version of the raw category string.
+# Mirrors the labels exposed by components/TypeFieldInput.tsx on the frontend;
+# unknown categories fall back to a title-cased version of the raw string.
 _CATEGORY_LABELS: dict[str, str] = {
     "yes_no": "Yes/No",
     "yes/no": "Yes/No",
@@ -29,7 +24,6 @@ def _label_for(category: str) -> str:
     key = category.strip().lower()
     if key in _CATEGORY_LABELS:
         return _CATEGORY_LABELS[key]
-    # Title-case fallback for unknown categories. Preserves embedded spaces.
     return " ".join(word.capitalize() for word in category.strip().split())
 
 
@@ -42,11 +36,7 @@ def _join_categories(labels: list[str]) -> str:
 
 
 def _single_subpoll_default_title(category: str) -> str:
-    """Match the existing single-poll auto-titles for 1-sub-poll multipolls.
-
-    Mirrors generateTitle() in app/create-poll/page.tsx. Time and yes/no get
-    short prompts; everything else uses "<Category>?".
-    """
+    # Mirrors generateTitle() in app/create-poll/page.tsx for 1-sub-poll cases.
     key = (category or "").strip().lower()
     if key in ("yes_no", "yes/no"):
         return "Yes/No?"
@@ -60,15 +50,6 @@ def generate_multipoll_title(
     sub_poll_categories: list[str],
     multipoll_context: str | None,
 ) -> str:
-    """Compute a default title for a multipoll.
-
-    Args:
-        sub_poll_categories: ordered list of category strings (one per sub-poll).
-        multipoll_context: optional whole-multipoll context string.
-
-    Returns:
-        A title-cased string suitable for display.
-    """
     context = (multipoll_context or "").strip() or None
     cats = [c for c in (sub_poll_categories or []) if c and c.strip()]
 
