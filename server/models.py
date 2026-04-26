@@ -361,6 +361,15 @@ class MultipollResponse(BaseModel):
     created_at: str
     updated_at: str
     sub_polls: list[PollResponse]
+    # Multipoll-level participation aggregates (Phase 3.2).
+    # Per CLAUDE.md → "Addressability paradigm", multipoll-scoped data lives
+    # at the multipoll level so the FE never aggregates sub-poll vote rows.
+    # `voter_names`: distinct named voters across all sub-polls (sorted).
+    # `anonymous_count`: max anon vote count across sub-polls (assumes the
+    # same anon person typically participates in each sibling sub-poll —
+    # closer to truth than summing, which would double-count).
+    voter_names: list[str] = Field(default_factory=list)
+    anonymous_count: int = 0
 
 
 # Resolve forward references (PollResponse.results -> PollResultsResponse)

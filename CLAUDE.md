@@ -785,6 +785,17 @@ The algorithm uses a **greedy selection with priority ordering**:
 
 ## Multipoll System (In Progress)
 
+### Addressability paradigm (READ FIRST)
+
+**The multipoll is the addressable unit. Sub-polls are internal-only.** This shapes every Phase 2+ decision:
+
+- **URLs reference multipolls, never sub-polls.** Multipolls have `id` (uuid) and `short_id` — both URL-able (`/p/<short_id>/`, `/thread/<id>/`). Sub-polls have a `polls.id` uuid for foreign-key purposes inside the DB, but it is not URL-able. Never construct `/p/<sub-poll-uuid>/` — use the parent multipoll's `short_id`. (The legacy fallback `/p/<sub-poll-uuid>/` happens to resolve via `apiGetPollById` today because the loader cascades, but treat that as a transitional artifact, not an API.)
+- **No client-side aggregation across sub-polls.** Anything that conceptually belongs to "the whole multipoll" — voter participation list, total respondent count, copy-link target, share-via, vote-submission unit, close/reopen/cutoff target — must come from a multipoll-level data source. Don't iterate `multipoll.sub_polls` on the FE to compute multipoll-level state. Either (a) the server returns the aggregate as a field on `MultipollResponse` / a sibling endpoint, or (b) a multipoll-level endpoint computes it server-side. Anything that lands as "merge N per-sub-poll fetches in the browser" is the wrong shape — push the aggregation to the server.
+- **Per-sub-poll data still flows per-sub-poll.** Each sub-poll's ballot, results, options, suggestions, time slots, etc. continue to use `/api/polls/<sub-poll-id>` style endpoints. The principle is about MULTIPOLL-LEVEL aggregates, not about retiring per-sub-poll plumbing.
+- **Internal client state can still key on sub-poll ids.** Refs (`cardRefs`, `expandedWrapperRefs`), per-poll cache entries (`pollCache`), and DOM keys all use sub-poll ids freely — they're stable internal identifiers, not URLs. The principle bites at the FE↔server boundary, not at internal data structures.
+
+When designing a new feature: ask "is this a multipoll-level concept?" If yes, route through a multipoll endpoint or field; never sum/dedupe across sub-polls in the browser.
+
 **Status**: phasing plan in `docs/multipoll-phasing.md`. **Phases 1, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, and 4 shipped** (Phase 3.2 thread-card aggregation + Phase 5 column drops still pending):
 
 - **Phase 1 (schema + new API)** — migration 092 created the `multipolls` table and added nullable `multipoll_id` + `sub_poll_index` to `polls`; endpoints `POST /api/multipolls`, `GET /api/multipolls/{short_id}`, `GET /api/multipolls/by-id/{id}` create + read wrapper-and-sub-polls atomically. Validation rejects participation sub-polls, multiple `time` sub-polls, and same-kind sub-polls without distinct `context`. Auto-title is computed at read time from sub-poll categories + multipoll context (rules in `server/algorithms/multipoll_title.py`); explicit titles persist to `thread_title`.

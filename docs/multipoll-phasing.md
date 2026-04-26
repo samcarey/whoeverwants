@@ -70,6 +70,17 @@ Recommended deferral: do this as a series of small PRs after Phase 2.4 + 3 land 
 
 ---
 
+## Addressability paradigm (applies across all phases)
+
+**The multipoll is the addressable unit. Sub-polls are internal-only.**
+
+- **URLs reference multipolls, never sub-polls.** Multipolls own `id` + `short_id` and are the targets of `/p/<short_id>/` and `/thread/<id>/`. Sub-poll uuids exist for foreign-key plumbing inside the DB but are not URL-able. Any "share this", "copy link", "navigate to", or "related thread" computation routes through the multipoll, never a sub-poll uuid.
+- **Multipoll-level state lives at the multipoll level — no client-side aggregation.** Voter participation list, total respondent count, "is this poll closed", deadline, creator, follow-up/fork chain, vote-submission unit (Phase 3+), close/reopen/cutoff target — all these are multipoll-level concepts. They MUST be sourced from a multipoll-level endpoint or field on `MultipollResponse`. The FE never iterates `multipoll.sub_polls` to compute multipoll-level state. If the data doesn't exist at the multipoll level today, the right fix is to surface it at that level (server field or new endpoint), not to aggregate on the client.
+- **Per-sub-poll state still flows per-sub-poll.** Ballots, options, suggestions, time slots, ranking interactions, sub-poll results — all continue to use `/api/polls/<sub-poll-id>` endpoints. The paradigm is about MULTIPOLL-LEVEL aggregates, not about deprecating sub-poll plumbing.
+- **Internal client identifiers can still use sub-poll ids freely.** Refs, cache keys, DOM `key=` props, expand state — these are not URLs and not API contracts. Sub-poll ids work fine here.
+
+When designing any feature in this rollout, ask: *"is this a multipoll-level concept?"* If yes → route through a multipoll endpoint/field. Never sum/dedupe across sub-polls in the browser.
+
 ## Schema strategy (applies across phases)
 
 Rather than introduce a new `sub_polls` table that duplicates `polls`, we treat the existing `polls` table as **the sub-poll table** and add a new `multipolls` table for the wrapper-level fields. Each row in `polls` gains an `multipoll_id` FK pointing to its wrapper. A wrapper with one sub-poll renders identically to today's single-poll view (the wrapper is invisible).

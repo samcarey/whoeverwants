@@ -578,3 +578,103 @@ class TestMultipollOperations:
         assert reopened["is_closed"] is False
         assert len(reopened["sub_polls"]) == 3
         assert all(sp["is_closed"] is False for sp in reopened["sub_polls"])
+
+
+class TestMultipollVoterAggregation:
+    """Server-side aggregation of voter participation across sibling sub-polls.
+    Per CLAUDE.md → "Addressability paradigm", these fields exist so the FE
+    never iterates sub-poll vote rows to compute multipoll-level state."""
+
+    @staticmethod
+    def _vote(client, poll_id: str, voter_name: str | None, choice: str = "yes"):
+        body = {
+            "vote_type": "yes_no",
+            "yes_no_choice": choice,
+            "voter_name": voter_name,
+        }
+        resp = client.post(f"/api/polls/{poll_id}/votes", json=body)
+        assert resp.status_code == 200, resp.text
+
+    def _make_two_yes_no_multi(self, client, creator_secret):
+        resp = client.post(
+            "/api/multipolls",
+            json={
+                "creator_secret": creator_secret,
+                "context": "Test",
+                "sub_polls": [
+                    _yes_no_sub_poll(context="A"),
+                    _yes_no_sub_poll(context="B"),
+                ],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    def test_empty_multipoll_has_zero_respondents(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
+        assert data["voter_names"] == []
+        assert data["anonymous_count"] == 0
+
+    def test_named_voters_dedupe_across_sub_polls(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        # Alice + Bob vote on both; Carol only on A.
+        for poll_id in (sp_a["id"], sp_b["id"]):
+            self._vote(client, poll_id, "Alice")
+            self._vote(client, poll_id, "Bob")
+        self._vote(client, sp_a["id"], "Carol", choice="no")
+
+        data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
+        # Alice + Bob should each appear once (deduped); Carol once.
+        assert sorted(data["voter_names"]) == ["Alice", "Bob", "Carol"]
+        assert data["anonymous_count"] == 0
+
+    def test_anonymous_count_is_max_per_sub_poll(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        # 3 anon on A, 2 anon on B → expect MAX = 3.
+        for _ in range(3):
+            self._vote(client, sp_a["id"], None)
+        for _ in range(2):
+            self._vote(client, sp_b["id"], None)
+        data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
+        assert data["voter_names"] == []
+        assert data["anonymous_count"] == 3
+
+    def test_mixed_named_and_anonymous(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        sp_a, sp_b = multi["sub_polls"]
+        self._vote(client, sp_a["id"], "Alice")
+        self._vote(client, sp_b["id"], "Alice")
+        self._vote(client, sp_a["id"], None)
+        self._vote(client, sp_a["id"], None)
+        self._vote(client, sp_b["id"], None)
+        data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
+        assert data["voter_names"] == ["Alice"]
+        # max(2 anon on A, 1 anon on B) = 2
+        assert data["anonymous_count"] == 2
+
+    def test_aggregation_returned_by_short_id_endpoint_too(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        sp_a = multi["sub_polls"][0]
+        self._vote(client, sp_a["id"], "Alice")
+        short_id = multi["short_id"]
+        data = client.get(f"/api/multipolls/{short_id}").json()
+        assert data["voter_names"] == ["Alice"]
+
+    def test_aggregation_returned_after_close(self, client, creator_secret):
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        sp_a = multi["sub_polls"][0]
+        self._vote(client, sp_a["id"], "Alice")
+        closed = client.post(
+            f"/api/multipolls/{multi['id']}/close",
+            json={"creator_secret": creator_secret, "close_reason": "manual"},
+        ).json()
+        assert closed["voter_names"] == ["Alice"]
+
+    def test_create_response_omits_voter_data(self, client, creator_secret):
+        # Newly-created multipoll has no votes — fields default to empty.
+        multi = self._make_two_yes_no_multi(client, creator_secret)
+        assert multi["voter_names"] == []
+        assert multi["anonymous_count"] == 0
