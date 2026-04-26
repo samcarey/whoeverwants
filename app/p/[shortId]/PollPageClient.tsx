@@ -46,9 +46,17 @@ interface PollPageClientProps {
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
+  // True when this PollPageClient is rendered as one section of a
+  // multi-sub-poll multipoll group. Suppresses chrome that the wrapper
+  // owns (per the multipoll Submission paradigm in CLAUDE.md). Phase
+  // 3.4 follow-up A only uses this to suppress the duplicate
+  // <PollDetails> render (the thread page renders the section label
+  // from `poll.details` already). Phase 3.4 follow-up B will extend
+  // this prop to gate Submit / voter name / confirmation as well.
+  partOfMultipollGroup?: boolean;
 }
 
-export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true }: PollPageClientProps) {
+export default function PollPageClient({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false }: PollPageClientProps) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -1375,8 +1383,10 @@ export default function PollPageClient({ poll, createdDate, pollId, externalYesN
         {/* Creation info lives on the compact card header (creator name + relative time);
              full timestamp is available via the tooltip on that time. */}
 
-        {/* Poll details (expandable) */}
-        {poll.details && <PollDetails details={poll.details} />}
+        {/* Poll details (expandable). Suppressed in multi-sub-poll groups
+             because the thread-page section label already renders
+             poll.details (used there as the disambiguating context). */}
+        {poll.details && !partOfMultipollGroup && <PollDetails details={poll.details} />}
 
         {showReferenceLocation && (
           <div className="mb-3 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">

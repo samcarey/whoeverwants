@@ -1402,6 +1402,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     pollId={sp.id}
                                     externalYesNoResults={isYesNo}
                                     isExpanded={isExpanded}
+                                    partOfMultipollGroup={isMultiGroup}
                                   />
                                 </div>
                               );
