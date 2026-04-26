@@ -18,17 +18,56 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------------
+-- Schema-drift safety net.
+--
+-- Migration 030 dropped polls.short_id and polls.sequential_id; the
+-- production DB still has them (it was bootstrapped from Supabase before 030
+-- and the columns survived), but freshly-built dev DBs (per-user dev_*
+-- schemas built by replaying migrations from scratch) don't. We need
+-- polls.short_id to exist so we can copy it onto the multipoll wrapper. Add
+-- the columns + sequence + back-fill if they are missing. No-op on prod.
+-- ---------------------------------------------------------------------------
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'polls' AND column_name = 'sequential_id'
+  ) THEN
+    EXECUTE 'CREATE SEQUENCE IF NOT EXISTS polls_sequential_id_seq';
+    EXECUTE 'ALTER TABLE polls ADD COLUMN sequential_id INTEGER UNIQUE DEFAULT nextval(''polls_sequential_id_seq'')';
+    EXECUTE 'ALTER SEQUENCE polls_sequential_id_seq OWNED BY polls.sequential_id';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'polls' AND column_name = 'short_id'
+  ) THEN
+    EXECUTE 'ALTER TABLE polls ADD COLUMN short_id TEXT UNIQUE';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_polls_short_id ON polls(short_id)';
+  END IF;
+
+  -- Backfill any rows missing sequential_id / short_id (encode_base62 is
+  -- defined in migration 021).
+  IF EXISTS (
+    SELECT 1 FROM polls WHERE sequential_id IS NULL OR short_id IS NULL LIMIT 1
+  ) THEN
+    UPDATE polls
+    SET sequential_id = COALESCE(sequential_id, nextval('polls_sequential_id_seq'))
+    WHERE sequential_id IS NULL;
+    UPDATE polls
+    SET short_id = encode_base62(sequential_id)
+    WHERE short_id IS NULL AND sequential_id IS NOT NULL;
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- Pass 1: insert one multipoll per legacy non-participation poll.
 --
--- We need a deterministic 1:1 join between the inserted multipoll rows and
--- the source polls so we can update polls.multipoll_id afterwards. The trick:
--- we explicitly carry the source poll.id through as multipolls.id is a fresh
--- uuid, but we also write each poll's short_id onto the multipoll. After the
--- INSERT, polls.short_id <-> multipolls.short_id is unique (polls.short_id is
--- unique by construction), so we can use that as the join key in Pass 2.
---
--- The multipolls.short_id auto-generation trigger fires only when short_id
--- IS NULL, so providing an explicit short_id here bypasses it.
+-- Each wrapper inherits the source poll's short_id so existing share URLs
+-- still resolve (the multipolls.short_id auto-generation trigger is bypassed
+-- by providing an explicit value). polls.short_id <-> multipolls.short_id
+-- becomes a 1:1 mapping we can use as the join key in Pass 2.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO multipolls (
@@ -62,13 +101,10 @@ FROM polls p
 WHERE p.multipoll_id IS NULL
   AND p.poll_type != 'participation'
   AND p.short_id IS NOT NULL;
-  -- Polls without short_id are unreachable via URL anyway; leave them alone.
 
 -- ---------------------------------------------------------------------------
 -- Pass 2: update polls.multipoll_id to point at the new wrapper (joining on
--- short_id) and set sub_poll_index = 0. This is unambiguous because each
--- legacy poll has a unique short_id and we only inserted one multipoll per
--- legacy poll.
+-- short_id) and set sub_poll_index = 0.
 -- ---------------------------------------------------------------------------
 
 UPDATE polls p
