@@ -13,16 +13,24 @@ from models import (
     CreateMultipollRequest,
     CreateSubPollRequest,
     CutoffSuggestionsRequest,
+    EditVoteRequest,
     MultipollResponse,
+    MultipollVoteItem,
     PollType,
     ReopenPollRequest,
+    SubmitMultipollVotesRequest,
+    SubmitVoteRequest,
+    VoteResponse,
 )
 from routers.polls import (
+    _edit_vote_on_poll,
     _finalize_suggestion_options,
     _finalize_time_slots,
     _json_or_none,
     _resolve_sub_poll_winner,
     _row_to_poll,
+    _row_to_vote,
+    _submit_vote_to_poll,
 )
 
 router = APIRouter(prefix="/api/multipolls", tags=["multipolls"])
@@ -553,6 +561,118 @@ def cutoff_multipoll_suggestions(multipoll_id: str, req: CutoffSuggestionsReques
         voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
     return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)
+
+
+def _vote_item_to_submit_req(item: MultipollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
+    return SubmitVoteRequest(
+        vote_type=item.vote_type,
+        yes_no_choice=item.yes_no_choice,
+        ranked_choices=item.ranked_choices,
+        ranked_choice_tiers=item.ranked_choice_tiers,
+        suggestions=item.suggestions,
+        is_abstain=item.is_abstain,
+        is_ranking_abstain=item.is_ranking_abstain,
+        voter_name=voter_name,
+        min_participants=item.min_participants,
+        max_participants=item.max_participants,
+        voter_day_time_windows=item.voter_day_time_windows,
+        voter_duration=item.voter_duration,
+        options_metadata=item.options_metadata,
+        liked_slots=item.liked_slots,
+        disliked_slots=item.disliked_slots,
+    )
+
+
+def _vote_item_to_edit_req(item: MultipollVoteItem, voter_name: str | None) -> EditVoteRequest:
+    return EditVoteRequest(
+        yes_no_choice=item.yes_no_choice,
+        ranked_choices=item.ranked_choices,
+        ranked_choice_tiers=item.ranked_choice_tiers,
+        suggestions=item.suggestions,
+        is_abstain=item.is_abstain,
+        is_ranking_abstain=item.is_ranking_abstain,
+        voter_name=voter_name,
+        min_participants=item.min_participants,
+        max_participants=item.max_participants,
+        voter_day_time_windows=item.voter_day_time_windows,
+        voter_duration=item.voter_duration,
+        liked_slots=item.liked_slots,
+        disliked_slots=item.disliked_slots,
+    )
+
+
+@router.post(
+    "/{multipoll_id}/votes",
+    response_model=list[VoteResponse],
+    status_code=201,
+)
+def submit_multipoll_votes(multipoll_id: str, req: SubmitMultipollVotesRequest):
+    """Atomic batch vote across multiple sub-polls of one multipoll.
+
+    Each `items[i]` either inserts a new vote (vote_id null) or updates an
+    existing one (vote_id set) on `items[i].sub_poll_id`. Per the addressability
+    paradigm, this is the multipoll-level entry point — clients should prefer
+    it over per-sub-poll calls when the user submits votes across siblings in
+    one action. Validation, finalization, and auto-close run per-sub-poll
+    inside the same transaction; any failure rolls back every item.
+
+    voter_name is multipoll-level: one voter, many sub-poll ballots.
+    """
+    now = datetime.now(timezone.utc)
+
+    sub_poll_ids = [item.sub_poll_id for item in req.items]
+    if len(set(sub_poll_ids)) != len(sub_poll_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Each sub_poll_id may appear at most once per request",
+        )
+
+    with get_db() as conn:
+        multipoll_row = conn.execute(
+            "SELECT id, is_closed FROM multipolls WHERE id = %(id)s",
+            {"id": multipoll_id},
+        ).fetchone()
+        if not multipoll_row:
+            raise HTTPException(status_code=404, detail="Multipoll not found")
+        if multipoll_row.get("is_closed"):
+            raise HTTPException(status_code=400, detail="Multipoll is closed")
+
+        owned = conn.execute(
+            """
+            SELECT id FROM polls
+            WHERE multipoll_id = %(mid)s
+              AND id::text = ANY(%(ids)s)
+            """,
+            {"mid": multipoll_id, "ids": sub_poll_ids},
+        ).fetchall()
+        owned_ids = {str(r["id"]) for r in owned}
+        for sub_poll_id in sub_poll_ids:
+            if sub_poll_id not in owned_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Sub-poll {sub_poll_id} does not belong to this multipoll",
+                )
+
+        result_rows: list[dict] = []
+        for item in req.items:
+            if item.vote_id:
+                row = _edit_vote_on_poll(
+                    conn,
+                    item.sub_poll_id,
+                    item.vote_id,
+                    _vote_item_to_edit_req(item, req.voter_name),
+                    now,
+                )
+            else:
+                row = _submit_vote_to_poll(
+                    conn,
+                    item.sub_poll_id,
+                    _vote_item_to_submit_req(item, req.voter_name),
+                    now,
+                )
+            result_rows.append(row)
+
+    return [_row_to_vote(r) for r in result_rows]
 
 
 @router.post("/{multipoll_id}/cutoff-availability", response_model=MultipollResponse)

@@ -114,6 +114,42 @@ class EditVoteRequest(BaseModel):
     disliked_slots: list[str] | None = None
 
 
+class MultipollVoteItem(BaseModel):
+    """One sub-poll's worth of vote data inside a unified multipoll submission.
+
+    `vote_id` toggles insert vs. update: when set, the row identified by
+    `vote_id` (which must already be on `sub_poll_id`) is updated; when null, a
+    new row is inserted. Mirrors per-sub-poll `SubmitVoteRequest` /
+    `EditVoteRequest` payloads minus `voter_name` (which is multipoll-level —
+    one voter, many sub-poll ballots in one transaction).
+    """
+
+    sub_poll_id: str
+    vote_id: str | None = None
+    vote_type: str
+    yes_no_choice: str | None = None
+    ranked_choices: list[str] | None = None
+    ranked_choice_tiers: list[list[str]] | None = None
+    suggestions: list[str] | None = None
+    is_abstain: bool = False
+    is_ranking_abstain: bool = False
+    min_participants: int | None = None
+    max_participants: int | None = None
+    voter_day_time_windows: list[dict] | None = None
+    voter_duration: dict | None = None
+    options_metadata: dict | None = None
+    liked_slots: list[str] | None = None
+    disliked_slots: list[str] | None = None
+
+
+class SubmitMultipollVotesRequest(BaseModel):
+    """Atomic multi-sub-poll vote submission. All `items` are inserted/updated
+    in a single transaction; any item failure rolls back every other item."""
+
+    voter_name: str | None = None
+    items: list[MultipollVoteItem] = Field(..., min_length=1)
+
+
 class ClosePollRequest(BaseModel):
     creator_secret: str
     close_reason: CloseReason = CloseReason.manual

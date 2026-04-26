@@ -516,6 +516,45 @@ export async function apiGetVotes(pollId: string): Promise<ApiVote[]> {
   });
 }
 
+// Phase 3.4: unified multipoll voting. One transaction, one voter_name, many
+// sub-poll ballots. Each item either inserts (vote_id null) or updates
+// (vote_id set) on its sub_poll_id; any item failure rolls back the whole
+// batch. Caller is responsible for invalidating per-sub-poll caches via
+// invalidateMultipoll() — done here so callers can't forget.
+export interface MultipollVoteItem {
+  sub_poll_id: string;
+  vote_id?: string | null;
+  vote_type: string;
+  yes_no_choice?: string | null;
+  ranked_choices?: string[] | null;
+  ranked_choice_tiers?: string[][] | null;
+  suggestions?: string[] | null;
+  is_abstain?: boolean;
+  is_ranking_abstain?: boolean;
+  min_participants?: number | null;
+  max_participants?: number | null;
+  voter_day_time_windows?: any[] | null;
+  voter_duration?: any | null;
+  options_metadata?: OptionsMetadata | null;
+  liked_slots?: string[] | null;
+  disliked_slots?: string[] | null;
+}
+
+export async function apiSubmitMultipollVotes(
+  multipollId: string,
+  params: { voter_name?: string | null; items: MultipollVoteItem[] },
+): Promise<ApiVote[]> {
+  const data = await multipollFetch<ApiVote[]>(
+    `/${encodeURIComponent(multipollId)}/votes`,
+    { method: 'POST', body: JSON.stringify(params) },
+  );
+  // Cascading invalidation: the multipoll cache entry's sub_polls list drives
+  // per-sub-poll cache eviction in invalidateMultipoll, so we don't need to
+  // walk params.items here.
+  invalidateMultipoll(multipollId);
+  return data;
+}
+
 export async function apiEditVote(pollId: string, voteId: string, params: {
   yes_no_choice?: string | null;
   ranked_choices?: string[] | null;
