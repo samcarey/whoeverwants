@@ -46,13 +46,9 @@ interface PollPageClientProps {
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
-  // True when this PollPageClient is rendered as one section of a
-  // multi-sub-poll multipoll group. Suppresses chrome that the wrapper
-  // owns (per the multipoll Submission paradigm in CLAUDE.md). Phase
-  // 3.4 follow-up A only uses this to suppress the duplicate
-  // <PollDetails> render (the thread page renders the section label
-  // from `poll.details` already). Phase 3.4 follow-up B will extend
-  // this prop to gate Submit / voter name / confirmation as well.
+  // True when this poll renders as one section of a multi-sub-poll group.
+  // The thread page already renders poll.details as the section label, so
+  // we suppress the inner <PollDetails> to avoid the duplicate.
   partOfMultipollGroup?: boolean;
 }
 

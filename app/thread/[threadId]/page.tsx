@@ -258,16 +258,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   >(null);
   const [voteChangeSubmitting, setVoteChangeSubmitting] = useState(false);
 
-  // Phase 3.4 follow-up A: for all-yes_no multi-sub-poll groups, taps on the
-  // external Yes/No card stage the choice here (keyed by sub_poll_id) instead
-  // of submitting immediately. The wrapper-level Submit button below the card
-  // commits all staged choices in one atomic apiSubmitMultipollVotes call.
+  // Staged yes/no choices, keyed by sub_poll_id. Taps on a multi-yes_no
+  // group's external card write here instead of firing apiSubmitVote
+  // immediately — the wrapper-level Submit commits them as one batch.
   const [pendingMultipollChoices, setPendingMultipollChoices] = useState<Map<string, 'yes' | 'no' | 'abstain'>>(() => new Map());
-  // Voter name input lives at the multipoll wrapper level (one per multipoll).
   const [multipollVoterNames, setMultipollVoterNames] = useState<Map<string, string>>(() => new Map());
-  // Confirmation gate for the wrapper-level submit. { multipollId }.
-  const [pendingMultipollSubmit, setPendingMultipollSubmit] = useState<{ multipollId: string } | null>(null);
-  // Per-multipoll submit-in-flight + last error.
+  // Snapshots subPolls at button-tap time so the modal's message + onConfirm
+  // stay stable even if groupedThreadPolls re-derives mid-confirmation.
+  const [pendingMultipollSubmit, setPendingMultipollSubmit] = useState<
+    { multipollId: string; subPolls: Poll[]; stagedCount: number } | null
+  >(null);
   const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
   const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(() => new Map());
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
@@ -548,10 +548,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     };
   }, [thread, visiblePollIds]);
 
-  // Build the MultipollVoteItem array for an all-yes_no multi-group from the
-  // currently staged choices. Sub-polls without a staged change are omitted —
-  // the unified endpoint applies items independently and leaves untouched
-  // sub-polls alone.
   const buildMultipollItems = (subPolls: Poll[]): MultipollVoteItem[] => {
     const items: MultipollVoteItem[] = [];
     for (const sp of subPolls) {
@@ -570,11 +566,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     return items;
   };
 
-  // Submit + distribute results for a multipoll-level vote on an all-yes_no
-  // multi-group. Atomic on the server: any item failure rolls back the batch.
+  // Atomic on the server: any item failure rolls back the whole batch.
   const confirmMultipollSubmit = async (multipollId: string, subPolls: Poll[]) => {
-    setMultipollSubmitting((prev) => { const next = new Set(prev); next.add(multipollId); return next; });
-    setMultipollSubmitError((prev) => { const next = new Map(prev); next.delete(multipollId); return next; });
+    setMultipollSubmitting((prev) => {
+      if (prev.has(multipollId)) return prev;
+      const next = new Set(prev);
+      next.add(multipollId);
+      return next;
+    });
+    setMultipollSubmitError((prev) => {
+      if (!prev.has(multipollId)) return prev;
+      const next = new Map(prev);
+      next.delete(multipollId);
+      return next;
+    });
     try {
       const items = buildMultipollItems(subPolls);
       if (items.length === 0) {
@@ -585,18 +590,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       const voter_name = voterNameRaw.trim() || null;
       const returnedVotes = await apiSubmitMultipollVotes(multipollId, { voter_name, items });
 
-      // Distribute returned votes back into per-sub-poll state. Each ApiVote
-      // carries poll_id (which is the sub-poll uuid in this codepath) so we
-      // can match to the original sub-poll without iterating items in lockstep.
+      const subPollById = new Map(subPolls.map((sp) => [sp.id, sp]));
       setUserVoteMap((prev) => {
         const next = new Map(prev);
         for (const v of returnedVotes) {
-          const sp = subPolls.find((p) => p.id === v.poll_id);
+          const sp = subPollById.get(v.poll_id);
           if (!sp || sp.poll_type !== 'yes_no') continue;
-          const choice: 'yes' | 'no' | 'abstain' = v.is_abstain
-            ? 'abstain'
-            : (v.yes_no_choice as 'yes' | 'no');
-          next.set(sp.id, { choice, voteId: v.id, voterName: v.voter_name ?? null });
+          next.set(sp.id, {
+            choice: parseYesNoChoice(v),
+            voteId: v.id,
+            voterName: v.voter_name ?? null,
+          });
         }
         return next;
       });
@@ -609,8 +613,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       setVotedPollIds(fresh.votedPollIds);
       setAbstainedPollIds(fresh.abstainedPollIds);
 
-      // Clear staged choices for this multipoll's sub-polls.
       setPendingMultipollChoices((prev) => {
+        let mutated = false;
+        for (const sp of subPolls) {
+          if (prev.has(sp.id)) { mutated = true; break; }
+        }
+        if (!mutated) return prev;
         const next = new Map(prev);
         for (const sp of subPolls) next.delete(sp.id);
         return next;
@@ -618,7 +626,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       if (voter_name) saveUserName(voter_name);
 
-      // Notify each sub-poll's listeners (results refetch, voted-flag sync).
       for (const v of returnedVotes) {
         window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: v.poll_id } }));
       }
@@ -629,7 +636,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       const message = err instanceof Error ? err.message : 'Submit failed.';
       setMultipollSubmitError((prev) => { const next = new Map(prev); next.set(multipollId, message); return next; });
     } finally {
-      setMultipollSubmitting((prev) => { const next = new Set(prev); next.delete(multipollId); return next; });
+      setMultipollSubmitting((prev) => {
+        if (!prev.has(multipollId)) return prev;
+        const next = new Set(prev);
+        next.delete(multipollId);
+        return next;
+      });
     }
   };
 
@@ -1308,13 +1320,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // every sub-poll is yes_no so nothing empty sits under
                     // the external block.
                     const allYesNo = group.subPolls.every((sp) => sp.poll_type === 'yes_no');
-                    // Phase 3.4 follow-up A: all-yes_no multi-groups route
-                    // tap-to-vote through the wrapper-level Submit instead of
-                    // submitting per-sub-poll on tap. Mixed-type multi-groups
-                    // (yes_no + ranked_choice) keep per-sub-poll submit until
-                    // PR B lifts Submit out of PollPageClient generally.
+                    // All-yes_no multi-groups route taps to the wrapper-level
+                    // Submit; mixed-type multi-groups still use per-sub-poll
+                    // Submit (lifted in a follow-up PR).
                     const useMultipollSubmit = isMultiGroup && allYesNo && !!group.multipollId;
-                    const multipollIdForSubmit = group.multipollId ?? null;
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
                       <div
@@ -1383,6 +1392,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                               : (newChoice) => {
                                                   if (useMultipollSubmit) {
                                                     setPendingMultipollChoices((prev) => {
+                                                      if (prev.get(sp.id) === newChoice) return prev;
                                                       const next = new Map(prev);
                                                       next.set(sp.id, newChoice);
                                                       return next;
@@ -1407,14 +1417,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                 </div>
                               );
                             })}
-                            {useMultipollSubmit && multipollIdForSubmit && !isClosed && (() => {
-                              // Wrapper-level Submit row for all-yes_no
-                              // multi-groups. Voter name is per-multipoll;
-                              // staged choices commit atomically via
-                              // apiSubmitMultipollVotes.
-                              const multipollId = multipollIdForSubmit;
-                              const stagedSubPollIds = group.subPolls.filter((sp) => pendingMultipollChoices.has(sp.id));
-                              const hasStagedChange = stagedSubPollIds.length > 0;
+                            {useMultipollSubmit && group.multipollId && !isClosed && (() => {
+                              const multipollId = group.multipollId;
+                              const hasStagedChange = group.subPolls.some((sp) => pendingMultipollChoices.has(sp.id));
                               const submitting = multipollSubmitting.has(multipollId);
                               const submitError = multipollSubmitError.get(multipollId);
                               const voterNameVal = multipollVoterNames.get(multipollId) ?? getUserName() ?? '';
@@ -1431,6 +1436,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       name={voterNameVal}
                                       setName={(name: string) =>
                                         setMultipollVoterNames((prev) => {
+                                          if (prev.get(multipollId) === name) return prev;
                                           const next = new Map(prev);
                                           next.set(multipollId, name);
                                           return next;
@@ -1447,7 +1453,13 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                   )}
                                   <button
                                     type="button"
-                                    onClick={() => setPendingMultipollSubmit({ multipollId })}
+                                    onClick={() => {
+                                      let stagedCount = 0;
+                                      for (const sp of group.subPolls) {
+                                        if (pendingMultipollChoices.has(sp.id)) stagedCount++;
+                                      }
+                                      setPendingMultipollSubmit({ multipollId, subPolls: group.subPolls, stagedCount });
+                                    }}
                                     disabled={submitting || !hasStagedChange}
                                     className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                                   >
@@ -1699,22 +1711,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         onCancel={() => setPendingVoteChange(null)}
       />
 
-      {/* Wrapper-level Submit confirmation for all-yes_no multi-sub-poll
-          groups. The button writes pendingMultipollSubmit; this modal opens,
-          and on confirm we run confirmMultipollSubmit to atomically submit
-          every staged choice through apiSubmitMultipollVotes. */}
+      {/* Wrapper-level Submit confirmation. subPolls + stagedCount are
+          snapshotted at button-tap time so the modal stays consistent if
+          groupedThreadPolls re-derives mid-confirmation. */}
       <ConfirmationModal
         isOpen={!!pendingMultipollSubmit}
         title="Submit vote"
         message={
           pendingMultipollSubmit
-            ? (() => {
-                const group = groupedThreadPolls.find((g) => g.multipollId === pendingMultipollSubmit.multipollId);
-                const count = group ? group.subPolls.filter((sp) => pendingMultipollChoices.has(sp.id)).length : 0;
-                return count === 1
-                  ? 'Submit your vote on this poll?'
-                  : `Submit your vote across ${count} sub-polls?`;
-              })()
+            ? pendingMultipollSubmit.stagedCount === 1
+              ? 'Submit your vote on this poll?'
+              : `Submit your vote across ${pendingMultipollSubmit.stagedCount} sub-polls?`
             : ''
         }
         confirmText={pendingMultipollSubmit && multipollSubmitting.has(pendingMultipollSubmit.multipollId) ? 'Submitting…' : 'Submit Vote'}
@@ -1722,9 +1729,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         confirmButtonClass="bg-blue-600 hover:bg-blue-700 text-white"
         onConfirm={() => {
           if (!pendingMultipollSubmit) return;
-          const multipollId = pendingMultipollSubmit.multipollId;
-          const group = groupedThreadPolls.find((g) => g.multipollId === multipollId);
-          if (group) void confirmMultipollSubmit(multipollId, group.subPolls);
+          void confirmMultipollSubmit(pendingMultipollSubmit.multipollId, pendingMultipollSubmit.subPolls);
         }}
         onCancel={() => setPendingMultipollSubmit(null)}
       />
