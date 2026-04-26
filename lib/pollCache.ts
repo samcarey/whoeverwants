@@ -16,7 +16,7 @@
  * for long-lived PWA sessions with many polls.
  */
 
-import type { Poll, PollResults } from './types';
+import type { Multipoll, Poll, PollResults } from './types';
 import type { ApiVote, ApiRankedChoiceRound } from './api';
 
 const CACHE_TTL_MS = 60_000;
@@ -44,6 +44,12 @@ let accessiblePollsCache: CacheEntry<Poll[]> | null = null;
 const resultsCache = new Map<string, CacheEntry<ResultsValue>>();
 const votesCache = new Map<string, CacheEntry<ApiVote[]>>();
 const participantsCache = new Map<string, CacheEntry<Participant[]>>();
+
+// Multipoll wrapper cache. Sub-polls inside a Multipoll are also written to
+// the per-poll cache via cachePolls(), so apiGetPollById hits warm cache after
+// a multipoll fetch. See docs/multipoll-phasing.md (Phase 2.1).
+const multipollById = new Map<string, CacheEntry<Multipoll>>();
+const multipollByShortId = new Map<string, CacheEntry<Multipoll>>();
 
 function isValid(entry: CacheEntry<unknown>, ttl = CACHE_TTL_MS): boolean {
   return Date.now() - entry.storedAt < ttl;
@@ -144,5 +150,35 @@ export function invalidatePoll(id: string): void {
 
 /** Invalidate the accessible polls list (e.g., after discovering new polls). */
 export function invalidateAccessiblePolls(): void {
+  accessiblePollsCache = null;
+}
+
+/** Cache a multipoll wrapper plus its sub-polls (sub-polls go into pollCache). */
+export function cacheMultipoll(multipoll: Multipoll): void {
+  setLru(multipollById, multipoll.id, multipoll);
+  if (multipoll.short_id) {
+    setLru(multipollByShortId, multipoll.short_id, multipoll);
+  }
+  cachePolls(multipoll.sub_polls);
+}
+
+export function getCachedMultipollById(id: string): Multipoll | null {
+  const entry = multipollById.get(id);
+  return entry && isValid(entry) ? entry.value : null;
+}
+
+export function getCachedMultipollByShortId(shortId: string): Multipoll | null {
+  const entry = multipollByShortId.get(shortId);
+  return entry && isValid(entry) ? entry.value : null;
+}
+
+/** Invalidate a multipoll wrapper plus all its sub-polls. */
+export function invalidateMultipoll(id: string): void {
+  const entry = multipollById.get(id);
+  if (entry) {
+    multipollById.delete(id);
+    if (entry.value.short_id) multipollByShortId.delete(entry.value.short_id);
+    for (const sub of entry.value.sub_polls) invalidatePoll(sub.id);
+  }
   accessiblePollsCache = null;
 }

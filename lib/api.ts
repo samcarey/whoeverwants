@@ -3,13 +3,14 @@
  * Replaces direct Supabase client calls with fetch()-based requests to the FastAPI server.
  */
 
-import type { Poll, PollResults, OptionsMetadata } from './types';
+import type { Multipoll, Poll, PollResults, OptionsMetadata } from './types';
 import { branchToSlug } from './slug';
 import {
   cachePoll,
   cachePollResults, getCachedPollResults,
   cacheVotes, getCachedVotes,
   cacheParticipants, getCachedParticipants,
+  cacheMultipoll, getCachedMultipollById, getCachedMultipollByShortId,
 } from './pollCache';
 
 // API URL resolution:
@@ -36,6 +37,7 @@ function getApiEndpoint(endpoint: string): string {
 }
 
 const API_BASE = getApiEndpoint('polls');
+const MULTIPOLL_BASE = getApiEndpoint('multipolls');
 
 // Dispatched on `window` with `{ detail: { pollId } }` after any vote mutation
 // so VoterList instances refresh immediately instead of waiting for the poll
@@ -74,8 +76,8 @@ class ApiError extends Error {
   }
 }
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
+async function fetchWithBase<T>(base: string, path: string, options?: RequestInit): Promise<T> {
+  const url = `${base}${path}`;
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -96,6 +98,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return res.json();
+}
+
+function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(API_BASE, path, options);
+}
+
+function multipollFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(MULTIPOLL_BASE, path, options);
 }
 
 // --- Poll response → Poll type mapping ---
@@ -293,6 +303,111 @@ export async function apiGetPollById(pollId: string): Promise<Poll> {
     cachePoll(poll);
     return poll;
   });
+}
+
+// --- Multipoll CRUD (Phase 2.1) ---
+//
+// Mirrors server/routers/multipolls.py. Multipolls wrap one or more sub-polls;
+// a 1-sub-poll multipoll renders identically to today's single poll. See
+// docs/multipoll-phasing.md.
+
+// Participation polls are excluded from the multipoll system — see
+// CLAUDE.md → "Participation Polls (Deprecated)" and the server validator
+// in server/routers/multipolls.py.
+export type SubPollType = 'yes_no' | 'ranked_choice' | 'time';
+
+export interface CreateSubPollParams {
+  poll_type?: SubPollType;
+  category?: string | null;
+  options?: string[] | null;
+  options_metadata?: OptionsMetadata | null;
+  context?: string | null;
+  suggestion_deadline_minutes?: number | null;
+  allow_pre_ranking?: boolean;
+  min_responses?: number | null;
+  show_preliminary_results?: boolean;
+  min_availability_percent?: number;
+  day_time_windows?: any[] | null;
+  duration_window?: any | null;
+  reference_latitude?: number | null;
+  reference_longitude?: number | null;
+  reference_location_label?: string | null;
+}
+
+export interface CreateMultipollParams {
+  creator_secret: string;
+  creator_name?: string | null;
+  response_deadline?: string | null;
+  prephase_deadline?: string | null;
+  prephase_deadline_minutes?: number | null;
+  follow_up_to?: string | null;
+  fork_of?: string | null;
+  thread_title?: string | null;
+  context?: string | null;
+  title?: string | null;
+  sub_polls: CreateSubPollParams[];
+}
+
+function toMultipoll(data: any): Multipoll {
+  return {
+    id: data.id,
+    short_id: data.short_id ?? null,
+    creator_secret: data.creator_secret ?? null,
+    creator_name: data.creator_name ?? null,
+    response_deadline: data.response_deadline ?? null,
+    prephase_deadline: data.prephase_deadline ?? null,
+    prephase_deadline_minutes: data.prephase_deadline_minutes ?? null,
+    is_closed: data.is_closed ?? false,
+    close_reason: data.close_reason ?? null,
+    follow_up_to: data.follow_up_to ?? null,
+    fork_of: data.fork_of ?? null,
+    thread_title: data.thread_title ?? null,
+    context: data.context ?? null,
+    title: data.title,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    sub_polls: Array.isArray(data.sub_polls) ? data.sub_polls.map(toPoll) : [],
+  };
+}
+
+export async function apiCreateMultipoll(params: CreateMultipollParams): Promise<Multipoll> {
+  const data = await multipollFetch('', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  const multipoll = toMultipoll(data);
+  cacheMultipoll(multipoll);
+  return multipoll;
+}
+
+const multipollInFlight = new Map<string, Promise<Multipoll>>();
+
+export async function apiGetMultipollByShortId(shortId: string): Promise<Multipoll> {
+  return coalesced(
+    multipollInFlight,
+    `short:${shortId}`,
+    getCachedMultipollByShortId(shortId),
+    async () => {
+      const data = await multipollFetch(`/${encodeURIComponent(shortId)}`);
+      const multipoll = toMultipoll(data);
+      cacheMultipoll(multipoll);
+      return multipoll;
+    },
+  );
+}
+
+export async function apiGetMultipollById(multipollId: string): Promise<Multipoll> {
+  return coalesced(
+    multipollInFlight,
+    `id:${multipollId}`,
+    getCachedMultipollById(multipollId),
+    async () => {
+      const data = await multipollFetch(`/by-id/${encodeURIComponent(multipollId)}`);
+      const multipoll = toMultipoll(data);
+      cacheMultipoll(multipoll);
+      return multipoll;
+    },
+  );
 }
 
 export async function apiFindDuplicatePoll(title: string, followUpTo: string): Promise<Poll | null> {
