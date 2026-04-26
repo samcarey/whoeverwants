@@ -169,7 +169,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     navigateCloseModalRef.current = () => {
       const params = new URLSearchParams(searchParams.toString());
-      ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode']
+      ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode', 'category']
         .forEach(p => params.delete(p));
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
@@ -184,6 +184,27 @@ function TemplateInner({ children }: AppTemplateProps) {
       navigateCloseModalRef.current();
     }, 300);
   }, []);
+
+  // Open the create-poll modal from the floating What/When/Where bubble bar.
+  // From home, navigate to /thread/new (with create + extras) so the modal
+  // auto-opens after the slide transition. From a thread / poll / empty-thread
+  // page, open the modal in place and auto-set followUpTo when the page
+  // exposes a thread-latest-poll-id on <body>.
+  const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
+    if (pathname === '/') {
+      const qs = new URLSearchParams({ create: '1', ...extraParams }).toString();
+      navigateWithTransition(router, `/thread/new?${qs}`, 'forward');
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('create', '1');
+    for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
+    const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
+    if (threadLatestPollId) {
+      params.set('followUpTo', threadLatestPollId);
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  }, [pathname, router, searchParams]);
 
   // Drag-to-dismiss touch handling for the create poll modal sheet.
   useEffect(() => {
@@ -505,41 +526,58 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.body
       )}
 
-      {/* Floating "+" create-poll button — fixed bottom-right, home + thread-like pages only.
-           Rendered via portal outside the scaling container so it positions against
-           the viewport. `view-transition-name: floating-plus` keeps it fixed (no
-           slide) across home <-> thread navigation — see globals.css.
-           On the home page the button navigates to /thread/new/ — a placeholder
-           page that hosts the FAB and a "create a poll and share the link"
-           prompt. The empty thread leaves no trace if the user navigates away
-           without creating a poll. */}
+      {/* Floating What/When/Where create-poll bubbles — fixed at the bottom,
+           home + thread-like pages only. Rendered via portal outside the
+           scaling container so they position against the viewport.
+           `view-transition-name: floating-plus` on the wrapper keeps the bubble
+           bar pinned (no slide) across home <-> thread navigation — see
+           globals.css.
+
+           Behavior on the home page: each bubble navigates to /thread/new with
+           the appropriate query params so the create modal auto-opens with
+           preselection (no two-tap detour through the empty placeholder).
+           On thread / poll / empty-thread pages: each bubble opens the create
+           modal in place, with auto-set followUpTo when a thread-latest-poll-id
+           is exposed on <body>.
+
+           Preselection mapping (Phase 2.3 of the multipoll redesign — see
+           docs/multipoll-phasing.md):
+             - What  → no preselection (defaults to whatever the form picks)
+             - When  → ?mode=time
+             - Where → ?category=restaurant (most common "where" type)
+           */}
       {isMounted && (pathname === '/' || isThreadLikePage) && createPortal(
-        <button
-          onClick={() => {
-            if (pathname === '/') {
-              navigateWithTransition(router, '/thread/new', 'forward');
-              return;
-            }
-            const params = new URLSearchParams(searchParams.toString());
-            params.set('create', '1');
-            // When on an existing thread page, auto-set followUpTo for the latest poll
-            const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
-            if (threadLatestPollId) {
-              params.set('followUpTo', threadLatestPollId);
-            }
-            router.push(`${pathname}?${params.toString()}`);
-          }}
-          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
+        <div
+          className="fixed z-50 floating-plus-button left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
-            right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
-          aria-label="Create new poll"
         >
-          <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>,
+          <button
+            type="button"
+            onClick={() => openCreateFromBubble({})}
+            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            aria-label="Create new poll"
+          >
+            What
+          </button>
+          <button
+            type="button"
+            onClick={() => openCreateFromBubble({ mode: 'time' })}
+            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            aria-label="Create new time poll"
+          >
+            When
+          </button>
+          <button
+            type="button"
+            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
+            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            aria-label="Create new place poll"
+          >
+            Where
+          </button>
+        </div>,
         document.getElementById('floating-fab-portal')!
       )}
 

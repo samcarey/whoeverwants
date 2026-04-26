@@ -137,6 +137,10 @@ export function CreatePollContent() {
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
   const modeParam = searchParams.get('mode');
+  // Optional category preselection from the What/When/Where bubble FAB.
+  // "When" uses ?mode=time (poll-type-level switch); "Where" uses ?category=restaurant.
+  // Restored from URL on mount only — subsequent edits go through CategoryForLine.
+  const categoryParam = searchParams.get('category');
 
   // Track duplicate and fork relationships as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -193,7 +197,7 @@ export function CreatePollContent() {
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
-  const [category, setCategory] = useState<string>('custom');
+  const [category, setCategory] = useState<string>(categoryParam || 'custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Location/time fields for participation polls
@@ -500,7 +504,8 @@ export function CreatePollContent() {
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
-          if (formState.category) setCategory(formState.category);
+          // URL ?category= preselection (from the Where bubble FAB) wins over saved drafts.
+          if (formState.category && !categoryParam) setCategory(formState.category);
           if (formState.forField) setForField(formState.forField);
 
           // Restore participation poll conditions
