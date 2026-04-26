@@ -11,6 +11,7 @@ import {
   cacheVotes, getCachedVotes,
   cacheParticipants, getCachedParticipants,
   cacheMultipoll, getCachedMultipollById, getCachedMultipollByShortId,
+  invalidateMultipoll,
 } from './pollCache';
 
 // API URL resolution:
@@ -411,6 +412,58 @@ export async function apiGetMultipollById(multipollId: string): Promise<Multipol
       return multipoll;
     },
   );
+}
+
+// --- Multipoll-level operations (Phase 3) ---
+//
+// These close/reopen/cutoff the wrapper + every sub-poll atomically. Each
+// helper invalidates the multipoll cache (which cascades to every sub-poll)
+// and the accessible-polls cache so the next read reflects the mutation.
+async function multipollOperation(
+  multipollId: string,
+  path: 'close' | 'reopen' | 'cutoff-suggestions' | 'cutoff-availability',
+  body: Record<string, unknown>,
+): Promise<Multipoll> {
+  const data = await multipollFetch(`/${encodeURIComponent(multipollId)}/${path}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const multipoll = toMultipoll(data);
+  invalidateMultipoll(multipollId);
+  cacheMultipoll(multipoll);
+  return multipoll;
+}
+
+export async function apiCloseMultipoll(
+  multipollId: string,
+  creatorSecret: string,
+  closeReason: string = 'manual',
+): Promise<Multipoll> {
+  return multipollOperation(multipollId, 'close', {
+    creator_secret: creatorSecret,
+    close_reason: closeReason,
+  });
+}
+
+export async function apiReopenMultipoll(
+  multipollId: string,
+  creatorSecret: string,
+): Promise<Multipoll> {
+  return multipollOperation(multipollId, 'reopen', { creator_secret: creatorSecret });
+}
+
+export async function apiCutoffMultipollSuggestions(
+  multipollId: string,
+  creatorSecret: string,
+): Promise<Multipoll> {
+  return multipollOperation(multipollId, 'cutoff-suggestions', { creator_secret: creatorSecret });
+}
+
+export async function apiCutoffMultipollAvailability(
+  multipollId: string,
+  creatorSecret: string,
+): Promise<Multipoll> {
+  return multipollOperation(multipollId, 'cutoff-availability', { creator_secret: creatorSecret });
 }
 
 export async function apiFindDuplicatePoll(title: string, followUpTo: string): Promise<Poll | null> {
