@@ -29,7 +29,7 @@ import RespondentCircles from "@/components/RespondentCircles";
 import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
-import PollPageClient from "@/app/p/[shortId]/PollPageClient";
+import SubPollBallot from "@/components/SubPollBallot";
 import PollResultsDisplay, { CompactRankedChoicePreview, CompactSuggestionPreview, CompactTimePreview } from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { forgetPoll } from "@/lib/forgetPoll";
@@ -1133,7 +1133,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
-                       with interactive elements inside the expanded PollPageClient. */}
+                       with interactive elements inside the expanded SubPollBallot. */}
                   <div
                     onClick={handleClick}
                     onTouchStart={handleTouchStart}
@@ -1340,7 +1340,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                   {(visiblePollIds.has(poll.id) || isExpanded) && (() => {
                     // For yes_no polls the thread view renders the whole
                     // voting + results UI externally (via YesNoResults inline
-                    // before PollPageClient), so PollPageClient returns null
+                    // before SubPollBallot), so SubPollBallot returns null
                     // for its yes_no branch. Drop the mt-1.5 wrapper gap when
                     // every sub-poll is yes_no so nothing empty sits under
                     // the external block.
@@ -1431,7 +1431,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       </div>
                                     );
                                   })()}
-                                  <PollPageClient
+                                  <SubPollBallot
                                     poll={sp}
                                     createdDate={formatCreationTimestamp(sp.created_at)}
                                     pollId={sp.id}
