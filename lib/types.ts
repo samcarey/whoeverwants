@@ -161,3 +161,25 @@ export interface RankedChoiceRound {
   borda_score?: number;
   tie_broken_by_borda?: boolean;
 }
+
+// Multipoll wrapper. Mirrors MultipollResponse in server/models.py.
+// See docs/multipoll-phasing.md.
+export interface Multipoll {
+  id: string;
+  short_id?: string | null;
+  creator_secret?: string | null;
+  creator_name?: string | null;
+  response_deadline?: string | null;
+  prephase_deadline?: string | null;
+  prephase_deadline_minutes?: number | null;
+  is_closed: boolean;
+  close_reason?: string | null;
+  follow_up_to?: string | null;
+  fork_of?: string | null;
+  thread_title?: string | null;
+  context?: string | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  sub_polls: Poll[];
+}

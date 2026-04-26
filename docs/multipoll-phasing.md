@@ -127,22 +127,85 @@ Pure function `generate_multipoll_title(sub_polls, multipoll_context) -> str`. L
 
 **Goal**: users start creating multipolls via the new What/When/Where bubbles. New polls go through `POST /api/multipolls`. Old polls continue to render via the existing single-poll codepath.
 
-### Scope sketch
+Phase 2 is too big to ship in one PR. It's split into five sub-phases, each shippable on its own. Sub-phases 2.1–2.3 are pure plumbing / single-button replacement; 2.4 introduces the dual-modal multi-sub-poll UI; 2.5 wires up rendering for multi-sub-poll multipolls.
 
-- Replace single `+` FAB on home + thread pages with **What / When / Where** bubble buttons (equally spaced along the bottom).
-- Each bubble opens the dual-modal sheet (top: sub-poll category + options + per-sub-poll context; bottom: shared multipoll context + voting cutoff + optional prephase cutoff).
-- Top modal's checkmark commits the sub-poll into a draft slot. The What/When/Where buttons reappear so the user can add more.
-- localStorage draft persistence (per-tab, per-device).
-- Submit calls `POST /api/multipolls`; on success, navigate to `/p/<multipoll_short_id>/`.
-- **The thread/poll page reads via `GET /api/multipolls/by-id/{...}`** when the multipoll wrapper exists; otherwise falls through to the existing single-poll path. This means voting/results/close/reopen still flow through the per-sub-poll endpoints — Phase 2 doesn't unify those yet.
-- 1-sub-poll multipolls render identically to today's polls (the wrapper is invisible).
-- Backwards-compat: every existing `+`-button entry point (Follow-Up, Fork, Duplicate, "Vote on it", thread-page FAB) is replaced with the new bubble UI.
+The cardinal rule for every sub-phase: **legacy single polls keep working unchanged**. Mixed state (some polls have `multipoll_id`, some don't) is the norm through the rest of the rollout.
 
-### Open questions for Phase 2
+### Phase 2.1 — API client + types + cache plumbing (no UI change)
 
-- How do Follow-Up / Fork / Duplicate compose with the new What/When/Where flow? Likely: each of those auto-fills a single What sub-poll matching the source poll's category, and the user can add more sub-polls before submitting.
-- Does the bottom modal "shared prephase cutoff" only show when at least one of the staged sub-polls has a prephase? (Probably yes — if the only sub-poll is a yes/no, no prephase cutoff is needed.)
-- Pre-existing pollCache / accessiblePollsCache invalidation when the new endpoint is the source of truth.
+Smallest meaningful first step. Pure additive plumbing on the frontend:
+
+- `lib/types.ts`: add `Multipoll` and `MultipollSubPoll` interfaces matching `MultipollResponse` / `PollResponse` from the server.
+- `lib/api.ts`: `apiCreateMultipoll`, `apiGetMultipollByShortId`, `apiGetMultipollById` helpers. Coalesce concurrent fetches via the existing `coalesced()` idiom. Cache results.
+- `lib/pollCache.ts`: `multipollCache` keyed by id and short_id. 60s TTL. `cacheMultipoll`, `getCachedMultipollById`, `getCachedMultipollByShortId`, `invalidateMultipoll`. Sub-polls are cached via the existing `cachePoll()` since they're plain `Poll` objects.
+- No component or page changes. No new entry points exercise these helpers yet.
+
+Done criteria: helpers exist, are typed, build cleanly. No behavior change visible to users. Can be exercised manually via browser devtools (`window.__apiCreateMultipoll = ...` for ad-hoc curl-like testing) or by writing a one-off test page.
+
+### Phase 2.2 — Single-button "+" routes through `POST /api/multipolls`
+
+Switch the existing create-poll flow to write multipolls under the hood — but UI stays exactly the same (one big create form, one Submit button → one sub-poll wrapped in one multipoll).
+
+- `app/create-poll/page.tsx` submit handler: build a `CreateMultipollRequest` with exactly one `CreateSubPollRequest` and call `apiCreateMultipoll`. On success navigate to `/p/<multipoll.short_id>/`.
+- `app/p/[shortId]/page.tsx` loader: try `apiGetMultipollByShortId` first; if 404 fall back to `apiGetPollByShortId`. For 1-sub-poll multipolls, render the single sub-poll exactly as today (effectively unwrap the multipoll for display).
+- `app/thread/[threadId]/page.tsx` and `lib/threadUtils.ts`: keep walking the polls table for now — the polls row still has all the wrapper-level fields duplicated by `_insert_sub_poll`. **No multipoll-aware thread aggregation in this sub-phase.**
+- **Caveat**: when the new multipoll has `follow_up_to`/`fork_of` set on the multipoll level, the polls row also needs `follow_up_to`/`fork_of` set so legacy thread aggregation still finds the chain. This requires a server-side change in `_insert_sub_poll`: look up the parent multipoll's first sub-poll and store its id on the new poll's `follow_up_to`. Same for `fork_of`. Track this in the server PR for 2.2.
+- All existing entry points (Follow-Up, Fork, Duplicate, "Vote on it") flow through the same updated submit handler — no per-button changes needed since they all funnel into `app/create-poll/page.tsx`.
+
+Done criteria: creating a poll (regular, follow-up, fork, duplicate) writes a multipoll wrapper + 1 sub-poll. URL is the multipoll's short_id. Existing thread / poll pages render the new poll identically to before. Existing legacy polls (no `multipoll_id`) keep working.
+
+### Phase 2.3 — What/When/Where FAB on home + thread (still single sub-poll)
+
+Visual change to the FAB; behavior is equivalent to a category-prefilled tap of the old `+` button.
+
+- Replace the single `+` floating action button (`app/template.tsx` portal target, `#floating-fab-portal`) with three equally-spaced bubble buttons: **What** / **When** / **Where**.
+- Each bubble opens the existing create-poll modal with the category preselected:
+  - **What** → no preselection (user picks from dropdown excluding location/restaurant/time).
+  - **When** → category locked to `time`.
+  - **Where** → category dropdown limited to location-like categories (restaurant, location, custom).
+- Empty thread placeholder (`/thread/new`) gets the same three bubbles instead of the old single `+`.
+- No multi-sub-poll yet; the modal still creates exactly one sub-poll on submit.
+- Update CLAUDE.md "Navigation Layout" to describe the three-bubble FAB.
+
+Done criteria: home + thread + `/thread/new` show three bubbles. Each opens the create-poll modal pre-set to the right category. Submit produces a 1-sub-poll multipoll.
+
+### Phase 2.4 — Dual-modal multi-sub-poll create flow
+
+The big UI change: the top sheet stages a single sub-poll, the bottom sheet holds shared multipoll fields, and the user can add multiple sub-polls before submitting.
+
+- Bottom modal (shared multipoll fields): optional `context`, voting cutoff (`response_deadline`), optional shared prephase cutoff (`prephase_deadline_minutes`). Slides up only as far as needed for its content.
+- Top modal (per-sub-poll): category + options + optional per-sub-poll `context`. Has a checkmark in its top-right corner that commits the sub-poll to a draft slot.
+- Draft slots: compact rows displayed above the bottom form showing each staged sub-poll's category + summary. The What/When/Where bubbles reappear above the bottom form between commits so the user can add more sub-polls.
+- localStorage draft persistence (per-tab, per-device): preserve draft state across modal close + reopen, browser refresh, etc.
+- Submit calls `POST /api/multipolls` with all staged sub-polls. On success → `/p/<multipoll.short_id>/`.
+- Validation in the UI mirrors the server: ≥1 sub-poll, ≤1 time sub-poll, same-kind sub-polls require distinct contexts, no participation polls.
+- Auto-title preview in the bottom modal header (mirrors `generate_multipoll_title` logic).
+
+Done criteria: user can create 2+ sub-poll multipolls. Reopening the modal mid-create preserves the draft. Server returns 201 and the URL navigates to a multi-sub-poll multipoll page (rendered in 2.5).
+
+### Phase 2.5 — Render multi-sub-poll multipolls (read-only display, per-sub-poll voting)
+
+Make the `/p/<short_id>/` page handle multipolls with multiple sub-polls. Voting/results stay per-sub-poll until Phase 3.
+
+- `app/p/[shortId]/page.tsx`: when the multipoll has 2+ sub-polls, render a stacked list of `PollPageClient` instances — one per sub-poll, each labeled with the sub-poll's `context` (or category fallback). Above the stack: the multipoll title + multipoll-level context.
+- Single-sub-poll multipolls keep rendering exactly as today (no nested wrapper visual).
+- Each sub-poll uses its own existing per-poll endpoints for vote / results / VoterList / etc. — that's all unchanged.
+- **No multipoll-level Submit, no multipoll-level abstain** — each sub-poll keeps its own Submit. Phase 3 unifies these.
+- Thread card aggregation (one card per multipoll) is **not** in this sub-phase. Until Phase 3, a multi-sub-poll multipoll appears as N rows in the thread (one per sub-poll). Acceptable while the feature is new and rare; revisit if it becomes confusing in production.
+
+Done criteria: a multi-sub-poll multipoll page displays all sub-polls in order, each independently voteable. 1-sub-poll multipolls + legacy polls are visually identical to today.
+
+### Cross-cutting concerns for Phase 2
+
+- **Cache invalidation**: every multipoll mutation (create, vote propagation, close — Phase 3) needs to call `invalidateMultipoll()` and `invalidateAccessiblePolls()`. Phase 2 only has create, but lay the helper down in 2.1.
+- **`pollDiscovery.ts`**: walks `follow_up_to` chains on polls. Once 2.2 propagates `follow_up_to` to the polls row for sub-polls, discovery keeps working. If we later switch the source of truth to multipolls.follow_up_to, discovery needs an update.
+- **PWA cache**: snapshot helpers (`buildPollSnapshot` in `lib/pollCreator.ts`) used for fork/duplicate/follow-up are unchanged through Phase 2 — they still operate on a single `Poll`. Phase 2.4's draft persistence is a separate localStorage store.
+
+### Open questions for Phase 2 (revisit during sub-phase implementation)
+
+- How do Follow-Up / Fork / Duplicate compose with the new What/When/Where flow in 2.4? Likely: prefill a single What/When/Where draft slot matching the source's category, then the user can add more.
+- Does 2.4's bottom modal show the "shared prephase cutoff" only when at least one staged sub-poll has a prephase? (Probably yes — yes/no-only multipolls don't need a prephase cutoff.)
+- Should `apiGetMultipoll` also seed the per-sub-poll `pollCache` so subsequent `apiGetPollById` calls hit warm cache? (Probably yes — minor perf win, easy to do in the helper.)
 
 ---
 
