@@ -183,6 +183,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const [loading, setLoading] = useState(!initialThread);
   const [error, setError] = useState(false);
 
+  const patchThreadPolls = useRef(
+    (predicate: (p: Poll) => boolean, patcher: (p: Poll) => Partial<Poll>) => {
+      setThread((prev) => {
+        if (!prev) return prev;
+        if (!prev.polls.some(predicate)) return prev;
+        return {
+          ...prev,
+          polls: prev.polls.map((p) => (predicate(p) ? { ...p, ...patcher(p) } : p)),
+        };
+      });
+    },
+  ).current;
+
   // Set data attribute on body so the bottom bar "+" button can auto-follow-up
   useEffect(() => {
     if (thread) {
@@ -1191,37 +1204,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             try {
               const secret = getCreatorSecret(action.poll.id) || 'dev-override';
               const multipollId = action.poll.multipoll_id;
+              let updated: { response_deadline?: string | null | undefined };
+              let predicate: (p: Poll) => boolean;
               if (multipollId) {
-                const updated = await apiReopenMultipoll(multipollId, secret);
-                const updatedDeadline = updated.response_deadline ?? null;
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.multipoll_id === multipollId
-                            ? { ...p, is_closed: false, response_deadline: updatedDeadline ?? p.response_deadline }
-                            : p,
-                        ),
-                      }
-                    : prev,
-                );
+                updated = await apiReopenMultipoll(multipollId, secret);
+                predicate = (p) => p.multipoll_id === multipollId;
               } else {
-                const updated = await apiReopenPoll(action.poll.id, secret);
+                updated = await apiReopenPoll(action.poll.id, secret);
                 invalidatePoll(action.poll.id);
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.id === action.poll.id
-                            ? { ...p, is_closed: false, response_deadline: updated.response_deadline ?? p.response_deadline }
-                            : p,
-                        ),
-                      }
-                    : prev,
-                );
+                predicate = (p) => p.id === action.poll.id;
               }
+              patchThreadPolls(predicate, (p) => ({
+                is_closed: false,
+                response_deadline: updated.response_deadline ?? p.response_deadline,
+              }));
             } catch (err) {
               console.error('Failed to reopen poll:', err);
             }
@@ -1231,32 +1227,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               const multipollId = action.poll.multipoll_id;
               if (multipollId) {
                 await apiCloseMultipoll(multipollId, secret);
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.multipoll_id === multipollId
-                            ? { ...p, is_closed: true, close_reason: 'manual' }
-                            : p,
-                        ),
-                      }
-                    : prev,
+                patchThreadPolls(
+                  (p) => p.multipoll_id === multipollId,
+                  () => ({ is_closed: true, close_reason: 'manual' }),
                 );
               } else {
                 await apiClosePoll(action.poll.id, secret);
                 invalidatePoll(action.poll.id);
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.id === action.poll.id
-                            ? { ...p, is_closed: true, close_reason: 'manual' }
-                            : p,
-                        ),
-                      }
-                    : prev,
+                patchThreadPolls(
+                  (p) => p.id === action.poll.id,
+                  () => ({ is_closed: true, close_reason: 'manual' }),
                 );
               }
             } catch (err) {
@@ -1270,45 +1250,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 return;
               }
               const multipollId = action.poll.multipoll_id;
+              let updated: Pick<Poll, 'suggestion_deadline' | 'options'> | null;
               if (multipollId) {
                 const wrapper = await apiCutoffMultipollAvailability(multipollId, secret);
-                const updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.id === action.poll.id
-                            ? {
-                                ...p,
-                                suggestion_deadline: updated?.suggestion_deadline ?? p.suggestion_deadline,
-                                options: updated?.options ?? p.options,
-                              }
-                            : p,
-                        ),
-                      }
-                    : prev,
-                );
+                updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
               } else {
-                const updated = await apiCutoffAvailability(action.poll.id, secret);
+                updated = await apiCutoffAvailability(action.poll.id, secret);
                 invalidatePoll(action.poll.id);
-                setThread((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        polls: prev.polls.map((p) =>
-                          p.id === action.poll.id
-                            ? {
-                                ...p,
-                                suggestion_deadline: updated.suggestion_deadline ?? p.suggestion_deadline,
-                                options: updated.options ?? p.options,
-                              }
-                            : p,
-                        ),
-                      }
-                    : prev,
-                );
               }
+              patchThreadPolls(
+                (p) => p.id === action.poll.id,
+                (p) => ({
+                  suggestion_deadline: updated?.suggestion_deadline ?? p.suggestion_deadline,
+                  options: updated?.options ?? p.options,
+                }),
+              );
               // Refresh the compact preview — the availability phase just ended so
               // time-slot results are now meaningful.
               const refreshed = await apiGetPollResults(action.poll.id).catch(() => null);

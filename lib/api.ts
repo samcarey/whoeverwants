@@ -421,7 +421,7 @@ export async function apiGetMultipollById(multipollId: string): Promise<Multipol
 // and the accessible-polls cache so the next read reflects the mutation.
 async function multipollOperation(
   multipollId: string,
-  path: string,
+  path: 'close' | 'reopen' | 'cutoff-suggestions' | 'cutoff-availability',
   body: Record<string, unknown>,
 ): Promise<Multipoll> {
   const data = await multipollFetch(`/${encodeURIComponent(multipollId)}/${path}`, {

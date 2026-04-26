@@ -18,7 +18,6 @@ The guiding principle: **every phase leaves `main` shippable**. Existing polls k
 | 3.1 — multipoll-level close/reopen/cutoff endpoints | ✅ on this branch | New `POST /api/multipolls/{id}/{close,reopen,cutoff-suggestions,cutoff-availability}` endpoints close/reopen/cutoff the wrapper + every sub-poll atomically. Thread page long-press handlers route to the multipoll endpoint when `poll.multipoll_id` is set, optimistically updating every sibling. |
 | 3.2 — thread card aggregation | ⏳ not started | Group sibling sub-polls under a single visual card group (auto-titled by category list). |
 | 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
-| 5 — cleanup of legacy columns + dual-codepath branches | ⏳ not started | High blast radius; deferred. |
 
 ## What's next — concrete starting points
 
