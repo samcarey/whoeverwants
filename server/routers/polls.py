@@ -644,6 +644,34 @@ def get_poll(poll_id: str):
 # --- Voting ---
 
 
+def _enforce_suggestion_phase_timing(poll: dict, suggestions, ranked_choices) -> bool:
+    """Validate that the request's suggestions/ranked_choices respect the poll's
+    suggestion-phase cutoff. Raises HTTPException(400) on violation. Returns
+    `has_suggestion_phase` for downstream use by `validate_vote()`.
+    """
+    has_suggestion_phase = (
+        poll.get("suggestion_deadline") is not None
+        or poll.get("suggestion_deadline_minutes") is not None
+    )
+    if has_suggestion_phase and poll.get("suggestion_deadline"):
+        in_suggestion_phase = datetime.now(timezone.utc) < poll["suggestion_deadline"]
+
+        # Reject new suggestions after cutoff
+        if not in_suggestion_phase and suggestions:
+            raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
+
+        # For time polls: reject ranked_choices while still in availability phase
+        # (slots aren't finalized yet, so rankings can't be submitted)
+        if poll["poll_type"] == "time" and in_suggestion_phase and ranked_choices:
+            raise HTTPException(status_code=400, detail="Rankings not allowed until availability phase has closed")
+
+        # Reject rankings before cutoff if pre-ranking is disabled (ranked_choice polls)
+        if poll["poll_type"] != "time" and in_suggestion_phase and ranked_choices and not poll["allow_pre_ranking"]:
+            raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
+
+    return has_suggestion_phase
+
+
 @router.post("/{poll_id}/votes", response_model=VoteResponse, status_code=201)
 def submit_vote(poll_id: str, req: SubmitVoteRequest):
     """Submit a vote on a poll."""
@@ -687,27 +715,9 @@ def submit_vote(poll_id: str, req: SubmitVoteRequest):
             poll = dict(poll)
             poll["suggestion_deadline"] = new_deadline
 
-        has_suggestion_phase = poll.get("suggestion_deadline") is not None or poll.get("suggestion_deadline_minutes") is not None
-
-        # Enforce suggestion phase timing
-        if has_suggestion_phase and poll.get("suggestion_deadline"):
-            now_check = datetime.now(timezone.utc)
-            cutoff = poll["suggestion_deadline"]
-            in_suggestion_phase = now_check < cutoff
-
-            # Reject new suggestions after cutoff
-            if not in_suggestion_phase and req.suggestions:
-                raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
-
-            # For time polls: reject ranked_choices while still in availability phase
-            # (slots aren't finalized yet, so rankings can't be submitted)
-            if poll["poll_type"] == "time" and in_suggestion_phase and req.ranked_choices:
-                raise HTTPException(status_code=400, detail="Rankings not allowed until availability phase has closed")
-
-            # Reject rankings before cutoff if pre-ranking is disabled (ranked_choice polls)
-            if poll["poll_type"] != "time" and in_suggestion_phase and req.ranked_choices:
-                if not poll["allow_pre_ranking"]:
-                    raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
+        has_suggestion_phase = _enforce_suggestion_phase_timing(
+            poll, req.suggestions, req.ranked_choices
+        )
 
         # Validate vote structure
         try:
@@ -822,23 +832,11 @@ def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
         if poll and poll["is_closed"]:
             raise HTTPException(status_code=400, detail="Poll is closed")
 
-        has_suggestion_phase = poll.get("suggestion_deadline") is not None or poll.get("suggestion_deadline_minutes") is not None
+        has_suggestion_phase = _enforce_suggestion_phase_timing(
+            poll, req.suggestions, req.ranked_choices
+        )
         if has_suggestion_phase and poll.get("suggestion_deadline"):
-            now_check = datetime.now(timezone.utc)
-            cutoff = poll["suggestion_deadline"]
-            in_suggestion_phase = now_check < cutoff
-
-            # Reject new suggestions after cutoff
-            if not in_suggestion_phase and req.suggestions:
-                raise HTTPException(status_code=400, detail="Suggestions cutoff has passed")
-
-            # For time polls: reject ranked_choices while still in availability phase
-            if poll["poll_type"] == "time" and in_suggestion_phase and req.ranked_choices:
-                raise HTTPException(status_code=400, detail="Rankings not allowed until availability phase has closed")
-
-            # Reject rankings before cutoff if pre-ranking is disabled (ranked_choice polls)
-            if poll["poll_type"] != "time" and in_suggestion_phase and req.ranked_choices and not poll["allow_pre_ranking"]:
-                raise HTTPException(status_code=400, detail="Rankings not allowed until suggestions cutoff")
+            in_suggestion_phase = datetime.now(timezone.utc) < poll["suggestion_deadline"]
 
             # Prevent unsuggesting options that others have ranked
             if in_suggestion_phase and req.suggestions is not None:
