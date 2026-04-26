@@ -320,6 +320,11 @@ class CreateMultipollRequest(BaseModel):
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
+    # follow_up_to / fork_of are POLL ids (matching the legacy single-poll
+    # create API). The server resolves them to the parent's multipoll_id for
+    # multipolls.follow_up_to / multipolls.fork_of, and writes the original
+    # poll_id onto each sub-poll's polls.follow_up_to / polls.fork_of so the
+    # existing thread-walking aggregation keeps working until Phase 5.
     follow_up_to: str | None = None
     fork_of: str | None = None
     thread_title: str | None = None
