@@ -649,11 +649,36 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     if (!pendingVoteChange) return;
     const { pollId, newChoice } = pendingVoteChange;
     const current = userVoteMap.get(pollId);
+    const subPoll = thread?.polls.find((p) => p.id === pollId);
+    const multipollId = subPoll?.multipoll_id ?? null;
     setVoteChangeSubmitting(true);
     try {
       let resultVoteId: string;
       let resultVoterName: string | null;
-      if (current) {
+      if (multipollId) {
+        // Route every yes_no tap-to-change through the unified multipoll
+        // endpoint as a single-item batch. Matches the architectural
+        // "vote submission is always atomic across the multipoll" rule
+        // (see CLAUDE.md → Multipoll System), even when the multipoll
+        // has only one sub-poll.
+        const voter_name = current
+          ? current.voterName
+          : (getUserName()?.trim() || null);
+        const item: MultipollVoteItem = {
+          sub_poll_id: pollId,
+          vote_id: current?.voteId ?? null,
+          vote_type: 'yes_no',
+          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+          is_abstain: newChoice === 'abstain',
+        };
+        const returned = await apiSubmitMultipollVotes(multipollId, { voter_name, items: [item] });
+        const v = returned.find((r) => r.poll_id === pollId);
+        if (!v) throw new Error('Vote response missing for sub-poll');
+        resultVoteId = v.id;
+        resultVoterName = v.voter_name ?? null;
+        if (!current) setStoredVoteId(pollId, resultVoteId);
+        if (voter_name) saveUserName(voter_name);
+      } else if (current) {
         const updated = await apiEditVote(pollId, current.voteId, {
           yes_no_choice: newChoice === 'abstain' ? null : newChoice,
           is_abstain: newChoice === 'abstain',
