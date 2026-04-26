@@ -2031,8 +2031,6 @@ export default function SubPollBallot({ poll, createdDate, pollId, externalYesNo
             </div>
           )}
 
-
-
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
           {/* For suggestion-phase polls, hide until user has submitted rankings */}
           {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}

@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Test the actual vote display logic from PollPageClient
-describe('PollPageClient Vote Display Logic', () => {
+// Test the actual vote display logic from SubPollBallot
+describe('SubPollBallot Vote Display Logic', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -12,7 +12,7 @@ describe('PollPageClient Vote Display Logic', () => {
 
   describe('Vote Data Processing', () => {
     it('should process vote data correctly when fetched from database', () => {
-      // This simulates the exact logic in PollPageClient.tsx
+      // This simulates the exact logic in SubPollBallot.tsx
       const poll = { 
         id: 'test-poll',
         poll_type: 'yes_no'
