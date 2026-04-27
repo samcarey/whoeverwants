@@ -1135,7 +1135,7 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
           el.style.transform = `translateY(${delta}px)`;
 
           // Force reflow so the browser registers the old position
-          el.offsetHeight; // eslint-disable-line @typescript-eslint/no-unused-expressions
+          void el.offsetHeight;
 
           // PLAY: Animate to new position
           el.style.transition = 'transform 0.3s ease';
