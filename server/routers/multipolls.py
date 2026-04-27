@@ -260,6 +260,17 @@ def _row_to_multipoll(
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
 ) -> MultipollResponse:
+    # Phase 3.5: every sub-poll inherits the wrapper's follow_up_to as
+    # `multipoll_follow_up_to`. Sub-poll rows fetched from the polls table
+    # don't carry that field directly, so attach it here before mapping.
+    multipoll_follow_up_to = (
+        str(row["follow_up_to"]) if row.get("follow_up_to") else None
+    )
+    enriched = []
+    for sp in sub_poll_rows:
+        enriched_sp = dict(sp)
+        enriched_sp["multipoll_follow_up_to"] = multipoll_follow_up_to
+        enriched.append(enriched_sp)
     return MultipollResponse(
         id=str(row["id"]),
         short_id=row.get("short_id"),
@@ -270,13 +281,13 @@ def _row_to_multipoll(
         prephase_deadline_minutes=row.get("prephase_deadline_minutes"),
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
-        follow_up_to=str(row["follow_up_to"]) if row.get("follow_up_to") else None,
+        follow_up_to=multipoll_follow_up_to,
         thread_title=row.get("thread_title"),
         context=row.get("context"),
         title=_compute_display_title(row, sub_poll_rows),
         created_at=_iso_or_none(row["created_at"]) or "",
         updated_at=_iso_or_none(row["updated_at"]) or "",
-        sub_polls=[_row_to_poll(sp) for sp in sub_poll_rows],
+        sub_polls=[_row_to_poll(sp) for sp in enriched],
         voter_names=voter_names or [],
         anonymous_count=anonymous_count,
     )
