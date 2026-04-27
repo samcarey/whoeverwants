@@ -562,26 +562,29 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({})}
-            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
+            className="h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,0.3)]"
             aria-label="Create new poll"
           >
-            What
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">what</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateFromBubble({ mode: 'time' })}
-            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
+            className="h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,0.3)]"
             aria-label="Create new time poll"
           >
-            When
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">when</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateFromBubble({ category: 'restaurant' })}
-            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
+            className="h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,0.3)]"
             aria-label="Create new place poll"
           >
-            Where
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">where</span>
           </button>
         </div>,
         document.getElementById('floating-fab-portal')!
