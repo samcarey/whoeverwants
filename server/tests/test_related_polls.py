@@ -8,7 +8,7 @@ default so the chain semantics mirror production after the Phase 4 backfill.
 
 import pytest
 
-from algorithms.related_questions import QuestionRelation, get_all_related_question_ids
+from algorithms.related_polls import QuestionRelation, get_all_related_question_ids
 
 
 def _p(
