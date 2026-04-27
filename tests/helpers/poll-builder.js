@@ -47,11 +47,12 @@ class PollBuilder {
       await apiSubmitTestVote(poll.id, {
         vote_type: 'ranked_choice',
         ranked_choices: voteArray,
+        _multipoll_id: poll._multipoll_id,
       })
     }
 
     // Step 3: Close poll to trigger IRV calculation, then get results
-    await apiClosePoll(poll.id, this.creatorSecret)
+    await apiClosePoll(poll.id, this.creatorSecret, poll._multipoll_id)
     const results = await apiGetResults(poll.id)
 
     // Step 4: Assert expected results
