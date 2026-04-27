@@ -14,6 +14,19 @@ export function loadVotedPolls(): { votedPollIds: Set<string>; abstainedPollIds:
   return { votedPollIds: voted, abstainedPollIds: abstained };
 }
 
+/** Returns true if this browser's localStorage has any record of voting
+ *  (yes/no/ranked) or abstaining on the given poll. */
+export function hasVotedOnPoll(pollId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
+    return votedPolls[pollId] === true || votedPolls[pollId] === 'abstained';
+  } catch (error) {
+    console.error('Error checking vote status:', error);
+    return false;
+  }
+}
+
 /** Set the votedPolls flag for a single poll (true = voted, 'abstained',
  *  or null to remove). Safe to call server-side — no-ops without window. */
 export function setVotedPollFlag(pollId: string, state: true | 'abstained' | null): void {

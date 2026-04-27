@@ -28,6 +28,8 @@ import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadSubPollDraft, saveSubPollDraft, clearSubPollDraft, SubPollDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
+import { hasVotedOnPoll, getStoredVoteId, setStoredVoteId, setVotedPollFlag } from "@/lib/votedPollsStorage";
+import { buildVoteData, buildMultipollVoteItem, type BallotInputs } from "./SubPollBallot/voteDataBuilders";
 
 interface SubPollBallotProps {
   poll: Poll;
@@ -265,130 +267,24 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     return responseCount >= minResp;
   }, [isPollClosed, poll.show_preliminary_results, poll.min_responses, responseCount]);
 
-  // Check if user has voted on this poll (stored in localStorage)
-  const hasVotedOnPoll = useCallback((pollId: string): boolean => {
-    if (typeof window === 'undefined') return false;
-    try {
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      return votedPolls[pollId] === true || votedPolls[pollId] === 'abstained';
-    } catch (error) {
-      console.error('Error checking vote status:', error);
-      return false;
-    }
-  }, []);
-
-  // Mark poll as voted (save to localStorage)
+  // Mark poll as voted: writes both the votedPolls flag and pollVoteIds in
+  // one call. Listeners that re-read localStorage on POLL_VOTES_CHANGED_EVENT
+  // (e.g. the thread page's awaiting-response border) need both writes
+  // visible before the dispatch.
   const markPollAsVoted = useCallback((pollId: string, voteId?: string, abstained?: boolean) => {
-    if (typeof window === 'undefined') return;
-    try {
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      votedPolls[pollId] = abstained ? 'abstained' : true;
-      localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
-      
-      // Store the vote ID if provided
-      if (voteId) {
-        const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-        voteIds[pollId] = voteId;
-        localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
-      }
-    } catch (error) {
-      console.error('Error marking poll as voted:', error);
-    }
+    setVotedPollFlag(pollId, abstained ? 'abstained' : true);
+    if (voteId) setStoredVoteId(pollId, voteId);
   }, []);
 
-
-  // Get stored vote ID for a poll
-  const getStoredVoteId = useCallback((pollId: string): string | null => {
-    if (typeof window === 'undefined') return null;
-    try {
-      // Check both localStorage formats
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-      
-      // Return from either format
-      const voteIdFromVotedPolls = votedPolls[pollId]?.voteId;
-      const voteIdFromPollVoteIds = pollVoteIds[pollId];
-      
-      const storedVoteId = voteIdFromVotedPolls || voteIdFromPollVoteIds || null;
-      
-      if (storedVoteId) {
-      } else {
-      }
-      
-      return storedVoteId;
-    } catch (error) {
-      console.error('Error getting stored vote ID:', error);
-      return null;
-    }
-  }, []);
-
-  // Fetch and aggregate all user vote data from localStorage vote IDs
-  const fetchAggregatedVoteData = useCallback(async (pollId: string) => {
-    if (typeof window === 'undefined') return null;
-
-    try {
-      // Get all stored vote IDs from different localStorage formats
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-      
-      const voteIds: string[] = [];
-      
-      // Get vote ID from votedPolls format
-      if (votedPolls[pollId]?.voteId) {
-        voteIds.push(votedPolls[pollId].voteId);
-      }
-      
-      // Get vote ID from pollVoteIds format
-      if (pollVoteIds[pollId]) {
-        voteIds.push(pollVoteIds[pollId]);
-      }
-
-      if (voteIds.length === 0) {
-        // No localStorage vote ID found - this browser hasn't voted
-        // CRITICAL: Don't use fallback that grabs other browsers' votes
-        return null;
-      }
-
-
-      // Fetch all votes for this poll and filter by localStorage IDs
-      const allPollVotes = await apiGetVotes(pollId);
-      const userVotes = allPollVotes.filter(v => voteIds.includes(v.id));
-
-      if (userVotes.length === 0) {
-        return null;
-      }
-
-      // ONLY use votes from this browser's localStorage - no cross-browser contamination
-      const allVotes = [...userVotes];
-
-      // Return the most recent vote
-      const sortedVotes = allVotes.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      return sortedVotes[0];
-    } catch (error) {
-      console.error('Error fetching aggregated vote data:', error);
-      return null;
-    }
-  }, [poll.poll_type]);
-
-  // Fetch vote data from database by vote ID (legacy function)
   const fetchVoteData = useCallback(async (voteId: string) => {
-
     try {
       const allVotes = await apiGetVotes(poll.id);
       const vote = allVotes.find(v => v.id === voteId);
       return vote || null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }, [poll.id]);
-
-  // Fetch and aggregate all user vote data for this poll (for newly created polls)
-  const fetchLatestUserVote = useCallback(async (pollId: string) => {
-    // CRITICAL: Return null to prevent cross-browser vote contamination
-    // This function was aggregating votes from ALL browsers, causing vote isolation issues
-    // Force use of localStorage-based vote tracking only
-    return null;
-  }, []);
 
   const fetchPollResults = useCallback(async () => {
     // Prevent rapid-fire calls: skip if already in-flight or called within last 2s.
@@ -560,19 +456,18 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       const voteId = getStoredVoteId(poll.id);
       setUserVoteId(voteId);
       
-      // Fetch vote data from database if we have a vote ID or for specific poll types
-      if (voteId || hasSuggestionPhase) {
+      // Fetch vote data from database if we have a vote ID. Without one we
+      // can't tell which row in `votes` belongs to this browser, so we skip
+      // — the suggestion-phase branch used to fall back to fetchLatestUserVote
+      // but that was disabled to avoid cross-browser vote contamination.
+      if (voteId) {
         // Skip the loading state if we already have cached votes — the fetch
         // will return instantly but the loading→loaded re-render cycle causes
         // a flicker during view transitions.
         const hasCachedData = !!getCachedVotes(poll.id);
         if (!hasCachedData) setIsLoadingVoteData(true);
 
-        const fetchPromise = voteId
-          ? fetchVoteData(voteId)
-          : fetchLatestUserVote(poll.id);
-          
-        fetchPromise.then(voteData => {
+        fetchVoteData(voteId).then(voteData => {
           if (voteData) {
             setUserVoteData(voteData);
 
@@ -581,13 +476,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
             if (voteData && 'id' in voteData && voteData.id) {
               setUserVoteId(voteData.id);
               // Backfill pollVoteIds localStorage so the poll list can show personalized badges
-              try {
-                const voteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-                if (!voteIds[poll.id]) {
-                  voteIds[poll.id] = voteData.id;
-                  localStorage.setItem('pollVoteIds', JSON.stringify(voteIds));
-                }
-              } catch (e) { /* ignore */ }
+              if (!getStoredVoteId(poll.id)) setStoredVoteId(poll.id, voteData.id);
             }
 
             // For polls with suggestion phase, fetch results to show vote counts even when poll is open
@@ -636,7 +525,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
+  }, [poll.id, poll.poll_type, hasVoted, fetchVoteData, isNewPoll]);
 
   // Fetch results when poll closes or for time polls in preferences phase
   useEffect(() => {
@@ -859,6 +748,33 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
   };
 
+  // Snapshot the per-sub-poll state into the shape `buildVoteData` expects.
+  // Both `submitVote` and `prepareBatchVoteItem` call this so they read
+  // exactly the same inputs.
+  const getBallotInputs = (): BallotInputs => ({
+    pollId: poll.id,
+    pollType: poll.poll_type,
+    isAbstaining,
+    yesNoChoice,
+    rankedChoices,
+    rankedChoiceTiers,
+    suggestionChoices,
+    suggestionMetadata,
+    hasSuggestionPhase,
+    canSubmitSuggestions,
+    inAvailabilityPhase,
+    voterDayTimeWindows,
+    durationMinValue,
+    durationMaxValue,
+    durationMinEnabled,
+    durationMaxEnabled,
+    likedSlots,
+    dislikedSlots,
+    voterName,
+    pollOptions,
+    userVoteData,
+  });
+
   const handleVoteClick = async () => {
     await logToServer('suggestion-vote', 'info', 'handleVoteClick started', {
       isSubmitting,
@@ -963,107 +879,13 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     });
 
     try {
-      if (poll.poll_type === 'yes_no') {
-        if (!yesNoChoice && !isAbstaining) {
-          setVoteError("Please select Yes, No, or Abstain");
-          setIsSubmitting(false);
-          return;
-        }
-        voteData = {
-          poll_id: poll.id,
-          vote_type: 'yes_no' as const,
-          yes_no_choice: isAbstaining ? null : yesNoChoice,
-          is_abstain: isAbstaining,
-          voter_name: voterName.trim() || null
-        };
-      } else if (poll.poll_type === 'ranked_choice') {
-        // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
-        const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
-        const filteredSuggestionsForValidation = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
-        // Filter and validate tiers in lockstep with ranked_choices. Drop
-        // empty strings from each tier and drop empty tiers.
-        const filteredTiers: string[][] = rankedChoiceTiers
-          .map(tier => tier.filter(c => c && c.trim().length > 0))
-          .filter(tier => tier.length > 0);
-        // Only send tiers if they actually encode ties (at least one tier has
-        // size > 1). Otherwise the flat ranked_choices list is sufficient and
-        // we avoid storing redundant singleton tiers.
-        const hasTies = filteredTiers.some(tier => tier.length > 1);
-
-        if (filteredRankedChoices.length === 0 && !isAbstaining && (!canSubmitSuggestions || filteredSuggestionsForValidation.length === 0)) {
-          if (!canSubmitSuggestions) {
-            setVoteError("Please rank at least one option or select Abstain");
-            setIsSubmitting(false);
-            return;
-          }
-          // During suggestion phase, empty submission is treated as abstain (handled by finalAbstain below)
-        }
-        
-        // Additional validation: ensure choices are valid poll options
-        const invalidChoices = filteredRankedChoices.filter(choice => !pollOptions.includes(choice));
-        
-        if (invalidChoices.length > 0) {
-          console.error('Invalid choices detected:', invalidChoices);
-          setVoteError("Invalid options detected. Please refresh and try again.");
-          setIsSubmitting(false);
-          return;
-        }
-        
-        // Include suggestions if poll has a suggestion phase
-        const filteredSuggestions = hasSuggestionPhase
-          ? suggestionChoices.filter(choice => choice && choice.trim().length > 0)
-          : null;
-        const filteredMetadata = hasSuggestionPhase && filteredSuggestions && filteredSuggestions.length > 0 && Object.keys(suggestionMetadata).length > 0
-          ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
-          : null;
-
-        // During suggestion phase with no rankings and no suggestions: abstain
-        const hasRankings = filteredRankedChoices.length > 0;
-        const hasSuggestions = filteredSuggestions && filteredSuggestions.length > 0;
-        const previousSuggestions = userVoteData?.suggestions;
-        const hasPreviousSuggestions = previousSuggestions && previousSuggestions.length > 0;
-        const hasAnyContent = hasRankings || hasSuggestions || hasPreviousSuggestions;
-        const finalAbstain = !hasAnyContent;
-        // Ranking-specific abstain: user explicitly abstained from ranking but has suggestions
-        const rankingAbstain = isAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions);
-
-        voteData = {
-          poll_id: poll.id,
-          vote_type: 'ranked_choice' as const,
-          ranked_choices: isAbstaining || !hasRankings ? null : filteredRankedChoices,
-          ranked_choice_tiers:
-            isAbstaining || !hasRankings || !hasTies ? null : filteredTiers,
-          suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
-          is_abstain: finalAbstain,
-          is_ranking_abstain: rankingAbstain,
-          voter_name: voterName.trim() || null,
-          options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
-        };
-      } else if (poll.poll_type === 'time') {
-        if (inAvailabilityPhase) {
-          voteData = {
-            vote_type: 'time' as const,
-            voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
-            voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
-              minValue: durationMinValue,
-              maxValue: durationMaxValue,
-              minEnabled: durationMinEnabled,
-              maxEnabled: durationMaxEnabled
-            } : null,
-            is_abstain: isAbstaining,
-            voter_name: voterName.trim() || null,
-          };
-        } else {
-          // Preferences phase: submit liked/disliked reactions
-          voteData = {
-            vote_type: 'time' as const,
-            liked_slots: isAbstaining ? null : (likedSlots ?? []),
-            disliked_slots: isAbstaining ? null : (dislikedSlots ?? []),
-            is_abstain: isAbstaining,
-            voter_name: voterName.trim() || null,
-          };
-        }
+      const buildResult = buildVoteData(getBallotInputs());
+      if (!buildResult.ok) {
+        setVoteError(buildResult.error);
+        setIsSubmitting(false);
+        return;
       }
+      voteData = buildResult.voteData;
 
       let voteId: string | undefined;
       let error: any; // eslint-disable-line
@@ -1077,27 +899,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         // rule that vote submission is always atomic across the multipoll
         // (see CLAUDE.md → Multipoll System). Single-item batch from this
         // ballot — the multipoll has only one sub-poll being touched here.
-        const item: MultipollVoteItem = {
-          sub_poll_id: poll.id,
-          vote_id: isEditing ? userVoteId : null,
-          vote_type: voteData.vote_type,
-          yes_no_choice: voteData.yes_no_choice ?? null,
-          ranked_choices: voteData.ranked_choices ?? null,
-          ranked_choice_tiers: voteData.ranked_choice_tiers ?? null,
-          is_abstain: voteData.is_abstain ?? false,
-          is_ranking_abstain: voteData.is_ranking_abstain ?? false,
-          options_metadata: voteData.options_metadata ?? null,
-          voter_day_time_windows: voteData.voter_day_time_windows ?? null,
-          voter_duration: voteData.voter_duration ?? null,
-          liked_slots: voteData.liked_slots ?? null,
-          disliked_slots: voteData.disliked_slots ?? null,
-        };
-        // Past the suggestion-phase deadline, omit suggestions on edits so the
-        // server's COALESCE leaves the existing column alone. On inserts (and
-        // during the suggestion phase), pass them through.
-        if (!(isEditing && poll.poll_type === 'ranked_choice' && !canSubmitSuggestions)) {
-          item.suggestions = voteData.suggestions ?? null;
-        }
+        const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
+          pollType: poll.poll_type,
+          canSubmitSuggestions,
+          isEditing,
+        });
         try {
           const returned = await apiSubmitMultipollVotes(multipollId, {
             voter_name: trimmedVoterName,
@@ -1244,128 +1050,30 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
 
-  // Validation + voteData/MultipollVoteItem construction here mirror the
-  // logic in handleVoteClick + submitVote. Kept inline (not extracted) until
-  // the legacy submitVote per-poll fallback retires in Phase 5 — at which
-  // point this becomes the only copy.
+  // Validation + voteData/MultipollVoteItem construction is shared with
+  // submitVote via voteDataBuilders. The two callers diverge only on the
+  // POST-build side effects: submitVote calls the API itself; this returns
+  // a deferred commit/fail pair the wrapper invokes after batching.
   const prepareBatchVoteItem = (): PrepareBatchVoteItemResult => {
     const isAnyEditing = isEditingVote || isEditingRanking;
     if (isSubmitting || (hasVoted && !isAnyEditing) || isPollClosed) {
       return { skip: true };
     }
 
-    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
-      const error = "Please select Yes, No, or Abstain";
-      setVoteError(error);
-      return { ok: false, error };
+    const buildResult = buildVoteData(getBallotInputs());
+    if (!buildResult.ok) {
+      setVoteError(buildResult.error);
+      return { ok: false, error: buildResult.error };
     }
-
-    let effectiveIsAbstaining = isAbstaining;
-    if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
-      const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
-      const filteredSuggestions = suggestionChoices.filter(c => c && c.trim().length > 0);
-      if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
-        if (canSubmitSuggestions) {
-          effectiveIsAbstaining = true;
-        } else {
-          const error = "Please rank at least one option or select Abstain";
-          setVoteError(error);
-          return { ok: false, error };
-        }
-      }
-    }
-
+    const { voteData, effectiveIsAbstaining } = buildResult;
     setVoteError(null);
 
-    let voteData: any = {};
-    if (poll.poll_type === 'yes_no') {
-      voteData = {
-        poll_id: poll.id,
-        vote_type: 'yes_no' as const,
-        yes_no_choice: effectiveIsAbstaining ? null : yesNoChoice,
-        is_abstain: effectiveIsAbstaining,
-        voter_name: voterName.trim() || null,
-      };
-    } else if (poll.poll_type === 'ranked_choice') {
-      const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
-      const filteredTiers: string[][] = rankedChoiceTiers
-        .map(tier => tier.filter(c => c && c.trim().length > 0))
-        .filter(tier => tier.length > 0);
-      const hasTies = filteredTiers.some(tier => tier.length > 1);
-      const invalidChoices = filteredRankedChoices.filter(c => !pollOptions.includes(c));
-      if (invalidChoices.length > 0) {
-        const error = "Invalid options detected. Please refresh and try again.";
-        setVoteError(error);
-        return { ok: false, error };
-      }
-      const filteredSuggestions = hasSuggestionPhase
-        ? suggestionChoices.filter(c => c && c.trim().length > 0)
-        : null;
-      const filteredMetadata = hasSuggestionPhase && filteredSuggestions && filteredSuggestions.length > 0 && Object.keys(suggestionMetadata).length > 0
-        ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
-        : null;
-      const hasRankings = filteredRankedChoices.length > 0;
-      const hasSuggestions = !!(filteredSuggestions && filteredSuggestions.length > 0);
-      const previousSuggestions = userVoteData?.suggestions;
-      const hasPreviousSuggestions = !!(previousSuggestions && previousSuggestions.length > 0);
-      const hasAnyContent = hasRankings || hasSuggestions || hasPreviousSuggestions;
-      const finalAbstain = !hasAnyContent;
-      const rankingAbstain = effectiveIsAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions);
-      voteData = {
-        poll_id: poll.id,
-        vote_type: 'ranked_choice' as const,
-        ranked_choices: effectiveIsAbstaining || !hasRankings ? null : filteredRankedChoices,
-        ranked_choice_tiers: effectiveIsAbstaining || !hasRankings || !hasTies ? null : filteredTiers,
-        suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
-        is_abstain: finalAbstain,
-        is_ranking_abstain: rankingAbstain,
-        voter_name: voterName.trim() || null,
-        options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
-      };
-    } else if (poll.poll_type === 'time') {
-      if (inAvailabilityPhase) {
-        voteData = {
-          vote_type: 'time' as const,
-          voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
-          voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
-            minValue: durationMinValue,
-            maxValue: durationMaxValue,
-            minEnabled: durationMinEnabled,
-            maxEnabled: durationMaxEnabled,
-          } : null,
-          is_abstain: effectiveIsAbstaining,
-          voter_name: voterName.trim() || null,
-        };
-      } else {
-        voteData = {
-          vote_type: 'time' as const,
-          liked_slots: effectiveIsAbstaining ? null : (likedSlots ?? []),
-          disliked_slots: effectiveIsAbstaining ? null : (dislikedSlots ?? []),
-          is_abstain: effectiveIsAbstaining,
-          voter_name: voterName.trim() || null,
-        };
-      }
-    }
-
     const isEditing = isAnyEditing && !!userVoteId;
-    const item: MultipollVoteItem = {
-      sub_poll_id: poll.id,
-      vote_id: isEditing ? userVoteId : null,
-      vote_type: voteData.vote_type,
-      yes_no_choice: voteData.yes_no_choice ?? null,
-      ranked_choices: voteData.ranked_choices ?? null,
-      ranked_choice_tiers: voteData.ranked_choice_tiers ?? null,
-      is_abstain: voteData.is_abstain ?? false,
-      is_ranking_abstain: voteData.is_ranking_abstain ?? false,
-      options_metadata: voteData.options_metadata ?? null,
-      voter_day_time_windows: voteData.voter_day_time_windows ?? null,
-      voter_duration: voteData.voter_duration ?? null,
-      liked_slots: voteData.liked_slots ?? null,
-      disliked_slots: voteData.disliked_slots ?? null,
-    };
-    if (!(isEditing && poll.poll_type === 'ranked_choice' && !canSubmitSuggestions)) {
-      item.suggestions = voteData.suggestions ?? null;
-    }
+    const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
+      pollType: poll.poll_type,
+      canSubmitSuggestions,
+      isEditing,
+    });
 
     // Snapshot per-sub-poll state at build time so the post-submit
     // side effects in commit() don't read whatever the user edited

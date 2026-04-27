@@ -21,6 +21,13 @@ import {
   TierCardRows,
   LinkCircle,
 } from './rankable/visuals';
+import {
+  loadSavedRanking,
+  saveRanking,
+  shuffleArray,
+  createRankedOptions,
+  type RankableOption,
+} from './rankable/storage';
 
 // Re-export pure helpers so existing test imports
 // (`@/components/RankableOptions`) keep working.
@@ -32,12 +39,6 @@ export {
   getTierRange,
   tierRanks,
 };
-
-interface RankableOption {
-  id: string;
-  text: string;
-  top: number;
-}
 
 interface RankableOptionsProps {
   options: string[];
@@ -63,63 +64,17 @@ interface RankableOptionsProps {
 
 export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, initialTiers, optionsMetadata, renderOption, preserveOrder = false, disableGrouping = false, newOptions }: RankableOptionsProps) {
 
-  // Load saved state from localStorage
-  const loadSavedState = useCallback(() => {
-    if (!storageKey || typeof window === 'undefined') return null;
-
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Validate that saved options match current options
-        const allSavedTexts = [...parsed.mainList, ...parsed.noPreferenceList].map((opt: RankableOption) => opt.text).sort();
-        const currentTexts = [...options].sort();
-
-        if (allSavedTexts.length === currentTexts.length &&
-            allSavedTexts.every((text: string, index: number) => text === currentTexts[index])) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load saved ranking state:', e);
-    }
-    return null;
-  }, [storageKey, options]);
-
-  // Save state to localStorage
-  const saveState = useCallback((mainList: RankableOption[], noPreferenceList: RankableOption[], linkedPairs: Set<string>) => {
-    if (!storageKey || typeof window === 'undefined') return;
-
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({
-        mainList,
-        noPreferenceList,
-        linkedPairs: Array.from(linkedPairs),
-        timestamp: Date.now()
-      }));
-    } catch (e) {
-      console.error('Failed to save ranking state:', e);
-    }
-  }, [storageKey]);
-
-  // Shuffle array using Fisher-Yates algorithm for fair randomization
-  const shuffleArray = useCallback(<T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }, []);
-
-  // Create ranked options from props
-  const createRankedOptions = useCallback((optionTexts: string[]) => {
-    return optionTexts.map((text, index) => ({
-      id: `option-${index}`,
-      text,
-      top: 0 // Will be set by updateItemPositions
-    }));
-  }, []);
+  // Bind props/options to the pure helpers in rankable/storage.ts so
+  // downstream useCallback deps see a stable identity for these.
+  const loadSavedState = useCallback(
+    () => loadSavedRanking(storageKey, options),
+    [storageKey, options],
+  );
+  const saveState = useCallback(
+    (mainList: RankableOption[], noPreferenceList: RankableOption[], linkedPairs: Set<string>) =>
+      saveRanking(storageKey, mainList, noPreferenceList, linkedPairs),
+    [storageKey],
+  );
 
   // State management - separate lists for main ranking and no preference
   const [mainList, setMainList] = useState<RankableOption[]>([]);
