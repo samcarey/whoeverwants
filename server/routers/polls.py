@@ -35,6 +35,43 @@ from algorithms.yes_no import count_yes_no_votes
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
+# Phase 3.5: SELECTs that feed `_row_to_poll` for FE consumption use this
+# pattern so the row carries the wrapper's `follow_up_to` (the source of truth
+# for thread chains). The helper is split into prefix + suffix because most
+# callers also need a WHERE clause; placeholders use psycopg's %(name)s syntax.
+_SELECT_POLL_WITH_MULTIPOLL_PREFIX = """
+    SELECT p.*, mp.follow_up_to AS multipoll_follow_up_to
+      FROM polls p
+      LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
+"""
+
+
+def _attach_multipoll_chain_fields(conn, row) -> dict | None:
+    """Annotate a polls row (e.g. from RETURNING *) with multipoll_follow_up_to.
+
+    SELECTs feeding `_row_to_poll` should use `_SELECT_POLL_WITH_MULTIPOLL_PREFIX`
+    instead so they get the field via JOIN. This helper is for UPDATE/INSERT
+    paths where a separate lookup is the simplest fix.
+    """
+    if row is None:
+        return None
+    row = dict(row)
+    multipoll_id = row.get("multipoll_id")
+    if not multipoll_id:
+        row["multipoll_follow_up_to"] = None
+        return row
+    mp_row = conn.execute(
+        "SELECT follow_up_to FROM multipolls WHERE id = %(id)s",
+        {"id": str(multipoll_id)},
+    ).fetchone()
+    row["multipoll_follow_up_to"] = (
+        str(mp_row["follow_up_to"])
+        if mp_row and mp_row.get("follow_up_to")
+        else None
+    )
+    return row
+
+
 def _check_auto_close(conn, poll_id: str) -> None:
     """Auto-close a poll based on auto_close_after (respondent count)."""
     poll = conn.execute(
@@ -155,7 +192,6 @@ def _row_to_poll(row: dict) -> PollResponse:
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
         follow_up_to=str(row["follow_up_to"]) if row.get("follow_up_to") else None,
-        fork_of=str(row["fork_of"]) if row.get("fork_of") else None,
         short_id=row.get("short_id"),
         suggestion_deadline=row["suggestion_deadline"].isoformat() if row.get("suggestion_deadline") else None,
         suggestion_deadline_minutes=row.get("suggestion_deadline_minutes"),
@@ -176,6 +212,16 @@ def _row_to_poll(row: dict) -> PollResponse:
         thread_title=row.get("thread_title"),
         multipoll_id=str(row["multipoll_id"]) if row.get("multipoll_id") else None,
         sub_poll_index=row.get("sub_poll_index"),
+        # Phase 3.5: source of truth for thread chains. Populated by the
+        # `_select_polls_with_multipoll_followup` SQL helper via a LEFT JOIN
+        # onto multipolls; absent for callers that SELECT polls directly,
+        # which is fine — `_row_to_poll` returns None and the FE chain logic
+        # defensively treats the poll as a standalone thread root.
+        multipoll_follow_up_to=(
+            str(row["multipoll_follow_up_to"])
+            if row.get("multipoll_follow_up_to")
+            else None
+        ),
     )
 
 
@@ -240,14 +286,12 @@ def create_poll(req: CreatePollRequest):
     with get_db() as conn:
         # thread_title: explicit request wins; otherwise inherit from the
         # follow_up_to parent via a COALESCE subquery in the INSERT (below)
-        # so we avoid a round-trip. Forks don't inherit — fork_of doesn't
-        # drive the subquery.
+        # so we avoid a round-trip.
 
         row = conn.execute(
             """
             INSERT INTO polls (title, poll_type, options, response_deadline,
                                creator_secret, creator_name, follow_up_to,
-                               fork_of,
                                suggestion_deadline, suggestion_deadline_minutes,
                                allow_pre_ranking,
                                auto_close_after, details,
@@ -262,7 +306,6 @@ def create_poll(req: CreatePollRequest):
                                created_at, updated_at)
             VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
                     %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
-                    %(fork_of)s,
                     %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
                     %(allow_pre_ranking)s,
                     %(auto_close_after)s, %(details)s,
@@ -285,7 +328,6 @@ def create_poll(req: CreatePollRequest):
                 "creator_secret": req.creator_secret,
                 "creator_name": req.creator_name,
                 "follow_up_to": req.follow_up_to,
-                "fork_of": req.fork_of,
                 # If suggestion_deadline_minutes is set, defer the deadline until first suggestion
                 "suggestion_deadline": None if req.suggestion_deadline_minutes else req.suggestion_deadline,
                 "suggestion_deadline_minutes": req.suggestion_deadline_minutes,
@@ -307,6 +349,9 @@ def create_poll(req: CreatePollRequest):
                 "now": now,
             },
         ).fetchone()
+        # New legacy polls have multipoll_id IS NULL, so the field is None.
+        # Retained for symmetry with the multipoll-routed create flow.
+        row = _attach_multipoll_chain_fields(conn, row)
 
     return _row_to_poll(row)
 
@@ -328,11 +373,11 @@ def find_duplicate_poll(title: str, follow_up_to: str):
     """Find an existing poll that is a follow-up to the same parent with the same title (case-insensitive)."""
     with get_db() as conn:
         row = conn.execute(
-            """
-            SELECT * FROM polls
-            WHERE LOWER(title) = LOWER(%(title)s)
-              AND follow_up_to = %(follow_up_to)s
-            ORDER BY created_at ASC
+            _SELECT_POLL_WITH_MULTIPOLL_PREFIX
+            + """
+            WHERE LOWER(p.title) = LOWER(%(title)s)
+              AND p.follow_up_to = %(follow_up_to)s
+            ORDER BY p.created_at ASC
             LIMIT 1
             """,
             {"title": title, "follow_up_to": follow_up_to},
@@ -347,7 +392,7 @@ def get_poll_by_short_id(short_id: str):
     """Get a poll by its short ID."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM polls WHERE short_id = %(short_id)s",
+            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.short_id = %(short_id)s",
             {"short_id": short_id},
         ).fetchone()
     if not row:
@@ -360,7 +405,7 @@ def get_poll(poll_id: str):
     """Get a poll by UUID."""
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM polls WHERE id = %(poll_id)s",
+            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
             {"poll_id": poll_id},
         ).fetchone()
         if not row:
@@ -376,7 +421,7 @@ def get_poll(poll_id: str):
             _finalize_suggestion_options(conn, poll_id, datetime.now(timezone.utc))
             # Re-fetch to get updated options
             row = conn.execute(
-                "SELECT * FROM polls WHERE id = %(poll_id)s",
+                _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
                 {"poll_id": poll_id},
             ).fetchone()
 
@@ -880,6 +925,8 @@ def close_poll(poll_id: str, req: ClosePollRequest):
         if row["poll_type"] == "ranked_choice" and row.get("suggestion_deadline"):
             _finalize_suggestion_options(conn, poll_id, now)
 
+        row = _attach_multipoll_chain_fields(conn, row)
+
     return _row_to_poll(row)
 
 
@@ -902,8 +949,9 @@ def reopen_poll(poll_id: str, req: ReopenPollRequest):
                 "now": datetime.now(timezone.utc),
             },
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+        if not row:
+            raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
+        row = _attach_multipoll_chain_fields(conn, row)
     return _row_to_poll(row)
 
 
@@ -930,8 +978,9 @@ def update_thread_title(poll_id: str, req: UpdateThreadTitleRequest):
                 "now": datetime.now(timezone.utc),
             },
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Poll not found")
+        if not row:
+            raise HTTPException(status_code=404, detail="Poll not found")
+        row = _attach_multipoll_chain_fields(conn, row)
     return _row_to_poll(row)
 
 
@@ -970,6 +1019,8 @@ def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
             raise HTTPException(status_code=400, detail="No suggestions to cutoff, invalid creator secret, or suggestion phase already ended")
 
         _finalize_suggestion_options(conn, poll_id, now)
+
+        row = _attach_multipoll_chain_fields(conn, row)
 
     return _row_to_poll(row)
 
@@ -1015,7 +1066,10 @@ def cutoff_availability(poll_id: str, req: CutoffSuggestionsRequest):
 
     # Re-read to get updated options
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM polls WHERE id = %(poll_id)s", {"poll_id": poll_id}).fetchone()
+        row = conn.execute(
+            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
+            {"poll_id": poll_id},
+        ).fetchone()
     return _row_to_poll(row)
 
 
@@ -1030,9 +1084,9 @@ def get_accessible_polls(req: AccessiblePollsRequest):
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT * FROM polls
-               WHERE id = ANY(%(poll_ids)s)
-               ORDER BY created_at DESC""",
+            _SELECT_POLL_WITH_MULTIPOLL_PREFIX
+            + """ WHERE p.id = ANY(%(poll_ids)s)
+                ORDER BY p.created_at DESC""",
             {"poll_ids": req.poll_ids},
         ).fetchall()
 
@@ -1139,30 +1193,36 @@ def get_accessible_polls(req: AccessiblePollsRequest):
 
 @router.post("/related", response_model=RelatedPollsResponse)
 def get_related_polls(req: RelatedPollsRequest):
-    """Discover all polls related to the input IDs via follow-up/fork chains."""
+    """Discover all polls related to the input IDs via follow-up chains."""
     if not req.poll_ids:
         return RelatedPollsResponse(
             all_related_ids=[], original_count=0, discovered_count=0
         )
     with get_db() as conn:
-        # Fetch all polls that have any relationship (or are in the input set
-        # or share a multipoll_id with the input set). Phase 2.5 also tracks
-        # multipoll siblings so visiting one sub-poll discovers its peers.
+        # Fetch every poll plus its multipoll's follow_up_to (Phase 3.5 source
+        # of truth for thread chains). The discovery walks multipoll-level
+        # chains via mp.follow_up_to + multipoll-sibling grouping; per-poll
+        # follow_up_to is no longer consulted for chain traversal.
         rows = conn.execute(
-            """SELECT id, follow_up_to, fork_of, multipoll_id FROM polls
-               WHERE follow_up_to IS NOT NULL
-                  OR fork_of IS NOT NULL
-                  OR multipoll_id IS NOT NULL
-                  OR id = ANY(%(poll_ids)s)""",
+            """SELECT p.id, p.multipoll_id,
+                      mp.follow_up_to AS multipoll_follow_up_to
+                 FROM polls p
+                 LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
+                WHERE mp.follow_up_to IS NOT NULL
+                   OR p.multipoll_id IS NOT NULL
+                   OR p.id = ANY(%(poll_ids)s)""",
             {"poll_ids": req.poll_ids},
         ).fetchall()
 
     all_polls = [
         PollRelation(
             id=str(r["id"]),
-            follow_up_to=str(r["follow_up_to"]) if r["follow_up_to"] else None,
-            fork_of=str(r["fork_of"]) if r["fork_of"] else None,
             multipoll_id=str(r["multipoll_id"]) if r.get("multipoll_id") else None,
+            multipoll_follow_up_to=(
+                str(r["multipoll_follow_up_to"])
+                if r.get("multipoll_follow_up_to")
+                else None
+            ),
         )
         for r in rows
     ]

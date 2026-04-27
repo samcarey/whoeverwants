@@ -1,12 +1,12 @@
-"""Discover all related polls via follow-up and fork chains.
+"""Discover all related poll IDs via the multipoll-level follow_up chain.
 
-Given a set of poll IDs, recursively traverses follow_up_to and fork_of
-relationships in both directions (ancestors and descendants) to find all
-connected polls.
+Phase 3.5: thread chains live at the multipoll level. Two polls are related
+when their multipolls form a follow_up chain (in either direction) or when
+they share a multipoll wrapper (sibling sub-polls).
 
-Reference: database/migrations/017_create_poll_discovery_function_up.sql
-(original SQL only searched descendants via follow_up_to; this Python version
-is bidirectional and also follows fork_of).
+The original SQL discovery walked `polls.follow_up_to` per-row. Forks were
+removed in migration 095; sibling-sub-poll grouping was added when the
+multipoll system shipped.
 """
 
 from __future__ import annotations
@@ -16,14 +16,16 @@ from dataclasses import dataclass
 
 @dataclass
 class PollRelation:
-    """A poll's relationship fields."""
+    """A poll's relationship fields used by the discovery algorithm.
+
+    `multipoll_id` groups sibling sub-polls. `multipoll_follow_up_to` is the
+    poll's wrapper's follow_up chain pointer (a multipoll_id, or None for
+    thread roots).
+    """
+
     id: str
-    follow_up_to: str | None
-    fork_of: str | None
-    # Phase 2.5: multipoll wrapper this poll belongs to. Sibling sub-polls
-    # (sharing the same multipoll_id) are treated as related so visiting any
-    # one of them grants access to the whole group.
     multipoll_id: str | None = None
+    multipoll_follow_up_to: str | None = None
 
 
 def get_all_related_poll_ids(
@@ -31,17 +33,17 @@ def get_all_related_poll_ids(
     all_polls: list[PollRelation],
     max_depth: int = 10,
 ) -> list[str]:
-    """Find all poll IDs related to the input set via follow-up/fork chains
-    and multipoll-sibling grouping.
+    """Find all poll IDs related to the input set via multipoll-level
+    follow_up chains and multipoll-sibling grouping.
 
-    Searches bidirectionally:
-    - Descendants: polls whose follow_up_to or fork_of points to a known poll
-    - Ancestors: polls that a known poll's follow_up_to or fork_of points to
-    - Multipoll siblings: polls sharing a multipoll_id with a known poll
+    Searches bidirectionally at the multipoll level:
+    - Descendants: multipolls whose `follow_up_to` points to a known multipoll
+    - Ancestors: a known multipoll's `follow_up_to` target
+    - Siblings: every sub-poll of a visited multipoll
 
     Args:
         input_poll_ids: Starting set of poll IDs.
-        all_polls: All polls with their relationship fields.
+        all_polls: All polls with their multipoll-level relationship fields.
         max_depth: Maximum traversal iterations (prevents infinite loops).
 
     Returns:
@@ -50,50 +52,59 @@ def get_all_related_poll_ids(
     if not input_poll_ids or not all_polls:
         return list(set(input_poll_ids)) if input_poll_ids else []
 
-    # Build lookup structures
     poll_by_id: dict[str, PollRelation] = {p.id: p for p in all_polls}
-    # Children: poll_id -> list of polls that reference it
-    children_by_parent: dict[str, list[str]] = {}
+
+    # multipoll_id -> [poll_id, ...] (every sub-poll of a wrapper).
+    polls_by_multipoll: dict[str, list[str]] = {}
+    # parent_multipoll_id -> [child_multipoll_id, ...] from mp.follow_up_to.
+    children_by_parent_multipoll: dict[str, list[str]] = {}
+    # multipoll_id -> parent_multipoll_id (mp.follow_up_to). Sub-polls of one
+    # wrapper share the same value; recorded once.
+    parent_of_multipoll: dict[str, str | None] = {}
+
     for p in all_polls:
-        if p.follow_up_to:
-            children_by_parent.setdefault(p.follow_up_to, []).append(p.id)
-        if p.fork_of:
-            children_by_parent.setdefault(p.fork_of, []).append(p.id)
-    # Multipoll siblings: multipoll_id -> list of poll ids
-    siblings_by_multipoll: dict[str, list[str]] = {}
-    for p in all_polls:
-        if p.multipoll_id:
-            siblings_by_multipoll.setdefault(p.multipoll_id, []).append(p.id)
+        if not p.multipoll_id:
+            continue
+        polls_by_multipoll.setdefault(p.multipoll_id, []).append(p.id)
+        if p.multipoll_id not in parent_of_multipoll:
+            parent_of_multipoll[p.multipoll_id] = p.multipoll_follow_up_to
+        if p.multipoll_follow_up_to:
+            children_by_parent_multipoll.setdefault(p.multipoll_follow_up_to, []).append(
+                p.multipoll_id
+            )
+
+    # Dedupe child multipoll lists (one entry per child multipoll, not per
+    # sibling sub-poll of that child).
+    for parent_id, children in children_by_parent_multipoll.items():
+        children_by_parent_multipoll[parent_id] = list(dict.fromkeys(children))
 
     discovered: set[str] = set(input_poll_ids)
-    frontier: set[str] = set(input_poll_ids)
+    discovered_multipolls: set[str] = {
+        poll_by_id[pid].multipoll_id
+        for pid in input_poll_ids
+        if pid in poll_by_id and poll_by_id[pid].multipoll_id
+    }
+    multipoll_frontier: set[str] = set(discovered_multipolls)
 
     for _ in range(max_depth):
-        new_ids: set[str] = set()
-
-        for pid in frontier:
-            # Descendants: polls that follow_up_to or fork_of this poll
-            for child_id in children_by_parent.get(pid, []):
-                if child_id not in discovered:
-                    new_ids.add(child_id)
-
-            # Ancestors: this poll's follow_up_to / fork_of targets
-            poll = poll_by_id.get(pid)
-            if poll:
-                if poll.follow_up_to and poll.follow_up_to not in discovered:
-                    new_ids.add(poll.follow_up_to)
-                if poll.fork_of and poll.fork_of not in discovered:
-                    new_ids.add(poll.fork_of)
-                # Multipoll siblings
-                if poll.multipoll_id:
-                    for sib_id in siblings_by_multipoll.get(poll.multipoll_id, []):
-                        if sib_id not in discovered:
-                            new_ids.add(sib_id)
-
-        if not new_ids:
+        new_multipolls: set[str] = set()
+        for mid in multipoll_frontier:
+            # Descendants: child multipolls whose follow_up_to == mid.
+            for child_id in children_by_parent_multipoll.get(mid, []):
+                if child_id not in discovered_multipolls:
+                    new_multipolls.add(child_id)
+            # Ancestor: this multipoll's follow_up_to target.
+            parent_id = parent_of_multipoll.get(mid)
+            if parent_id and parent_id not in discovered_multipolls:
+                new_multipolls.add(parent_id)
+        if not new_multipolls:
             break
+        discovered_multipolls |= new_multipolls
+        multipoll_frontier = new_multipolls
 
-        discovered |= new_ids
-        frontier = new_ids
+    # Expand each discovered multipoll to its sub-polls.
+    for mid in discovered_multipolls:
+        for pid in polls_by_multipoll.get(mid, []):
+            discovered.add(pid)
 
     return list(discovered)

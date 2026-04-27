@@ -8,7 +8,6 @@ import PollResultsDisplay from "@/components/PollResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import ForkHeader from "@/components/ForkHeader";
 
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
@@ -1595,13 +1594,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           </div>
         )}
 
-        {/* Show follow-up/fork header for closed polls */}
-        {isPollClosed && poll.fork_of && (
-          <div className="mt-2">
-            <ForkHeader forkOfPollId={poll.fork_of} />
-          </div>
-        )}
-
         {/* Poll Content Based on Type */}
         {poll.poll_type === 'yes_no' ? (
           <div>
@@ -1652,10 +1644,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
 
-                  {/* Show follow-up/fork header after submit button */}
-                  <div className="mt-4">
-                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                  </div>
                 </>
               )}
             </div>
@@ -1832,9 +1820,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                     </>
                   )}
 
-                  <div className="mt-4">
-                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                  </div>
                 </>
               )}
             </div>
@@ -1950,10 +1935,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                     wrapperHandlesSubmit={wrapperHandlesSubmit}
                   />
 
-                  {/* Show follow-up/fork header after submit button */}
-                  <div className="mt-4">
-                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                  </div>
                 </>
               )}
             </div>

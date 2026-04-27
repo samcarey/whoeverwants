@@ -29,7 +29,6 @@ class CreatePollRequest(BaseModel):
     creator_secret: str
     creator_name: str | None = None
     follow_up_to: str | None = None
-    fork_of: str | None = None
     suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
@@ -179,7 +178,6 @@ class PollResponse(BaseModel):
     is_closed: bool = False
     close_reason: str | None = None
     follow_up_to: str | None = None
-    fork_of: str | None = None
     short_id: str | None = None
     suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
@@ -204,6 +202,11 @@ class PollResponse(BaseModel):
     # sub-polls when rendering threads.
     multipoll_id: str | None = None
     sub_poll_index: int | None = None
+    # Phase 3.5: the wrapper's `follow_up_to` (a multipoll_id, or None for
+    # thread roots). The FE walks this for thread chains instead of the
+    # per-poll `follow_up_to`. Populated via LEFT JOIN onto multipolls; NULL
+    # when the poll has no wrapper.
+    multipoll_follow_up_to: str | None = None
     results: "PollResultsResponse | None" = None
     voter_names: list[str] | None = None
 
@@ -291,7 +294,7 @@ class CreateSubPollRequest(BaseModel):
     reference_longitude: float | None = None
     reference_location_label: str | None = None
     # Whether the title was auto-generated. Stored on the polls row so that
-    # subsequent fork/duplicate flows know whether to retain or regenerate.
+    # subsequent duplicate flows know whether to retain or regenerate.
     is_auto_title: bool = False
 
 
@@ -301,13 +304,12 @@ class CreateMultipollRequest(BaseModel):
     response_deadline: str | None = None
     prephase_deadline: str | None = None
     prephase_deadline_minutes: int | None = None
-    # follow_up_to / fork_of are POLL ids (matching the legacy single-poll
-    # create API). The server resolves them to the parent's multipoll_id for
-    # multipolls.follow_up_to / multipolls.fork_of, and writes the original
-    # poll_id onto each sub-poll's polls.follow_up_to / polls.fork_of so the
-    # existing thread-walking aggregation keeps working until Phase 5.
+    # follow_up_to is a POLL id (matching the legacy single-poll create API).
+    # The server resolves it to the parent's multipoll_id for
+    # multipolls.follow_up_to, and writes the original poll_id onto each
+    # sub-poll's polls.follow_up_to so the existing thread-walking aggregation
+    # keeps working until Phase 5.
     follow_up_to: str | None = None
-    fork_of: str | None = None
     thread_title: str | None = None
     context: str | None = None
     # Optional explicit title; when absent, derived from sub-poll categories
@@ -327,7 +329,6 @@ class MultipollResponse(BaseModel):
     is_closed: bool = False
     close_reason: str | None = None
     follow_up_to: str | None = None
-    fork_of: str | None = None
     thread_title: str | None = None
     context: str | None = None
     title: str

@@ -108,28 +108,27 @@ def _resolve_parent_multipoll_id(conn, parent_poll_id: str | None) -> str | None
 
 
 def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
-    # follow_up_to / fork_of in the request are *poll ids* (matching the legacy
+    # follow_up_to in the request is a *poll id* (matching the legacy
     # single-poll create API). Resolve to the parent's multipoll_id for the
     # multipolls row; the original poll_id is also written onto each sub-poll's
-    # polls.follow_up_to / polls.fork_of so legacy thread aggregation keeps
-    # working until Phase 5. thread_title falls back through both kinds of
-    # parent so threads with mixed-mode parents inherit titles correctly.
+    # polls.follow_up_to so legacy thread aggregation keeps working until
+    # Phase 5. thread_title falls back through both kinds of parent so threads
+    # with mixed-mode parents inherit titles correctly.
     parent_followup_multipoll_id = _resolve_parent_multipoll_id(conn, req.follow_up_to)
-    parent_fork_multipoll_id = _resolve_parent_multipoll_id(conn, req.fork_of)
     explicit_title = req.title if req.title is not None else req.thread_title
     return conn.execute(
         """
         INSERT INTO multipolls (
             creator_secret, creator_name, response_deadline,
             prephase_deadline, prephase_deadline_minutes,
-            follow_up_to, fork_of, context,
+            follow_up_to, context,
             thread_title,
             created_at, updated_at
         )
         VALUES (
             %(creator_secret)s, %(creator_name)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
-            %(follow_up_multipoll_id)s, %(fork_multipoll_id)s, %(context)s,
+            %(follow_up_multipoll_id)s, %(context)s,
             COALESCE(
                 %(explicit_title)s,
                 (SELECT thread_title FROM multipolls WHERE id = %(follow_up_multipoll_id)s),
@@ -151,7 +150,6 @@ def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
             ),
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
             "follow_up_multipoll_id": parent_followup_multipoll_id,
-            "fork_multipoll_id": parent_fork_multipoll_id,
             "follow_up_poll_id": req.follow_up_to,
             "context": req.context,
             "explicit_title": explicit_title,
@@ -180,7 +178,7 @@ def _insert_sub_poll(
         INSERT INTO polls (
             title, poll_type, options, response_deadline,
             creator_secret, creator_name,
-            follow_up_to, fork_of,
+            follow_up_to,
             suggestion_deadline, suggestion_deadline_minutes,
             allow_pre_ranking,
             details,
@@ -197,7 +195,7 @@ def _insert_sub_poll(
         VALUES (
             %(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
             %(creator_secret)s, %(creator_name)s,
-            %(follow_up_to)s, %(fork_of)s,
+            %(follow_up_to)s,
             %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
             %(allow_pre_ranking)s,
             %(details)s,
@@ -220,11 +218,10 @@ def _insert_sub_poll(
             "response_deadline": req.response_deadline,
             "creator_secret": req.creator_secret,
             "creator_name": req.creator_name,
-            # Mirror the request's poll-id refs onto the polls row so legacy
+            # Mirror the request's poll-id ref onto the polls row so legacy
             # thread aggregation keeps walking until Phase 5 (see
             # CreateMultipollRequest docstring for the full semantics).
             "follow_up_to": req.follow_up_to,
-            "fork_of": req.fork_of,
             "suggestion_deadline": suggestion_deadline_value,
             "suggestion_deadline_minutes": sub.suggestion_deadline_minutes,
             "allow_pre_ranking": sub.allow_pre_ranking,
@@ -274,7 +271,6 @@ def _row_to_multipoll(
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
         follow_up_to=str(row["follow_up_to"]) if row.get("follow_up_to") else None,
-        fork_of=str(row["fork_of"]) if row.get("fork_of") else None,
         thread_title=row.get("thread_title"),
         context=row.get("context"),
         title=_compute_display_title(row, sub_poll_rows),

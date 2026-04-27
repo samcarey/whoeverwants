@@ -32,7 +32,10 @@ export interface Poll {
   is_closed?: boolean;
   close_reason?: 'manual' | 'deadline' | 'max_capacity' | 'uncontested';
   follow_up_to?: string;
-  fork_of?: string;
+  // Phase 3.5: the wrapper's follow_up_to (a multipoll_id) — the source of
+  // truth for thread chains. `follow_up_to` (a poll_id) is still populated by
+  // the server until Phase 5 but the FE no longer reads it for chain logic.
+  multipoll_follow_up_to?: string | null;
   short_id?: string;
   suggestion_deadline?: string | null;
   suggestion_deadline_minutes?: number | null;
@@ -143,7 +146,6 @@ export interface Multipoll {
   is_closed: boolean;
   close_reason?: string | null;
   follow_up_to?: string | null;
-  fork_of?: string | null;
   thread_title?: string | null;
   context?: string | null;
   title: string;

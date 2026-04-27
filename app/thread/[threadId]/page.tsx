@@ -1697,7 +1697,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           poll={modalPoll}
           totalVotes={pollResultsMap.get(modalPoll.id)?.total_votes}
           onClose={() => setShowModal(false)}
-          showForkButton={false}
           onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
           onReopen={
             modalPoll.is_closed &&

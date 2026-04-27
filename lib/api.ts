@@ -122,7 +122,7 @@ function toPoll(data: any): Poll {
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? undefined,
     follow_up_to: data.follow_up_to ?? undefined,
-    fork_of: data.fork_of ?? undefined,
+    multipoll_follow_up_to: data.multipoll_follow_up_to ?? null,
     short_id: data.short_id ?? undefined,
     suggestion_deadline: data.suggestion_deadline ?? undefined,
     suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
@@ -193,7 +193,6 @@ export async function apiCreatePoll(params: {
   creator_secret: string;
   creator_name?: string;
   follow_up_to?: string;
-  fork_of?: string;
   suggestion_deadline?: string;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
@@ -299,7 +298,6 @@ export interface CreateMultipollParams {
   prephase_deadline?: string | null;
   prephase_deadline_minutes?: number | null;
   follow_up_to?: string | null;
-  fork_of?: string | null;
   thread_title?: string | null;
   context?: string | null;
   title?: string | null;
@@ -318,7 +316,6 @@ function toMultipoll(data: any): Multipoll {
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? null,
     follow_up_to: data.follow_up_to ?? null,
-    fork_of: data.fork_of ?? null,
     thread_title: data.thread_title ?? null,
     context: data.context ?? null,
     title: data.title,

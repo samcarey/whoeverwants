@@ -273,11 +273,11 @@ class TestSubPollLinkage:
 
 
 class TestChainPropagation:
-    """Phase 2.2: follow_up_to / fork_of are POLL ids in the request. The
-    server resolves them to the parent's multipoll_id (or NULL for legacy
-    parents) for the multipolls row, and copies the poll_id onto each
-    sub-poll's polls.follow_up_to / polls.fork_of so the legacy thread
-    aggregation keeps working until Phase 5."""
+    """Phase 2.2 + 3.5: follow_up_to is a POLL id in the request. The server
+    resolves it to the parent's multipoll_id (or NULL for legacy parents) for
+    the multipolls row, and copies the poll_id onto each sub-poll's
+    polls.follow_up_to so the legacy thread-walking aggregation keeps working
+    until Phase 5."""
 
     def _create_multipoll_parent(self, client, creator_secret):
         resp = client.post(
@@ -327,12 +327,11 @@ class TestChainPropagation:
         child_sub_poll_id = child_data["sub_polls"][0]["id"]
         with psycopg.connect(TEST_DB_URL) as conn:
             row = conn.execute(
-                "SELECT follow_up_to, fork_of FROM polls WHERE id = %s",
+                "SELECT follow_up_to FROM polls WHERE id = %s",
                 (child_sub_poll_id,),
             ).fetchone()
             assert row is not None
             assert str(row[0]) == parent_sub_poll_id
-            assert row[1] is None
 
     def test_followup_to_legacy_parent(self, client, creator_secret):
         legacy_parent = self._create_legacy_parent(client, creator_secret)
@@ -361,35 +360,6 @@ class TestChainPropagation:
                 (child_sub_poll_id,),
             ).fetchone()
             assert str(row[0]) == legacy_parent_id
-
-    def test_fork_of_multipoll_parent(self, client, creator_secret):
-        parent = self._create_multipoll_parent(client, creator_secret)
-        parent_sub_poll_id = parent["sub_polls"][0]["id"]
-        parent_multipoll_id = parent["id"]
-
-        child = client.post(
-            "/api/multipolls",
-            json={
-                "creator_secret": creator_secret,
-                "fork_of": parent_sub_poll_id,
-                "sub_polls": [_yes_no_sub_poll()],
-            },
-        )
-        assert child.status_code == 201, child.text
-        child_data = child.json()
-        assert child_data["fork_of"] == parent_multipoll_id
-        assert child_data["follow_up_to"] is None
-
-        import psycopg
-
-        child_sub_poll_id = child_data["sub_polls"][0]["id"]
-        with psycopg.connect(TEST_DB_URL) as conn:
-            row = conn.execute(
-                "SELECT follow_up_to, fork_of FROM polls WHERE id = %s",
-                (child_sub_poll_id,),
-            ).fetchone()
-            assert row[0] is None
-            assert str(row[1]) == parent_sub_poll_id
 
     def test_thread_title_inherits_from_multipoll_parent(self, client, creator_secret):
         parent = client.post(

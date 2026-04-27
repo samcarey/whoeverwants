@@ -1,8 +1,15 @@
 /**
  * Thread grouping utilities for the messaging-style UI.
  *
- * A "thread" is a chain of polls linked by follow_up_to relationships.
- * Standalone polls (no follow_up_to, nothing follows them) are single-poll threads.
+ * A "thread" is a chain of multipolls linked by `multipolls.follow_up_to`.
+ * Sub-polls of one multipoll are siblings; the chain itself is multipoll-level.
+ * Single-multipoll threads (one wrapper, no parent or children) render as one
+ * card group.
+ *
+ * Phase 3.5: chain walking uses `Poll.multipoll_follow_up_to` (the wrapper's
+ * follow_up_to, a multipoll_id). The legacy per-poll `follow_up_to` column is
+ * still populated by the server but the FE no longer reads it for chain
+ * traversal — Phase 5 retires it.
  */
 
 import type { Poll } from './types';
@@ -39,41 +46,53 @@ export interface Thread {
  * Build index maps and collect descendants via BFS from a set of start IDs.
  * Shared by buildThreads (multiple roots) and buildThreadFromPollDown (single anchor).
  *
- * Phase 2.5: when a poll has a multipoll_id, all sibling sub-polls of the same
- * multipoll are also enqueued — they form one logical "card group" within the
- * thread. This way visiting any sub-poll's URL pulls the whole multipoll into
- * the thread view, regardless of which sub-poll the follow_up_to walk reached
- * first.
+ * Phase 3.5: chain edges are multipoll-to-multipoll. Visiting any sub-poll
+ * pulls the whole multipoll group (siblings) AND every multipoll that lists
+ * the current multipoll in its `follow_up_to` (children). The map keys are
+ * multipoll_ids — matching `Poll.multipoll_id` and `Poll.multipoll_follow_up_to`
+ * — so legacy per-poll `follow_up_to` is no longer consulted for traversal.
  */
 function collectDescendants(
   startIds: string[],
   pollById: Map<string, Poll>,
-  childrenOf: Map<string, string[]>,
-  siblingsOf: Map<string, string[]>,
+  pollIdsByMultipoll: Map<string, string[]>,
+  childrenByParentMultipoll: Map<string, string[]>,
   visited: Set<string>,
 ): Poll[] {
   const collected: Poll[] = [];
+  const visitedMultipolls = new Set<string>();
   const queue = [...startIds];
   while (queue.length > 0) {
     const current = queue.shift()!;
     if (visited.has(current)) continue;
     visited.add(current);
     const poll = pollById.get(current);
-    if (poll) {
-      collected.push(poll);
-      // Follow_up_to children — direct descendants down the thread.
-      const children = childrenOf.get(current) || [];
-      for (const childId of children) {
-        if (!visited.has(childId)) {
-          queue.push(childId);
-        }
+    if (!poll) continue;
+    collected.push(poll);
+
+    if (!poll.multipoll_id) continue;
+    if (visitedMultipolls.has(poll.multipoll_id)) continue;
+    visitedMultipolls.add(poll.multipoll_id);
+
+    // Multipoll siblings — sub-polls of this wrapper.
+    for (const siblingId of pollIdsByMultipoll.get(poll.multipoll_id) ?? []) {
+      if (!visited.has(siblingId)) queue.push(siblingId);
+    }
+
+    // Children: any multipoll whose follow_up_to == current multipoll. Enqueue
+    // every sub-poll of each child so the BFS covers the entire child group.
+    for (const childMultipollId of childrenByParentMultipoll.get(poll.multipoll_id) ?? []) {
+      for (const childPollId of pollIdsByMultipoll.get(childMultipollId) ?? []) {
+        if (!visited.has(childPollId)) queue.push(childPollId);
       }
-      // Multipoll siblings — sub-polls sharing the same multipoll wrapper.
-      const siblings = siblingsOf.get(current) || [];
-      for (const siblingId of siblings) {
-        if (!visited.has(siblingId)) {
-          queue.push(siblingId);
-        }
+    }
+
+    // Ancestor: this multipoll's follow_up_to. Pull every sibling of the
+    // parent into the thread too so BFS covers the upstream group.
+    const parentMultipollId = poll.multipoll_follow_up_to;
+    if (parentMultipollId) {
+      for (const parentPollId of pollIdsByMultipoll.get(parentMultipollId) ?? []) {
+        if (!visited.has(parentPollId)) queue.push(parentPollId);
       }
     }
   }
@@ -88,68 +107,72 @@ function collectDescendants(
   return collected;
 }
 
-/** Build pollById, childrenOf, and siblingsOf maps from a flat list of polls.
+/** Build pollById + multipoll-level chain maps from a flat list of polls.
  *
- *  childrenOf walks polls.follow_up_to (legacy, still populated through Phase 5).
- *  siblingsOf walks polls.multipoll_id — every sub-poll of a multipoll lists all
- *  its sibling sub-polls (excluding itself), so collectDescendants can pull the
- *  whole group whenever any of them is visited.
+ *  - `pollIdsByMultipoll`: multipoll_id -> [pollId, ...]. Drives sibling
+ *    grouping AND child/parent expansion (we walk multipoll-level edges and
+ *    fan out to all sub-polls of each visited wrapper).
+ *  - `childrenByParentMultipoll`: parent_multipoll_id -> [child_multipoll_id, ...].
+ *    Built from `Poll.multipoll_follow_up_to`. Polls without a multipoll_id
+ *    (legacy / participation-style standalone) are excluded from chain
+ *    traversal and stay as their own single-poll thread root.
  */
 function buildPollMaps(polls: Poll[]): {
   pollById: Map<string, Poll>;
-  childrenOf: Map<string, string[]>;
-  siblingsOf: Map<string, string[]>;
+  pollIdsByMultipoll: Map<string, string[]>;
+  childrenByParentMultipoll: Map<string, string[]>;
 } {
   const pollById = new Map<string, Poll>();
   for (const poll of polls) {
     pollById.set(poll.id, poll);
   }
-  const childrenOf = new Map<string, string[]>();
+
+  const pollIdsByMultipoll = new Map<string, string[]>();
+  // Track which multipolls we've already counted as children so we dedupe
+  // child entries even though multiple sub-polls share the same parent ref.
+  const seenChildEdge = new Set<string>();
+  const childrenByParentMultipoll = new Map<string, string[]>();
   for (const poll of polls) {
-    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
-      const existing = childrenOf.get(poll.follow_up_to) || [];
-      existing.push(poll.id);
-      childrenOf.set(poll.follow_up_to, existing);
+    if (!poll.multipoll_id) continue;
+    const existing = pollIdsByMultipoll.get(poll.multipoll_id) ?? [];
+    existing.push(poll.id);
+    pollIdsByMultipoll.set(poll.multipoll_id, existing);
+
+    const parent = poll.multipoll_follow_up_to;
+    if (parent) {
+      const edgeKey = `${parent}->${poll.multipoll_id}`;
+      if (!seenChildEdge.has(edgeKey)) {
+        seenChildEdge.add(edgeKey);
+        const list = childrenByParentMultipoll.get(parent) ?? [];
+        list.push(poll.multipoll_id);
+        childrenByParentMultipoll.set(parent, list);
+      }
     }
   }
-  // multipoll_id -> [pollId, ...]
-  const byMultipoll = new Map<string, string[]>();
-  for (const poll of polls) {
-    if (poll.multipoll_id) {
-      const existing = byMultipoll.get(poll.multipoll_id) || [];
-      existing.push(poll.id);
-      byMultipoll.set(poll.multipoll_id, existing);
-    }
-  }
-  // For each poll that's part of a multipoll, list its siblings (group minus self).
-  const siblingsOf = new Map<string, string[]>();
-  for (const [mpId, pollIds] of byMultipoll.entries()) {
-    if (pollIds.length < 2) continue; // 1-sub-poll multipoll: nothing to add
-    for (const id of pollIds) {
-      siblingsOf.set(id, pollIds.filter((p) => p !== id));
-    }
-  }
-  return { pollById, childrenOf, siblingsOf };
+  return { pollById, pollIdsByMultipoll, childrenByParentMultipoll };
 }
 
 /**
  * Build threads from a flat list of polls.
  *
- * Groups polls by follow_up_to chains. Only follow_up_to relationships form
- * threads — fork_of relationships are ignored for threading purposes.
+ * Groups sub-polls by their multipoll wrapper, then chains wrappers via
+ * `multipoll_follow_up_to`. Only multipoll-level follow_up_to relationships
+ * form threads.
  */
 export function buildThreads(
   polls: Poll[],
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread[] {
-  const { pollById, childrenOf, siblingsOf } = buildPollMaps(polls);
+  const { pollById, pollIdsByMultipoll, childrenByParentMultipoll } = buildPollMaps(polls);
 
-  // Find root polls: polls whose follow_up_to is null or points to a poll
-  // we don't have access to
+  // Find root polls: polls whose multipoll has no `follow_up_to` OR whose
+  // follow_up_to target is a multipoll we don't have access to. Polls with
+  // no multipoll_id (legacy / standalone) are also treated as roots.
   const isChild = new Set<string>();
   for (const poll of polls) {
-    if (poll.follow_up_to && pollById.has(poll.follow_up_to)) {
+    const parent = poll.multipoll_follow_up_to;
+    if (parent && pollIdsByMultipoll.has(parent)) {
       isChild.add(poll.id);
     }
   }
@@ -161,11 +184,18 @@ export function buildThreads(
 
   for (const root of roots) {
     if (visited.has(root.id)) continue;
-    const threadPolls = collectDescendants([root.id], pollById, childrenOf, siblingsOf, visited);
+    const threadPolls = collectDescendants(
+      [root.id],
+      pollById,
+      pollIdsByMultipoll,
+      childrenByParentMultipoll,
+      visited,
+    );
     threads.push(buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds));
   }
 
-  // Safety net for orphaned polls
+  // Safety net for orphaned polls (e.g. polls in a multipoll whose siblings
+  // weren't rooted because of a missing multipoll_follow_up_to target).
   for (const poll of polls) {
     if (!visited.has(poll.id)) {
       threads.push(buildThreadFromPolls([poll], votedPollIds, abstainedPollIds));
@@ -284,24 +314,38 @@ export function getThreadRouteId(thread: Thread): string {
 }
 
 /**
- * Walk up the `follow_up_to` chain starting from `poll`, consulting `lookup`
- * at each step, and return the route ID (short_id or id) of the furthest
- * ancestor reachable. For a standalone poll — or when the cache doesn't
- * have the full chain — the deepest resolvable ancestor is returned.
+ * Walk up the multipoll-level follow_up chain starting from `poll` and
+ * return the route ID (short_id or id) of the furthest ancestor reachable.
+ * The chain is multipoll-to-multipoll — at each step we follow the current
+ * poll's `multipoll_follow_up_to` to any sub-poll of the parent multipoll.
+ * When the cache doesn't have a parent sub-poll, the deepest resolvable
+ * ancestor is returned (caller-friendly: a stale cache produces a near-root
+ * URL that the FE can still resolve via the loader).
+ *
+ * `pollByMultipoll` defaults to scanning `getCachedAccessiblePolls()`. Pass
+ * a custom resolver when you have a faster lookup at hand (e.g. a Map
+ * keyed by `multipoll_id`).
  */
 export function findThreadRootRouteId(
   poll: Poll,
-  lookup: (id: string) => Poll | null | undefined,
+  pollByMultipoll?: (multipollId: string) => Poll | null | undefined,
 ): string {
+  const resolveByMultipoll =
+    pollByMultipoll ?? defaultPollByMultipoll;
   let root: Poll = poll;
-  let parentId = poll.follow_up_to;
-  while (parentId) {
-    const parent = lookup(parentId);
+  while (root.multipoll_follow_up_to) {
+    const parent = resolveByMultipoll(root.multipoll_follow_up_to);
     if (!parent) break;
     root = parent;
-    parentId = parent.follow_up_to;
   }
   return root.short_id || root.id;
+}
+
+function defaultPollByMultipoll(multipollId: string): Poll | null {
+  if (typeof window === 'undefined') return null;
+  const cached = getCachedAccessiblePolls();
+  if (!cached) return null;
+  return cached.find(p => p.multipoll_id === multipollId) ?? null;
 }
 
 /**
@@ -315,10 +359,16 @@ export function buildThreadFromPollDown(
   votedPollIds: Set<string>,
   abstainedPollIds: Set<string>,
 ): Thread | null {
-  const { pollById, childrenOf, siblingsOf } = buildPollMaps(allPolls);
+  const { pollById, pollIdsByMultipoll, childrenByParentMultipoll } = buildPollMaps(allPolls);
   if (!pollById.has(anchorPollId)) return null;
 
-  const threadPolls = collectDescendants([anchorPollId], pollById, childrenOf, siblingsOf, new Set());
+  const threadPolls = collectDescendants(
+    [anchorPollId],
+    pollById,
+    pollIdsByMultipoll,
+    childrenByParentMultipoll,
+    new Set(),
+  );
   return buildThreadFromPolls(threadPolls, votedPollIds, abstainedPollIds);
 }
 

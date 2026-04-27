@@ -169,7 +169,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     navigateCloseModalRef.current = () => {
       const params = new URLSearchParams(searchParams.toString());
-      ['create', 'followUpTo', 'fork', 'duplicate', 'voteFromSuggestion', 'mode', 'category']
+      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category']
         .forEach(p => params.delete(p));
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
