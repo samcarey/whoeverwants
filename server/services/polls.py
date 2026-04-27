@@ -7,6 +7,7 @@ here; nothing here depends on the router modules, so there are no circular
 imports.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -141,8 +142,6 @@ def _finalize_suggestion_options(conn, poll_id: str, now: datetime) -> None:
 
     Collects all unique suggestions from votes and writes them to the poll's options column.
     """
-    import json
-
     votes = conn.execute(
         "SELECT suggestions FROM votes WHERE poll_id = %(poll_id)s AND suggestions IS NOT NULL",
         {"poll_id": poll_id},
@@ -176,7 +175,6 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
     then applies the availability threshold filter and longest-per-start-time dedup so
     poll.options contains only the slots voters will actually rank.
     """
-    import json
     from algorithms.time_poll import (
         generate_time_poll_slots,
         compute_slot_availability,
@@ -373,7 +371,6 @@ def _submit_vote_to_poll(conn, poll_id: str, req: SubmitVoteRequest, now: dateti
     except VoteValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    import json
     row = conn.execute(
         """
         INSERT INTO votes (poll_id, vote_type, yes_no_choice, ranked_choices,
@@ -477,7 +474,6 @@ def _edit_vote_on_poll(conn, poll_id: str, vote_id: str, req: EditVoteRequest, n
                             detail=f"Cannot remove suggestions that others have ranked: {', '.join(sorted(blocked))}",
                         )
 
-    import json
     row = conn.execute(
         """
         UPDATE votes
@@ -540,7 +536,6 @@ def _compute_results(poll, votes) -> PollResultsResponse:
         )
 
     if poll_type == "ranked_choice":
-        import json
         raw_options = poll.get("options")
         poll_options = None
         if raw_options:
@@ -622,7 +617,6 @@ def _compute_results(poll, votes) -> PollResultsResponse:
         )
 
     if poll_type == "time":
-        import json
         from algorithms.time_poll import calculate_time_poll_results
 
         raw_options = poll.get("options")
@@ -664,5 +658,4 @@ def _json_or_none(val) -> str | None:
     """Serialize a JSON-compatible value for a JSONB column, or None."""
     if val is None:
         return None
-    import json
     return json.dumps(val)
