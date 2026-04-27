@@ -49,6 +49,9 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
+const BUBBLE_BUTTON_CLASS =
+  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,0.3)]";
+
 function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -524,12 +527,12 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Floating "+" FAB — home page only. Navigates to /thread/new/ where
            the user picks a What/When/Where bubble for what they want to create.
            Rendered via portal outside the scaling container so it positions
-           against the viewport. `view-transition-name: floating-plus` keeps it
-           fixed (no slide) across home <-> thread navigation — see globals.css. */}
+           against the viewport. Slides with the rest of the page in view
+           transitions (no shared transition name with the thread bubble bar). */}
       {isMounted && pathname === '/' && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/thread/new', 'forward')}
-          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
+          className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
@@ -550,11 +553,11 @@ function TemplateInner({ children }: AppTemplateProps) {
              - When  → ?mode=time
              - Where → ?category=restaurant (most common "where" type)
            Auto-sets followUpTo when the page exposes data-thread-latest-poll-id.
-           `view-transition-name: floating-plus` on the wrapper keeps the bar
-           pinned across home <-> thread navigation — see globals.css. */}
+           The bar is part of the root snapshot during view transitions so it
+           slides in/out with the page. */}
       {isMounted && isThreadLikePage && createPortal(
         <div
-          className="fixed z-50 floating-plus-button left-1/2 -translate-x-1/2 flex items-center gap-3"
+          className="fixed z-50 left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
@@ -562,26 +565,29 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({})}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className={BUBBLE_BUTTON_CLASS}
             aria-label="Create new poll"
           >
-            What
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">what</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateFromBubble({ mode: 'time' })}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className={BUBBLE_BUTTON_CLASS}
             aria-label="Create new time poll"
           >
-            When
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">when</span>
           </button>
           <button
             type="button"
             onClick={() => openCreateFromBubble({ category: 'restaurant' })}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className={BUBBLE_BUTTON_CLASS}
             aria-label="Create new place poll"
           >
-            Where
+            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <span className="text-[1.12rem]">where</span>
           </button>
         </div>,
         document.getElementById('floating-fab-portal')!
