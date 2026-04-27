@@ -25,14 +25,15 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
 import FollowUpModal from "@/components/FollowUpModal";
 import ConfirmationModal from "@/components/ConfirmationModal";
-import RespondentCircles from "@/components/RespondentCircles";
 import VoterList from "@/components/VoterList";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import type { ApiVote } from "@/lib/api";
 import SubPollBallot, { type SubPollBallotHandle } from "@/components/SubPollBallot";
 import PollResultsDisplay, { CompactRankedChoicePreview, CompactSuggestionPreview, CompactTimePreview } from "@/components/PollResults";
 import SimpleCountdown from "@/components/SimpleCountdown";
+import ThreadHeader from "@/components/ThreadHeader";
 import { forgetPoll } from "@/lib/forgetPoll";
+import { PENDING_ACTION_COPY, type PendingActionKind } from "./threadActionCopy";
 
 import type { Thread } from "@/lib/threadUtils";
 
@@ -41,40 +42,6 @@ import type { Thread } from "@/lib/threadUtils";
 // doesn't re-run its effect on every parent render.
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
-
-type PendingActionKind = 'forget' | 'reopen' | 'close' | 'cutoff-availability';
-
-const PENDING_ACTION_COPY: Record<PendingActionKind, {
-  title: string;
-  message: string;
-  confirmText: string;
-  confirmButtonClass: string;
-}> = {
-  forget: {
-    title: 'Forget poll',
-    message: "This will remove the poll from your browser's history. You won't see it in your poll list anymore, and any vote data stored locally will be deleted. You can still access it again with the direct link.",
-    confirmText: 'Forget Poll',
-    confirmButtonClass: 'bg-yellow-500 hover:bg-yellow-600 text-white',
-  },
-  reopen: {
-    title: 'Reopen Poll',
-    message: 'Are you sure you want to reopen this poll? This will allow voting to resume and results will be hidden until the poll is closed again.',
-    confirmText: 'Reopen Poll',
-    confirmButtonClass: 'bg-green-600 hover:bg-green-700 text-white',
-  },
-  close: {
-    title: 'Close Poll',
-    message: 'Are you sure you want to close this poll? This action cannot be undone and voting will end immediately.',
-    confirmText: 'Close Poll',
-    confirmButtonClass: 'bg-red-600 hover:bg-red-700 text-white',
-  },
-  'cutoff-availability': {
-    title: 'End Availability Phase',
-    message: 'Are you sure you want to end the availability phase now? Time slots will be generated and preference ranking will begin immediately.',
-    confirmText: 'End Now',
-    confirmButtonClass: 'bg-amber-500 hover:bg-amber-600 text-white',
-  },
-};
 
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
@@ -95,70 +62,6 @@ function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; chi
 interface ThreadContentProps {
   threadId: string;
   initialExpandedPollId?: string | null;
-}
-
-interface ThreadHeaderProps {
-  headerRef: React.Ref<HTMLDivElement>;
-  title: string;
-  participantNames?: string[];
-  anonymousCount?: number;
-  subtitle?: string;
-  onTitleClick?: () => void;
-}
-
-// Fixed thread header. top:0 + padding-top:env(safe-area-inset-top) fills
-// the notch zone with the header background (otherwise items are visible
-// there when the document scrolls). headerRef is on the inner content
-// div so offsetHeight stays content-only; the sibling content below
-// reserves exactly that much padding-top.
-function ThreadHeader({ headerRef, title, participantNames, anonymousCount, subtitle, onTitleClick }: ThreadHeaderProps) {
-  const router = useRouter();
-  const titleBlock = (
-    <>
-      <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-        {title}
-      </h1>
-      {subtitle && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">{subtitle}</p>
-      )}
-    </>
-  );
-  return (
-    <div
-      className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
-      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-    >
-      <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
-        <button
-          onClick={() => navigateWithTransition(router, '/', 'back')}
-          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
-          aria-label="Go back"
-        >
-          <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        {participantNames && (
-          <RespondentCircles
-            names={participantNames}
-            anonymousCount={anonymousCount ?? 0}
-          />
-        )}
-        {onTitleClick ? (
-          <button
-            type="button"
-            onClick={onTitleClick}
-            className="min-w-0 flex-1 text-left active:opacity-60 transition-opacity"
-            aria-label="Thread details"
-          >
-            {titleBlock}
-          </button>
-        ) : (
-          <div className="min-w-0 flex-1">{titleBlock}</div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 export function ThreadContent({ threadId, initialExpandedPollId = null }: ThreadContentProps) {
