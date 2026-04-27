@@ -16,6 +16,19 @@ import type { Poll } from './types';
 import { getCachedPollById, getCachedPollByShortId, getCachedAccessiblePolls } from './pollCache';
 import { isUuidLike } from './pollId';
 
+/** Build a multipoll_id → Poll lookup Map from any iterable of polls. Polls
+ *  without a multipoll_id are skipped; the first occurrence per multipoll
+ *  wins, so callers can prepend a known-current poll to override an entry
+ *  already in the cache (`buildPollByMultipollMap([current, ...accessible])`).
+ */
+export function buildPollByMultipollMap(polls: Iterable<Poll>): Map<string, Poll> {
+  const map = new Map<string, Poll>();
+  for (const p of polls) {
+    if (p.multipoll_id && !map.has(p.multipoll_id)) map.set(p.multipoll_id, p);
+  }
+  return map;
+}
+
 export interface Thread {
   /** ID of the root poll (topmost accessible poll in the chain) */
   rootPollId: string;
@@ -345,7 +358,7 @@ function defaultPollByMultipoll(multipollId: string): Poll | null {
   if (typeof window === 'undefined') return null;
   const cached = getCachedAccessiblePolls();
   if (!cached) return null;
-  return cached.find(p => p.multipoll_id === multipollId) ?? null;
+  return buildPollByMultipollMap(cached).get(multipollId) ?? null;
 }
 
 /**

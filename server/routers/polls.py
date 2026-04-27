@@ -35,10 +35,9 @@ from algorithms.yes_no import count_yes_no_votes
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
-# Phase 3.5: SELECTs that feed `_row_to_poll` for FE consumption use this
-# pattern so the row carries the wrapper's `follow_up_to` (the source of truth
-# for thread chains). The helper is split into prefix + suffix because most
-# callers also need a WHERE clause; placeholders use psycopg's %(name)s syntax.
+# SELECTs feeding `_row_to_poll` use this prefix so the row carries the
+# wrapper's `follow_up_to` (the source of truth for thread chains). Pair it
+# with a WHERE clause that references the `p` alias.
 _SELECT_POLL_WITH_MULTIPOLL_PREFIX = """
     SELECT p.*, mp.follow_up_to AS multipoll_follow_up_to
       FROM polls p
@@ -47,12 +46,9 @@ _SELECT_POLL_WITH_MULTIPOLL_PREFIX = """
 
 
 def _attach_multipoll_chain_fields(conn, row) -> dict | None:
-    """Annotate a polls row (e.g. from RETURNING *) with multipoll_follow_up_to.
-
-    SELECTs feeding `_row_to_poll` should use `_SELECT_POLL_WITH_MULTIPOLL_PREFIX`
-    instead so they get the field via JOIN. This helper is for UPDATE/INSERT
-    paths where a separate lookup is the simplest fix.
-    """
+    """Annotate a RETURNING * row with multipoll_follow_up_to via a separate
+    lookup. Use this for UPDATE/INSERT paths; SELECT paths should use
+    `_SELECT_POLL_WITH_MULTIPOLL_PREFIX` instead."""
     if row is None:
         return None
     row = dict(row)
@@ -212,11 +208,8 @@ def _row_to_poll(row: dict) -> PollResponse:
         thread_title=row.get("thread_title"),
         multipoll_id=str(row["multipoll_id"]) if row.get("multipoll_id") else None,
         sub_poll_index=row.get("sub_poll_index"),
-        # Phase 3.5: source of truth for thread chains. Populated by the
-        # `_select_polls_with_multipoll_followup` SQL helper via a LEFT JOIN
-        # onto multipolls; absent for callers that SELECT polls directly,
-        # which is fine — `_row_to_poll` returns None and the FE chain logic
-        # defensively treats the poll as a standalone thread root.
+        # Populated by _SELECT_POLL_WITH_MULTIPOLL_PREFIX (or the post-mutation
+        # _attach_multipoll_chain_fields). Other callers get None.
         multipoll_follow_up_to=(
             str(row["multipoll_follow_up_to"])
             if row.get("multipoll_follow_up_to")
@@ -349,9 +342,6 @@ def create_poll(req: CreatePollRequest):
                 "now": now,
             },
         ).fetchone()
-        # New legacy polls have multipoll_id IS NULL, so the field is None.
-        # Retained for symmetry with the multipoll-routed create flow.
-        row = _attach_multipoll_chain_fields(conn, row)
 
     return _row_to_poll(row)
 

@@ -30,7 +30,7 @@ import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getCachedAccessiblePolls } from "@/lib/pollCache";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { findThreadRootRouteId, buildPollByMultipollMap } from "@/lib/threadUtils";
 import * as pollBackTarget from "@/lib/pollBackTarget";
 export const dynamic = 'force-dynamic';
 
@@ -38,16 +38,8 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-// Phase 3.5: build a multipoll_id → Poll resolver for `findThreadRootRouteId`.
-// Walks the cached accessible polls, falling through to the per-poll cache when
-// the list isn't available (e.g. user opened the create modal from a poll page
-// without first hitting home).
 function pollByMultipollLookup() {
-  const accessible = getCachedAccessiblePolls() ?? [];
-  const byMultipoll = new Map<string, Poll>();
-  for (const p of accessible) {
-    if (p.multipoll_id && !byMultipoll.has(p.multipoll_id)) byMultipoll.set(p.multipoll_id, p);
-  }
+  const byMultipoll = buildPollByMultipollMap(getCachedAccessiblePolls() ?? []);
   return (multipollId: string) => byMultipoll.get(multipollId) ?? null;
 }
 
