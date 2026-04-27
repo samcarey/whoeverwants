@@ -11,6 +11,8 @@ export interface ThreadHeaderProps {
   anonymousCount?: number;
   subtitle?: string;
   onTitleClick?: () => void;
+  onBack?: () => void;
+  rightSlot?: React.ReactNode;
 }
 
 /**
@@ -19,6 +21,11 @@ export interface ThreadHeaderProps {
  * there when the document scrolls). headerRef is on the inner content
  * div so offsetHeight stays content-only; the sibling content below
  * reserves exactly that much padding-top.
+ *
+ * onBack defaults to navigating to '/'; sub-routes pass their own handler
+ * (e.g. back to the thread root or the info page when in-app history exists).
+ * rightSlot renders an action button on the right; when provided, the title
+ * becomes centered to balance the layout.
  */
 export default function ThreadHeader({
   headerRef,
@@ -27,11 +34,20 @@ export default function ThreadHeader({
   anonymousCount,
   subtitle,
   onTitleClick,
+  onBack,
+  rightSlot,
 }: ThreadHeaderProps) {
   const router = useRouter();
+  const hasRightSlot = !!rightSlot;
+  const handleBack = onBack ?? (() => navigateWithTransition(router, '/', 'back'));
+
   const titleBlock = (
     <>
-      <h1 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
+      <h1
+        className={`font-semibold text-lg text-gray-900 dark:text-white truncate${
+          hasRightSlot ? ' text-center px-1' : ''
+        }`}
+      >
         {title}
       </h1>
       {subtitle && (
@@ -44,10 +60,13 @@ export default function ThreadHeader({
       className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
-      <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-4 py-2 flex items-center gap-2 overflow-hidden">
+      <div
+        ref={headerRef}
+        className={`max-w-4xl mx-auto pl-2 ${hasRightSlot ? 'pr-2' : 'pr-4'} py-2 flex items-center gap-2 overflow-hidden`}
+      >
         <button
-          onClick={() => navigateWithTransition(router, '/', 'back')}
-          className="w-10 h-10 -mr-1.5 flex items-center justify-center shrink-0"
+          onClick={handleBack}
+          className={`w-10 h-10 ${hasRightSlot ? '' : '-mr-1.5'} flex items-center justify-center shrink-0`}
           aria-label="Go back"
         >
           <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,6 +91,7 @@ export default function ThreadHeader({
         ) : (
           <div className="min-w-0 flex-1">{titleBlock}</div>
         )}
+        {rightSlot}
       </div>
     </div>
   );
