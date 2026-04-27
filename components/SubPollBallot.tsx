@@ -823,8 +823,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     setIsSubmitting(true);
     setVoteError(null);
 
-    let voteData: any = {}; // Initialize voteData outside try block for error logging
-
     try {
       const buildResult = buildVoteData(getBallotInputs());
       if (!buildResult.ok) {
@@ -832,14 +830,16 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         setIsSubmitting(false);
         return;
       }
-      voteData = buildResult.voteData;
-
-      let voteId: string | undefined;
-      let error: any;
+      const voteData = buildResult.voteData;
 
       const isEditing = (isEditingVote || isEditingRanking) && !!userVoteId;
       const multipollId = poll.multipoll_id ?? null;
       const trimmedVoterName = voterName.trim() || null;
+      const submitErrorMessage = isEditing
+        ? "Failed to update vote. Please try again."
+        : "Failed to submit vote. Please try again.";
+
+      let voteId: string | undefined;
 
       if (multipollId) {
         // Route through the unified multipoll endpoint per the architectural
@@ -860,26 +860,17 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           if (!v) throw new Error('Vote response missing for sub-poll');
           voteId = v.id;
           if (isEditing) setUserVoteData(v);
-        } catch (submitErr: any) {
-          error = submitErr;
-          console.error('Multipoll vote submit error:', submitErr);
-          if (isEditing) voteId = userVoteId;
-          setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
+        } catch (submitErr) {
+          console.error('Vote submission error:', submitErr);
+          console.error('Vote data that failed:', voteData);
+          setVoteError(submitErrorMessage);
+          return;
         }
       } else {
-        // Phase 5: every poll has a multipoll wrapper, so the legacy per-poll
-        // submit/edit fallbacks are unreachable. Surface as an error if the
-        // wrapper is somehow missing.
-        error = new Error('Cannot submit vote without multipoll_id');
+        // Phase 5: every poll has a multipoll wrapper, so this branch is
+        // unreachable. Surface as an error if the wrapper is somehow missing.
         console.error('Cannot submit vote without multipoll_id', { pollId: poll.id });
-        if (isEditing) voteId = userVoteId;
-        setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
-      }
-
-      if (error) {
-        console.error('Error submitting vote:', error);
-        console.error('Vote data that failed:', voteData);
-        setVoteError("Failed to submit vote. Please try again.");
+        setVoteError(submitErrorMessage);
         return;
       }
 
