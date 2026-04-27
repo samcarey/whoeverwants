@@ -49,8 +49,14 @@ export default function Template({ children }: AppTemplateProps) {
   );
 }
 
-const BUBBLE_BUTTON_CLASS =
-  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white font-medium [text-shadow:0_1px_2px_rgba(0,0,0,0.3)]";
+const BUBBLE_BUTTON_BASE =
+  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 shadow-md shadow-black/20 cursor-pointer text-gray-800 font-medium";
+const BUBBLE_BUTTON_WHAT =
+  `${BUBBLE_BUTTON_BASE} bg-amber-200 dark:bg-amber-300 active:bg-amber-300 dark:active:bg-amber-200`;
+const BUBBLE_BUTTON_WHERE =
+  `${BUBBLE_BUTTON_BASE} bg-rose-200 dark:bg-rose-300 active:bg-rose-300 dark:active:bg-rose-200`;
+const BUBBLE_BUTTON_WHEN =
+  `${BUBBLE_BUTTON_BASE} bg-sky-200 dark:bg-sky-300 active:bg-sky-300 dark:active:bg-sky-200`;
 
 function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
@@ -565,29 +571,36 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({})}
-            className={BUBBLE_BUTTON_CLASS}
+            className={BUBBLE_BUTTON_WHAT}
             aria-label="Create new question"
           >
-            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             <span className="text-[1.12rem]">what</span>
           </button>
           <button
             type="button"
-            onClick={() => openCreateFromBubble({ mode: 'time' })}
-            className={BUBBLE_BUTTON_CLASS}
-            aria-label="Create new time question"
+            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
+            className={BUBBLE_BUTTON_WHERE}
+            aria-label="Create new place question"
           >
-            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
-            <span className="text-[1.12rem]">when</span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+            </svg>
+            <span className="text-[1.12rem]">where</span>
           </button>
           <button
             type="button"
-            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
-            className={BUBBLE_BUTTON_CLASS}
-            aria-label="Create new place question"
+            onClick={() => openCreateFromBubble({ mode: 'time' })}
+            className={BUBBLE_BUTTON_WHEN}
+            aria-label="Create new time question"
           >
-            <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
-            <span className="text-[1.12rem]">where</span>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+            </svg>
+            <span className="text-[1.12rem]">when</span>
           </button>
         </div>,
         document.getElementById('floating-fab-portal')!
