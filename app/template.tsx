@@ -481,7 +481,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             className={`absolute bottom-0 left-0 right-0 rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
               modalClosing ? 'animate-slide-down' : 'animate-slide-up'
             }`}
-            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 15px)', overscrollBehavior: 'none' }}
+            style={{ maxHeight: 'calc(100% - env(safe-area-inset-top, 0px) - 15px)', overscrollBehavior: 'none' }}
             onClick={e => e.stopPropagation()}
           >
             {/* Drag handle */}
@@ -505,7 +505,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             {/* Generated title line */}
             <div id="create-question-title-portal" className="flex-shrink-0 px-4" />
             {/* Scrollable content */}
-            <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
+            <div ref={modalScrollRef} className="overflow-auto overscroll-contain min-h-0">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
                 <Suspense fallback={
                   <div className="flex justify-center items-center py-20">
