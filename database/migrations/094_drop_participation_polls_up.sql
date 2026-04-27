@@ -13,6 +13,13 @@
 
 BEGIN;
 
+-- 0. Drop the legacy auto-close trigger + function. Migration 064 was meant
+--    to drop these but they survived on some DBs (the function references
+--    `polls.max_participants`, which step 3 below deletes — leaving the
+--    trigger in place would break every subsequent INSERT into votes).
+DROP TRIGGER IF EXISTS check_participation_capacity ON votes;
+DROP FUNCTION IF EXISTS auto_close_participation_poll();
+
 -- 1. Delete every participation poll. ON DELETE CASCADE on votes.poll_id
 --    and polls.parent_participation_poll_id_fkey takes care of votes and
 --    location/time sub-polls. Pre-Phase-4 participation polls have no
