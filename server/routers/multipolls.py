@@ -23,7 +23,7 @@ from models import (
     UpdateThreadTitleRequest,
     VoteResponse,
 )
-from routers.polls import (
+from services.polls import (
     _edit_vote_on_poll,
     _finalize_suggestion_options,
     _finalize_time_slots,
