@@ -111,10 +111,9 @@ def _resolve_parent_multipoll_id(conn, parent_poll_id: str | None) -> str | None
 def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
     # follow_up_to in the request is a *poll id* (matching the legacy
     # single-poll create API). Resolve to the parent's multipoll_id for the
-    # multipolls row; the original poll_id is also written onto each sub-poll's
-    # polls.follow_up_to so legacy thread aggregation keeps working until
-    # Phase 5. thread_title falls back through both kinds of parent so threads
-    # with mixed-mode parents inherit titles correctly.
+    # multipolls row. Phase 5: legacy single-poll parents are gone — every
+    # poll has a multipoll wrapper — so the polls.thread_title fallback was
+    # removed.
     parent_followup_multipoll_id = _resolve_parent_multipoll_id(conn, req.follow_up_to)
     explicit_title = req.title if req.title is not None else req.thread_title
     return conn.execute(
@@ -132,8 +131,7 @@ def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
             %(follow_up_multipoll_id)s, %(context)s,
             COALESCE(
                 %(explicit_title)s,
-                (SELECT thread_title FROM multipolls WHERE id = %(follow_up_multipoll_id)s),
-                (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
+                (SELECT thread_title FROM multipolls WHERE id = %(follow_up_multipoll_id)s)
             ),
             %(now)s, %(now)s
         )
@@ -144,14 +142,13 @@ def _insert_multipoll(conn, req: CreateMultipollRequest, now: datetime) -> dict:
             "creator_name": req.creator_name,
             "response_deadline": req.response_deadline,
             # Defer the absolute deadline when *_minutes is set — mirrors the
-            # suggestion_deadline split on polls (see CLAUDE.md "Deferred
+            # legacy suggestion_deadline split (see CLAUDE.md "Deferred
             # Suggestion Deadline").
             "prephase_deadline": (
                 None if req.prephase_deadline_minutes else req.prephase_deadline
             ),
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
             "follow_up_multipoll_id": parent_followup_multipoll_id,
-            "follow_up_poll_id": req.follow_up_to,
             "context": req.context,
             "explicit_title": explicit_title,
             "now": now,
