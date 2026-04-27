@@ -12,7 +12,7 @@
 
 The Supabase-to-Python migration and infrastructure improvements (Phases 1-10) are complete. The current architecture is: Vercel (frontend) + DigitalOcean droplet (FastAPI API + PostgreSQL).
 
-**Next major change: multipoll redesign.** Every poll becomes a multipoll wrapping one or more sub-polls. The What/When/Where button bar replaces the single "+" FAB on threads/home. Participation polls are explicitly excluded and being phased out (see "Participation Polls (Deprecated)" and "Multipoll System (In Progress)" below).
+**Next major change: multipoll redesign.** Every poll becomes a multipoll wrapping one or more sub-polls. The What/When/Where button bar replaces the single "+" FAB on threads/home. The legacy participation poll type was removed in migration 094 — see "Participation Polls (Removed)" below.
 
 ## DigitalOcean Droplet (Production Server)
 
@@ -230,8 +230,8 @@ whoeverwants/
 │   ├── SuggestionsList.tsx         # Display suggestions with vote counts
 │   ├── CompactRankedChoiceResults.tsx # Ranked choice round display
 │   ├── ReadOnlyTierCards.tsx       # Read-only tier-card ranking display (shared)
-│   ├── MinMaxCounter.tsx           # Participation min/max selectors
-│   ├── ParticipationConditions.tsx # Voter condition UI
+│   ├── MinMaxCounter.tsx           # Time-poll Duration counter
+│   ├── TimePollFields.tsx          # Time-poll Duration + day/time windows
 │   ├── OptionsInput.tsx            # Poll options/suggestions input
 │   ├── Countdown.tsx               # Deadline countdown timer
 │   ├── ConfirmationModal.tsx       # Confirm destructive actions
@@ -277,12 +277,13 @@ whoeverwants/
 │   ├── usePageTitle.ts             # Dynamic page title hook
 │   └── pushoverNotifications.ts    # Push notification integration
 │
-├── database/migrations/            # SQL migration files (001-064, up + down)
+├── database/migrations/            # SQL migration files (001-094, up + down)
 │   ├── 001-015: Core schema (polls, votes, results, ranked choice, RLS)
 │   ├── 016-041: Short IDs, poll access, suggestion fields, RLS policies
 │   ├── 042-050: Suggestion poll type, vote constraints, editing
-│   ├── 051-056: Participation poll type, auto-close triggers
-│   └── 057-063: Voter conditions, participation priority algorithm
+│   ├── 051-063: Participation poll machinery (since removed in 094)
+│   ├── 064-093: Cleanup, time poll, multipolls, backfill
+│   └── 094: Drop participation poll type entirely
 │
 ├── tests/
 │   ├── __tests__/                  # Vitest unit/integration tests
@@ -308,7 +309,7 @@ whoeverwants/
 │   └── tests/                      # Scenario test modules
 │       ├── test_casual_decisions.py    # Yes/no & suggestion polls
 │       ├── test_ranked_preferences.py  # Ranked choice / IRV scenarios
-│       ├── test_event_planning.py      # Participation polls with constraints
+│       ├── test_event_planning.py      # Multi-stage event planning scenarios
 │       ├── test_edge_cases.py          # Anonymity, editing, large groups
 │       └── test_multi_stage.py         # Multi-poll workflows (fork, follow-up)
 │
@@ -349,9 +350,8 @@ whoeverwants/
 | Type | Description | Vote Data |
 |------|-------------|-----------|
 | `yes_no` | Simple binary vote | `{ vote: "yes" \| "no" }` |
-| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak; supports equal/tied rankings | `{ rankings: string[], ranked_choice_tiers?: string[][] }` |
-| `suggestion` | Suggest options, then vote on them | `{ suggestions: string[] }` |
-| `participation` | RSVP with min/max constraints & voter conditions | `{ participating: boolean, conditions: {...} }` |
+| `ranked_choice` | Instant Runoff Voting (IRV) with Borda tiebreak; supports equal/tied rankings; optional suggestion phase | `{ rankings: string[], ranked_choice_tiers?: string[][], suggestions?: string[] }` |
+| `time` | Two-phase availability (day/time windows) → preferences (likes/dislikes) | `{ voter_day_time_windows: [...], liked_slots?: string[], disliked_slots?: string[] }` |
 
 ### Access Control Model
 
@@ -715,71 +715,11 @@ Replace `<api_port>` with the dev server's API port (8001-8005).
 
 ---
 
-## Participation Polls (Deprecated)
+## Participation Polls (Removed)
 
-**Participation polls are being phased out.** Existing code is kept for reference only — do NOT extend, refactor, or integrate them into new features. The multipoll redesign explicitly excludes participation polls from its data model, UI flows, and migration. Eventually the participation poll type, its routes, components (`ParticipationConditions`, `MinMaxCounter`, voter conditions UI, sub-poll location/time fields), tables/columns, algorithms, and the inclusion-priority logic below will all be removed. Until then:
+The `poll_type='participation'` type, its FE components (`ParticipationConditions`, `SubPollField`, `ParticipationConditionsCard`), the `algorithms/participation.py` priority algorithm, the `auto_close.py` capacity-watcher, and every supporting column/constraint were dropped in **migration 094** (schema) plus the matching code removal. There is no longer a "participation" poll type or codepath. (`MinMaxCounter` survives — it's used by `TimePollFields` for the time-poll Duration counter.)
 
-- Don't add new features that interact with `poll_type='participation'`
-- Don't propose extending voter conditions or min/max participants to other poll types
-- Don't ask whether new features should handle participation polls — they shouldn't
-- Migration scripts and bulk operations should treat participation polls as a separate, untouched codepath
-- The multipoll system (below) does NOT wrap participation polls; they remain standalone for now
-
-The "Participation Poll Philosophy" subsections below document the existing inclusion-priority algorithm for reference only.
-
-## Participation Poll Philosophy: Maximizing Inclusion (Reference Only — Deprecated)
-
-### Core Principle
-
-**When multiple stable participant configurations exist, prioritize voters with fewer constraints to maximize future participation opportunities.**
-
-### Why This Matters
-
-Participation polls create interdependent constraints where each voter's willingness to participate depends on how many others participate. This can create scenarios where multiple valid "stable" configurations exist.
-
-**Example scenario:**
-- Poll requires 1-2 participants (set by creator)
-- Voter A votes YES with conditions: exactly 1 participant (min=1, max=1)
-- Voter B votes YES with conditions: 1+ participants (min=1, max=none)
-
-Both configurations are mathematically valid:
-- Configuration 1: Only Voter A participates (count=1, satisfies A's constraints)
-- Configuration 2: Only Voter B participates (count=1, satisfies B's constraints)
-
-### Selection Algorithm
-
-We choose **Configuration 2** (Voter B) because:
-
-1. **Flexibility**: Voter B's lack of max constraint means additional voters could join later
-2. **Inclusivity**: Maximizes the chance that more people can participate
-3. **Fairness**: Voters with restrictive constraints (like "exactly N") shouldn't block more flexible voters
-
-### Priority Ranking
-
-When selecting among competing voters, we rank by:
-
-1. **No max constraint** -> Highest priority (infinite flexibility)
-2. **Higher max value** -> Higher priority (more room for others)
-3. **Lower min value** -> Higher priority (easier to satisfy)
-4. **Earlier timestamp** -> Tiebreaker (first-come-first-served)
-
-### Implementation Strategy
-
-The algorithm uses a **greedy selection with priority ordering**:
-
-1. Calculate all voters who said "yes" to participating
-2. Sort voters by priority (most flexible first)
-3. Greedily include voters in priority order:
-   - Include voter if their constraints are satisfied by current count
-   - Skip voter if including them would violate anyone's constraints
-4. Return the final stable set of participating voters
-
-### Edge Cases Handled
-
-- **Oscillation**: When no fixed point exists, algorithm still converges
-- **All-or-nothing voters**: Those with restrictive maxes get lower priority
-- **Mixed constraints**: Algorithm finds optimal subset efficiently
-- **Empty result**: If no stable configuration exists, event doesn't happen (count=0)
+If a future feature needs RSVP-style headcount semantics, it should be designed from scratch as a sub-poll category inside the multipoll system rather than reviving the old standalone-poll architecture. The historical inclusion-priority algorithm (greedy selection respecting per-voter min/max constraints) is preserved in git history if anyone wants to mine it.
 
 ---
 
@@ -839,7 +779,7 @@ When designing a new feature: ask "is this a multipoll-level concept?" If yes, r
 - **Phase 3.2 follow-up (stacked compact pills)** — The footer-row pill slot in `app/thread/[threadId]/page.tsx` previously rendered only the anchor sub-poll's preview, leaving secondary winners invisible (e.g. a Yes/No+Restaurant card showed the Yes/No tally but hid the restaurant winner). The IIFE now extracts a `pillForSubPoll(sp)` helper that returns the type-specific pill JSX (or null) for any sub-poll. Single-sub-poll groups: unchanged — yes_no still bypasses `CompactPreviewClip` (the pill is omitted when expanded because the full Yes/No cards take over below), other types still wrap in the clip. Multi-sub-poll groups: one pill per sub-poll, stacked vertically (`flex flex-col items-end gap-1`) inside a single `CompactPreviewClip` so the whole column animates to 0 in lockstep with the heavy expand clip. Sub-polls with no data yet (no votes / no suggestions) drop their row so the column stays compact. Pattern to extend: when adding a new sub-poll-supported type, add a branch to `pillForSubPoll(sp)` — both the single-sub-poll and multi-sub-poll callsites pick it up automatically.
 - **Phase 3.1 (multipoll-level operations)** — `POST /api/multipolls/{id}/{close,reopen,cutoff-suggestions,cutoff-availability}` close/reopen/cutoff the wrapper + every sub-poll atomically (single transaction). `close` re-runs `_finalize_suggestion_options` for any ranked_choice sub-poll mid-suggestion-phase (mirrors the per-poll flow). `cutoff-suggestions` advances every sub-poll in a suggestion phase that has at least one suggestion vote, returning 400 only if NO sub-poll advanced. `cutoff-availability` targets the (≤1 enforced on create) time sub-poll. All four authorize on `multipolls.creator_secret`. FE: `apiCloseMultipoll` / `apiReopenMultipoll` / `apiCutoffMultipollSuggestions` / `apiCutoffMultipollAvailability` in `lib/api.ts` (each invalidates + re-caches via the shared `multipollOperation` helper). Thread page long-press handlers (`app/thread/[threadId]/page.tsx`) detect `action.poll.multipoll_id` and route to the multipoll endpoint when set — the optimistic `setThread` updater rewrites every sibling sharing the same `multipoll_id` (not just `id === action.poll.id`) so closing one card visually closes them all. Falls back to `apiClosePoll` / `apiReopenPoll` / `apiCutoffAvailability` when `multipoll_id` is null (participation polls).
 
-**Every non-participation poll now has a multipoll wrapper.** Participation polls keep `multipoll_id IS NULL` forever (per "Participation Polls (Deprecated)").
+**Every poll now has a multipoll wrapper.** (Migration 094 removed the participation poll type that was the lone exception.)
 
 Frontend conventions for the multipoll plumbing:
 - The exported `SubPollType` alias in `lib/api.ts` (`'yes_no' | 'ranked_choice' | 'time'`) is the canonical "what poll types can be sub-polls". Don't re-inline this union — the `participation` exclusion is enforced server-side too, and a shared alias keeps the two layers in sync.
@@ -855,6 +795,8 @@ Frontend conventions for the multipoll plumbing:
 - When adding a new `/api/<family>` endpoint, also add the rewrite in `next.config.ts: nextConfig.rewrites` (three entries: bare, trailing slash, `/:path*`). Without these, FE calls 404 from Next.js itself before reaching the proxy. Phase 2.2 hit this — the create UI silently failed loading multipolls until the rewrites landed.
 - **Multipoll-level mutations must rewrite every sibling in the optimistic state update.** When `action.poll.multipoll_id` is set, the close/reopen/cutoff handlers call `apiCloseMultipoll(multipollId, ...)` etc. — that hits every sub-poll on the server. The matching `setThread` updater needs to filter on `p.multipoll_id === multipollId`, NOT `p.id === action.poll.id`, otherwise siblings stay visually open until a refresh. The legacy `p.id === action.poll.id` path is kept only for the participation-poll fallback (`multipoll_id` is null). Same logic applies to anything else that mutates sub-poll-shared state (e.g. follow-up creation, future Phase 3.2 voting endpoints).
 - **Don't share `_finalize_*` helpers between `routers/polls.py` and `routers/multipolls.py` by re-implementing them.** The multipoll close/cutoff endpoints import `_finalize_suggestion_options`, `_finalize_time_slots`, `_resolve_sub_poll_winner` directly from `routers.polls`. They're free functions on a connection and per-poll-id, so reuse is clean. If you find yourself re-writing one of these in the multipoll router, that's a sign the helper is mis-scoped (split it into `algorithms/` instead). Same shape applies to `_submit_vote_to_poll(conn, poll_id, req, now)` / `_edit_vote_on_poll(conn, poll_id, vote_id, req, now)` — extracted from `submit_vote` / `edit_vote` for the Phase 3.4 unified vote endpoint and re-used directly inside the multipoll batch transaction. Both helpers raise `HTTPException` on validation failure (rolling back the entire batch); they don't open their own DB connection so the caller controls the transaction scope.
+
+  > **Note (post-migration 094):** `_resolve_sub_poll_winner` was deleted along with the participation poll type — it only made sense for the location/time sub-poll resolution flow. The pattern still applies to `_finalize_suggestion_options` / `_finalize_time_slots`.
 - **Multipoll endpoint tests need `DISABLE_RATE_LIMIT=1` and ideally a per-test DB.** The existing `test_multipolls_api.py` defaults `DATABASE_URL` to `postgresql://whoeverwants:whoeverwants@localhost:5432/whoeverwants` which on the dev droplet is the prod-shaped DB; the migration 093 backfill of real polls' short_ids into multipolls leaves the multipolls sequential_id sequence un-aware of the backfilled rows, so when tests advance the sequence they eventually collide on `multipolls_short_id_key`. Run tests against `dev_sam_at_samcarey_com` (smaller dataset, no collisions in practice) with rate limit off: `DATABASE_URL='...dev_sam...' DISABLE_RATE_LIMIT=1 uv run pytest tests/test_multipolls_api.py`. The sequence-collision is a pre-existing migration bug (out of scope here); a future cleanup should bump the sequence past the highest backfilled `encode_base62_inverse(short_id)` after Pass 1.
 
 This section captures the design decisions from the original conversation so future sessions can reference them without re-asking.
@@ -862,7 +804,7 @@ This section captures the design decisions from the original conversation so fut
 ### Core paradigm
 
 - **Every poll is a multipoll** containing one or more sub-polls. Existing single polls migrate to 1-sub-poll multipolls (destructive DB migration). A 1-sub-poll multipoll renders the same as today's poll — the wrapper is invisible in the UI for that case.
-- **Participation polls are excluded** from the multipoll system entirely. They stay standalone with their existing routes/components and are slated for eventual removal (see "Participation Polls (Deprecated)").
+- **Participation polls were removed in migration 094.** Older "Phase X" notes below mention them as a separate codepath; that's stale — every poll now has a multipoll wrapper.
 
 ### Entities
 
@@ -1191,14 +1133,6 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Use consistent constraint names across migrations.** If migration 043 creates `vote_type_check` and migration 048 drops/recreates `votes_vote_type_check` (different name!), both constraints coexist. New migrations that only update one name leave the other stale. Always `DROP CONSTRAINT IF EXISTS` for ALL known aliases before creating the updated constraint.
 - **When adding new enum values to CHECK constraints**, search all migrations for every constraint on that column (names may vary) and drop all of them before adding the new one. Use `SELECT conname FROM pg_constraint WHERE conrelid = 'table'::regclass` to audit.
 
-### Sub-Poll Architecture (Location/Time Fields)
-
-- **Participation polls support optional Location and Time fields** with three modes: `set` (static value), `preferences` (creator-provided options → ranked choice sub-poll), `suggestions` (suggestion sub-poll → auto-created ranked choice).
-- **Sub-polls are hidden from the main poll list** via `is_sub_poll = true` and filtered in `get_accessible_polls`. They're only accessible from the parent poll via `SubPollField` component.
-- **Sub-poll resolution**: When a ranked choice sub-poll with `sub_poll_role` closes, `_resolve_sub_poll_winner()` computes the IRV winner and writes it to the parent's `resolved_location` or `resolved_time` column.
-- **Creator secret propagation**: Sub-polls share the parent's `creator_secret`. The browser propagates it via `SubPollField` on page load since localStorage only stores secrets for directly-created polls.
-- **Column whitelist**: `_resolve_sub_poll_winner` uses an f-string for the column name — the field value MUST be validated against `("location", "time")` before interpolation.
-
 ### Deferred Suggestion Deadline
 
 - **Suggestion deadlines are deferred until the first suggestion is submitted.** Poll creation stores `suggestion_deadline_minutes` (the duration) and sets `suggestion_deadline` to NULL. When the first vote with suggestions arrives, the backend sets `suggestion_deadline = now + minutes`. This prevents empty cutoffs where the deadline expires before anyone suggests anything.
@@ -1236,7 +1170,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 
 - **Time windows where `max <= min` represent cross-midnight ranges** (e.g., 10 PM–2 AM). Equal start/end means a full 24-hour window. Use `<=` consistently in all cross-midnight detection — `<` misses the equal-times-as-24h case.
 - **String comparison works for HH:MM cross-midnight detection** only because the format is always zero-padded. `"02:00" < "22:00"` is correct lexicographically. If the format ever loses zero-padding (e.g., `"2:00"`), all comparisons silently break.
-- **`_window_effective_end()` in `time_slots.py`** is the canonical backend helper — it adds 1440 minutes when `w_end <= w_start`. The frontend has no shared utility yet; cross-midnight checks are inline in `DayTimeWindowsInput`, `ParticipationConditionsCard`, `TimeSlotRoundsDisplay`, and `TimeGridModal`.
+- **`_window_effective_end()` in `time_slots.py`** is the canonical backend helper — it adds 1440 minutes when `w_end <= w_start`. The frontend has no shared utility yet; cross-midnight checks are inline in `DayTimeWindowsInput` and `TimeGridModal`.
 - **Looping scroll wheels must scroll to the nearest occurrence** of the target index, not the center repetition. Otherwise wraparound (12→1) causes the wheel to scroll the long way around through all values.
 - **ScrollWheel's `suppressScrollHandler` flag can get permanently stuck.** `recenterLoop()` sets the flag and schedules an rAF to clear it, but `correctPosition()` runs synchronously right after and bails out because the flag is still set. If a touch interaction then overwrites `scrollTimeout`, the clearing rAF/timeout is lost and the flag stays true forever — silencing all `onChange` calls. Fix: defer `correctPosition` via rAF when suppression is active, and add a safety timeout (500ms) that guarantees the flag gets cleared.
 - **Use refs (not render-scope variables) for state that multiple scroll events may read/write within a single React render cycle.** `handleHourChange` in `TimeCounterInput` captured `periodIndex` from the render scope. When two scroll events crossed the AM/PM boundary before React re-rendered, the second event used the stale value and emitted the wrong time. Track such state in a `useRef` and update it immediately in the handler.
@@ -1319,7 +1253,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Use `bounded=1` with viewbox AND a hard distance cutoff** for proximity searches. Nominatim's viewbox is a bias, not a hard filter — results outside the box can still appear. Always post-filter with `_haversine_miles()` against `max_distance`.
 - **Always set `Accept-Language: en`** in Nominatim requests to avoid foreign-language results.
 - **Reference location is stored per-poll** (`reference_latitude`, `reference_longitude`, `reference_location_label` columns) and per-user in localStorage (`lib/userProfile.ts: UserLocation`). The poll creation page auto-fills from localStorage.
-- **Gate the "Near X" display on category, not just field presence.** Because the reference location auto-fills on every poll creation, non-location polls (Video Game, Movie) can end up with a `reference_location_label` that isn't meaningful. The poll page shows the badge only when `isLocationLikeCategory(poll.category)` or (participation poll with `location_mode` set). Extend this gate when adding new poll-detail UI that references location.
+- **Gate the "Near X" display on category, not just field presence.** Because the reference location auto-fills on every poll creation, non-location polls (Video Game, Movie) can end up with a `reference_location_label` that isn't meaningful. The poll page shows the badge only when `isLocationLikeCategory(poll.category)`. Extend this gate when adding new poll-detail UI that references location.
 - **Nominatim rate-limits aggressively (1 req/sec, IP-based).** Never fire parallel Nominatim requests — use a single search covering the area. The restaurant endpoint does one Nominatim call for the whole result set, not one per business.
 - **OSM data completeness varies wildly by region.** NYC has websites for most chain restaurants; suburban/rural areas often have none. The `_restaurant_favicon_cache` compensates: once any location of a chain (e.g., Burger King) has a website in OSM, all locations get that favicon via name-based caching.
 - **Restaurant search uses Nominatim with `extratags`** to extract cuisine data (e.g., `cuisine=mexican;burrito`), category type (`restaurant`, `fast_food`, `cafe`), and website URLs for favicons. No external paid API is needed — all restaurant data comes from OpenStreetMap.
@@ -1376,7 +1310,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Derive validation highlights from source state, not error strings**: When a form element needs to highlight in response to a specific validation failure, derive the highlight boolean from the underlying state (e.g. `dayTimeWindows.length === 0`) rather than comparing `validationError === "some exact string"`. String comparison silently breaks on typos or rewording. The pattern in `ParticipationConditions.tsx: highlightDaysButton` passes a simple state-derived boolean from the parent.
 - **Compact tappable-value → modal pattern**: For form fields that don't need to be adjusted often (like Minimum Participation), use a single-line `<div>` with a `<button>` showing the current value in blue (`text-blue-600 dark:text-blue-400`). Tapping opens a modal with the full control (slider, picker, etc.). Don't wrap the whole thing in a `<label>` — there's no form control to associate with. Example: `MinimumParticipationModal.tsx` + the compact field in `app/create-poll/page.tsx` (time poll block).
 - **Pill-on-info-line → modal pattern**: `components/SearchRadiusBubble.tsx` is the shared "blue pill shows current value, tap to edit in a small modal" control. Used on the poll-creation form (`ReferenceLocationInput`) AND on the voting page's "Near X" info line (`SubPollBallot`) — owning `searchRadius` state in `SubPollBallot` and forwarding it as a prop to `SuggestionVotingInterface` keeps the two surfaces in sync with a single source of truth. When adding another numeric-value-with-unit pill control, reuse this component or mirror its structure (pill uses `bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full` class stack).
-- **Radius bubble on the "Near X" voting-form line is gated on `canSubmitSuggestions && isLocationLikeCategory(category)`** — it's only meaningful during suggestion collection for location polls. `showReferenceLocation` (which wraps the pin + label) already covers participation polls with `location_mode` but those don't use the autocomplete search radius, hence the stricter inner gate. `reference_location_label` is always co-set with `reference_latitude`/`reference_longitude`, so checking the label is sufficient — don't re-guard on latitude.
+- **Radius bubble on the "Near X" voting-form line is gated on `canSubmitSuggestions && isLocationLikeCategory(category)`** — it's only meaningful during suggestion collection for location polls. `reference_location_label` is always co-set with `reference_latitude`/`reference_longitude`, so checking the label is sufficient — don't re-guard on latitude.
 
 ### Social Test Report Bidirectional Linking
 
@@ -1395,7 +1329,7 @@ bash scripts/remote.sh "docker exec whoeverwants-db-1 psql -U whoeverwants -c \"
 - **Shared pill primitives** in `PollResults.tsx`: `PILL_CLASS` (includes `min-w-0` so it can shrink below content width when the status label on the left claims most of the flex row), `PILL_COLORS_OPEN` (blue), `PILL_COLORS_CLOSED` (green). Reuse these rather than copying class stacks — the review agents flag divergence fast. Empty-state copy ("No voters", "No suggestions yet") is NOT rendered in the card's pill slot anymore — it lives below the card in the respondents row (see the "Respondent Row" section below). Every compact preview component (`YesNoResults` hideLoser path, `CompactRankedChoicePreview`, `CompactSuggestionPreview`, `CompactTimePreview`) returns `null` when empty and the wrapper at the callsite is also skipped so no gap lingers.
 - **Closed polls show "Closed Xm ago" (faint) in the in-card footer row's status slot** — the compact pills (Yes/No, CompactRankedChoicePreview, CompactSuggestionPreview, CompactTimePreview) are the single source of truth for the winner, so the status slot is repurposed for timing info only. Uses `compactDurationSince(closedAt)` from `lib/pollListUtils.ts`, which promotes to the next larger unit only when that unit's count would be ≥ 2 (13d stays `13d`; 14d becomes `2w`). The `closedAt` source is `response_deadline` when `close_reason === 'deadline'` (more accurate than `updated_at`, which would drift on subsequent edits), else `updated_at` (reliable for manual / max_capacity / uncontested closes — the DB trigger refreshes it on every `is_closed` flip). Don't call `getResultBadge` here — it's no longer imported into the thread page.
 - **Time polls in the availability phase render "Collecting Availability" in the footer row's status slot**, not in the pill slot — same format and styling as "Taking Suggestions". Use `isInTimeAvailabilityPhase(poll)` (in `lib/pollListUtils.ts`) as the single check; the `CompactTimePreview` pill returns null during that phase so nothing is duplicated.
-- **`POLL_TYPE_SYMBOLS` needs an entry for every new poll type** (in `lib/pollListUtils.ts`). Without it, polls with that type and no matching category fall through to `'☰'` — a giveaway that the icon's wrong. Currently: `yes_no: '👍'`, `ranked_choice: '🗳️'`, `participation: '🙋'`, `time: '📅'`.
+- **`POLL_TYPE_SYMBOLS` needs an entry for every new poll type** (in `lib/pollListUtils.ts`). Without it, polls with that type and no matching category fall through to `'☰'` — a giveaway that the icon's wrong. Currently: `yes_no: '👍'`, `ranked_choice: '🗳️'`, `time: '📅'`.
 - **Ties aren't possible in the ranked_choice winner field.** After Borda count tiebreak fails, the algorithm falls back to alphabetical. So `results.winner === 'tie'` only happens in yes_no; compact previews for ranked_choice can treat a missing winner as "no voters yet" rather than ambiguously tied.
 - **Plain-text fallbacks get `mr-[0.4rem]` extra right margin** on top of the card's `px-2` (≈80% more distance from the card border) so they don't visually crowd the edge. Pill content keeps its own internal padding and sits at the default right edge of the card.
 - **Category icon vertical centering**: `mt-[4px]` on the icon wrapper (previously `mt-[7px]`). Pure line-box centering (9px) reads low because the line-box includes descender space; biasing toward cap-height centering (5px) reads better for emoji glyphs across the category set. If the emoji set or title size changes, re-tune with Playwright `getBoundingClientRect` on both `<h3>` and the icon wrapper.

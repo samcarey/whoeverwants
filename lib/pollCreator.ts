@@ -86,8 +86,6 @@ export function buildPollSnapshot(poll: Poll) {
     options: poll.options,
     response_deadline: poll.response_deadline,
     creator_name: poll.creator_name,
-    min_participants: poll.min_participants,
-    max_participants: poll.max_participants,
     auto_close_after: poll.auto_close_after,
     details: poll.details,
     category: poll.category,

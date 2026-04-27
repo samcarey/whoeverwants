@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
 import Link from "next/link";
 import {
-  apiCreatePoll,
   apiCreateMultipoll,
   apiFindDuplicatePoll,
   CreateMultipollParams,
@@ -25,10 +24,9 @@ import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
-import MinMaxCounter from "@/components/MinMaxCounter";
-import ParticipationConditions, { DayTimeWindow } from "@/components/ParticipationConditions";
-import LocationTimeFieldConfig from "@/components/LocationTimeFieldConfig";
+import TimePollFields from "@/components/TimePollFields";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
+import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { getCachedAccessiblePolls, getCachedPollById } from "@/lib/pollCache";
@@ -62,8 +60,8 @@ function pollChainLookup() {
 //
 // Phase 2.4: `additionalSubPolls` are prepended to the sub_polls array so
 // staged drafts come first (display order) and the current form's sub-poll
-// is the last one. Server validates the combined list (≤1 time, no
-// participation, distinct contexts for same-kind sub-polls).
+// is the last one. Server validates the combined list (≤1 time sub-poll,
+// distinct contexts for same-kind sub-polls).
 function pollDataToMultipollRequest(
   pollData: any,
   additionalSubPolls: CreateSubPollParams[] = [],
@@ -191,12 +189,10 @@ export function CreatePollContent() {
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const pollType = modeParam === 'participation' ? 'participation' : modeParam === 'time' ? 'time' : 'poll';
-  const setPollType = useCallback((type: 'poll' | 'participation' | 'time') => {
+  const pollType = modeParam === 'time' ? 'time' : 'poll';
+  const setPollType = useCallback((type: 'poll' | 'time') => {
     const url = new URL(window.location.href);
-    if (type === 'participation') {
-      url.searchParams.set('mode', 'participation');
-    } else if (type === 'time') {
+    if (type === 'time') {
       url.searchParams.set('mode', 'time');
     } else {
       url.searchParams.delete('mode');
@@ -204,10 +200,6 @@ export function CreatePollContent() {
     router.replace(url.pathname + url.search);
   }, [router]);
   const [options, setOptions] = useState<string[]>(['']);
-  const [minParticipants, setMinParticipants] = useState<number | null>(1);
-  const [maxParticipants, setMaxParticipants] = useState<number | null>(null);
-  const [minEnabled, setMinEnabled] = useState(true);
-  const [maxEnabled, setMaxEnabled] = useState(false);
   const [durationMinValue, setDurationMinValue] = useState<number | null>(1);
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(true);
@@ -242,17 +234,6 @@ export function CreatePollContent() {
   const [category, setCategory] = useState<string>(categoryParam || 'custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
-  // Location/time fields for participation polls
-  const [locationMode, setLocationMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
-  const [locationValue, setLocationValue] = useState('');
-  const [locationOptions, setLocationOptions] = useState<string[]>(['', '']);
-  const [locationSuggestionsDeadline, setLocationSuggestionsDeadline] = useState('10min');
-  const [locationPreferencesDeadline, setLocationPreferencesDeadline] = useState('10min');
-  const [timeMode, setTimeMode] = useState<'none' | 'set' | 'preferences' | 'suggestions'>('none');
-  const [timeValue, setTimeValue] = useState('');
-  const [timeOptions, setTimeOptions] = useState<string[]>(['', '']);
-  const [timeSuggestionsDeadline, setTimeSuggestionsDeadline] = useState('10min');
-  const [timePreferencesDeadline, setTimePreferencesDeadline] = useState('10min');
   // Reference location for proximity-based search
   const [refLatitude, setRefLatitude] = useState<number | undefined>(undefined);
   const [refLongitude, setRefLongitude] = useState<number | undefined>(undefined);
@@ -264,7 +245,7 @@ export function CreatePollContent() {
   // Phase 2.4: previously-committed sub-polls awaiting submit. The current
   // form represents the *last* sub-poll; on submit we prepend these to the
   // multipoll request. MVP only stages yes_no/ranked_choice (server enforces
-  // ≤1 time and rejects participation entirely).
+  // ≤1 time sub-poll).
   const [stagedSubPolls, setStagedSubPolls] = useState<CreateSubPollParams[]>([]);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
@@ -334,21 +315,9 @@ export function CreatePollContent() {
       return appendFor(buildFromOptions(filled, 'Quick Vote'));
     }
 
-    // participation
-    if (pollType === 'participation') {
-      if (locationMode === 'set' && locationValue.trim()) {
-        return `Who's going to ${shortenLocation(locationValue)}?`;
-      }
-      if (locationMode === 'preferences') {
-        const filled = locationOptions.filter(o => o.trim()).map(shortenLocation);
-        if (filled.length > 0) return buildFromOptions(filled, "Who's in?");
-      }
-      return "Who's in?";
-    }
-
     // time
     return appendFor("Time?");
-  }, [pollType, category, options, forField, locationMode, locationValue, locationOptions]);
+  }, [pollType, category, options, forField]);
 
   // Focus details textarea when opening
   useEffect(() => {
@@ -503,9 +472,6 @@ export function CreatePollContent() {
         isAutoTitle,
         category,
         forField,
-        minParticipants,
-        maxParticipants,
-        maxEnabled,
         durationMinValue,
         durationMaxValue,
         durationMinEnabled,
@@ -517,7 +483,7 @@ export function CreatePollContent() {
       };
       localStorage.setItem('pollFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedSubPolls]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedSubPolls]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -557,10 +523,6 @@ export function CreatePollContent() {
           if (formState.category && !categoryParam) setCategory(formState.category);
           if (formState.forField) setForField(formState.forField);
 
-          // Restore participation poll conditions
-          if (formState.minParticipants !== undefined) setMinParticipants(formState.minParticipants);
-          if (formState.maxParticipants !== undefined) setMaxParticipants(formState.maxParticipants);
-          if (formState.maxEnabled !== undefined) setMaxEnabled(formState.maxEnabled);
           if (formState.durationMinValue !== undefined) setDurationMinValue(formState.durationMinValue);
           if (formState.durationMaxValue !== undefined) setDurationMaxValue(formState.durationMaxValue);
           if (formState.durationMinEnabled !== undefined) setDurationMinEnabled(formState.durationMinEnabled);
@@ -599,8 +561,7 @@ export function CreatePollContent() {
   };
 
   // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'participation' | 'time' => {
-    if (pollType === 'participation') return 'participation';
+  const getPollType = (): 'yes_no' | 'ranked_choice' | 'time' => {
     if (pollType === 'time' || category === 'time') return 'time';
     if (category === 'yes_no') return 'yes_no';
     return 'ranked_choice';
@@ -642,30 +603,7 @@ export function CreatePollContent() {
       if (optErr) return optErr;
     }
 
-    // Participation poll: must have days selected, and every day needs a time slot
-    if (dbPollType === 'participation') {
-      if (dayTimeWindows.length === 0) {
-        return "Please select at least one day.";
-      }
-      const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
-      if (emptyDays.length > 0) {
-        return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
-      }
-      // Check minimum duration on all time windows
-      if (durationMinEnabled && durationMinValue != null) {
-        const minDurMinutes = Math.round(durationMinValue * 60);
-        if (minDurMinutes > 0) {
-          const tooShort = dayTimeWindows.some(dtw =>
-            dtw.windows.some(w => windowDurationMinutes(w) < minDurMinutes)
-          );
-          if (tooShort) {
-            return `Each time window must be at least ${formatDurationLabel(minDurMinutes)} long (the minimum duration).`;
-          }
-        }
-      }
-    }
-
-    // Time poll: same day/window requirements as participation
+    // Time poll: every selected day needs a time slot
     if (dbPollType === 'time') {
       if (dayTimeWindows.length === 0) {
         return "Please select at least one day.";
@@ -723,8 +661,8 @@ export function CreatePollContent() {
   };
 
   // Subset of getValidationError that only checks per-sub-poll fields. Skips
-  // title (multipoll-level), deadline (multipoll-level), and time / participation
-  // shapes (those types can't be staged in MVP).
+  // title (multipoll-level), deadline (multipoll-level), and time
+  // shapes (time can't be staged in MVP).
   const getSubPollValidationError = (): string | null => {
     const dbPollType = getPollType();
     if (dbPollType !== 'yes_no' && dbPollType !== 'ranked_choice') {
@@ -918,20 +856,6 @@ export function CreatePollContent() {
             // ranked_choice without options (e.g. suggestion phase poll)
             setPollType('poll');
             setOptions(['']);
-          } else if (forkData.poll_type === 'participation') {
-            setPollType('participation');
-            setOptions(['']);
-            // Load participant counts
-            if (forkData.min_participants !== null && forkData.min_participants !== undefined) {
-              setMinParticipants(forkData.min_participants);
-            }
-            if (forkData.max_participants !== null && forkData.max_participants !== undefined) {
-              setMaxParticipants(forkData.max_participants);
-              setMaxEnabled(true);
-            } else {
-              setMaxEnabled(false);
-              setMaxParticipants(null);
-            }
           } else if (forkData.poll_type === 'time') {
             setPollType('time');
             setOptions(['']);
@@ -1006,21 +930,10 @@ export function CreatePollContent() {
           if (duplicateData.poll_type === 'ranked_choice') {
             setPollType('poll');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.poll_type === 'participation') {
-            setPollType('participation');
+          } else if (duplicateData.poll_type === 'time') {
+            setPollType('time');
             setOptions(['']);
-            // Load participant counts
-            if (duplicateData.min_participants !== null && duplicateData.min_participants !== undefined) {
-              setMinParticipants(duplicateData.min_participants);
-              setMinEnabled(true);
-            }
-            if (duplicateData.max_participants !== null && duplicateData.max_participants !== undefined) {
-              setMaxParticipants(duplicateData.max_participants);
-              setMaxEnabled(true);
-            } else {
-              setMaxEnabled(false);
-              setMaxParticipants(null);
-            }
+            if (duplicateData.min_availability_percent != null) setMinimumParticipation(duplicateData.min_availability_percent);
           } else {
             // yes_no poll
             setPollType('poll');
@@ -1123,7 +1036,7 @@ export function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, minParticipants, maxParticipants, maxEnabled, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
 
   // Track form changes for fork validation
   useEffect(() => {
@@ -1386,33 +1299,6 @@ export function CreatePollContent() {
         pollData.allow_pre_ranking = allowPreRanking;
       }
 
-      // Add min/max participants for participation polls
-      if (dbPollType === 'participation') {
-        // Min is always required
-        if (minParticipants !== null) {
-          pollData.min_participants = minParticipants;
-        }
-        // Max is optional
-        if (maxEnabled && maxParticipants !== null) {
-          pollData.max_participants = maxParticipants;
-        }
-
-        // Add day_time_windows
-        if (dayTimeWindows.length > 0) {
-          pollData.day_time_windows = dayTimeWindows;
-        }
-
-        // Add duration_window if either min or max is enabled
-        if (durationMinEnabled || durationMaxEnabled) {
-          pollData.duration_window = {
-            minValue: durationMinValue,
-            maxValue: durationMaxValue,
-            minEnabled: durationMinEnabled,
-            maxEnabled: durationMaxEnabled
-          };
-        }
-      }
-
       // Add time poll specific fields
       if (dbPollType === 'time') {
         if (dayTimeWindows.length > 0) {
@@ -1431,35 +1317,6 @@ export function CreatePollContent() {
         const cutoffMinutes = getSuggestionCutoffMinutes();
         pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
       }
-
-      // Add location field for participation polls
-      if (dbPollType === 'participation') {
-        const addFieldData = (
-          fieldName: 'location',
-          mode: string,
-          fieldValue: string,
-          fieldOptions: string[],
-          sugDeadline: string,
-          prefDeadline: string,
-        ) => {
-          if (mode === 'none') return;
-          pollData[`${fieldName}_mode`] = mode;
-          if (mode === 'set') {
-            pollData[`${fieldName}_value`] = fieldValue.trim();
-          } else if (mode === 'preferences') {
-            pollData[`${fieldName}_options`] = fieldOptions.filter(o => o.trim() !== '');
-            pollData[`${fieldName}_preferences_deadline_minutes`] =
-              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
-          } else if (mode === 'suggestions') {
-            pollData[`${fieldName}_suggestions_deadline_minutes`] =
-              BASE_DEADLINE_OPTIONS.find(o => o.value === sugDeadline)?.minutes || 10;
-            pollData[`${fieldName}_preferences_deadline_minutes`] =
-              BASE_DEADLINE_OPTIONS.find(o => o.value === prefDeadline)?.minutes || 10;
-          }
-        };
-        addFieldData('location', locationMode, locationValue, locationOptions, locationSuggestionsDeadline, locationPreferencesDeadline);
-      }
-
 
       // Add min_responses and show_preliminary_results for preference polls
       if (dbPollType === 'ranked_choice') {
@@ -1482,36 +1339,17 @@ export function CreatePollContent() {
         }
       }
 
-      // Phase 2.2: route non-participation polls through the multipoll API.
-      // The wrapper is invisible for 1-sub-poll multipolls; voting/results
-      // continue to use the per-poll endpoints. Participation polls stay on
-      // the legacy path — see CLAUDE.md "Participation Polls (Deprecated)".
-      const useMultipollPath = dbPollType !== 'participation';
-
-      // Phase 2.4: participation polls can't be wrapped in a multipoll, so
-      // they're incompatible with staged sub-polls. The +Add button is
-      // hidden for participation/time, but a user could stage on a poll
-      // form and then switch to participation — bail with a clear error.
-      if (!useMultipollPath && stagedSubPolls.length > 0) {
-        setError("Remove the staged sections before switching to a participation poll.");
-        setIsLoading(false);
-        isSubmittingRef.current = false;
-        reEnableForm(form);
-        return;
-      }
-
+      // Every poll routes through the multipoll API. The wrapper is invisible
+      // for 1-sub-poll multipolls; voting/results continue to use the per-poll
+      // endpoints.
       let createdPoll: Poll;
-      let createdMultipoll: Multipoll | null = null;
+      let createdMultipoll: Multipoll;
       try {
-        if (useMultipollPath) {
-          createdMultipoll = await apiCreateMultipoll(
-            pollDataToMultipollRequest(pollData, stagedSubPolls),
-          );
-          // The current form's sub-poll is the LAST one (staged are prepended).
-          createdPoll = createdMultipoll.sub_polls[createdMultipoll.sub_polls.length - 1];
-        } else {
-          createdPoll = await apiCreatePoll(pollData);
-        }
+        createdMultipoll = await apiCreateMultipoll(
+          pollDataToMultipollRequest(pollData, stagedSubPolls),
+        );
+        // The current form's sub-poll is the LAST one (staged are prepended).
+        createdPoll = createdMultipoll.sub_polls[createdMultipoll.sub_polls.length - 1];
       } catch (apiError: any) {
         console.error("Error creating poll:", apiError);
         setError(apiError.message || "Failed to create poll. Please try again.");
@@ -1525,12 +1363,8 @@ export function CreatePollContent() {
       // creator_secret for all of them. The wrapper's secret is shared across
       // sub-polls server-side; recordPollCreation just persists the mapping
       // locally per poll id (used by FollowUp/Close/Reopen actions).
-      if (createdMultipoll) {
-        for (const sp of createdMultipoll.sub_polls) {
-          recordPollCreation(sp.id, creatorSecret);
-        }
-      } else {
-        recordPollCreation(createdPoll.id, creatorSecret);
+      for (const sp of createdMultipoll.sub_polls) {
+        recordPollCreation(sp.id, creatorSecret);
       }
 
       // For suggestion polls, creators vote after creation like any other participant
@@ -1559,12 +1393,12 @@ export function CreatePollContent() {
       // Navigate to the new poll. `pollBackTarget.set` records the thread
       // URL so the poll page's back button leads to the thread containing
       // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      // Phase 2.2: when we created via the multipoll path, the URL targets
-      // the multipoll's short_id, not the sub-poll's. The thread back-target
-      // still uses poll-level walking (legacy follow_up_to chain), which
-      // works because every sub-poll has polls.follow_up_to set.
+      // The URL targets the multipoll's short_id, not any sub-poll's. The
+      // thread back-target still uses poll-level walking (legacy
+      // follow_up_to chain), which works because every sub-poll has
+      // polls.follow_up_to set.
       const redirectId =
-        createdMultipoll?.short_id ?? createdPoll.short_id ?? createdPoll.id;
+        createdMultipoll.short_id ?? createdPoll.short_id ?? createdPoll.id;
       pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollChainLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {
@@ -1713,7 +1547,7 @@ export function CreatePollContent() {
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
           {/* Non-default modes: show link back to preferences form */}
-          {(pollType === 'participation' || pollType === 'time') && (
+          {pollType === 'time' && (
             <div className="flex justify-center">
               <button
                 type="button"
@@ -1728,7 +1562,7 @@ export function CreatePollContent() {
           {/* Category and For fields are now in the header via CategoryForLine */}
 
           {/* Reference location for location polls */}
-          {(isLocationLikeCategory(category) || (pollType === 'participation' && locationMode !== 'none')) && (
+          {isLocationLikeCategory(category) && (
             <ReferenceLocationInput
               latitude={refLatitude}
               longitude={refLongitude}
@@ -1744,36 +1578,10 @@ export function CreatePollContent() {
             />
           )}
 
-          {/* Participant counters for participation polls */}
-          {pollType === 'participation' && (
-            <ParticipationConditions
-              minValue={minParticipants}
-              maxValue={maxParticipants}
-              maxEnabled={maxEnabled}
-              onMinChange={setMinParticipants}
-              onMaxChange={setMaxParticipants}
-              onMaxEnabledChange={setMaxEnabled}
-              disabled={isLoading}
-              durationMinValue={durationMinValue}
-              durationMaxValue={durationMaxValue}
-              durationMinEnabled={durationMinEnabled}
-              durationMaxEnabled={durationMaxEnabled}
-              onDurationMinChange={setDurationMinValue}
-              onDurationMaxChange={setDurationMaxValue}
-              onDurationMinEnabledChange={setDurationMinEnabled}
-              onDurationMaxEnabledChange={setDurationMaxEnabled}
-              dayTimeWindows={dayTimeWindows}
-              onDayTimeWindowsChange={setDayTimeWindows}
-              isCreationForm={true}
-              highlightDaysButton={dayTimeWindows.length === 0}
-            />
-          )}
-
           {/* Time poll: Duration + DayTimeWindows + threshold + deadlines */}
           {(pollType === 'time' || (pollType === 'poll' && category === 'time')) && (
             <>
-              <ParticipationConditions
-                hideParticipantCounters={true}
+              <TimePollFields
                 disabled={isLoading}
                 durationMinValue={durationMinValue}
                 durationMaxValue={durationMaxValue}
@@ -1785,7 +1593,6 @@ export function CreatePollContent() {
                 onDurationMaxEnabledChange={setDurationMaxEnabled}
                 dayTimeWindows={dayTimeWindows}
                 onDayTimeWindowsChange={setDayTimeWindows}
-                isCreationForm={true}
                 highlightDaysButton={dayTimeWindows.length === 0}
               />
 
@@ -1896,27 +1703,6 @@ export function CreatePollContent() {
                 isClient={isClient}
               />
             </>
-          )}
-
-          {/* Location field for participation polls */}
-          {pollType === 'participation' && (
-            <div className="space-y-3">
-              <LocationTimeFieldConfig
-                label="Location"
-                mode={locationMode}
-                onModeChange={setLocationMode}
-                value={locationValue}
-                onValueChange={setLocationValue}
-                options={locationOptions}
-                onOptionsChange={setLocationOptions}
-                suggestionsDeadline={locationSuggestionsDeadline}
-                onSuggestionsDeadlineChange={setLocationSuggestionsDeadline}
-                preferencesDeadline={locationPreferencesDeadline}
-                onPreferencesDeadlineChange={setLocationPreferencesDeadline}
-                deadlineOptions={BASE_DEADLINE_OPTIONS}
-                isLoading={isLoading}
-              />
-            </div>
           )}
 
           {/* Options field for poll type (ranked choice / suggestions) */}
@@ -2093,76 +1879,12 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Response Deadline (for participation polls) */}
-          {pollType === 'participation' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-1">Close After</label>
-                <select
-                  id="deadline"
-                  value={deadlineOption}
-                  onChange={(e) => setDeadlineOption(e.target.value)}
-                  disabled={isLoading}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                >
-                  {deadlineOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {isClient ? getTimeLabel(option.value) : option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {deadlineOption === "custom" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Custom Deadline<span className="text-gray-500 font-normal">{getCustomDeadlineDisplay()}</span>
-                  </label>
-                  <div className="flex justify-between gap-2">
-                    <div className="w-auto">
-                      <label htmlFor="customDate" className="block text-xs text-gray-500 mb-1">
-                        Date
-                      </label>
-                      <input
-                        type="date"
-                        id="customDate"
-                        value={customDate}
-                        onChange={(e) => setCustomDate(e.target.value)}
-                        disabled={isLoading}
-                        min={isClient ? getTodayDate() : ''}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                        required
-                      />
-                    </div>
-                    <div className="w-auto">
-                      <label htmlFor="customTime" className="block text-xs text-gray-500 mb-1 text-right">
-                        Time
-                      </label>
-                      <input
-                        type="time"
-                        id="customTime"
-                        value={customTime}
-                        onChange={(e) => setCustomTime(e.target.value)}
-                        disabled={isLoading}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Title for participation/time polls - rendered below close after */}
+          {/* Title for time polls - rendered below close after */}
           {pollType !== 'poll' && titleField}
 
           {/* Phase 2.4: stage the current section and start a new one. Hidden
-              when the current form is participation (excluded from multipolls)
-              or time (≤1 time sub-poll allowed; user submits with just the
-              current time form). */}
+              when the current form is time (≤1 time sub-poll allowed; user
+              submits with just the current time form). */}
           {pollType === 'poll' && category !== 'time' && (
             <div className="flex justify-center pt-1">
               <button

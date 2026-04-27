@@ -3,8 +3,8 @@
 //
 // Storage layout: keyed by multipoll_id. Each entry holds shared multipoll-level
 // fields (voter_name) plus a per-sub-poll map of in-progress vote state.
-// Participation polls have no multipoll wrapper — they use the legacy per-poll
-// key path (multipollId === null in the helpers below).
+// The legacy per-poll key path (multipollId === null) is retained for
+// pre-Phase-4 polls that haven't been wrapped.
 
 import type { DayTimeWindow } from "./types";
 
@@ -14,9 +14,6 @@ const LEGACY_PREFIX = 'ballotDraft:';
 export interface SubPollDraft {
   yesNoChoice?: 'yes' | 'no' | null;
   isAbstaining?: boolean;
-  voterMinParticipants?: number | null;
-  voterMaxParticipants?: number | null;
-  voterMaxEnabled?: boolean;
   voterDayTimeWindows?: DayTimeWindow[];
   durationMinValue?: number | null;
   durationMaxValue?: number | null;
@@ -65,8 +62,8 @@ export function clearMultipollBallotDraft(multipollId: string): void {
   removeKey(MULTIPOLL_PREFIX + multipollId);
 }
 
-// When multipollId is null, falls back to the legacy per-sub-poll key (used by
-// participation polls, which have no multipoll wrapper).
+// When multipollId is null, falls back to the legacy per-sub-poll key (used
+// by any pre-Phase-4 polls that haven't been wrapped in a multipoll).
 export function loadSubPollDraft(
   multipollId: string | null | undefined,
   subPollId: string

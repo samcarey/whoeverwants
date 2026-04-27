@@ -8,7 +8,7 @@ This test suite evaluates the application across two dimensions:
 
 ### 1. Technical Soundness
 - Do vote counts add up correctly?
-- Are algorithmic guarantees (IRV majority, participation priority) upheld?
+- Are algorithmic guarantees (IRV majority, time-poll availability filter) upheld?
 - Do edge cases (ties, abstentions, empty polls) resolve without errors?
 - Is data integrity maintained across create → vote → close → results lifecycle?
 
@@ -29,7 +29,6 @@ Each test simulates a **realistic social scenario** with a cast of characters ma
 |----------|-------|------------|
 | **Casual Decisions** | Friend groups making low-stakes choices | yes/no, suggestion |
 | **Ranked Preferences** | Groups with diverse, ordered preferences | ranked_choice |
-| **Event Planning** | Scheduling with availability constraints | participation |
 | **Edge Cases & Dynamics** | Adversarial inputs, social pressure, anonymity | all types |
 | **Multi-Stage Workflows** | Suggestion → preference pipelines, follow-ups | suggestion + ranked_choice |
 
@@ -43,7 +42,7 @@ Tests use recurring voter archetypes to model real group dynamics:
 - **The Contrarian** — Often disagrees with the majority
 - **The Peacemaker** — Votes to maximize group harmony (middle options, abstains on controversy)
 - **The Late Joiner** — Votes last, sometimes after seeing partial results
-- **The Flake** — RSVPs yes then doesn't follow through (for participation polls)
+- **The Flake** — Votes yes then disengages from the resulting plan
 
 ### Evaluation Criteria
 

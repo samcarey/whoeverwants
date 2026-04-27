@@ -27,7 +27,6 @@ from routers.polls import (
     _finalize_suggestion_options,
     _finalize_time_slots,
     _json_or_none,
-    _resolve_sub_poll_winner,
     _row_to_poll,
     _row_to_vote,
     _submit_vote_to_poll,
@@ -51,13 +50,6 @@ def _iso_or_none(value) -> str | None:
 def _validate_request(req: CreateMultipollRequest) -> None:
     if not req.sub_polls:
         raise HTTPException(status_code=400, detail="At least one sub-poll is required")
-
-    for sp in req.sub_polls:
-        if sp.poll_type == PollType.participation:
-            raise HTTPException(
-                status_code=400,
-                detail="Participation polls cannot be sub-polls of a multipoll",
-            )
 
     time_count = sum(1 for sp in req.sub_polls if sp.poll_type == PollType.time)
     if time_count > 1:
@@ -306,7 +298,7 @@ def _fetch_sub_polls(conn, multipoll_id: str) -> list[dict]:
 
 
 def _compute_multipoll_voter_data(conn, multipoll_id: str) -> tuple[list[str], int]:
-    """Multipoll-level participation aggregation. Per the addressability
+    """Multipoll-level voter aggregation. Per the addressability
     paradigm, the FE never sums per-sub-poll vote rows — it consumes these
     server-computed fields instead. Named voters are deduped (case-sensitive,
     matching the per-poll `voter_names` aggregation in get_accessible_polls);
@@ -461,8 +453,6 @@ def close_multipoll(multipoll_id: str, req: ClosePollRequest):
             sp_dict = dict(sp)
             if sp_dict["poll_type"] == "ranked_choice" and sp_dict.get("suggestion_deadline"):
                 _finalize_suggestion_options(conn, str(sp_dict["id"]), now)
-            if sp_dict["poll_type"] == "ranked_choice" and sp_dict.get("sub_poll_role"):
-                _resolve_sub_poll_winner(conn, sp_dict)
 
         # Re-read to reflect any finalize_suggestion_options writes.
         multipoll_row = conn.execute(
@@ -573,8 +563,6 @@ def _vote_item_to_submit_req(item: MultipollVoteItem, voter_name: str | None) ->
         is_abstain=item.is_abstain,
         is_ranking_abstain=item.is_ranking_abstain,
         voter_name=voter_name,
-        min_participants=item.min_participants,
-        max_participants=item.max_participants,
         voter_day_time_windows=item.voter_day_time_windows,
         voter_duration=item.voter_duration,
         options_metadata=item.options_metadata,
@@ -592,8 +580,6 @@ def _vote_item_to_edit_req(item: MultipollVoteItem, voter_name: str | None) -> E
         is_abstain=item.is_abstain,
         is_ranking_abstain=item.is_ranking_abstain,
         voter_name=voter_name,
-        min_participants=item.min_participants,
-        max_participants=item.max_participants,
         voter_day_time_windows=item.voter_day_time_windows,
         voter_duration=item.voter_duration,
         liked_slots=item.liked_slots,

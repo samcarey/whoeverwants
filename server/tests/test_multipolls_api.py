@@ -117,17 +117,6 @@ class TestCreateMultipoll:
         )
         assert resp.status_code == 422  # pydantic min_length
 
-    def test_rejects_participation_sub_poll(self, client, creator_secret):
-        resp = client.post(
-            "/api/multipolls",
-            json={
-                "creator_secret": creator_secret,
-                "sub_polls": [{"poll_type": "participation"}],
-            },
-        )
-        assert resp.status_code == 400
-        assert "participation" in resp.json()["detail"].lower()
-
     def test_rejects_two_time_sub_polls(self, client, creator_secret):
         resp = client.post(
             "/api/multipolls",

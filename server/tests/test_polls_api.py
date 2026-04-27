@@ -107,23 +107,6 @@ class TestCreatePoll:
         assert resp.status_code == 201
         assert resp.json()["response_deadline"] is not None
 
-    def test_create_participation_poll(self, client, creator_secret):
-        resp = client.post(
-            "/api/polls",
-            json={
-                "title": "Game night",
-                "poll_type": "participation",
-                "min_participants": 4,
-                "max_participants": 8,
-                "creator_secret": creator_secret,
-            },
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["min_participants"] == 4
-        assert data["max_participants"] == 8
-
-
 # --- Get poll ---
 
 

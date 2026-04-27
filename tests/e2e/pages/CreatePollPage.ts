@@ -21,7 +21,6 @@ export class CreatePollPage extends BasePage {
   get pollTypeToggle() {
     return {
       poll: this.page.locator('button:has-text("🗳️")').first(),
-      participation: this.page.locator('button:has-text("🙋")').first()
     };
   }
 
@@ -80,11 +79,9 @@ export class CreatePollPage extends BasePage {
     await this.titleInput.fill(title);
   }
 
-  async selectPollType(type: 'poll' | 'participation') {
+  async selectPollType(type: 'poll') {
     if (type === 'poll') {
       await this.pollTypeToggle.poll.click();
-    } else if (type === 'participation') {
-      await this.pollTypeToggle.participation.click();
     }
   }
 

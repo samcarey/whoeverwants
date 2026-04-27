@@ -2,11 +2,10 @@
 
 Enforces that each vote contains exactly the fields required for its poll type
 and no fields belonging to other poll types. Mirrors the database CHECK constraint
-from migration 084.
+from migration 094.
 
 Rules:
 - yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/suggestions
-- participation: same structure as yes_no (yes_no_choice required)
 - ranked_choice: requires ranked_choices and/or suggestions (suggestions allowed
   for polls with a suggestion phase). Forbids yes_no_choice.
 - All types: is_abstain=True relaxes the "required" field constraint
@@ -39,15 +38,13 @@ def validate_vote(
     """
     # vote_type must match poll_type
     if vote_type != poll_type:
-        # participation polls accept both 'participation' and 'yes_no' vote types
-        if not (poll_type == "participation" and vote_type in ("yes_no", "participation")):
-            raise VoteValidationError(
-                f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
-            )
+        raise VoteValidationError(
+            f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
+        )
 
-    if poll_type == "yes_no" or poll_type == "participation":
+    if poll_type == "yes_no":
         if ranked_choice_tiers:
-            raise VoteValidationError("ranked_choice_tiers not allowed for yes/no or participation polls")
+            raise VoteValidationError("ranked_choice_tiers not allowed for yes/no polls")
         _validate_yes_no_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     elif poll_type == "ranked_choice":
         _validate_ranked_choice_vote(
