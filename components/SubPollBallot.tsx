@@ -60,8 +60,19 @@ interface SubPollBallotProps {
   onWrapperSubmitStateChange?: (pollId: string, state: { visible: boolean; label: string }) => void;
 }
 
+export type PrepareBatchVoteItemResult =
+  | {
+      ok: true;
+      item: MultipollVoteItem;
+      commit: (vote: import("@/lib/api").ApiVote) => void;
+      fail: (errorMessage: string) => void;
+    }
+  | { skip: true }
+  | { ok: false; error: string };
+
 export interface SubPollBallotHandle {
   triggerSubmit: () => void;
+  prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
 const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: SubPollBallotProps, ref) {
@@ -1393,8 +1404,247 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // per-sub-poll button used to invoke.
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
+
+  // Validation + voteData/MultipollVoteItem construction here mirror the
+  // logic in handleVoteClick + submitVote. Kept inline (not extracted) until
+  // the legacy submitVote per-poll fallback retires in Phase 5 — at which
+  // point this becomes the only copy.
+  const prepareBatchVoteItem = (): PrepareBatchVoteItemResult => {
+    const isAnyEditing = isEditingVote || isEditingRanking;
+    if (isSubmitting || (hasVoted && !isAnyEditing) || isPollClosed) {
+      return { skip: true };
+    }
+
+    if ((poll.poll_type === 'yes_no' || poll.poll_type === 'participation') && !yesNoChoice && !isAbstaining) {
+      const error = "Please select Yes, No, or Abstain";
+      setVoteError(error);
+      return { ok: false, error };
+    }
+
+    if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
+      const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
+        (dtw: DayTimeWindow) => dtw.windows.length > 0
+      );
+      if (pollHasTimeWindows) {
+        const enabledWindows = voterDayTimeWindows.flatMap(
+          (dtw: DayTimeWindow) => dtw.windows.filter(w => w.enabled !== false)
+        );
+        if (enabledWindows.length === 0) {
+          const error = "Please enable at least one time window, or vote No.";
+          setVoteError(error);
+          return { ok: false, error };
+        }
+        const minDurMinutes = durationMinEnabled && durationMinValue != null
+          ? Math.round(durationMinValue * 60) : null;
+        if (minDurMinutes != null && minDurMinutes > 0) {
+          const tooShort = enabledWindows.some(w => windowDurationMinutes(w) < minDurMinutes);
+          if (tooShort) {
+            const error = `Each enabled time window must be at least ${formatDurationLabel(minDurMinutes)} long.`;
+            setVoteError(error);
+            return { ok: false, error };
+          }
+        }
+      }
+    }
+
+    let effectiveIsAbstaining = isAbstaining;
+    if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
+      const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
+      const filteredSuggestions = suggestionChoices.filter(c => c && c.trim().length > 0);
+      if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
+        if (canSubmitSuggestions) {
+          effectiveIsAbstaining = true;
+        } else {
+          const error = "Please rank at least one option or select Abstain";
+          setVoteError(error);
+          return { ok: false, error };
+        }
+      }
+    }
+
+    setVoteError(null);
+
+    let voteData: any = {};
+    if (poll.poll_type === 'yes_no') {
+      voteData = {
+        poll_id: poll.id,
+        vote_type: 'yes_no' as const,
+        yes_no_choice: effectiveIsAbstaining ? null : yesNoChoice,
+        is_abstain: effectiveIsAbstaining,
+        voter_name: voterName.trim() || null,
+      };
+    } else if (poll.poll_type === 'participation') {
+      voteData = {
+        poll_id: poll.id,
+        vote_type: 'participation' as const,
+        yes_no_choice: effectiveIsAbstaining ? null : yesNoChoice,
+        is_abstain: effectiveIsAbstaining,
+        voter_name: voterName.trim() || null,
+        min_participants: voterMinParticipants,
+        max_participants: voterMaxEnabled ? voterMaxParticipants : null,
+        voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
+        voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
+          minValue: durationMinValue,
+          maxValue: durationMaxValue,
+          minEnabled: durationMinEnabled,
+          maxEnabled: durationMaxEnabled,
+        } : null,
+      };
+    } else if (poll.poll_type === 'ranked_choice') {
+      const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
+      const filteredTiers: string[][] = rankedChoiceTiers
+        .map(tier => tier.filter(c => c && c.trim().length > 0))
+        .filter(tier => tier.length > 0);
+      const hasTies = filteredTiers.some(tier => tier.length > 1);
+      const invalidChoices = filteredRankedChoices.filter(c => !pollOptions.includes(c));
+      if (invalidChoices.length > 0) {
+        const error = "Invalid options detected. Please refresh and try again.";
+        setVoteError(error);
+        return { ok: false, error };
+      }
+      const filteredSuggestions = hasSuggestionPhase
+        ? suggestionChoices.filter(c => c && c.trim().length > 0)
+        : null;
+      const filteredMetadata = hasSuggestionPhase && filteredSuggestions && filteredSuggestions.length > 0 && Object.keys(suggestionMetadata).length > 0
+        ? Object.fromEntries(Object.entries(suggestionMetadata).filter(([key]) => filteredSuggestions.includes(key)))
+        : null;
+      const hasRankings = filteredRankedChoices.length > 0;
+      const hasSuggestions = !!(filteredSuggestions && filteredSuggestions.length > 0);
+      const previousSuggestions = userVoteData?.suggestions;
+      const hasPreviousSuggestions = !!(previousSuggestions && previousSuggestions.length > 0);
+      const hasAnyContent = hasRankings || hasSuggestions || hasPreviousSuggestions;
+      const finalAbstain = !hasAnyContent;
+      const rankingAbstain = effectiveIsAbstaining && !hasRankings && (hasSuggestions || hasPreviousSuggestions);
+      voteData = {
+        poll_id: poll.id,
+        vote_type: 'ranked_choice' as const,
+        ranked_choices: effectiveIsAbstaining || !hasRankings ? null : filteredRankedChoices,
+        ranked_choice_tiers: effectiveIsAbstaining || !hasRankings || !hasTies ? null : filteredTiers,
+        suggestions: hasSuggestions ? filteredSuggestions : (hasPreviousSuggestions ? previousSuggestions : null),
+        is_abstain: finalAbstain,
+        is_ranking_abstain: rankingAbstain,
+        voter_name: voterName.trim() || null,
+        options_metadata: filteredMetadata && Object.keys(filteredMetadata).length > 0 ? filteredMetadata : null,
+      };
+    } else if (poll.poll_type === 'time') {
+      if (inAvailabilityPhase) {
+        voteData = {
+          vote_type: 'time' as const,
+          voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
+          voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
+            minValue: durationMinValue,
+            maxValue: durationMaxValue,
+            minEnabled: durationMinEnabled,
+            maxEnabled: durationMaxEnabled,
+          } : null,
+          is_abstain: effectiveIsAbstaining,
+          voter_name: voterName.trim() || null,
+        };
+      } else {
+        voteData = {
+          vote_type: 'time' as const,
+          liked_slots: effectiveIsAbstaining ? null : (likedSlots ?? []),
+          disliked_slots: effectiveIsAbstaining ? null : (dislikedSlots ?? []),
+          is_abstain: effectiveIsAbstaining,
+          voter_name: voterName.trim() || null,
+        };
+      }
+    }
+
+    const isEditing = isAnyEditing && !!userVoteId;
+    const item: MultipollVoteItem = {
+      sub_poll_id: poll.id,
+      vote_id: isEditing ? userVoteId : null,
+      vote_type: voteData.vote_type,
+      yes_no_choice: voteData.yes_no_choice ?? null,
+      ranked_choices: voteData.ranked_choices ?? null,
+      ranked_choice_tiers: voteData.ranked_choice_tiers ?? null,
+      is_abstain: voteData.is_abstain ?? false,
+      is_ranking_abstain: voteData.is_ranking_abstain ?? false,
+      options_metadata: voteData.options_metadata ?? null,
+      voter_day_time_windows: voteData.voter_day_time_windows ?? null,
+      voter_duration: voteData.voter_duration ?? null,
+      min_participants: voteData.min_participants ?? null,
+      max_participants: voteData.max_participants ?? null,
+      liked_slots: voteData.liked_slots ?? null,
+      disliked_slots: voteData.disliked_slots ?? null,
+    };
+    if (!(isEditing && poll.poll_type === 'ranked_choice' && !canSubmitSuggestions)) {
+      item.suggestions = voteData.suggestions ?? null;
+    }
+
+    // Snapshot per-sub-poll state at build time so the post-submit
+    // side effects in commit() don't read whatever the user edited
+    // between button-tap and API-resolution.
+    const capturedSuggestionMetadata = suggestionMetadata;
+    const capturedIsAbstaining = effectiveIsAbstaining;
+    const capturedIsEditing = isEditing;
+    const capturedPollOptions = pollOptions;
+    const capturedSuggestionTimerStarted = suggestionTimerStarted;
+    const capturedAvailabilityTimerStarted = availabilityTimerStarted;
+
+    // commit handles SubPollBallot-internal state only. The wrapper-level
+    // confirmMultipollSubmit owns shared cross-sub-poll work — votedPolls /
+    // pollVoteIds localStorage, POLL_VOTES_CHANGED_EVENT dispatch, and
+    // saveUserName — so commit doesn't duplicate them on the batch path.
+    const commit = (vote: import("@/lib/api").ApiVote) => {
+      invalidatePoll(poll.id);
+      setHasVoted(true);
+      setUserVoteId(vote.id);
+      if (capturedIsEditing) setUserVoteData(vote);
+      if (!capturedIsEditing) {
+        setResponseCount(prev => prev + 1);
+      }
+      if (capturedSuggestionMetadata && Object.keys(capturedSuggestionMetadata).length > 0) {
+        setOptionsMetadataLocal(prev => ({ ...prev, ...capturedSuggestionMetadata }));
+      }
+      if (!capturedIsEditing) {
+        setHasPollDataState(true);
+      }
+      if (poll.poll_type === 'time' && inAvailabilityPhase && !capturedAvailabilityTimerStarted && poll.suggestion_deadline_minutes && !capturedIsEditing) {
+        const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+        setSuggestionDeadlineOverride(newDeadline.toISOString());
+      }
+      if (hasSuggestionPhase) {
+        if (!capturedSuggestionTimerStarted && poll.suggestion_deadline_minutes && !capturedIsEditing) {
+          const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+          setSuggestionDeadlineOverride(newDeadline.toISOString());
+        }
+        if (capturedIsAbstaining && canSubmitRankings) {
+          setIsAbstaining(false);
+        }
+        setTimeout(async () => {
+          await loadExistingSuggestions(false);
+          await fetchPollResults();
+        }, 500);
+      }
+      if (hasSuggestionPhase && capturedPollOptions.length > 0) {
+        storeSeenPollOptions(poll.id, capturedPollOptions);
+        setSeenPollOptions(capturedPollOptions);
+      }
+      clearSubPollDraft(poll.multipoll_id ?? null, poll.id);
+      setIsEditingVote(false);
+      setIsEditingRanking(false);
+      if (hasSuggestionPhase && capturedIsEditing) {
+        void fetchPollResults();
+      }
+      if (isPollClosed || showPrelimResults) {
+        void fetchPollResults();
+      }
+    };
+
+    const fail = (errorMessage: string) => {
+      setVoteError(errorMessage);
+    };
+
+    return { ok: true, item, commit, fail };
+  };
+  const prepareBatchVoteItemRef = useRef(prepareBatchVoteItem);
+  prepareBatchVoteItemRef.current = prepareBatchVoteItem;
+
   useImperativeHandle(ref, () => ({
     triggerSubmit: () => { void handleVoteClickRef.current(); },
+    prepareBatchVoteItem: () => prepareBatchVoteItemRef.current(),
   }), []);
 
   const wrapperShouldShowSubmit = useMemo(() => {
