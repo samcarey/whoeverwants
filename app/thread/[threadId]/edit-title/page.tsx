@@ -8,6 +8,7 @@ import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } fro
 import { useThread } from "@/lib/useThread";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import type { Thread } from "@/lib/threadUtils";
+import ThreadHeader from "@/components/ThreadHeader";
 import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
 function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
@@ -45,23 +46,11 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
 
   return (
     <>
-      <div
-        className="fixed left-0 right-0 top-0 z-20 bg-background touch-none"
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      >
-        <div ref={headerRef} className="max-w-4xl mx-auto pl-2 pr-2 py-2 flex items-center gap-2">
-          <button
-            onClick={goBack}
-            className="w-10 h-10 flex items-center justify-center shrink-0"
-            aria-label="Cancel"
-          >
-            <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h1 className="flex-1 min-w-0 text-center font-semibold text-lg text-gray-900 dark:text-white truncate px-1">
-            Edit Title
-          </h1>
+      <ThreadHeader
+        headerRef={headerRef}
+        title="Edit Title"
+        onBack={goBack}
+        rightSlot={
           <button
             onClick={save}
             disabled={saving}
@@ -70,8 +59,8 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
           >
             {saving ? '...' : 'Save'}
           </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="max-w-4xl mx-auto px-4" style={{ paddingTop: `calc(${headerHeight}px + 1rem)` }}>
         <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Thread title</label>
