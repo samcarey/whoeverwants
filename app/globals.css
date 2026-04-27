@@ -149,16 +149,16 @@ body {
  * ========================================================================= */
 
 @keyframes vt-slide-out-left {
-  from { transform: translateX(0); opacity: 1; }
-  to   { transform: translateX(-25%); opacity: 0.5; }
+  from { transform: translateX(0); }
+  to   { transform: translateX(-100%); }
 }
 @keyframes vt-slide-in-right {
   from { transform: translateX(100%); }
   to   { transform: translateX(0); }
 }
 @keyframes vt-slide-out-right {
-  from { transform: translateX(0); opacity: 1; }
-  to   { transform: translateX(25%); opacity: 0.5; }
+  from { transform: translateX(0); }
+  to   { transform: translateX(100%); }
 }
 @keyframes vt-slide-in-left {
   from { transform: translateX(-100%); }
