@@ -14,14 +14,16 @@ export function getPollSymbol(pollType: string, isClosed: boolean): string {
   return POLL_TYPE_SYMBOLS[pollType] || '☰';
 }
 
-export function getCategoryIcon(poll: Poll): string {
+/** Phase 5b: takes `isClosed` as a separate arg since `is_closed` is a
+ *  wrapper-level field. Callers source it from the parent multipoll. */
+export function getCategoryIcon(poll: Poll, isClosed: boolean = false): string {
   const category = poll.category;
   if (category && category !== 'custom') {
     const builtIn = getBuiltInType(category);
     if (builtIn?.icon) return builtIn.icon;
   }
   // Custom or no category — use poll type symbol
-  return getPollSymbol(poll.poll_type, poll.is_closed ?? false);
+  return getPollSymbol(poll.poll_type, isClosed);
 }
 
 export function relativeTime(dateStr: string): string {
@@ -61,10 +63,17 @@ export function compactDurationSince(dateStr: string): string {
   return `${Math.floor(days / 365)}y`;
 }
 
-export function isInSuggestionPhase(poll: Poll): boolean {
+/** Phase 5b: takes the wrapper's `prephase_deadline` (legacy
+ *  `suggestion_deadline`) as a separate arg — it lives on the multipoll, not
+ *  the poll. Sub-poll-local `suggestion_deadline_minutes` (the duration
+ *  setting) still drives the "deferred timer not yet started" branch. */
+export function isInSuggestionPhase(
+  poll: Poll,
+  suggestionDeadline?: string | null,
+): boolean {
   if (poll.poll_type !== 'ranked_choice') return false;
-  if (poll.suggestion_deadline && new Date(poll.suggestion_deadline) > new Date()) return true;
-  if (!poll.suggestion_deadline && poll.suggestion_deadline_minutes) return true;
+  if (suggestionDeadline && new Date(suggestionDeadline) > new Date()) return true;
+  if (!suggestionDeadline && poll.suggestion_deadline_minutes) return true;
   return false;
 }
 

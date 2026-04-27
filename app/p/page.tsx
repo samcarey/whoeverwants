@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
-import { apiGetPollById } from "@/lib/api";
+import { apiGetPollById, apiGetMultipollById } from "@/lib/api";
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +16,13 @@ function PollRedirect() {
     async function handleRedirect() {
       if (id) {
         try {
+          // Phase 5b: short_id lives on the multipoll wrapper. Walk the
+          // sub-poll → multipoll path to resolve the friendly URL.
           const poll = await apiGetPollById(id);
-          if (poll?.short_id) {
-            router.replace(`/p/${poll.short_id}`);
+          const multipollId = poll?.multipoll_id;
+          const wrapper = multipollId ? await apiGetMultipollById(multipollId).catch(() => null) : null;
+          if (wrapper?.short_id) {
+            router.replace(`/p/${wrapper.short_id}`);
           } else {
             router.replace(`/p/${id}`);
           }

@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Poll } from "@/lib/types";
-import { getAccessiblePolls } from "@/lib/simplePollQueries";
+import type { Multipoll } from "@/lib/types";
+import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { apiGetAllPollIds } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { getCachedAccessiblePolls } from "@/lib/pollCache";
+import { getCachedAccessibleMultipolls } from "@/lib/pollCache";
 import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
@@ -36,11 +36,11 @@ const activityPhrases = [
 
 export default function Home() {
   // Cache-seed avoids loading flash on view-transition return from a thread.
-  const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
-    const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
-    return { polls: cached ?? [], loading: cached === null };
+  const [{ multipolls: initialMultipolls, loading: initialLoading }] = useState(() => {
+    const cached = typeof window === "undefined" ? null : getCachedAccessibleMultipolls();
+    return { multipolls: cached ?? [], loading: cached === null };
   });
-  const [polls, setPolls] = useState<Poll[]>(initialPolls);
+  const [multipolls, setMultipolls] = useState<Multipoll[]>(initialMultipolls);
   const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
@@ -159,15 +159,15 @@ export default function Home() {
         } catch (discoveryError) {
         }
 
-        // Get polls this browser has access to
-        const data = await getAccessiblePolls();
+        // Get multipolls this browser has access to
+        const data = await getAccessibleMultipolls();
         if (!data) {
           console.error("Error fetching accessible polls");
           setError("Failed to load polls");
           return;
         }
 
-        setPolls(data);
+        setMultipolls(data);
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");
@@ -193,15 +193,15 @@ export default function Home() {
       } catch (discoveryError) {
       }
 
-      // Get polls this browser has access to
-      const data = await getAccessiblePolls();
+      // Get multipolls this browser has access to
+      const data = await getAccessibleMultipolls();
       if (!data) {
         console.error("Error fetching accessible polls");
         setError("Failed to load polls");
         return;
       }
 
-      setPolls(data);
+      setMultipolls(data);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred");
@@ -229,14 +229,14 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && polls.length === 0 && (
+      {!loading && !error && multipolls.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           Once you create a poll or open a link from someone, it will be shown here.
         </div>
       )}
 
       {!loading && !error && (
-        <ThreadList polls={polls} />
+        <ThreadList multipolls={multipolls} />
       )}
 
     </>

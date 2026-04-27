@@ -29,8 +29,8 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
-import { getCachedAccessiblePolls } from "@/lib/pollCache";
-import { findThreadRootRouteId, buildPollByMultipollMap } from "@/lib/threadUtils";
+import { getCachedAccessibleMultipolls } from "@/lib/pollCache";
+import { findThreadRootRouteId, buildMultipollMap } from "@/lib/threadUtils";
 import * as pollBackTarget from "@/lib/pollBackTarget";
 export const dynamic = 'force-dynamic';
 
@@ -38,8 +38,8 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-function pollByMultipollLookup() {
-  const byMultipoll = buildPollByMultipollMap(getCachedAccessiblePolls() ?? []);
+function multipollLookup() {
+  const byMultipoll = buildMultipollMap(getCachedAccessibleMultipolls() ?? []);
   return (multipollId: string) => byMultipoll.get(multipollId) ?? null;
 }
 
@@ -1216,8 +1216,15 @@ export function CreatePollContent() {
         try {
           const existing = await apiFindDuplicatePoll(title, followUpTo);
           if (existing) {
-            const shortId = existing.short_id || existing.id;
-            pollBackTarget.set(shortId, findThreadRootRouteId(existing, pollByMultipollLookup()));
+            // Phase 5b: short_id lives on the multipoll wrapper. Resolve via
+            // the parent multipoll so the redirect targets the friendly URL.
+            const lookup = multipollLookup();
+            const wrapper = existing.multipoll_id ? lookup(existing.multipoll_id) : null;
+            const shortId = wrapper?.short_id || existing.id;
+            const rootRouteId = wrapper
+              ? findThreadRootRouteId(wrapper, lookup)
+              : shortId;
+            pollBackTarget.set(shortId, rootRouteId);
             router.replace(`/p/${shortId}`);
             return;
           }
@@ -1280,13 +1287,11 @@ export function CreatePollContent() {
       // Navigate to the new poll. `pollBackTarget.set` records the thread
       // URL so the poll page's back button leads to the thread containing
       // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      // The URL targets the multipoll's short_id, not any sub-poll's. The
-      // thread back-target still uses poll-level walking (legacy
-      // follow_up_to chain), which works because every sub-poll has
-      // polls.follow_up_to set.
-      const redirectId =
-        createdMultipoll.short_id ?? createdPoll.short_id ?? createdPoll.id;
-      pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollByMultipollLookup()));
+      // Phase 5b: short_id lives on the multipoll wrapper, so the redirect
+      // targets the wrapper's friendly URL. The thread back target walks
+      // multipoll-level chains via findThreadRootRouteId.
+      const redirectId = createdMultipoll.short_id ?? createdPoll.id;
+      pollBackTarget.set(redirectId, findThreadRootRouteId(createdMultipoll, multipollLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);

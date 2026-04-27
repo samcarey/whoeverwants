@@ -1,24 +1,22 @@
 "use client";
 
-import { Poll } from "@/lib/types";
+import type { Multipoll, Poll } from "@/lib/types";
 import {
   apiGetMultipollById,
   apiGetMultipollByShortId,
   apiGetPollById,
-  apiGetPollByShortId,
   ApiError,
 } from "@/lib/api";
 import { addAccessiblePollId } from "@/lib/browserPollAccess";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { getAccessiblePolls } from "@/lib/simplePollQueries";
+import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
 import {
-  getCachedAccessiblePolls,
+  getCachedAccessibleMultipolls,
   getCachedMultipollById,
   getCachedMultipollByShortId,
   getCachedPollById,
-  getCachedPollByShortId,
 } from "@/lib/pollCache";
-import { findThreadRootRouteId, buildPollByMultipollMap } from "@/lib/threadUtils";
+import { findThreadRootRouteId, buildMultipollMap } from "@/lib/threadUtils";
 import { isUuidLike } from "@/lib/pollId";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
@@ -30,25 +28,36 @@ function PollContent() {
   const params = useParams();
 
   // Resolve synchronously from cache when possible so the thread view renders on first paint.
-  // Phase 2.2: short ids in /p/[shortId]/ may belong to a multipoll wrapper.
-  // Try the multipoll cache first; for 1-sub-poll multipolls the wrapper is
-  // invisible — we render the sub-poll exactly as today. Multi-sub-poll
-  // wrappers fall through to the same path (Phase 2.5 will replace this with
-  // a stacked render), expanding the first sub-poll for now.
+  // Phase 5b: short_id lives on the multipoll wrapper; the URL `/p/<id>/` may
+  // point at a multipoll short_id, multipoll uuid, or sub-poll uuid. Cache
+  // lookup tries each in turn.
   const resolvedInitial = (() => {
     if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    const byEither = <T,>(byId: (s: string) => T, byShort: (s: string) => T) =>
-      isUuidLike(raw) ? byId(raw) : byShort(raw);
-    const cachedMultipoll = byEither(getCachedMultipollById, getCachedMultipollByShortId);
-    const poll = cachedMultipoll?.sub_polls[0]
-      ?? byEither(getCachedPollById, getCachedPollByShortId);
-    if (!poll) return null;
-    // Prepend the current poll so it wins for its multipoll_id even if a
-    // stale entry sits in the accessible-polls cache.
-    const byMultipoll = buildPollByMultipollMap([poll, ...(getCachedAccessiblePolls() ?? [])]);
-    const rootRouteId = findThreadRootRouteId(poll, (mid) => byMultipoll.get(mid) ?? null);
+    let multipoll: Multipoll | null = null;
+    let poll: Poll | null = null;
+    if (isUuidLike(raw)) {
+      multipoll = getCachedMultipollById(raw);
+      if (multipoll) {
+        poll = multipoll.sub_polls[0] ?? null;
+      } else {
+        const cachedPoll = getCachedPollById(raw);
+        if (cachedPoll) {
+          poll = cachedPoll;
+          if (cachedPoll.multipoll_id) {
+            multipoll = getCachedMultipollById(cachedPoll.multipoll_id);
+          }
+        }
+      }
+    } else {
+      multipoll = getCachedMultipollByShortId(raw);
+      if (multipoll) poll = multipoll.sub_polls[0] ?? null;
+    }
+    if (!poll || !multipoll) return null;
+    // Prepend the current multipoll so it wins over any stale entry.
+    const byMultipoll = buildMultipollMap([multipoll, ...(getCachedAccessibleMultipolls() ?? [])]);
+    const rootRouteId = findThreadRootRouteId(multipoll, (mid) => byMultipoll.get(mid) ?? null);
     return { poll, rootRouteId };
   })();
 
@@ -72,32 +81,34 @@ function PollContent() {
     (async () => {
       try {
         const isUuid = isUuidLike(shortId);
-        // Phase 2.2: try the multipoll endpoint first. A 404 means this is a
-        // legacy single-poll url (or a poll-id url for a poll inside a
-        // multipoll); fall back to the single-poll endpoint.
-        const multipoll = await (isUuid
+        // Phase 5b: try the multipoll endpoint first. A 404 means the URL is
+        // a sub-poll uuid (the per-poll endpoint resolves it, and we then
+        // fetch the parent multipoll to find the root).
+        let multipoll: Multipoll | null = await (isUuid
           ? apiGetMultipollById(shortId)
           : apiGetMultipollByShortId(shortId)
         ).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
-        const poll = multipoll
-          ? multipoll.sub_polls[0] ?? null
-          : isUuid
-            ? await apiGetPollById(shortId).catch(() => null)
-            : await apiGetPollByShortId(shortId).catch(() => null);
-        if (!poll) {
+        let poll: Poll | null = multipoll?.sub_polls[0] ?? null;
+        if (!multipoll && isUuid) {
+          poll = await apiGetPollById(shortId).catch(() => null);
+          if (poll?.multipoll_id) {
+            multipoll = await apiGetMultipollById(poll.multipoll_id).catch(() => null);
+          }
+        }
+        if (!poll || !multipoll) {
           if (!cancelled) setError(true);
           return;
         }
         addAccessiblePollId(poll.id);
-        // Run discovery + fetch the accessible polls so ancestor polls are
-        // available for the multipoll-level follow_up walk.
+        // Run discovery + fetch accessible multipolls so ancestor wrappers
+        // are available for the chain walk.
         try { await discoverRelatedPolls(); } catch {}
-        const accessible = (await getAccessiblePolls()) ?? [];
-        const byMultipoll = buildPollByMultipollMap([poll, ...accessible]);
-        const rootRouteId = findThreadRootRouteId(poll, (mid) => byMultipoll.get(mid) ?? null);
+        const accessible = (await getAccessibleMultipolls()) ?? [];
+        const byMultipoll = buildMultipollMap([multipoll, ...accessible]);
+        const rootRouteId = findThreadRootRouteId(multipoll, (mid) => byMultipoll.get(mid) ?? null);
         if (!cancelled) setResolved({ poll, rootRouteId });
       } catch {
         if (!cancelled) setError(true);
