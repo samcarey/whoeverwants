@@ -64,13 +64,7 @@ export type PrepareBatchVoteItemResult =
   | {
       ok: true;
       item: MultipollVoteItem;
-      // Commit post-submit state with the returned ApiVote. The wrapper calls
-      // this for each prepared sub-poll once the batched apiSubmitMultipollVotes
-      // call resolves. Mirrors the post-write side effects in submitVote.
       commit: (vote: import("@/lib/api").ApiVote) => void;
-      // Roll back the prepared state when the batch fails. Surfaces the error
-      // message inside this sub-poll's ballot so the user sees per-section
-      // feedback alongside the wrapper-level error.
       fail: (errorMessage: string) => void;
     }
   | { skip: true }
@@ -78,11 +72,6 @@ export type PrepareBatchVoteItemResult =
 
 export interface SubPollBallotHandle {
   triggerSubmit: () => void;
-  // Used by mixed-type multi-sub-poll wrapper Submit (Phase 3.4 follow-up B,
-  // mixed-type case). Synchronously validates current state and builds a
-  // MultipollVoteItem; the wrapper batches items across sub-polls into one
-  // atomic apiSubmitMultipollVotes call. Returns commit/fail callbacks that
-  // the wrapper invokes after the batch resolves.
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
@@ -1416,13 +1405,10 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
 
-  // prepareBatchVoteItem mirrors the validation in handleVoteClick + the
-  // voteData build in submitVote, then constructs a MultipollVoteItem the
-  // wrapper can fold into a batched apiSubmitMultipollVotes call. The
-  // returned commit/fail closures capture the per-sub-poll state at
-  // build time and run the post-write side effects when the wrapper's
-  // batched API call resolves. No state is mutated in this call other
-  // than `voteError` on validation failure.
+  // Validation + voteData/MultipollVoteItem construction here mirror the
+  // logic in handleVoteClick + submitVote. Kept inline (not extracted) until
+  // the legacy submitVote per-poll fallback retires in Phase 5 — at which
+  // point this becomes the only copy.
   const prepareBatchVoteItem = (): PrepareBatchVoteItemResult => {
     const isAnyEditing = isEditingVote || isEditingRanking;
     if (isSubmitting || (hasVoted && !isAnyEditing) || isPollClosed) {
@@ -1587,16 +1573,20 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       item.suggestions = voteData.suggestions ?? null;
     }
 
-    // Capture state needed by commit() in closures so subsequent state
-    // changes don't leak into the post-submit side effects.
+    // Snapshot per-sub-poll state at build time so the post-submit
+    // side effects in commit() don't read whatever the user edited
+    // between button-tap and API-resolution.
     const capturedSuggestionMetadata = suggestionMetadata;
     const capturedIsAbstaining = effectiveIsAbstaining;
     const capturedIsEditing = isEditing;
     const capturedPollOptions = pollOptions;
-    const capturedVoterName = voterName.trim();
     const capturedSuggestionTimerStarted = suggestionTimerStarted;
     const capturedAvailabilityTimerStarted = availabilityTimerStarted;
 
+    // commit handles SubPollBallot-internal state only. The wrapper-level
+    // confirmMultipollSubmit owns shared cross-sub-poll work — votedPolls /
+    // pollVoteIds localStorage, POLL_VOTES_CHANGED_EVENT dispatch, and
+    // saveUserName — so commit doesn't duplicate them on the batch path.
     const commit = (vote: import("@/lib/api").ApiVote) => {
       invalidatePoll(poll.id);
       setHasVoted(true);
@@ -1608,11 +1598,9 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       if (capturedSuggestionMetadata && Object.keys(capturedSuggestionMetadata).length > 0) {
         setOptionsMetadataLocal(prev => ({ ...prev, ...capturedSuggestionMetadata }));
       }
-      markPollAsVoted(poll.id, vote.id, capturedIsAbstaining);
       if (!capturedIsEditing) {
         setHasPollDataState(true);
       }
-      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: poll.id } }));
       if (poll.poll_type === 'time' && inAvailabilityPhase && !capturedAvailabilityTimerStarted && poll.suggestion_deadline_minutes && !capturedIsEditing) {
         const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
         setSuggestionDeadlineOverride(newDeadline.toISOString());
@@ -1635,7 +1623,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         setSeenPollOptions(capturedPollOptions);
       }
       clearSubPollDraft(poll.multipoll_id ?? null, poll.id);
-      if (capturedVoterName) saveUserName(capturedVoterName);
       setIsEditingVote(false);
       setIsEditingRanking(false);
       if (hasSuggestionPhase && capturedIsEditing) {

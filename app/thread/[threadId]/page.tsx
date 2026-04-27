@@ -269,11 +269,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const setMultipollVoterName = useRef((id: string, name: string) => {
     setMultipollVoterNames((prev) => (prev.get(id) === name ? prev : new Map(prev).set(id, name)));
   }).current;
-  // Snapshots subPolls at button-tap time so the modal's message + onConfirm
-  // stay stable even if groupedThreadPolls re-derives mid-confirmation.
-  // For mixed-type multi-groups, also captures the prepared MultipollVoteItem
-  // + commit/fail closures from each non-yes_no SubPollBallot so subsequent
-  // edits don't leak into the in-flight batch.
+  // Snapshots subPolls + the prepared MultipollVoteItems at button-tap time so
+  // edits to the form between the click and the modal confirm don't leak into
+  // the in-flight batch. preparedNonYesNo is empty for all-yes_no groups (the
+  // wrapper builds yes_no items from pendingMultipollChoices at confirm time).
   type PreparedNonYesNoEntry = {
     pollId: string;
     item: MultipollVoteItem;
@@ -285,7 +284,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       multipollId: string;
       subPolls: Poll[];
       stagedCount: number;
-      preparedNonYesNo?: PreparedNonYesNoEntry[];
+      preparedNonYesNo: PreparedNonYesNoEntry[];
     } | null
   >(null);
   const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
@@ -608,7 +607,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const confirmMultipollSubmit = async (
     multipollId: string,
     subPolls: Poll[],
-    preparedNonYesNo: PreparedNonYesNoEntry[] = [],
+    preparedNonYesNo: PreparedNonYesNoEntry[],
   ) => {
     setMultipollSubmitting((prev) => {
       if (prev.has(multipollId)) return prev;
@@ -649,8 +648,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         return next;
       });
 
-      // Dispatch each non-yes_no sub-poll's commit() with its returned vote so
-      // SubPollBallot updates its internal hasVoted/userVoteId/etc. state.
       const returnedByPollId = new Map(returnedVotes.map((v) => [v.poll_id, v]));
       for (const prepared of preparedNonYesNo) {
         const v = returnedByPollId.get(prepared.pollId);
@@ -686,8 +683,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     } catch (err: unknown) {
       console.error('Multipoll vote submit failed:', err);
       const message = err instanceof Error ? err.message : 'Submit failed.';
-      // Surface the error per-sub-poll inside the section's voteError plus
-      // at the wrapper level so the user sees both contexts.
       for (const prepared of preparedNonYesNo) prepared.fail(message);
       setMultipollSubmitError((prev) => { const next = new Map(prev); next.set(multipollId, message); return next; });
     } finally {
@@ -1400,15 +1395,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // every sub-poll is yes_no so nothing empty sits under
                     // the external block.
                     const allYesNo = group.subPolls.every((sp) => sp.poll_type === 'yes_no');
-                    // Wrapper Submit fires for every multi-sub-poll group with
-                    // a multipoll wrapper. All-yes_no taps stage in
-                    // pendingMultipollChoices (follow-up A); mixed-type uses
-                    // each non-yes_no SubPollBallot's prepareBatchVoteItem ref
-                    // method to fold into the same atomic batch (this PR).
                     const useMultipollSubmit = isMultiGroup && !!group.multipollId;
-                    // Phase 3.4 follow-up B: 1-sub-poll non-yes_no
-                    // multipolls render Submit + voter name at the
-                    // wrapper level (yes_no uses tap-to-change above).
                     const useWrapperSubmit = !isMultiGroup && !!group.multipollId && group.subPolls[0]?.poll_type !== 'yes_no';
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
                     return (
@@ -1493,13 +1480,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     );
                                   })()}
                                   {(() => {
-                                    // wrapperOwnsSubmit covers two flavors:
-                                    //   1) useWrapperSubmit: 1-sub-poll non-yes_no multipoll
-                                    //   2) useMultipollSubmit + multi-group + non-yes_no
-                                    //      (mixed-type case batched via prepareBatchVoteItem)
-                                    // Yes_no sub-polls in any multi-group keep their external
-                                    // PollResultsDisplay rendering (Phase 3.3) — wrapperOwnsSubmit
-                                    // stays false there because Submit doesn't apply to them.
+                                    // Yes_no sub-polls render externally via PollResultsDisplay
+                                    // (Phase 3.3) — they don't have an inline Submit to suppress.
                                     const wrapperOwnsSubmit = !!group.multipollId && (
                                       useWrapperSubmit ||
                                       (useMultipollSubmit && !isYesNo)
@@ -1535,13 +1517,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                             {useMultipollSubmit && group.multipollId && !isClosed && (() => {
                               const multipollId = group.multipollId;
                               const hasYesNoStaged = group.subPolls.some((sp) => sp.poll_type === 'yes_no' && pendingMultipollChoices.has(sp.id));
-                              // Mixed-type ready signal: any non-yes_no
-                              // SubPollBallot has reported wrapperSubmitState
-                              // visible=true (i.e. it has a vote ready to submit
-                              // or is in edit mode). For all-yes_no groups this
-                              // is always false since no SubPollBallot reports
-                              // visible=true (yes_no skips the wrapper Submit
-                              // signal — see SubPollBallot.wrapperShouldShowSubmit).
                               const hasNonYesNoReady = group.subPolls.some(
                                 (sp) => sp.poll_type !== 'yes_no' && wrapperSubmitState.get(sp.id)?.visible === true,
                               );
@@ -1573,10 +1548,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      // Snapshot per-sub-poll state so the
-                                      // batched submit uses what the user saw
-                                      // at button-tap, not whatever the form
-                                      // looks like once the modal confirms.
+                                      // Snapshot prepared items at button-tap
+                                      // so edits between click and confirm
+                                      // don't leak into the in-flight batch.
                                       const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
                                       let stagedCount = 0;
                                       let hadValidationError = false;
@@ -1590,6 +1564,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                         const result = handle.prepareBatchVoteItem();
                                         if ('skip' in result) continue;
                                         if (!result.ok) {
+                                          // Error is surfaced inline via SubPollBallot.voteError.
                                           hadValidationError = true;
                                           continue;
                                         }
@@ -1601,10 +1576,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                         });
                                         stagedCount++;
                                       }
-                                      // Validation errors surface inline in
-                                      // each affected SubPollBallot's voteError
-                                      // — abort the modal flow so the user can
-                                      // fix them before reconfirming.
                                       if (hadValidationError) return;
                                       if (stagedCount === 0) return;
                                       setPendingMultipollSubmit({
@@ -1919,7 +1890,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
           void confirmMultipollSubmit(
             pendingMultipollSubmit.multipollId,
             pendingMultipollSubmit.subPolls,
-            pendingMultipollSubmit.preparedNonYesNo ?? [],
+            pendingMultipollSubmit.preparedNonYesNo,
           );
         }}
         onCancel={() => setPendingMultipollSubmit(null)}
