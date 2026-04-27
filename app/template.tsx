@@ -562,7 +562,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({})}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
             aria-label="Create new poll"
           >
             What
@@ -570,7 +570,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({ mode: 'time' })}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
             aria-label="Create new time poll"
           >
             When
@@ -578,7 +578,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           <button
             type="button"
             onClick={() => openCreateFromBubble({ category: 'restaurant' })}
-            className="h-12 px-5 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-base font-medium"
+            className="h-10 px-3 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer text-white text-[1.4rem] font-medium"
             aria-label="Create new place poll"
           >
             Where
