@@ -131,7 +131,10 @@ export async function apiSubmitTestVote(pollId, params) {
   let multipollId = _multipoll_id
   if (!multipollId) {
     const pollRes = await fetch(`${TEST_API_BASE}/${pollId}`)
-    if (!pollRes.ok) throw new Error(`Failed to fetch poll: ${pollRes.status}`)
+    if (!pollRes.ok) {
+      // Surface as a "submit vote" error so callers see a consistent message.
+      throw new Error(`Failed to submit vote: ${pollRes.status} ${await pollRes.text()}`)
+    }
     multipollId = (await pollRes.json()).multipoll_id
   }
   const res = await fetch(`${TEST_MULTIPOLL_BASE}/${multipollId}/votes`, {
