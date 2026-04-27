@@ -6,7 +6,7 @@ import { Poll } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiEditVote, apiSubmitVote, apiReopenPoll, apiClosePoll, apiCutoffAvailability, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Multipoll } from "@/lib/types";
 import type { MultipollVoteItem } from "@/lib/api";
 import { getUserName, saveUserName } from "@/lib/userProfile";
@@ -701,53 +701,35 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     const current = userVoteMap.get(pollId);
     const subPoll = thread?.polls.find((p) => p.id === pollId);
     const multipollId = subPoll?.multipoll_id ?? null;
+    if (!multipollId) {
+      // Phase 5: every poll has a multipoll wrapper, so this branch is dead.
+      // Surface as a runtime error rather than silently dropping the vote.
+      console.error('confirmVoteChange called for poll without multipoll_id');
+      return;
+    }
     setVoteChangeSubmitting(true);
     try {
-      let resultVoteId: string;
-      let resultVoterName: string | null;
-      if (multipollId) {
-        // Route every yes_no tap-to-change through the unified multipoll
-        // endpoint as a single-item batch. Matches the architectural
-        // "vote submission is always atomic across the multipoll" rule
-        // (see CLAUDE.md → Multipoll System), even when the multipoll
-        // has only one sub-poll.
-        const voter_name = current
-          ? current.voterName
-          : (getUserName()?.trim() || null);
-        const item: MultipollVoteItem = {
-          sub_poll_id: pollId,
-          vote_id: current?.voteId ?? null,
-          vote_type: 'yes_no',
-          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
-          is_abstain: newChoice === 'abstain',
-        };
-        const returned = await apiSubmitMultipollVotes(multipollId, { voter_name, items: [item] });
-        const v = returned.find((r) => r.poll_id === pollId);
-        if (!v) throw new Error('Vote response missing for sub-poll');
-        resultVoteId = v.id;
-        resultVoterName = v.voter_name ?? null;
-        if (!current) setStoredVoteId(pollId, resultVoteId);
-        if (voter_name) saveUserName(voter_name);
-      } else if (current) {
-        const updated = await apiEditVote(pollId, current.voteId, {
-          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
-          is_abstain: newChoice === 'abstain',
-          voter_name: current.voterName,
-        });
-        resultVoteId = current.voteId;
-        resultVoterName = updated.voter_name ?? current.voterName;
-      } else {
-        const savedName = getUserName();
-        const submitted = await apiSubmitVote(pollId, {
-          vote_type: 'yes_no',
-          yes_no_choice: newChoice === 'abstain' ? null : newChoice,
-          is_abstain: newChoice === 'abstain',
-          voter_name: savedName && savedName.trim() ? savedName.trim() : null,
-        });
-        resultVoteId = submitted.id;
-        resultVoterName = submitted.voter_name ?? null;
-        setStoredVoteId(pollId, resultVoteId);
-      }
+      // Route every yes_no tap-to-change through the unified multipoll endpoint
+      // as a single-item batch. Matches the architectural "vote submission is
+      // always atomic across the multipoll" rule (see CLAUDE.md → Multipoll
+      // System), even when the multipoll has only one sub-poll.
+      const voter_name = current
+        ? current.voterName
+        : (getUserName()?.trim() || null);
+      const item: MultipollVoteItem = {
+        sub_poll_id: pollId,
+        vote_id: current?.voteId ?? null,
+        vote_type: 'yes_no',
+        yes_no_choice: newChoice === 'abstain' ? null : newChoice,
+        is_abstain: newChoice === 'abstain',
+      };
+      const returned = await apiSubmitMultipollVotes(multipollId, { voter_name, items: [item] });
+      const v = returned.find((r) => r.poll_id === pollId);
+      if (!v) throw new Error('Vote response missing for sub-poll');
+      const resultVoteId = v.id;
+      const resultVoterName = v.voter_name ?? null;
+      if (!current) setStoredVoteId(pollId, resultVoteId);
+      if (voter_name) saveUserName(voter_name);
       invalidatePoll(pollId);
       setUserVoteMap((prev) => {
         const next = new Map(prev);
@@ -1753,20 +1735,18 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             try {
               const secret = getCreatorSecret(action.poll.id) || 'dev-override';
               const multipollId = action.poll.multipoll_id;
-              let updated: { response_deadline?: string | null | undefined };
-              let predicate: (p: Poll) => boolean;
-              if (multipollId) {
-                updated = await apiReopenMultipoll(multipollId, secret);
-                predicate = (p) => p.multipoll_id === multipollId;
-              } else {
-                updated = await apiReopenPoll(action.poll.id, secret);
-                invalidatePoll(action.poll.id);
-                predicate = (p) => p.id === action.poll.id;
+              if (!multipollId) {
+                console.error('Cannot reopen poll without multipoll_id');
+                return;
               }
-              patchThreadPolls(predicate, (p) => ({
-                is_closed: false,
-                response_deadline: updated.response_deadline ?? p.response_deadline,
-              }));
+              const updated = await apiReopenMultipoll(multipollId, secret);
+              patchThreadPolls(
+                (p) => p.multipoll_id === multipollId,
+                (p) => ({
+                  is_closed: false,
+                  response_deadline: updated.response_deadline ?? p.response_deadline,
+                }),
+              );
             } catch (err) {
               console.error('Failed to reopen poll:', err);
             }
@@ -1774,20 +1754,15 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             try {
               const secret = getCreatorSecret(action.poll.id) || '';
               const multipollId = action.poll.multipoll_id;
-              if (multipollId) {
-                await apiCloseMultipoll(multipollId, secret);
-                patchThreadPolls(
-                  (p) => p.multipoll_id === multipollId,
-                  () => ({ is_closed: true, close_reason: 'manual' }),
-                );
-              } else {
-                await apiClosePoll(action.poll.id, secret);
-                invalidatePoll(action.poll.id);
-                patchThreadPolls(
-                  (p) => p.id === action.poll.id,
-                  () => ({ is_closed: true, close_reason: 'manual' }),
-                );
+              if (!multipollId) {
+                console.error('Cannot close poll without multipoll_id');
+                return;
               }
+              await apiCloseMultipoll(multipollId, secret);
+              patchThreadPolls(
+                (p) => p.multipoll_id === multipollId,
+                () => ({ is_closed: true, close_reason: 'manual' }),
+              );
             } catch (err) {
               console.error('Failed to close poll:', err);
             }
@@ -1799,14 +1774,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 return;
               }
               const multipollId = action.poll.multipoll_id;
-              let updated: Pick<Poll, 'suggestion_deadline' | 'options'> | null;
-              if (multipollId) {
-                const wrapper = await apiCutoffMultipollAvailability(multipollId, secret);
-                updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
-              } else {
-                updated = await apiCutoffAvailability(action.poll.id, secret);
-                invalidatePoll(action.poll.id);
+              if (!multipollId) {
+                console.error('Cannot cutoff availability without multipoll_id');
+                return;
               }
+              const wrapper = await apiCutoffMultipollAvailability(multipollId, secret);
+              const updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
               patchThreadPolls(
                 (p) => p.id === action.poll.id,
                 (p) => ({

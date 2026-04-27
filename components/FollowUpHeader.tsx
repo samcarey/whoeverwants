@@ -2,21 +2,22 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiGetPollById } from "@/lib/api";
+import { apiGetMultipollById } from "@/lib/api";
 import { usePrefetch } from "@/lib/prefetch";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
 
 interface FollowUpHeaderProps {
-  followUpToPollId: string;
+  // Phase 5: chain pointers are at the multipoll level (a multipoll_id).
+  followUpToMultipollId: string;
   onRemove?: () => void;
 }
 
-export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpHeaderProps) {
+export default function FollowUpHeader({ followUpToMultipollId, onRemove }: FollowUpHeaderProps) {
   const router = useRouter();
   const { prefetch } = usePrefetch();
-  const [originalPollTitle, setOriginalPollTitle] = useState<string | null>(null);
-  const [originalPollShortId, setOriginalPollShortId] = useState<string | null>(null);
+  const [originalTitle, setOriginalTitle] = useState<string | null>(null);
+  const [originalShortId, setOriginalShortId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -25,29 +26,29 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
   );
 
   useEffect(() => {
-    async function fetchOriginalPoll() {
-      if (!followUpToPollId) {
+    async function fetchOriginal() {
+      if (!followUpToMultipollId) {
         setLoading(false);
         return;
       }
 
       try {
-        const data = await apiGetPollById(followUpToPollId);
-        setOriginalPollTitle(data.title);
+        const data = await apiGetMultipollById(followUpToMultipollId);
+        setOriginalTitle(data.title);
         if (data.short_id) {
-          setOriginalPollShortId(data.short_id);
+          setOriginalShortId(data.short_id);
           prefetch(`/p/${data.short_id}`, { priority: "low" });
         }
       } catch (err) {
-        console.error('Error fetching original poll:', err);
+        console.error('Error fetching parent multipoll:', err);
         setError(true);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchOriginalPoll();
-  }, [followUpToPollId]);
+    fetchOriginal();
+  }, [followUpToMultipollId]);
 
   const handleRemoveConfirm = () => {
     setShowRemoveModal(false);
@@ -77,7 +78,7 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
     );
   }
 
-  if (error || !originalPollTitle) {
+  if (error || !originalTitle) {
     return (
       <div className="my-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
         <div className="flex items-center gap-3">
@@ -104,11 +105,12 @@ export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpH
         <div className="text-sm text-blue-900 dark:text-blue-100 mb-1 flex items-center justify-center flex-wrap gap-x-1">
           <span>Follow up to</span>
           <button
-            onClick={() => router.push(`/p/${originalPollShortId || followUpToPollId}`)}
+            onClick={() => originalShortId && router.push(`/p/${originalShortId}`)}
+            disabled={!originalShortId}
             className="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-800/70 rounded text-sm font-medium text-blue-800 dark:text-blue-200 transition-colors relative overflow-hidden whitespace-nowrap min-w-0 max-w-[180px]"
-            title={originalPollTitle}
+            title={originalTitle}
           >
-            <span className="truncate">{originalPollTitle}</span>
+            <span className="truncate">{originalTitle}</span>
             <div className="absolute top-0 right-0 bottom-0 w-3 bg-gradient-to-l from-blue-100 dark:from-blue-900/50 to-transparent pointer-events-none"></div>
           </button>
         </div>

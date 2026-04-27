@@ -19,43 +19,9 @@ class CloseReason(str, Enum):
 
 
 # -- Request models --
-
-
-class CreatePollRequest(BaseModel):
-    title: str
-    poll_type: PollType = PollType.yes_no
-    options: list[str] | None = None
-    response_deadline: str | None = None
-    creator_secret: str
-    creator_name: str | None = None
-    follow_up_to: str | None = None
-    suggestion_deadline: str | None = None
-    suggestion_deadline_minutes: int | None = None
-    allow_pre_ranking: bool = True
-    auto_close_after: int | None = None
-    details: str | None = None
-    # Time poll fields
-    day_time_windows: list[dict] | None = None
-    duration_window: dict | None = None
-    # Category for autocomplete (suggestion/ranked_choice polls)
-    category: str | None = None
-    # Metadata for options (thumbnail URLs, info links) keyed by option label
-    options_metadata: dict | None = None
-    # Whether the title was auto-generated from poll options
-    is_auto_title: bool = False
-    # Reference location for proximity-based search
-    reference_latitude: float | None = None
-    reference_longitude: float | None = None
-    reference_location_label: str | None = None
-    # Minimum responses before results are shown (preference/suggestion polls)
-    min_responses: int | None = None
-    # Whether to show preliminary results once min_responses is met
-    show_preliminary_results: bool = True
-    # For time polls: slot is included if its availability count >= max_slot_availability * (min_availability_percent / 100).
-    # Default 95 means slots within 5% of the most-available slot pass.
-    min_availability_percent: int = 95
-    # Optional user-set thread title. Normally inherited from the follow-up parent.
-    thread_title: str | None = None
+#
+# Phase 5: the legacy `CreatePollRequest` is gone — every poll is created via
+# `CreateMultipollRequest` + `CreateSubPollRequest` defined further below.
 
 
 class SubmitVoteRequest(BaseModel):
@@ -103,11 +69,14 @@ class MultipollVoteItem(BaseModel):
     new row is inserted. Mirrors per-sub-poll `SubmitVoteRequest` /
     `EditVoteRequest` payloads minus `voter_name` (which is multipoll-level —
     one voter, many sub-poll ballots in one transaction).
+
+    `vote_type` is required for inserts (vote_id is null) but optional for
+    edits (vote_id is set) — edit logic uses the existing row's vote_type.
     """
 
     sub_poll_id: str
     vote_id: str | None = None
-    vote_type: str
+    vote_type: str | None = None
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
     ranked_choice_tiers: list[list[str]] | None = None
@@ -166,6 +135,17 @@ class RelatedPollsResponse(BaseModel):
 
 
 class PollResponse(BaseModel):
+    """Sub-poll API response shape.
+
+    Wrapper-level fields (creator_secret, response_deadline, is_closed,
+    close_reason, short_id, thread_title, suggestion_deadline, creator_name)
+    are sourced from the parent multipoll via JOIN — see `_SELECT_POLL_FULL`
+    in `routers/polls.py`. They remain on `PollResponse` so that legacy FE
+    callsites that read `poll.is_closed` etc. keep working without a 30-file
+    refactor; the long-term direction (per CLAUDE.md → Addressability) is for
+    the FE to source these from the `Multipoll` wrapper directly.
+    """
+
     id: str
     title: str
     poll_type: str
@@ -177,7 +157,6 @@ class PollResponse(BaseModel):
     creator_name: str | None = None
     is_closed: bool = False
     close_reason: str | None = None
-    follow_up_to: str | None = None
     short_id: str | None = None
     suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
@@ -197,15 +176,13 @@ class PollResponse(BaseModel):
     response_count: int | None = None
     min_availability_percent: int | None = None
     thread_title: str | None = None
-    # Phase 2.5: multipoll wrapper this poll belongs to (NULL for pre-Phase-4
-    # legacy polls that haven't been wrapped). Used by the FE to group sibling
-    # sub-polls when rendering threads.
+    # Phase 2.5: multipoll wrapper this poll belongs to. Phase 4 backfilled
+    # every non-participation poll; Phase 5 makes participation polls go
+    # away entirely, so this is effectively NOT NULL on every row.
     multipoll_id: str | None = None
     sub_poll_index: int | None = None
     # Phase 3.5: the wrapper's `follow_up_to` (a multipoll_id, or None for
-    # thread roots). The FE walks this for thread chains instead of the
-    # per-poll `follow_up_to`. Populated via LEFT JOIN onto multipolls; NULL
-    # when the poll has no wrapper.
+    # thread roots). The FE walks this for thread chains.
     multipoll_follow_up_to: str | None = None
     results: "PollResultsResponse | None" = None
     voter_names: list[str] | None = None

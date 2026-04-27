@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiUpdateThreadTitle } from "@/lib/api";
+import { apiUpdateMultipollThreadTitle } from "@/lib/api";
 import { invalidatePoll } from "@/lib/pollCache";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useThread } from "@/lib/useThread";
@@ -25,9 +25,14 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
 
   const save = async () => {
     if (saving) return;
+    if (!latestPoll.multipoll_id) {
+      console.error('Cannot edit thread title without multipoll_id');
+      setSaving(false);
+      return;
+    }
     setSaving(true);
     try {
-      await apiUpdateThreadTitle(latestPoll.id, value.trim() || null);
+      await apiUpdateMultipollThreadTitle(latestPoll.multipoll_id, value.trim() || null);
       invalidatePoll(latestPoll.id);
       goBack();
     } catch (err) {

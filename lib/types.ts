@@ -31,10 +31,9 @@ export interface Poll {
   creator_name?: string;
   is_closed?: boolean;
   close_reason?: 'manual' | 'deadline' | 'max_capacity' | 'uncontested';
-  follow_up_to?: string;
-  // Phase 3.5: the wrapper's follow_up_to (a multipoll_id) — the source of
-  // truth for thread chains. `follow_up_to` (a poll_id) is still populated by
-  // the server until Phase 5 but the FE no longer reads it for chain logic.
+  // Phase 3.5: the wrapper's follow_up_to (a multipoll_id) is the source of
+  // truth for thread chains. The legacy per-poll `follow_up_to` column was
+  // dropped in Phase 5.
   multipoll_follow_up_to?: string | null;
   short_id?: string;
   suggestion_deadline?: string | null;

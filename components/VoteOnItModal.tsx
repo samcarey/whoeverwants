@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
-import { apiCreatePoll } from "@/lib/api";
+import { apiCreateMultipoll } from "@/lib/api";
 import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
 import { getUserName } from "@/lib/userProfile";
 
@@ -53,18 +53,24 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, 
       const creatorSecret = generateCreatorSecret();
       const creatorName = getUserName() || undefined;
 
-      const poll = await apiCreatePoll({
-        title: pollTitle,
-        poll_type: "ranked_choice",
-        options: suggestions,
-        response_deadline: deadline.toISOString(),
+      const multipoll = await apiCreateMultipoll({
         creator_secret: creatorSecret,
         creator_name: creatorName,
+        response_deadline: deadline.toISOString(),
         follow_up_to: pollId,
+        sub_polls: [
+          {
+            poll_type: "ranked_choice",
+            options: suggestions,
+            category: "custom",
+          },
+        ],
+        title: pollTitle,
       });
 
-      recordPollCreation(poll.id, creatorSecret);
-      const shortId = poll.short_id || poll.id;
+      const subPoll = multipoll.sub_polls[0];
+      recordPollCreation(subPoll.id, creatorSecret);
+      const shortId = multipoll.short_id || subPoll.short_id || subPoll.id;
       router.push(`/p/${shortId}`);
       onClose();
     } catch (err) {

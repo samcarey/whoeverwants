@@ -721,7 +721,25 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ---
 
-## Multipoll System (In Progress)
+## Multipoll System
+
+> **Phase 5 shipped on this branch.** Migration 096 dropped the wrapper-level
+> columns from `polls` (short_id, creator_secret, creator_name, response_deadline,
+> is_closed, close_reason, follow_up_to, thread_title, suggestion_deadline,
+> sequential_id) plus the BEFORE-INSERT `trigger_generate_short_id`. The
+> `multipolls` table is now the sole source of truth for these fields. Server
+> internal logic JOINs polls + multipolls via `_SELECT_POLL_FULL` so existing
+> code that reads `row["is_closed"]` etc. keeps working — and the API still
+> surfaces these fields on `PollResponse` (Phase 5b will refactor the FE to
+> source them from `Multipoll` directly). Legacy single-poll mutation endpoints
+> (`POST /api/polls`, vote/close/reopen/cutoff/thread-title) are retired along
+> with their FE clients (`apiCreatePoll`, `apiSubmitVote`, `apiEditVote`,
+> `apiClosePoll`, `apiReopenPoll`, `apiCutoffSuggestions`,
+> `apiCutoffAvailability`, `apiUpdateThreadTitle`); a new
+> `POST /api/multipolls/{id}/thread-title` + `apiUpdateMultipollThreadTitle`
+> takes their place. `Poll.follow_up_to` is gone — chain logic uses
+> `multipoll_follow_up_to`. `FollowUpHeader` now takes a multipoll_id.
+
 
 ### Submission paradigm (READ FIRST, alongside Addressability)
 
@@ -746,7 +764,7 @@ When designing any vote/submission feature, the rule is: **does this belong on t
 
 When designing a new feature: ask "is this a multipoll-level concept?" If yes, route through a multipoll endpoint or field; never sum/dedupe across sub-polls in the browser.
 
-**Status**: phasing plan in `docs/multipoll-phasing.md`. **Phases 1, 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2 (incl. stacked-pill follow-up), 3.3, 3.4 (unified vote endpoint + FE helper), 3.4 follow-up A (all-yes_no wrapper Submit), 3.4 follow-up A.5 (apiSubmitMultipollVotes routing), 3.4 follow-up B for both the 1-sub-poll case and mixed-type multi-sub-poll groups (Submit lifted to the wrapper for every non-yes_no multipoll, with atomic batched submit across mixed-type sub-polls), and 4 shipped** (Phase 3.5 multipoll-level follow_up_to source-of-truth, and Phase 5 column drops still pending):
+**Status**: phasing plan in `docs/multipoll-phasing.md`. **Every phase shipped** (Phases 1 through 5). Phase 5b — refactor FE callsites that read `poll.is_closed`/`poll.response_deadline`/etc. to source from the `Multipoll` wrapper directly — is the next cleanup but functionally not required (the API still surfaces those fields on `PollResponse` via JOIN).
 
 - **Phase 1 (schema + new API)** — migration 092 created the `multipolls` table and added nullable `multipoll_id` + `sub_poll_index` to `polls`; endpoints `POST /api/multipolls`, `GET /api/multipolls/{short_id}`, `GET /api/multipolls/by-id/{id}` create + read wrapper-and-sub-polls atomically. Validation rejects participation sub-polls, multiple `time` sub-polls, and same-kind sub-polls without distinct `context`. Auto-title is computed at read time from sub-poll categories + multipoll context (rules in `server/algorithms/multipoll_title.py`); explicit titles persist to `thread_title`.
 - **Phase 2.1 (frontend plumbing)** — `Multipoll` type in `lib/types.ts`, multipoll cache helpers in `lib/pollCache.ts`, `apiCreateMultipoll` / `apiGetMultipollByShortId` / `apiGetMultipollById` in `lib/api.ts`.
