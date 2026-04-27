@@ -721,7 +721,25 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ---
 
-## Multipoll System (In Progress)
+## Multipoll System
+
+> **Phase 5 shipped on this branch.** Migration 096 dropped the wrapper-level
+> columns from `polls` (short_id, creator_secret, creator_name, response_deadline,
+> is_closed, close_reason, follow_up_to, thread_title, suggestion_deadline,
+> sequential_id) plus the BEFORE-INSERT `trigger_generate_short_id`. The
+> `multipolls` table is now the sole source of truth for these fields. Server
+> internal logic JOINs polls + multipolls via `_SELECT_POLL_FULL` so existing
+> code that reads `row["is_closed"]` etc. keeps working — and the API still
+> surfaces these fields on `PollResponse` (Phase 5b will refactor the FE to
+> source them from `Multipoll` directly). Legacy single-poll mutation endpoints
+> (`POST /api/polls`, vote/close/reopen/cutoff/thread-title) are retired along
+> with their FE clients (`apiCreatePoll`, `apiSubmitVote`, `apiEditVote`,
+> `apiClosePoll`, `apiReopenPoll`, `apiCutoffSuggestions`,
+> `apiCutoffAvailability`, `apiUpdateThreadTitle`); a new
+> `POST /api/multipolls/{id}/thread-title` + `apiUpdateMultipollThreadTitle`
+> takes their place. `Poll.follow_up_to` is gone — chain logic uses
+> `multipoll_follow_up_to`. `FollowUpHeader` now takes a multipoll_id.
+
 
 ### Submission paradigm (READ FIRST, alongside Addressability)
 

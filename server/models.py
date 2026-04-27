@@ -69,11 +69,14 @@ class MultipollVoteItem(BaseModel):
     new row is inserted. Mirrors per-sub-poll `SubmitVoteRequest` /
     `EditVoteRequest` payloads minus `voter_name` (which is multipoll-level —
     one voter, many sub-poll ballots in one transaction).
+
+    `vote_type` is required for inserts (vote_id is null) but optional for
+    edits (vote_id is set) — edit logic uses the existing row's vote_type.
     """
 
     sub_poll_id: str
     vote_id: str | None = None
-    vote_type: str
+    vote_type: str | None = None
     yes_no_choice: str | None = None
     ranked_choices: list[str] | None = None
     ranked_choice_tiers: list[list[str]] | None = None

@@ -542,6 +542,8 @@ def cutoff_multipoll_suggestions(multipoll_id: str, req: CutoffSuggestionsReques
 
 
 def _vote_item_to_submit_req(item: MultipollVoteItem, voter_name: str | None) -> SubmitVoteRequest:
+    if not item.vote_type:
+        raise HTTPException(status_code=400, detail="vote_type is required when inserting a new vote")
     return SubmitVoteRequest(
         vote_type=item.vote_type,
         yes_no_choice=item.yes_no_choice,
