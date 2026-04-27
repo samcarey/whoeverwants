@@ -12,6 +12,7 @@ from database import get_db
 from models import (
     AccessiblePollsRequest,
     EditVoteRequest,
+    MultipollResponse,
     PollResponse,
     PollResultsResponse,
     PollType,
@@ -30,13 +31,13 @@ from algorithms.yes_no import count_yes_no_votes
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
-# Phase 5: wrapper-level columns (creator_secret, response_deadline, is_closed,
-# close_reason, follow_up_to, short_id, thread_title, suggestion_deadline,
-# creator_name) live on `multipolls`. SELECT statements that need them on a
-# poll row append the WHERE clause to this prefix. Multipoll fields are
-# aliased to the legacy polls column names so internal logic that reads
-# `row["is_closed"]`, `row["response_deadline"]`, etc. keeps working — and
-# `_row_to_poll` continues to return them in the API response.
+# Phase 5b: wrapper-level fields are no longer surfaced on PollResponse.
+# `_row_to_poll` ignores them when building the response. Internal logic
+# (vote submission, results computation, finalization) still needs to read
+# these from the wrapper, so the JOIN here aliases the same names — callers
+# operate on the joined dict in-memory and the response shape is filtered by
+# `_row_to_poll`. The FE-only `multipoll_follow_up_to` is the chain pointer
+# used for thread building.
 _SELECT_POLL_FULL = """
     SELECT p.*,
            mp.short_id AS short_id,
@@ -54,9 +55,9 @@ _SELECT_POLL_FULL = """
 
 
 def _fetch_poll_full(conn, poll_id: str) -> dict | None:
-    """Fetch a poll plus its wrapper-level fields (joined from multipolls).
-    Returns a dict keyed by the legacy polls column names so existing logic
-    that read `SELECT * FROM polls` keeps working."""
+    """Fetch a poll plus its wrapper-level fields (joined from multipolls)
+    for internal consumption. The fields aren't surfaced in PollResponse but
+    are needed by results computation, vote validation, and finalization."""
     return conn.execute(
         _SELECT_POLL_FULL + " WHERE p.id = %(poll_id)s",
         {"poll_id": poll_id},
@@ -66,7 +67,10 @@ def _fetch_poll_full(conn, poll_id: str) -> dict | None:
 def _attach_wrapper_fields(conn, row) -> dict | None:
     """Annotate a RETURNING * row from polls with wrapper-level fields fetched
     from the parent multipoll. Use after UPDATE/INSERT on the polls table when
-    the response goes back through `_row_to_poll`."""
+    the response goes back through `_row_to_poll`. Phase 5b: only
+    `multipoll_follow_up_to` is surfaced on PollResponse, but the other fields
+    are still attached here so internal post-write logic that reads
+    `row["is_closed"]` etc. keeps working."""
     if row is None:
         return None
     row = dict(row)
@@ -223,25 +227,20 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
 def _row_to_poll(row: dict) -> PollResponse:
     """Convert a database row to a PollResponse.
 
-    Wrapper-level fields (response_deadline, creator_secret, creator_name,
-    is_closed, close_reason, short_id, thread_title, suggestion_deadline,
-    multipoll_follow_up_to) are sourced from the parent multipoll via JOIN —
-    use `_SELECT_POLL_FULL` for SELECTs or `_attach_wrapper_fields` after
-    UPDATE/INSERT to populate them onto the row dict before calling here."""
+    Phase 5b: wrapper-level fields (response_deadline, creator_secret,
+    creator_name, is_closed, close_reason, short_id, thread_title,
+    suggestion_deadline) are no longer surfaced on PollResponse — the FE
+    sources them from the parent Multipoll. Use `_SELECT_POLL_FULL` (or
+    `_attach_wrapper_fields` for RETURNING * paths) to populate
+    `multipoll_follow_up_to` on the row dict before calling here, since
+    that's the only wrapper field we still expose."""
     return PollResponse(
         id=str(row["id"]),
         title=row["title"],
         poll_type=row["poll_type"],
         options=row.get("options"),
-        response_deadline=row["response_deadline"].isoformat() if row.get("response_deadline") else None,
         created_at=row["created_at"].isoformat() if isinstance(row["created_at"], datetime) else str(row["created_at"]),
         updated_at=row["updated_at"].isoformat() if isinstance(row["updated_at"], datetime) else str(row["updated_at"]),
-        creator_secret=row.get("creator_secret"),
-        creator_name=row.get("creator_name"),
-        is_closed=row.get("is_closed", False),
-        close_reason=row.get("close_reason"),
-        short_id=row.get("short_id"),
-        suggestion_deadline=row["suggestion_deadline"].isoformat() if row.get("suggestion_deadline") else None,
         suggestion_deadline_minutes=row.get("suggestion_deadline_minutes"),
         allow_pre_ranking=row.get("allow_pre_ranking", True),
         auto_close_after=row.get("auto_close_after"),
@@ -257,7 +256,6 @@ def _row_to_poll(row: dict) -> PollResponse:
         min_responses=row.get("min_responses"),
         show_preliminary_results=row.get("show_preliminary_results", True),
         min_availability_percent=row.get("min_availability_percent"),
-        thread_title=row.get("thread_title"),
         multipoll_id=str(row["multipoll_id"]) if row.get("multipoll_id") else None,
         sub_poll_index=row.get("sub_poll_index"),
         multipoll_follow_up_to=(
@@ -837,33 +835,76 @@ def _compute_results(poll, votes) -> PollResultsResponse:
 # --- Accessible polls ---
 
 
-@router.post("/accessible", response_model=list[PollResponse])
+@router.post("/accessible", response_model=list[MultipollResponse])
 def get_accessible_polls(req: AccessiblePollsRequest):
-    """Get polls by a list of IDs (used by frontend to fetch polls the browser has access to)."""
+    """Return the multipoll wrappers covering the user's accessible poll IDs.
+
+    Phase 5b: returns `MultipollResponse[]` instead of flat `PollResponse[]`.
+    Per the addressability paradigm, the multipoll is the unit of identity —
+    the FE consumes wrapper-level fields (response_deadline, is_closed, etc.)
+    from the multipoll and per-sub-poll fields from each `sub_poll`.
+
+    Each requested poll_id resolves to its multipoll; we return one
+    MultipollResponse per unique multipoll covered, including ALL sub-polls
+    of that multipoll (siblings of any requested poll). Inline `results` are
+    populated on each sub-poll using the same gating as the per-poll /results
+    endpoint (closed polls always; open polls when show_preliminary_results
+    is true and min_responses is unset-or-met).
+    """
+    # Local import keeps this file from growing a circular dep with multipolls.py.
+    from routers.multipolls import (
+        _compute_multipoll_voter_data,
+        _row_to_multipoll,
+    )
+
     if not req.poll_ids:
         return []
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        rows = conn.execute(
-            _SELECT_POLL_FULL
-            + """ WHERE p.id = ANY(%(poll_ids)s)
-                ORDER BY p.created_at DESC""",
-            {"poll_ids": req.poll_ids},
+        # Resolve requested poll_ids → unique multipoll_ids. Polls without a
+        # multipoll_id are skipped (post-Phase-4 there shouldn't be any).
+        mp_id_rows = conn.execute(
+            """SELECT DISTINCT multipoll_id
+                 FROM polls
+                WHERE id = ANY(%(ids)s) AND multipoll_id IS NOT NULL""",
+            {"ids": req.poll_ids},
+        ).fetchall()
+        multipoll_ids = [str(r["multipoll_id"]) for r in mp_id_rows]
+        if not multipoll_ids:
+            return []
+
+        # Fetch every multipoll wrapper.
+        multipoll_rows = conn.execute(
+            """SELECT * FROM multipolls
+                WHERE id = ANY(%(ids)s)
+                ORDER BY created_at DESC""",
+            {"ids": multipoll_ids},
         ).fetchall()
 
-        if not req.include_results:
-            return [_row_to_poll(r) for r in rows]
+        # Fetch every sub-poll of these multipolls in one query, preserving
+        # creator-intended order.
+        sub_poll_rows = conn.execute(
+            """SELECT * FROM polls
+                WHERE multipoll_id = ANY(%(ids)s)
+                ORDER BY multipoll_id, sub_poll_index NULLS LAST, created_at""",
+            {"ids": multipoll_ids},
+        ).fetchall()
+        sub_polls_by_mp: dict[str, list] = {}
+        for sp in sub_poll_rows:
+            sub_polls_by_mp.setdefault(str(sp["multipoll_id"]), []).append(sp)
+        all_sub_poll_ids = [str(sp["id"]) for sp in sub_poll_rows]
 
-        closed_poll_ids = []
-        open_poll_ids = []
-        for r in rows:
-            is_closed = r.get("is_closed", False)
-            deadline = r.get("response_deadline")
-            deadline_passed = deadline and deadline <= now
-            if is_closed or deadline_passed:
-                closed_poll_ids.append(str(r["id"]))
-            else:
-                open_poll_ids.append(str(r["id"]))
+        # Inline-results gating mirrors the previous per-poll behavior. A
+        # sub-poll's `is_closed` / `response_deadline` come from its wrapper.
+        wrappers_by_id = {str(mp["id"]): mp for mp in multipoll_rows}
+        closed_poll_ids: list[str] = []
+        open_poll_ids: list[str] = []
+        for sp in sub_poll_rows:
+            mp = wrappers_by_id.get(str(sp["multipoll_id"]))
+            is_closed = bool(mp and mp.get("is_closed"))
+            deadline = mp.get("response_deadline") if mp else None
+            deadline_passed = bool(deadline and deadline <= now)
+            (closed_poll_ids if (is_closed or deadline_passed) else open_poll_ids).append(str(sp["id"]))
 
         votes_by_poll: dict[str, list] = {pid: [] for pid in closed_poll_ids}
         if closed_poll_ids:
@@ -876,7 +917,6 @@ def get_accessible_polls(req: AccessiblePollsRequest):
                 if pid in votes_by_poll:
                     votes_by_poll[pid].append(v)
 
-        # Count responses for open polls and fetch votes for those meeting min_responses
         response_counts: dict[str, int] = {}
         if open_poll_ids:
             count_rows = conn.execute(
@@ -886,18 +926,14 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             for cr in count_rows:
                 response_counts[str(cr["poll_id"])] = cr["cnt"]
 
-        # Include inline results when show_preliminary_results is true AND
-        # (min_responses is unset OR met). Matches the per-poll /results
-        # endpoint, so the thread page doesn't need a follow-up per-card fetch.
-        preliminary_poll_ids = []
-        rows_by_id = {str(r["id"]): r for r in rows}
+        sub_poll_rows_by_id = {str(sp["id"]): sp for sp in sub_poll_rows}
+        preliminary_poll_ids: list[str] = []
         for pid in open_poll_ids:
-            r = rows_by_id[pid]
-            min_resp = r.get("min_responses")
-            show_prelim = r.get("show_preliminary_results", True)
+            sp = sub_poll_rows_by_id[pid]
+            min_resp = sp.get("min_responses")
+            show_prelim = sp.get("show_preliminary_results", True)
             if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
                 preliminary_poll_ids.append(pid)
-
         if preliminary_poll_ids:
             prelim_vote_rows = conn.execute(
                 "SELECT * FROM votes WHERE poll_id = ANY(%(poll_ids)s)",
@@ -905,12 +941,10 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             ).fetchall()
             for v in prelim_vote_rows:
                 pid = str(v["poll_id"])
-                if pid not in votes_by_poll:
-                    votes_by_poll[pid] = []
-                votes_by_poll[pid].append(v)
+                votes_by_poll.setdefault(pid, []).append(v)
 
-        # Fetch unique voter names per poll for thread title generation.
-        # First, extract names from votes already loaded in memory.
+        # Per-sub-poll voter_names (kept on PollResponse for per-card respondent
+        # rows). Reuse vote rows we already fetched to avoid a second pass.
         voter_names_by_poll: dict[str, list[str]] = {}
         for pid, votes in votes_by_poll.items():
             names = sorted({
@@ -919,37 +953,60 @@ def get_accessible_polls(req: AccessiblePollsRequest):
             })
             if names:
                 voter_names_by_poll[pid] = names
-
-        # Only query DB for polls whose votes weren't already fetched.
-        remaining_poll_ids = [
-            str(r["id"]) for r in rows if str(r["id"]) not in votes_by_poll
-        ]
+        remaining_poll_ids = [pid for pid in all_sub_poll_ids if pid not in votes_by_poll]
         if remaining_poll_ids:
             vn_rows = conn.execute(
                 """SELECT poll_id, array_agg(DISTINCT voter_name ORDER BY voter_name) as names
-                   FROM votes
-                   WHERE poll_id = ANY(%(poll_ids)s) AND voter_name IS NOT NULL AND voter_name != ''
-                   GROUP BY poll_id""",
+                     FROM votes
+                    WHERE poll_id = ANY(%(poll_ids)s)
+                      AND voter_name IS NOT NULL AND voter_name != ''
+                    GROUP BY poll_id""",
                 {"poll_ids": remaining_poll_ids},
             ).fetchall()
             for vn in vn_rows:
                 voter_names_by_poll[str(vn["poll_id"])] = vn["names"]
 
-    results = []
-    for r in rows:
-        poll_resp = _row_to_poll(r)
-        pid = str(r["id"])
-        if pid in votes_by_poll:
-            try:
-                poll_resp.results = _compute_results(dict(r), votes_by_poll[pid])
-            except Exception:
-                logger.warning("Failed to compute results for poll %s", pid, exc_info=True)
-        if pid in response_counts:
-            poll_resp.response_count = response_counts[pid]
-        if pid in voter_names_by_poll:
-            poll_resp.voter_names = voter_names_by_poll[pid]
-        results.append(poll_resp)
-    return results
+        # Multipoll-level voter aggregates. _compute_multipoll_voter_data
+        # issues one query per multipoll; for the typical user with <100
+        # accessible multipolls this is fine, and matching the existing
+        # /api/multipolls/by-id/{id} behavior keeps the aggregation logic
+        # in one place.
+        voter_data_by_mp: dict[str, tuple[list[str], int]] = {}
+        for mp_id in multipoll_ids:
+            voter_data_by_mp[mp_id] = _compute_multipoll_voter_data(conn, mp_id)
+
+    # Build the response. Inline results / response_count / per-sub-poll
+    # voter_names are attached to each PollResponse after _row_to_multipoll
+    # builds it.
+    responses: list[MultipollResponse] = []
+    for mp_row in multipoll_rows:
+        mp_id = str(mp_row["id"])
+        sp_rows = sub_polls_by_mp.get(mp_id, [])
+        voter_names, anon_count = voter_data_by_mp.get(mp_id, ([], 0))
+        mp_resp = _row_to_multipoll(mp_row, sp_rows, voter_names, anon_count)
+        if req.include_results:
+            for sp_resp in mp_resp.sub_polls:
+                pid = sp_resp.id
+                if pid in votes_by_poll:
+                    sp_row = sub_poll_rows_by_id[pid]
+                    # _compute_results reads wrapper-level fields off the row
+                    # (response_deadline, close_reason, suggestion_deadline)
+                    # so splice them in from the wrapper.
+                    enriched = dict(sp_row)
+                    enriched["response_deadline"] = mp_row.get("response_deadline")
+                    enriched["close_reason"] = mp_row.get("close_reason")
+                    enriched["is_closed"] = mp_row.get("is_closed", False)
+                    enriched["suggestion_deadline"] = mp_row.get("prephase_deadline")
+                    try:
+                        sp_resp.results = _compute_results(enriched, votes_by_poll[pid])
+                    except Exception:
+                        logger.warning("Failed to compute results for poll %s", pid, exc_info=True)
+                if pid in response_counts:
+                    sp_resp.response_count = response_counts[pid]
+                if pid in voter_names_by_poll:
+                    sp_resp.voter_names = voter_names_by_poll[pid]
+        responses.append(mp_resp)
+    return responses
 
 
 @router.post("/related", response_model=RelatedPollsResponse)

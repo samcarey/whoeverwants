@@ -137,28 +137,19 @@ class RelatedPollsResponse(BaseModel):
 class PollResponse(BaseModel):
     """Sub-poll API response shape.
 
-    Wrapper-level fields (creator_secret, response_deadline, is_closed,
-    close_reason, short_id, thread_title, suggestion_deadline, creator_name)
-    are sourced from the parent multipoll via JOIN — see `_SELECT_POLL_FULL`
-    in `routers/polls.py`. They remain on `PollResponse` so that legacy FE
-    callsites that read `poll.is_closed` etc. keep working without a 30-file
-    refactor; the long-term direction (per CLAUDE.md → Addressability) is for
-    the FE to source these from the `Multipoll` wrapper directly.
+    Phase 5b: wrapper-level fields (creator_secret, response_deadline,
+    is_closed, close_reason, short_id, thread_title, suggestion_deadline,
+    creator_name) are no longer surfaced here — they live exclusively on the
+    parent `MultipollResponse`. The FE consumes them from the wrapper per the
+    addressability paradigm.
     """
 
     id: str
     title: str
     poll_type: str
     options: list[str] | None = None
-    response_deadline: str | None = None
     created_at: str
     updated_at: str
-    creator_secret: str | None = None
-    creator_name: str | None = None
-    is_closed: bool = False
-    close_reason: str | None = None
-    short_id: str | None = None
-    suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     auto_close_after: int | None = None
@@ -175,10 +166,9 @@ class PollResponse(BaseModel):
     show_preliminary_results: bool = True
     response_count: int | None = None
     min_availability_percent: int | None = None
-    thread_title: str | None = None
     # Phase 2.5: multipoll wrapper this poll belongs to. Phase 4 backfilled
-    # every non-participation poll; Phase 5 makes participation polls go
-    # away entirely, so this is effectively NOT NULL on every row.
+    # every non-participation poll; migration 094 dropped the participation
+    # poll type entirely, so this is effectively NOT NULL on every row.
     multipoll_id: str | None = None
     sub_poll_index: int | None = None
     # Phase 3.5: the wrapper's `follow_up_to` (a multipoll_id, or None for

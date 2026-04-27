@@ -4,13 +4,18 @@ import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import FollowUpHeader from "@/components/FollowUpHeader";
-import { Poll } from "@/lib/types";
+import { Poll, Multipoll } from "@/lib/types";
 import { buildPollSnapshot } from "@/lib/pollCreator";
 import { formatShortDateTime } from "@/lib/timeUtils";
 
 interface FollowUpModalProps {
   isOpen: boolean;
   poll: Poll;
+  // Phase 5b: wrapper-level fields (response_deadline, is_closed,
+  // close_reason) come from the parent multipoll. Caller passes it so this
+  // modal can render the closed-state copy + build follow-up/duplicate
+  // snapshots correctly.
+  multipoll: Multipoll;
   onClose: () => void;
   totalVotes?: number;
   // When provided, renders a Forget button alongside the others. The parent is
@@ -29,7 +34,7 @@ interface FollowUpModalProps {
   onCutoffAvailability?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, onDelete, onReopen, onClosePoll, onCutoffAvailability }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalVotes, onDelete, onReopen, onClosePoll, onCutoffAvailability }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   // Ignore the synthetic click that fires immediately after the long-press
@@ -48,23 +53,23 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, onDel
   };
 
   const pollSnapshot = {
-    ...buildPollSnapshot(poll),
+    ...buildPollSnapshot(poll, multipoll),
     total_votes: totalVotes,
   };
 
-  const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
+  const deadline = multipoll.response_deadline ? new Date(multipoll.response_deadline) : null;
   const now = new Date();
   const isExpired = !!(deadline && deadline <= now);
-  const isClosed = !!poll.is_closed;
+  const isClosed = !!multipoll.is_closed;
 
   // Priority: max-capacity and manual-close messages take precedence over
   // the plain "Expired on …" label. These used to render inline in the card
   // status block; they live here now so the card stays focused on results.
   let closedText: string | null = null;
-  if (isClosed && poll.close_reason === 'max_capacity') {
+  if (isClosed && multipoll.close_reason === 'max_capacity') {
     closedText = 'Poll auto-closed. Capacity reached.';
-  } else if (isClosed && poll.close_reason === 'manual') {
-    const closedAt = poll.updated_at ? new Date(poll.updated_at) : null;
+  } else if (isClosed && multipoll.close_reason === 'manual') {
+    const closedAt = multipoll.updated_at ? new Date(multipoll.updated_at) : null;
     closedText = closedAt
       ? `Closed manually on ${formatShortDateTime(closedAt)}`
       : 'Closed manually';

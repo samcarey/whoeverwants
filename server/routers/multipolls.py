@@ -244,12 +244,10 @@ def _row_to_multipoll(
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
 ) -> MultipollResponse:
-    # Phase 3.5 + Phase 5: sub-poll rows come from `_fetch_sub_polls` which
-    # selects only polls.*. Wrapper-level fields (response_deadline,
-    # creator_secret, is_closed, close_reason, short_id, thread_title,
-    # creator_name, suggestion_deadline) live on the multipoll wrapper —
-    # enrich each sub-poll row here so `_row_to_poll` returns them in the
-    # standard PollResponse shape.
+    # Phase 5b: PollResponse no longer carries wrapper-level fields, so we
+    # only need to splice the wrapper's follow_up_to (the FE chain pointer)
+    # onto each sub-poll row. The multipoll's own fields are surfaced on
+    # MultipollResponse below.
     multipoll_follow_up_to = (
         str(row["follow_up_to"]) if row.get("follow_up_to") else None
     )
@@ -257,14 +255,6 @@ def _row_to_multipoll(
     for sp in sub_poll_rows:
         enriched_sp = dict(sp)
         enriched_sp["multipoll_follow_up_to"] = multipoll_follow_up_to
-        enriched_sp["short_id"] = row.get("short_id")
-        enriched_sp["creator_secret"] = row.get("creator_secret")
-        enriched_sp["creator_name"] = row.get("creator_name")
-        enriched_sp["response_deadline"] = row.get("response_deadline")
-        enriched_sp["is_closed"] = row.get("is_closed", False)
-        enriched_sp["close_reason"] = row.get("close_reason")
-        enriched_sp["thread_title"] = row.get("thread_title")
-        enriched_sp["suggestion_deadline"] = row.get("prephase_deadline")
         enriched.append(enriched_sp)
     return MultipollResponse(
         id=str(row["id"]),

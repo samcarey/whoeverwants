@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Poll } from "@/lib/types";
+import { Multipoll } from "@/lib/types";
 import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
 import { relativeTime } from "@/lib/pollListUtils";
 import { loadVotedPolls } from "@/lib/votedPollsStorage";
@@ -14,10 +14,13 @@ import { navigateWithTransition } from "@/lib/viewTransitions";
 import { apiGetVotes, apiGetPollResults } from "@/lib/api";
 
 interface ThreadListProps {
-  polls: Poll[];
+  // Phase 5b: the home page passes the multipolls (wrapper-level units)
+  // returned by getAccessibleMultipolls(). buildThreads walks
+  // multipoll.follow_up_to to chain wrappers into threads.
+  multipolls: Multipoll[];
 }
 
-export default function ThreadList({ polls }: ThreadListProps) {
+export default function ThreadList({ multipolls }: ThreadListProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
   const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
@@ -35,8 +38,8 @@ export default function ThreadList({ polls }: ThreadListProps) {
   }, []);
 
   const threads = useMemo(() => {
-    return buildThreads(polls, votedPollIds, abstainedPollIds);
-  }, [polls, votedPollIds, abstainedPollIds]);
+    return buildThreads(multipolls, votedPollIds, abstainedPollIds);
+  }, [multipolls, votedPollIds, abstainedPollIds]);
 
   // Prefetch thread page routes for all visible threads on mount
   useEffect(() => {

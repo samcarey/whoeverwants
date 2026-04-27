@@ -12,8 +12,8 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
-import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitMultipollVotes, apiCutoffMultipollSuggestions, apiGetPollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
+import { Poll, PollResults, OptionsMetadata, DayTimeWindow, Multipoll } from "@/lib/types";
+import { apiGetPollResults, apiGetVotes, apiSubmitMultipollVotes, apiCutoffMultipollSuggestions, apiGetPollById, apiGetMultipollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -31,6 +31,11 @@ import { isLocationLikeCategory } from "@/components/TypeFieldInput";
 
 interface SubPollBallotProps {
   poll: Poll;
+  // Phase 5b: wrapper-level fields (response_deadline, is_closed,
+  // close_reason, prephase_deadline / legacy suggestion_deadline) live on the
+  // parent multipoll. Caller passes it so this component can source those
+  // fields directly per the addressability paradigm.
+  multipoll: Multipoll;
   createdDate: string;
   pollId: string | null;
   // When true, this component skips rendering YesNoResults itself — the
@@ -71,7 +76,7 @@ export interface SubPollBallotHandle {
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: SubPollBallotProps, ref) {
+const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, multipoll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: SubPollBallotProps, ref) {
   // Set the page title in the template header
   usePageTitle(poll.title);
 
@@ -116,7 +121,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
   const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
   const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
-  const [pollClosed, setPollClosed] = useState(poll.is_closed ?? false);
+  const [pollClosed, setPollClosed] = useState(multipoll.is_closed ?? false);
   // Don't automatically assume poll was reopened just because deadline passed
   // Only set manuallyReopened when explicitly reopened by creator action
   const [manuallyReopened, setManuallyReopened] = useState(false);
@@ -143,8 +148,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // has an optional suggestion collection phase before ranking begins.
   // When suggestion_deadline_minutes is set but suggestion_deadline is null, the timer hasn't started yet
   // (waiting for first suggestion). This is still considered "in suggestion phase".
-  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!(poll.suggestion_deadline || poll.suggestion_deadline_minutes);
-  const effectiveSuggestionDeadline = suggestionDeadlineOverride || poll.suggestion_deadline;
+  // Phase 5b: prephase_deadline lives on the multipoll wrapper (was
+  // polls.suggestion_deadline). Local naming sticks with "suggestion" since
+  // the rest of this component already uses that vocabulary.
+  const wrapperSuggestionDeadline = multipoll.prephase_deadline ?? null;
+  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!(wrapperSuggestionDeadline || poll.suggestion_deadline_minutes);
+  const effectiveSuggestionDeadline = suggestionDeadlineOverride || wrapperSuggestionDeadline;
   const suggestionTimerStarted = !!effectiveSuggestionDeadline;
   const inSuggestionPhase = hasSuggestionPhase && (
     !suggestionTimerStarted // Timer hasn't started yet (waiting for first suggestion)
@@ -157,7 +166,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   // Time poll phase helpers: availability phase while options haven't been generated yet
   const inAvailabilityPhase = poll.poll_type === 'time' && (!optionsOverride?.length) && (!poll.options || poll.options.length === 0);
-  const availabilityTimerStarted = !!(suggestionDeadlineOverride || poll.suggestion_deadline);
+  const availabilityTimerStarted = !!(suggestionDeadlineOverride || wrapperSuggestionDeadline);
   // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
@@ -234,8 +243,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const isPollExpired = useMemo(() => {
     // Use server-safe check
     const now = currentTime || new Date();
-    return poll.response_deadline && new Date(poll.response_deadline) <= now;
-  }, [poll.response_deadline, currentTime]);
+    return multipoll.response_deadline && new Date(multipoll.response_deadline) <= now;
+  }, [multipoll.response_deadline, currentTime]);
 
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
@@ -631,13 +640,13 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   // Fetch results when poll closes or for time polls in preferences phase
   useEffect(() => {
-    const isClosed = pollClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
+    const isClosed = pollClosed || (multipoll.response_deadline && new Date(multipoll.response_deadline) <= new Date());
     const shouldFetchForTimePoll = poll.poll_type === 'time' && !inAvailabilityPhase;
 
     if (isClosed || shouldFetchForTimePoll) {
       fetchPollResults();
     }
-  }, [pollClosed, poll.response_deadline, poll.poll_type, fetchPollResults, inAvailabilityPhase]);
+  }, [pollClosed, multipoll.response_deadline, poll.poll_type, fetchPollResults, inAvailabilityPhase]);
 
   // Load saved user name. Skip when the wrapper owns the voter name input
   // (Phase 3.4 follow-up B) — the wrapper seeds its own state from
@@ -653,11 +662,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   // Real-time timer to check for poll expiration
   useEffect(() => {
-    if (!poll.response_deadline || pollClosed) {
+    if (!multipoll.response_deadline || pollClosed) {
       return; // No deadline or already manually closed
     }
 
-    const deadline = new Date(poll.response_deadline);
+    const deadline = new Date(multipoll.response_deadline);
     const updateTimer = () => {
       const now = new Date();
       setCurrentTime(now);
@@ -675,24 +684,29 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [poll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.id]);
+  }, [multipoll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.id]);
 
   // Real-time subscription to listen for poll status changes (with polling fallback)
   useEffect(() => {
     
     let pollInterval: NodeJS.Timeout | null = null;
     
-    // Polling fallback function — polls the Python API for status changes
+    // Polling fallback function — polls the Python API for status changes.
+    // Phase 5b: is_closed lives on the multipoll wrapper, so fetch it from
+    // there. Response count still lives on the per-sub-poll PollResponse, so
+    // grab it via apiGetPollById.
     const pollForChanges = async () => {
       try {
-        const pollData = await apiGetPollById(poll.id);
+        const [wrapper, pollData] = await Promise.all([
+          poll.multipoll_id ? apiGetMultipollById(poll.multipoll_id).catch(() => null) : Promise.resolve(null),
+          apiGetPollById(poll.id).catch(() => null),
+        ]);
 
-        if (pollData && pollData.is_closed && !pollClosed) {
+        if (wrapper?.is_closed && !pollClosed) {
           setPollClosed(true);
-          setManuallyReopened(false); // Reset flag when closed
+          setManuallyReopened(false);
           fetchPollResults();
         }
-        // Update response count for preliminary results
         if (pollData?.response_count != null) {
           setResponseCount(pollData.response_count);
         }
@@ -826,10 +840,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       const wrapper = await apiCutoffMultipollSuggestions(multipollId, creatorSecret);
       const updatedPoll = wrapper.sub_polls.find((sp) => sp.id === poll.id) ?? null;
       invalidatePoll(poll.id);
+      // Phase 5b: prephase_deadline lives on the multipoll wrapper. Use the
+      // wrapper's value as the new override so the UI exits suggestion phase
+      // immediately.
+      setSuggestionDeadlineOverride(wrapper.prephase_deadline || new Date().toISOString());
       if (updatedPoll) {
-        // Update the suggestion deadline so the UI exits suggestion phase
-        setSuggestionDeadlineOverride(updatedPoll.suggestion_deadline || new Date().toISOString());
-        // Update options from the finalized poll so the ranking ballot can render
         if (updatedPoll.options) {
           const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
           setOptionsOverride(opts);
@@ -1508,7 +1523,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
              states (max-capacity, manual, expired) are surfaced in the
              long-press modal so the card body stays focused on results. */}
         {(() => {
-          const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
+          const deadline = multipoll.response_deadline ? new Date(multipoll.response_deadline) : null;
           const now = currentTime || new Date();
           const isExpired = deadline && deadline <= now;
 
@@ -1526,7 +1541,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
               poll.poll_type === 'time' &&
               inAvailabilityPhase &&
               !suggestionDeadlineOverride &&
-              !poll.suggestion_deadline &&
+              !wrapperSuggestionDeadline &&
               mins;
             if (isDeferredAvailability) {
               return (
@@ -1884,6 +1899,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                   {/* Ranking section — independent component with its own edit state */}
                   <RankingSection
                     poll={poll}
+                    suggestionDeadline={effectiveSuggestionDeadline ?? null}
+                    responseDeadline={multipoll.response_deadline ?? null}
                     pollId={pollId || ''}
                     pollOptions={pollOptions}
                     rankedChoices={rankedChoices}

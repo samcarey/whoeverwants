@@ -24,19 +24,16 @@ export interface Poll {
   title: string;
   poll_type: 'yes_no' | 'ranked_choice' | 'time';
   options?: string[];
-  response_deadline?: string;
   created_at: string;
   updated_at: string;
-  creator_secret?: string;
-  creator_name?: string;
-  is_closed?: boolean;
-  close_reason?: 'manual' | 'deadline' | 'max_capacity' | 'uncontested';
   // Phase 3.5: the wrapper's follow_up_to (a multipoll_id) is the source of
   // truth for thread chains. The legacy per-poll `follow_up_to` column was
   // dropped in Phase 5.
   multipoll_follow_up_to?: string | null;
-  short_id?: string;
-  suggestion_deadline?: string | null;
+  // Phase 5b: wrapper-level fields (response_deadline, is_closed,
+  // close_reason, creator_secret, creator_name, short_id, thread_title,
+  // suggestion_deadline) live on the parent Multipoll. Resolve via
+  // pollCache.getMultipollForPoll() or accept a Multipoll prop.
   suggestion_deadline_minutes?: number | null;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
@@ -53,11 +50,8 @@ export interface Poll {
   show_preliminary_results?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
-  thread_title?: string | null;
-  // Phase 2.5: multipoll wrapper this sub-poll belongs to (NULL for
-  // pre-Phase-4 legacy polls that haven't been wrapped). Drives
-  // sibling-grouping in threadUtils so all sub-polls of a multipoll appear
-  // together in a thread.
+  // Phase 2.5: multipoll wrapper this sub-poll belongs to. Phase 4 backfilled
+  // every existing poll, so this is effectively NOT NULL on every row.
   multipoll_id?: string | null;
   sub_poll_index?: number | null;
   results?: PollResults | null;

@@ -1,6 +1,6 @@
 // Utility functions for managing poll creator information in localStorage
 
-import type { Poll } from '@/lib/types';
+import type { Multipoll, Poll } from '@/lib/types';
 
 const POLL_CREATOR_STORAGE_KEY = 'poll_creator_data';
 const CLEANUP_INTERVAL_DAYS = 30; // Clean up polls older than 30 days
@@ -79,13 +79,19 @@ export function cleanupOldPolls(): void {
 
 // Build a snapshot of poll fields used for duplicate/follow-up forms.
 // Centralized here to avoid drift when fields are added or renamed.
-export function buildPollSnapshot(poll: Poll) {
+//
+// Phase 5b: wrapper-level fields (response_deadline, creator_name) are
+// sourced from the parent `Multipoll` since they no longer live on `Poll`.
+// `multipoll` is optional so callsites that build a snapshot for a poll
+// whose wrapper isn't loaded (e.g. an old localStorage entry) can still
+// pass just the poll — the resulting snapshot just omits the wrapper bits.
+export function buildPollSnapshot(poll: Poll, multipoll?: Multipoll | null) {
   return {
     title: poll.title,
     poll_type: poll.poll_type,
     options: poll.options,
-    response_deadline: poll.response_deadline,
-    creator_name: poll.creator_name,
+    response_deadline: multipoll?.response_deadline ?? null,
+    creator_name: multipoll?.creator_name ?? null,
     auto_close_after: poll.auto_close_after,
     details: poll.details,
     category: poll.category,

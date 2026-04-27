@@ -14,6 +14,12 @@
  * All maps are capped at MAX_ENTRIES (100) with simple LRU eviction — on
  * insert, if the map is full, the oldest entry is dropped. This bounds memory
  * for long-lived PWA sessions with many polls.
+ *
+ * Phase 5b: short_id is a wrapper-level concept — we no longer maintain a
+ * per-poll short_id index. `getCachedPollByShortId` resolves the multipoll
+ * cache and returns its first sub-poll. Sub-poll lookup by short_id is
+ * unambiguous because every multipoll's short_id maps to exactly one wrapper,
+ * and the FE only needs an "anchor poll" for thread building.
  */
 
 import type { Multipoll, Poll, PollResults } from './types';
@@ -31,12 +37,12 @@ interface CacheEntry<T> {
 type PollCache = CacheEntry<Poll>;
 type ResultsValue = PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
 
-// Keyed by poll.id AND poll.short_id for O(1) lookup by either.
 const cacheById = new Map<string, PollCache>();
-const cacheByShortId = new Map<string, PollCache>();
 
-// Cached result of getAccessiblePolls
-let accessiblePollsCache: CacheEntry<Poll[]> | null = null;
+// Cached result of getAccessibleMultipolls. Phase 5b: the wrapper is the
+// unit of identity, so accessibility is keyed on the multipoll wrappers
+// rather than the flat Poll[] list.
+let accessibleMultipollsCache: CacheEntry<Multipoll[]> | null = null;
 
 // Per-poll results and votes caches
 const resultsCache = new Map<string, CacheEntry<ResultsValue>>();
@@ -66,20 +72,19 @@ function setLru<T>(map: Map<string, CacheEntry<T>>, key: string, value: T): void
 /** Store a single poll in the cache. */
 export function cachePoll(poll: Poll): void {
   setLru(cacheById, poll.id, poll);
-  if (poll.short_id) {
-    setLru(cacheByShortId, poll.short_id, poll);
-  }
 }
 
-/** Store multiple polls (e.g., from getAccessiblePolls). */
+/** Store multiple polls (e.g., sub-polls from a multipoll fetch). */
 export function cachePolls(polls: Poll[]): void {
   for (const poll of polls) cachePoll(poll);
 }
 
-/** Store the full accessible polls list. */
-export function cacheAccessiblePolls(polls: Poll[]): void {
-  accessiblePollsCache = { value: polls, storedAt: Date.now() };
-  cachePolls(polls);
+/** Store the full accessible multipolls list. Cascades each multipoll into
+ *  the multipoll cache (which in turn caches sub-polls in the per-poll cache).
+ */
+export function cacheAccessibleMultipolls(multipolls: Multipoll[]): void {
+  accessibleMultipollsCache = { value: multipolls, storedAt: Date.now() };
+  for (const mp of multipolls) cacheMultipoll(mp);
 }
 
 /** Get a poll by ID if cached and fresh. */
@@ -88,15 +93,38 @@ export function getCachedPollById(id: string): Poll | null {
   return entry && isValid(entry) ? entry.value : null;
 }
 
-/** Get a poll by short ID if cached and fresh. */
+/** Get a poll by short ID if cached and fresh. Resolves through the multipoll
+ *  cache and returns the wrapper's first sub-poll (sub-polls are sorted by
+ *  sub_poll_index in cacheMultipoll). */
 export function getCachedPollByShortId(shortId: string): Poll | null {
-  const entry = cacheByShortId.get(shortId);
-  return entry && isValid(entry) ? entry.value : null;
+  const mp = getCachedMultipollByShortId(shortId);
+  return mp?.sub_polls[0] ?? null;
 }
 
-/** Get the cached accessible polls list if fresh. */
+/** Get the cached accessible multipolls list if fresh. */
+export function getCachedAccessibleMultipolls(): Multipoll[] | null {
+  return accessibleMultipollsCache && isValid(accessibleMultipollsCache)
+    ? accessibleMultipollsCache.value
+    : null;
+}
+
+/** Flat sub-polls accessor for callsites that just need every accessible poll
+ *  (e.g. the prefetcher). Returns null when the multipoll cache is cold. */
 export function getCachedAccessiblePolls(): Poll[] | null {
-  return accessiblePollsCache && isValid(accessiblePollsCache) ? accessiblePollsCache.value : null;
+  const wrappers = getCachedAccessibleMultipolls();
+  if (!wrappers) return null;
+  const polls: Poll[] = [];
+  for (const mp of wrappers) for (const sp of mp.sub_polls) polls.push(sp);
+  return polls;
+}
+
+/** Resolve a poll's parent multipoll wrapper from the cache, or null on
+ *  cache miss. Callers needing wrapper-level fields (is_closed,
+ *  response_deadline, etc.) consume this to source those fields per the
+ *  addressability paradigm. */
+export function getMultipollForPoll(poll: Poll): Multipoll | null {
+  if (!poll.multipoll_id) return null;
+  return getCachedMultipollById(poll.multipoll_id);
 }
 
 /** Cache poll results. */
@@ -123,19 +151,15 @@ export function getCachedVotes(pollId: string): ApiVote[] | null {
 
 /** Invalidate a single poll (call after mutations). */
 export function invalidatePoll(id: string): void {
-  const entry = cacheById.get(id);
-  if (entry) {
-    cacheById.delete(id);
-    if (entry.value.short_id) cacheByShortId.delete(entry.value.short_id);
-  }
+  cacheById.delete(id);
   resultsCache.delete(id);
   votesCache.delete(id);
-  accessiblePollsCache = null;
+  accessibleMultipollsCache = null;
 }
 
 /** Invalidate the accessible polls list (e.g., after discovering new polls). */
 export function invalidateAccessiblePolls(): void {
-  accessiblePollsCache = null;
+  accessibleMultipollsCache = null;
 }
 
 /** Cache a multipoll wrapper plus its sub-polls (sub-polls go into pollCache). */
@@ -165,5 +189,5 @@ export function invalidateMultipoll(id: string): void {
     if (entry.value.short_id) multipollByShortId.delete(entry.value.short_id);
     for (const sub of entry.value.sub_polls) invalidatePoll(sub.id);
   }
-  accessiblePollsCache = null;
+  accessibleMultipollsCache = null;
 }

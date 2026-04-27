@@ -70,7 +70,8 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, 
 
       const subPoll = multipoll.sub_polls[0];
       recordPollCreation(subPoll.id, creatorSecret);
-      const shortId = multipoll.short_id || subPoll.short_id || subPoll.id;
+      // Phase 5b: short_id lives on the multipoll wrapper.
+      const shortId = multipoll.short_id || subPoll.id;
       router.push(`/p/${shortId}`);
       onClose();
     } catch (err) {

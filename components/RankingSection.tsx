@@ -12,6 +12,12 @@ import type { ApiVote } from "@/lib/api";
 
 interface RankingSectionProps {
   poll: any;
+  // Phase 5b: wrapper-level fields (response_deadline, prephase_deadline /
+  // legacy suggestion_deadline) come in as separate props since they live on
+  // the parent multipoll, not the poll. SubPollBallot sources them from its
+  // `multipoll` prop and forwards them here.
+  suggestionDeadline?: string | null;
+  responseDeadline?: string | null;
   pollId: string;
   pollOptions: string[];
   rankedChoices: string[];
@@ -51,6 +57,8 @@ const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choi
 
 export default function RankingSection({
   poll,
+  suggestionDeadline,
+  responseDeadline,
   pollId,
   pollOptions,
   rankedChoices,
@@ -112,8 +120,8 @@ export default function RankingSection({
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
           <div className="text-blue-800 dark:text-blue-200 text-sm">
-            {poll.suggestion_deadline ? (
-              <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={poll.suggestion_deadline} /></>
+            {suggestionDeadline ? (
+              <>Ranking will open after suggestions cutoff in{' '}<Countdown deadline={suggestionDeadline} /></>
             ) : (
               <>Ranking will open after suggestions cutoff</>
             )}
@@ -143,7 +151,7 @@ export default function RankingSection({
       {canSubmitSuggestions && !isEditingRanking && (
         <>
           <h3 className="text-lg font-semibold text-center text-gray-900 dark:text-white mt-4 mb-1">Early Voting</h3>
-          <Countdown deadline={poll.response_deadline || null} label="Preferences closing" />
+          <Countdown deadline={responseDeadline ?? null} label="Preferences closing" />
           <p className="text-center text-xs text-amber-700 dark:text-amber-300 mb-3">
             Options may change until suggestions cutoff!
           </p>

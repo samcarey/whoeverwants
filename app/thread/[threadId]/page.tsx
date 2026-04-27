@@ -3,9 +3,9 @@
 import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { getAccessiblePolls } from "@/lib/simplePollQueries";
+import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache } from "@/lib/threadUtils";
+import { buildThreadFromMultipollDown, buildThreadSyncFromCache, buildMultipollMap } from "@/lib/threadUtils";
 import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Multipoll } from "@/lib/types";
 import type { MultipollVoteItem } from "@/lib/api";
@@ -13,7 +13,7 @@ import { getUserName, saveUserName } from "@/lib/userProfile";
 import CompactNameField from "@/components/CompactNameField";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll, getMultipollForPoll } from "@/lib/pollCache";
 import { isUuidLike } from "@/lib/pollId";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -186,6 +186,20 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   const [loading, setLoading] = useState(!initialThread);
   const [error, setError] = useState(false);
 
+  // Phase 5b: multipoll-level mutations (close/reopen/cutoff) update the
+  // multipolls array; sub-poll mutations (forget) update the polls array.
+  const patchThreadMultipolls = useRef(
+    (predicate: (mp: Multipoll) => boolean, patcher: (mp: Multipoll) => Partial<Multipoll>) => {
+      setThread((prev) => {
+        if (!prev) return prev;
+        if (!prev.multipolls.some(predicate)) return prev;
+        return {
+          ...prev,
+          multipolls: prev.multipolls.map((mp) => (predicate(mp) ? { ...mp, ...patcher(mp) } : mp)),
+        };
+      });
+    },
+  ).current;
   const patchThreadPolls = useRef(
     (predicate: (p: Poll) => boolean, patcher: (p: Poll) => Partial<Poll>) => {
       setThread((prev) => {
@@ -210,10 +224,17 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // Signal to the view transition helper that this page's content is rendered.
   usePageReady(!!thread && !loading);
 
-  // Prefetch poll page routes for all polls in this thread
+  // Prefetch poll page routes for all polls in this thread. Phase 5b:
+  // short_id lives on the multipoll wrapper, so the friendly URL uses the
+  // multipoll's short_id when available.
   useEffect(() => {
     if (!thread) return;
-    const hrefs = thread.polls.map(p => `/p/${p.short_id || p.id}`);
+    const wrapperByPollId = new Map<string, string>();
+    for (const mp of thread.multipolls) {
+      if (!mp.short_id) continue;
+      for (const sp of mp.sub_polls) wrapperByPollId.set(sp.id, mp.short_id);
+    }
+    const hrefs = thread.polls.map(p => `/p/${wrapperByPollId.get(p.id) || p.id}`);
     prefetchBatch(hrefs, { priority: "low" });
   }, [thread, prefetchBatch]);
 
@@ -371,12 +392,14 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         for (const id of getAccessiblePollIds()) {
           void apiGetVotes(id).catch(() => null);
         }
-        const polls = await getAccessiblePolls();
-        if (!polls) { setError(true); return; }
+        const multipolls = await getAccessibleMultipolls();
+        if (!multipolls) { setError(true); return; }
 
         // Re-read voted state — discovery or the user voting elsewhere may have changed it.
         const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
-        const foundThread = buildThreadFromPollDown(anchorPoll.id, polls, voted, abstained);
+        const anchorMultipollId = anchorPoll.multipoll_id;
+        if (!anchorMultipollId) { setError(true); return; }
+        const foundThread = buildThreadFromMultipollDown(anchorMultipollId, multipolls, voted, abstained);
 
         if (!foundThread) {
           setError(true);
@@ -892,9 +915,24 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
   // wear a golden border. The border uses the live predicate so it clears
   // immediately on vote; the sort order captures this at thread-load only so
   // the card doesn't jump positions underneath the user.
+  // Phase 5b: open/closed is multipoll-level — every sub-poll inherits its
+  // wrapper's is_closed + response_deadline.
   const now = new Date();
-  const isPollOpen = (poll: Poll) =>
-    poll.response_deadline ? new Date(poll.response_deadline) > now && !poll.is_closed : !poll.is_closed;
+  const multipollByPollId = useMemo(() => {
+    const map = new Map<string, Multipoll>();
+    if (!thread) return map;
+    for (const mp of thread.multipolls) {
+      for (const sp of mp.sub_polls) map.set(sp.id, mp);
+    }
+    return map;
+  }, [thread]);
+  const wrapperFor = (poll: Poll): Multipoll | null =>
+    multipollByPollId.get(poll.id) ?? (poll.multipoll_id ? multipollWrapperMap.get(poll.multipoll_id) ?? null : null);
+  const isPollOpen = (poll: Poll) => {
+    const mp = wrapperFor(poll);
+    if (!mp) return true;
+    return mp.response_deadline ? new Date(mp.response_deadline) > now && !mp.is_closed : !mp.is_closed;
+  };
   const isAwaitingResponse = (poll: Poll) =>
     isPollOpen(poll) && !votedPollIds.has(poll.id) && !abstainedPollIds.has(poll.id);
 
@@ -911,14 +949,33 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread]);
 
+  // Phase 5b: multipoll wrappers ride along on the thread state directly
+  // (returned in bulk from /api/polls/accessible). Build a quick id → wrapper
+  // map for the existing callsites that look one up. Voter aggregates stay
+  // fresh via the POLL_VOTES_CHANGED_EVENT handler below, which refetches
+  // affected wrappers and merges them back into thread.multipolls.
+  const multipollWrapperMap = useMemo(
+    () => (thread ? buildMultipollMap(thread.multipolls) : new Map<string, Multipoll>()),
+    [thread],
+  );
+
   // Phase 3.2: group sibling sub-polls of a multipoll into a single visual
-  // card group. 1-sub-poll wrappers (the post-Phase-4 norm everywhere on
-  // prod) render identically to today — anchor === only sub-poll, no
-  // section labels, no aggregation. Multi-sub-poll wrappers render one
-  // card with stacked sub-poll sections inside the expand clip and a
-  // multipoll-level respondent row below.
+  // card group. 1-sub-poll wrappers (the post-Phase-4 norm) render identically
+  // to today — anchor === only sub-poll, no section labels, no aggregation.
+  // Multi-sub-poll wrappers render one card with stacked sub-poll sections
+  // inside the expand clip and a multipoll-level respondent row below.
+  //
+  // Phase 5b: each group also carries the wrapper Multipoll so callsites can
+  // read wrapper-level fields (is_closed, response_deadline, ...) directly
+  // instead of looking them up via the cache.
   const groupedThreadPolls = useMemo(() => {
-    type Group = { key: string; multipollId: string | null; subPolls: Poll[]; anchor: Poll };
+    type Group = {
+      key: string;
+      multipollId: string | null;
+      multipoll: Multipoll | null;
+      subPolls: Poll[];
+      anchor: Poll;
+    };
     const groups: Group[] = [];
     const seen = new Set<string>();
     for (const poll of threadPolls) {
@@ -930,82 +987,59 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
             .filter((p) => p.multipoll_id === poll.multipoll_id)
             .sort((a, b) => (a.sub_poll_index ?? 0) - (b.sub_poll_index ?? 0))
         : [poll];
+      const multipoll = poll.multipoll_id
+        ? (multipollWrapperMap.get(poll.multipoll_id) ?? null)
+        : null;
       groups.push({
         key: groupKey,
         multipollId: poll.multipoll_id ?? null,
+        multipoll,
         subPolls,
         anchor: subPolls[0],
       });
     }
     return groups;
-  }, [threadPolls]);
-
-  // Multipoll wrapper cache for groups with 2+ sub-polls. Per the
-  // addressability paradigm, multipoll-level state (voter_names,
-  // anonymous_count, ...) comes from the multipoll endpoint — never
-  // from aggregating per-sub-poll fetches client-side. Lazy-fetched on
-  // viewport intersection (via the existing per-card observer +
-  // visiblePollIds), keyed by multipoll_id.
-  const [multipollWrapperMap, setMultipollWrapperMap] = useState<Map<string, Multipoll>>(() => new Map());
-
-  // Set of multipoll_ids we've already kicked off a fetch for (so the
-  // viewport effect doesn't re-trigger on every visiblePollIds change).
-  const multipollFetchedRef = useRef<Set<string>>(new Set());
+  }, [threadPolls, multipollWrapperMap]);
 
   // Refetch on vote-change events: when any sub-poll's votes change, the
   // wrapper's voter_names may have shifted. Refresh affected multipoll
-  // wrappers — cheap because the request is small and cached.
+  // wrappers — cheap because the request is small and cached. Updates flow
+  // through patchThreadMultipolls so the derived map stays in sync.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { pollId?: string } | undefined;
       if (!detail?.pollId || !thread) return;
       const poll = thread.polls.find((p) => p.id === detail.pollId);
       const mid = poll?.multipoll_id;
-      if (!mid || !multipollFetchedRef.current.has(mid)) return;
+      if (!mid) return;
       void apiGetMultipollById(mid).then((wrapper) => {
-        setMultipollWrapperMap((prev) => {
-          const next = new Map(prev);
-          next.set(mid, wrapper);
-          return next;
-        });
+        patchThreadMultipolls(
+          (mp) => mp.id === mid,
+          () => ({
+            voter_names: wrapper.voter_names,
+            anonymous_count: wrapper.anonymous_count,
+            sub_polls: wrapper.sub_polls,
+          }),
+        );
       }).catch(() => null);
     };
     window.addEventListener(POLL_VOTES_CHANGED_EVENT, handler);
     return () => window.removeEventListener(POLL_VOTES_CHANGED_EVENT, handler);
-  }, [thread]);
-
-  // Lazy-fetch each multi-sub-poll group's wrapper when its anchor card
-  // enters the viewport. visiblePollIds tracks anchor poll ids (the same
-  // ids the IntersectionObserver populates), so we just iterate groups
-  // and fire fetches for ones we haven't seen yet.
-  useEffect(() => {
-    for (const group of groupedThreadPolls) {
-      if (!group.multipollId || group.subPolls.length < 2) continue;
-      if (!visiblePollIds.has(group.anchor.id)) continue;
-      const mid = group.multipollId;
-      if (multipollFetchedRef.current.has(mid)) continue;
-      multipollFetchedRef.current.add(mid);
-      void apiGetMultipollById(mid).then((wrapper) => {
-        setMultipollWrapperMap((prev) => {
-          const next = new Map(prev);
-          next.set(mid, wrapper);
-          return next;
-        });
-      }).catch(() => {
-        multipollFetchedRef.current.delete(mid);
-      });
-    }
-  }, [groupedThreadPolls, visiblePollIds]);
+  }, [thread, patchThreadMultipolls]);
 
   // Sync the URL to reflect which card is expanded, using shallow history.replaceState
   // so Next.js doesn't unmount/remount on URL change. Sharing the URL reopens the
   // same expanded card.
+  // Phase 5b: short_id lives on the multipoll wrapper. Use the expanded card's
+  // multipoll short_id; fall back to the sub-poll uuid if the wrapper isn't
+  // available.
   useEffect(() => {
     if (typeof window === 'undefined' || !thread) return;
     let nextPath: string;
     if (expandedPollId) {
       const expandedPoll = thread.polls.find((p) => p.id === expandedPollId);
-      const routeId = expandedPoll?.short_id || expandedPollId;
+      const wrapper = expandedPoll ? wrapperFor(expandedPoll) : null;
+      const routeId = wrapper?.short_id || expandedPollId;
       nextPath = `/p/${routeId}/`;
     } else {
       nextPath = `/thread/${threadId}/`;
@@ -1013,6 +1047,9 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     if (window.location.pathname !== nextPath) {
       window.history.replaceState(window.history.state, '', nextPath + window.location.search + window.location.hash);
     }
+  // wrapperFor reads multipollByPollId/multipollWrapperMap which both derive
+  // from `thread`, so the existing thread dep covers wrapper lookups too.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedPollId, thread, threadId]);
 
   if (loading) {
@@ -1062,10 +1099,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
         {groupedThreadPolls.map((group) => {
             const poll = group.anchor;
             const isMultiGroup = group.subPolls.length > 1;
-            const wrapper = group.multipollId ? multipollWrapperMap.get(group.multipollId) : null;
+            const wrapper = group.multipoll;
             const isOpen = isPollOpen(poll);
             const isClosed = !isOpen;
             const isAwaiting = isAwaitingResponse(poll);
+            // Wrapper-level reads (Phase 5b). Hoisted here so every callsite
+            // inside this card iteration can use them without re-deriving.
+            const wrapperResponseDeadline = wrapper?.response_deadline ?? null;
+            const wrapperPrephaseDeadline = wrapper?.prephase_deadline ?? null;
+            const wrapperCloseReason = wrapper?.close_reason ?? null;
+            const wrapperUpdatedAt = wrapper?.updated_at ?? poll.updated_at;
 
             const handleTouchStart = (e: React.TouchEvent) => {
               isLongPress.current = false;
@@ -1152,7 +1195,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                      than line-box centering (9px); emoji glyphs feel slightly
                      low at the pure line-box center, so we bias upward. */}
                 <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[4px]">
-                  {getCategoryIcon(poll)}
+                  {getCategoryIcon(poll, isClosed)}
                 </div>
 
                 {/* Row 1 used to hold the above-card status label; the
@@ -1187,17 +1230,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                       <FloatingCopyLinkButton
                         url={(() => {
                           if (typeof window === 'undefined') return '';
-                          // For multi-sub-poll groups: route through the
-                          // multipoll's short_id (sub-poll uuids aren't
-                          // URL-able per the Addressability paradigm).
-                          // The wrapper is fetched lazily; until it lands,
-                          // fall back to the anchor's short_id (which for
-                          // any post-Phase-4 multipoll equals the
-                          // multipoll's short_id anyway, since the backfill
-                          // copies it).
-                          const shortId = (isMultiGroup && wrapper?.short_id)
-                            || poll.short_id
-                            || poll.id;
+                          // Phase 5b: short_id lives on the multipoll wrapper.
+                          const shortId = wrapper?.short_id || poll.id;
                           return `${window.location.origin}/p/${shortId}/`;
                         })()}
                       />
@@ -1221,32 +1255,32 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // (per the multipoll design), and `isClosed` is enforced
                     // multipoll-atomically by Phase 3.1 close/reopen.
                     const statusEl: React.ReactNode = (() => {
-                      const inSuggestions = isInSuggestionPhase(poll);
+                      const inSuggestions = isInSuggestionPhase(poll, wrapperPrephaseDeadline);
                       const inTimeAvailability = isInTimeAvailabilityPhase(poll);
                       if (isClosed) {
-                        const closedAt = poll.close_reason === 'deadline' && poll.response_deadline
-                          ? poll.response_deadline
-                          : poll.updated_at;
+                        const closedAt = wrapperCloseReason === 'deadline' && wrapperResponseDeadline
+                          ? wrapperResponseDeadline
+                          : wrapperUpdatedAt;
                         return (
                           <span className="text-xs text-gray-400 dark:text-gray-500">
                             Closed {compactDurationSince(closedAt)} ago
                           </span>
                         );
                       }
-                      if (inSuggestions && poll.suggestion_deadline) {
-                        return <SimpleCountdown deadline={poll.suggestion_deadline} label="Suggestions" />;
+                      if (inSuggestions && wrapperPrephaseDeadline) {
+                        return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Suggestions" />;
                       }
                       if (inSuggestions && poll.suggestion_deadline_minutes) {
                         return <span className="font-semibold text-blue-600 dark:text-blue-400">Taking Suggestions</span>;
                       }
                       if (inTimeAvailability) {
-                        if (poll.suggestion_deadline) {
-                          return <SimpleCountdown deadline={poll.suggestion_deadline} label="Availability" />;
+                        if (wrapperPrephaseDeadline) {
+                          return <SimpleCountdown deadline={wrapperPrephaseDeadline} label="Availability" />;
                         }
                         return <span className="font-semibold text-blue-600 dark:text-blue-400">Collecting Availability</span>;
                       }
-                      if (poll.response_deadline) {
-                        return <SimpleCountdown deadline={poll.response_deadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
+                      if (wrapperResponseDeadline) {
+                        return <SimpleCountdown deadline={wrapperResponseDeadline} label="Voting" colorClass="text-green-600 dark:text-green-400" />;
                       }
                       return null;
                     })();
@@ -1259,7 +1293,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                     // card's expand handler.
                     const pillForSubPoll = (sp: Poll): React.ReactNode => {
                       const r = pollResultsMap.get(sp.id);
-                      const inSuggestions = isInSuggestionPhase(sp);
+                      const inSuggestions = isInSuggestionPhase(sp, wrapperPrephaseDeadline);
                       const inTimeAvailability = isInTimeAvailabilityPhase(sp);
                       if (sp.poll_type === 'yes_no') {
                         const hasStats = !!r && (r.total_votes || 0) > 0;
@@ -1413,7 +1447,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     // disambiguation context); falls back to
                                     // category when details is empty.
                                     <div className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                                      <span className="text-base leading-none">{getCategoryIcon(sp)}</span>
+                                      <span className="text-base leading-none">{getCategoryIcon(sp, isClosed)}</span>
                                       <span className="truncate">
                                         {(sp.details && sp.details.trim()) || sp.category || sp.poll_type.replace('_', '/')}
                                       </span>
@@ -1474,6 +1508,10 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                     const setWrapperVoterName = wrapperOwnsSubmit
                                       ? ((name: string) => setMultipollVoterName(group.multipollId!, name))
                                       : undefined;
+                                    // Phase 5b: every poll has a multipoll
+                                    // wrapper post-Phase-4 backfill, so this
+                                    // assertion is safe in practice.
+                                    if (!wrapper) return null;
                                     return (
                                       <SubPollBallot
                                         ref={(handle) => {
@@ -1481,6 +1519,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                           else subPollBallotRefs.current.delete(sp.id);
                                         }}
                                         poll={sp}
+                                        multipoll={wrapper}
                                         createdDate={formatCreationTimestamp(sp.created_at)}
                                         pollId={sp.id}
                                         externalYesNoResults={isYesNo}
@@ -1622,7 +1661,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 <div className="col-start-2 row-start-3 mt-0 px-3 flex items-start gap-2 min-w-0">
                   <ClientOnly fallback={null}>
                     <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500 mt-px">
-                      {poll.creator_name && <>{poll.creator_name} &middot; </>}
+                      {wrapper?.creator_name && <>{wrapper.creator_name} &middot; </>}
                       <span
                         className="relative cursor-help"
                         onClick={() => setTooltipPollId((prev) => (prev === poll.id ? null : poll.id))}
@@ -1660,8 +1699,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                         pollId={poll.id}
                         singleLine
                         className="flex-1 min-w-0 justify-end mt-[3px]"
-                        filter={isInSuggestionPhase(poll) ? suggestionPhaseRespondentFilter : undefined}
-                        emptyText={isInSuggestionPhase(poll) ? 'No suggestions yet' : 'No voters'}
+                        filter={isInSuggestionPhase(poll, wrapperPrephaseDeadline) ? suggestionPhaseRespondentFilter : undefined}
+                        emptyText={isInSuggestionPhase(poll, wrapperPrephaseDeadline) ? 'No suggestions yet' : 'No voters'}
                       />
                     )}
                   </ClientOnly>
@@ -1673,34 +1712,40 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
            the poll is closed and the current browser is the creator (or dev). */}
-      {modalPoll && (
-        <FollowUpModal
-          isOpen={showModal}
-          poll={modalPoll}
-          totalVotes={pollResultsMap.get(modalPoll.id)?.total_votes}
-          onClose={() => setShowModal(false)}
-          onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
-          onReopen={
-            modalPoll.is_closed &&
-            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
-              ? () => setPendingAction({ kind: 'reopen', poll: modalPoll })
-              : undefined
-          }
-          onClosePoll={
-            !modalPoll.is_closed &&
-            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
-              ? () => setPendingAction({ kind: 'close', poll: modalPoll })
-              : undefined
-          }
-          onCutoffAvailability={
-            !modalPoll.is_closed &&
-            isInTimeAvailabilityPhase(modalPoll) &&
-            (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
-              ? () => setPendingAction({ kind: 'cutoff-availability', poll: modalPoll })
-              : undefined
-          }
-        />
-      )}
+      {modalPoll && (() => {
+        const modalWrapper = wrapperFor(modalPoll);
+        if (!modalWrapper) return null;
+        const isModalClosed = !!modalWrapper.is_closed;
+        return (
+          <FollowUpModal
+            isOpen={showModal}
+            poll={modalPoll}
+            multipoll={modalWrapper}
+            totalVotes={pollResultsMap.get(modalPoll.id)?.total_votes}
+            onClose={() => setShowModal(false)}
+            onDelete={() => setPendingAction({ kind: 'forget', poll: modalPoll })}
+            onReopen={
+              isModalClosed &&
+              (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+                ? () => setPendingAction({ kind: 'reopen', poll: modalPoll })
+                : undefined
+            }
+            onClosePoll={
+              !isModalClosed &&
+              (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+                ? () => setPendingAction({ kind: 'close', poll: modalPoll })
+                : undefined
+            }
+            onCutoffAvailability={
+              !isModalClosed &&
+              isInTimeAvailabilityPhase(modalPoll) &&
+              (!!getCreatorSecret(modalPoll.id) || process.env.NODE_ENV === 'development')
+                ? () => setPendingAction({ kind: 'cutoff-availability', poll: modalPoll })
+                : undefined
+            }
+          />
+        );
+      })()}
 
       {/* Single confirmation for forget + reopen + close — all three share
            the same lifecycle (tap → confirm/cancel → optimistic state update).
@@ -1740,11 +1785,12 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 return;
               }
               const updated = await apiReopenMultipoll(multipollId, secret);
-              patchThreadPolls(
-                (p) => p.multipoll_id === multipollId,
-                (p) => ({
+              patchThreadMultipolls(
+                (mp) => mp.id === multipollId,
+                () => ({
                   is_closed: false,
-                  response_deadline: updated.response_deadline ?? p.response_deadline,
+                  close_reason: null,
+                  response_deadline: updated.response_deadline ?? null,
                 }),
               );
             } catch (err) {
@@ -1759,8 +1805,8 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                 return;
               }
               await apiCloseMultipoll(multipollId, secret);
-              patchThreadPolls(
-                (p) => p.multipoll_id === multipollId,
+              patchThreadMultipolls(
+                (mp) => mp.id === multipollId,
                 () => ({ is_closed: true, close_reason: 'manual' }),
               );
             } catch (err) {
@@ -1780,13 +1826,19 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
               }
               const wrapper = await apiCutoffMultipollAvailability(multipollId, secret);
               const updated = wrapper.sub_polls.find((sp) => sp.id === action.poll.id) ?? null;
-              patchThreadPolls(
-                (p) => p.id === action.poll.id,
-                (p) => ({
-                  suggestion_deadline: updated?.suggestion_deadline ?? p.suggestion_deadline,
-                  options: updated?.options ?? p.options,
+              // Wrapper-level prephase_deadline + per-sub-poll options.
+              patchThreadMultipolls(
+                (mp) => mp.id === multipollId,
+                () => ({
+                  prephase_deadline: wrapper.prephase_deadline ?? null,
                 }),
               );
+              if (updated) {
+                patchThreadPolls(
+                  (p) => p.id === action.poll.id,
+                  (p) => ({ options: updated.options ?? p.options }),
+                );
+              }
               // Refresh the compact preview — the availability phase just ended so
               // time-slot results are now meaningful.
               const refreshed = await apiGetPollResults(action.poll.id).catch(() => null);

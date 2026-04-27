@@ -12,8 +12,10 @@ import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
 function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
   const router = useRouter();
-  const latestPoll = thread.polls[thread.polls.length - 1];
-  const [value, setValue] = useState<string>(latestPoll.thread_title ?? '');
+  // Phase 5b: thread_title lives on the multipoll wrapper.
+  const latestMultipoll = thread.latestMultipoll;
+  const latestPoll = thread.latestPoll;
+  const [value, setValue] = useState<string>(latestMultipoll.thread_title ?? '');
   const [saving, setSaving] = useState(false);
 
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();

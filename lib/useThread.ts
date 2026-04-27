@@ -11,8 +11,8 @@
 
 import { useEffect, useState } from "react";
 import type { Poll } from "./types";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
-import { getAccessiblePolls } from "./simplePollQueries";
+import { buildThreadFromMultipollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
+import { getAccessibleMultipolls } from "./simplePollQueries";
 import { discoverRelatedPolls } from "./pollDiscovery";
 import { apiGetPollById, apiGetPollByShortId } from "./api";
 import { addAccessiblePollId } from "./browserPollAccess";
@@ -72,11 +72,13 @@ export function useThread(threadId: string): UseThreadResult {
         }
 
         try { await discoverRelatedPolls(); } catch {}
-        const polls = await getAccessiblePolls();
-        if (!polls) { if (!cancelled) setError(true); return; }
+        const multipolls = await getAccessibleMultipolls();
+        if (!multipolls) { if (!cancelled) setError(true); return; }
 
         const { votedPollIds, abstainedPollIds } = loadVotedPolls();
-        const found = buildThreadFromPollDown(anchorPoll.id, polls, votedPollIds, abstainedPollIds);
+        const anchorMultipollId = anchorPoll.multipoll_id;
+        if (!anchorMultipollId) { if (!cancelled) setError(true); return; }
+        const found = buildThreadFromMultipollDown(anchorMultipollId, multipolls, votedPollIds, abstainedPollIds);
         if (cancelled) return;
         if (!found) { setError(true); return; }
         setThread(found);

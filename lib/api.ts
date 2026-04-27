@@ -109,25 +109,18 @@ function multipollFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // --- Poll response → Poll type mapping ---
 
 function toPoll(data: any): Poll {
-  // Wrapper-level fields (response_deadline, creator_secret, is_closed, etc.)
-  // are sourced from the parent multipoll server-side via JOIN. Phase 5 dropped
-  // these as polls columns; the API still surfaces them on PollResponse so FE
-  // callsites that read poll.is_closed etc. continue to work.
+  // Phase 5b: wrapper-level fields (response_deadline, creator_secret,
+  // creator_name, is_closed, close_reason, short_id, thread_title,
+  // suggestion_deadline) are sourced from the parent Multipoll. The FE
+  // consumes them via getMultipollForPoll() / Multipoll-typed props.
   return {
     id: data.id,
     title: data.title,
     poll_type: data.poll_type,
     options: data.options ?? undefined,
-    response_deadline: data.response_deadline ?? undefined,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    creator_secret: data.creator_secret ?? undefined,
-    creator_name: data.creator_name ?? undefined,
-    is_closed: data.is_closed ?? false,
-    close_reason: data.close_reason ?? undefined,
     multipoll_follow_up_to: data.multipoll_follow_up_to ?? null,
-    short_id: data.short_id ?? undefined,
-    suggestion_deadline: data.suggestion_deadline ?? undefined,
     suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
     allow_pre_ranking: data.allow_pre_ranking ?? true,
     details: data.details ?? undefined,
@@ -142,7 +135,6 @@ function toPoll(data: any): Poll {
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
-    thread_title: data.thread_title ?? null,
     multipoll_id: data.multipoll_id ?? null,
     sub_poll_index: data.sub_poll_index ?? null,
     voter_names: data.voter_names ?? undefined,
@@ -220,13 +212,17 @@ async function coalesced<T>(
 
 const pollInFlight = new Map<string, Promise<Poll>>();
 
+/** Resolve an "anchor poll" for a multipoll's short_id. Phase 5b: short_id
+ *  lives on the multipoll wrapper, so we fetch the wrapper (warming the
+ *  multipoll cache + its sub-polls in the per-poll cache) and return its
+ *  first sub-poll. Callers use this to bootstrap thread building, where any
+ *  sub-poll of the target multipoll is sufficient. */
 export async function apiGetPollByShortId(shortId: string): Promise<Poll> {
-  return coalesced(pollInFlight, `short:${shortId}`, null, async () => {
-    const data = await apiFetch(`/by-short-id/${encodeURIComponent(shortId)}`);
-    const poll = toPoll(data);
-    cachePoll(poll);
-    return poll;
-  });
+  const mp = await apiGetMultipollByShortId(shortId);
+  if (!mp.sub_polls.length) {
+    throw new ApiError(404, 'Multipoll has no sub-polls');
+  }
+  return mp.sub_polls[0];
 }
 
 export async function apiGetPollById(pollId: string): Promise<Poll> {
@@ -510,25 +506,39 @@ export async function apiGetRelatedPolls(pollIds: string[]): Promise<{
 
 // --- Accessible polls ---
 
-export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Poll[]> {
+// Phase 5b: returns Multipoll[] instead of Poll[]. The multipoll is the unit
+// of identity (per the addressability paradigm), so the FE consumes
+// wrapper-level fields (response_deadline, is_closed, etc.) from each
+// Multipoll directly. cacheMultipoll cascades each sub-poll into the per-poll
+// cache so apiGetPollById hits warm cache. Inline `results` on each sub-poll
+// are also mirrored into the per-poll results cache so apiGetPollResults
+// avoids a late re-fetch.
+export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Multipoll[]> {
   if (pollIds.length === 0) return [];
   const data: any[] = await apiFetch('/accessible', {
     method: 'POST',
     body: JSON.stringify({ poll_ids: pollIds, include_results: true }),
   });
   return data.map(d => {
-    const poll = toPoll(d);
-    if (d.results) {
-      const results = toPollResults(d.results);
-      poll.results = results;
-      // Mirror inline results into the per-poll cache so apiGetPollResults
-      // hits it (avoids layout shift from a late per-card re-fetch). Cache
-      // with the fuller Results type from toPollResults rather than the
-      // narrowed Poll.results (PollResults) so the ranked_choice_rounds
-      // augmentation is preserved.
-      cachePollResults(poll.id, results);
+    const multipoll = toMultipoll(d);
+    cacheMultipoll(multipoll);
+    // Mirror inline per-sub-poll results into the per-poll results cache so
+    // apiGetPollResults hits it without a late re-fetch (avoids layout shift
+    // when the thread page warms results on viewport intersection).
+    for (let i = 0; i < (Array.isArray(d.sub_polls) ? d.sub_polls.length : 0); i++) {
+      const subData = d.sub_polls[i];
+      if (subData?.results) {
+        const results = toPollResults(subData.results);
+        cachePollResults(subData.id, results);
+        // toPoll() in toMultipoll consumed sub_polls already, but didn't
+        // attach results to the Poll — mirror them here so consumers reading
+        // multipoll.sub_polls[i].results see them.
+        if (multipoll.sub_polls[i]) {
+          multipoll.sub_polls[i].results = results;
+        }
+      }
     }
-    return poll;
+    return multipoll;
   });
 }
 

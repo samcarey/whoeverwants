@@ -723,22 +723,44 @@ If a future feature needs RSVP-style headcount semantics, it should be designed 
 
 ## Multipoll System
 
-> **Phase 5 shipped on this branch.** Migration 096 dropped the wrapper-level
-> columns from `polls` (short_id, creator_secret, creator_name, response_deadline,
+> **Phase 5 + 5b shipped.** Migration 096 dropped the wrapper-level columns
+> from `polls` (short_id, creator_secret, creator_name, response_deadline,
 > is_closed, close_reason, follow_up_to, thread_title, suggestion_deadline,
-> sequential_id) plus the BEFORE-INSERT `trigger_generate_short_id`. The
-> `multipolls` table is now the sole source of truth for these fields. Server
-> internal logic JOINs polls + multipolls via `_SELECT_POLL_FULL` so existing
-> code that reads `row["is_closed"]` etc. keeps working — and the API still
-> surfaces these fields on `PollResponse` (Phase 5b will refactor the FE to
-> source them from `Multipoll` directly). Legacy single-poll mutation endpoints
-> (`POST /api/polls`, vote/close/reopen/cutoff/thread-title) are retired along
-> with their FE clients (`apiCreatePoll`, `apiSubmitVote`, `apiEditVote`,
-> `apiClosePoll`, `apiReopenPoll`, `apiCutoffSuggestions`,
-> `apiCutoffAvailability`, `apiUpdateThreadTitle`); a new
-> `POST /api/multipolls/{id}/thread-title` + `apiUpdateMultipollThreadTitle`
-> takes their place. `Poll.follow_up_to` is gone — chain logic uses
-> `multipoll_follow_up_to`. `FollowUpHeader` now takes a multipoll_id.
+> sequential_id). The `multipolls` table is now the sole source of truth.
+> **Phase 5b (this branch)** retires those fields from the API contract too:
+> `PollResponse` no longer surfaces them, and the FE consumes them from
+> `Multipoll` instead via:
+>
+> 1. `POST /api/polls/accessible` returns `MultipollResponse[]` (was
+>    `PollResponse[]`). The home page passes `multipolls` directly into
+>    `ThreadList`. `apiGetAccessiblePolls` returns `Multipoll[]`;
+>    `getAccessibleMultipolls` is the canonical helper.
+> 2. `lib/threadUtils.ts: buildThreads(multipolls, ...)` walks
+>    `multipoll.follow_up_to` for chain construction. `Thread` carries both
+>    `multipolls: Multipoll[]` and the flattened `polls: Poll[]`. Wrapper
+>    reads (creator_name, response_deadline, is_closed, thread_title) come
+>    from `latestMultipoll` / each Multipoll directly.
+> 3. Components that need wrapper context take a `multipoll: Multipoll` prop
+>    (or specific deadline props for `RankingSection`). The thread page
+>    derives a `multipollWrapperMap` from `thread.multipolls` and threads
+>    `wrapper` into `SubPollBallot`, `FollowUpModal`, the in-card status
+>    label, the copy-link button, and the long-press action handlers.
+> 4. `lib/pollCache.ts` exports `getMultipollForPoll(poll)` and
+>    `getCachedAccessibleMultipolls()`. `cacheByShortId` was removed —
+>    `getCachedPollByShortId` now resolves through the multipoll cache and
+>    returns `wrapper.sub_polls[0]`. `apiGetPollByShortId` is a thin wrapper
+>    over `apiGetMultipollByShortId`.
+> 5. Server-side: `PollResponse` only carries per-sub-poll fields (plus
+>    `multipoll_follow_up_to` for chain walking). Internal logic still JOINs
+>    multipolls via `_SELECT_POLL_FULL` for vote validation / results
+>    computation, but those fields don't escape into the response.
+>    `MultipollResponse` is the canonical wrapper shape.
+>
+> Note: `components/PollList.tsx` was deleted (dead code — the home page
+> uses `ThreadList`). Legacy single-poll mutation endpoints (`POST /api/polls`,
+> vote/close/reopen/cutoff/thread-title) and FE clients are gone (Phase 5).
+> `Poll.follow_up_to` is gone — chain logic uses `multipoll_follow_up_to`.
+> `FollowUpHeader` now takes a multipoll_id.
 
 
 ### Submission paradigm (READ FIRST, alongside Addressability)
@@ -764,7 +786,7 @@ When designing any vote/submission feature, the rule is: **does this belong on t
 
 When designing a new feature: ask "is this a multipoll-level concept?" If yes, route through a multipoll endpoint or field; never sum/dedupe across sub-polls in the browser.
 
-**Status**: phasing plan in `docs/multipoll-phasing.md`. **Every phase shipped** (Phases 1 through 5). Phase 5b — refactor FE callsites that read `poll.is_closed`/`poll.response_deadline`/etc. to source from the `Multipoll` wrapper directly — is the next cleanup but functionally not required (the API still surfaces those fields on `PollResponse` via JOIN).
+**Status**: phasing plan in `docs/multipoll-phasing.md`. **Every phase shipped** (Phases 1 through 5b). The multipoll redesign is complete — all wrapper-level state lives on `Multipoll`, sub-poll data lives on `Poll`, and the API contract reflects that boundary.
 
 - **Phase 1 (schema + new API)** — migration 092 created the `multipolls` table and added nullable `multipoll_id` + `sub_poll_index` to `polls`; endpoints `POST /api/multipolls`, `GET /api/multipolls/{short_id}`, `GET /api/multipolls/by-id/{id}` create + read wrapper-and-sub-polls atomically. Validation rejects participation sub-polls, multiple `time` sub-polls, and same-kind sub-polls without distinct `context`. Auto-title is computed at read time from sub-poll categories + multipoll context (rules in `server/algorithms/multipoll_title.py`); explicit titles persist to `thread_title`.
 - **Phase 2.1 (frontend plumbing)** — `Multipoll` type in `lib/types.ts`, multipoll cache helpers in `lib/pollCache.ts`, `apiCreateMultipoll` / `apiGetMultipollByShortId` / `apiGetMultipollById` in `lib/api.ts`.
