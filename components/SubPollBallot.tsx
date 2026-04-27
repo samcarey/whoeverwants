@@ -276,9 +276,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     if (voteId) setStoredVoteId(pollId, voteId);
   }, []);
 
-  // Fetch the user's vote record for this poll by vote ID. Listed as a
-  // separate helper so the post-load effect below can swap fetch strategies
-  // if we ever bring back cross-vote aggregation.
   const fetchVoteData = useCallback(async (voteId: string) => {
     try {
       const allVotes = await apiGetVotes(poll.id);
@@ -756,7 +753,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // exactly the same inputs.
   const getBallotInputs = (): BallotInputs => ({
     pollId: poll.id,
-    pollType: poll.poll_type ?? '',
+    pollType: poll.poll_type,
     isAbstaining,
     yesNoChoice,
     rankedChoices,
@@ -903,7 +900,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         // (see CLAUDE.md → Multipoll System). Single-item batch from this
         // ballot — the multipoll has only one sub-poll being touched here.
         const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
-          pollType: poll.poll_type ?? '',
+          pollType: poll.poll_type,
           canSubmitSuggestions,
           isEditing,
         });
@@ -1073,7 +1070,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
     const isEditing = isAnyEditing && !!userVoteId;
     const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
-      pollType: poll.poll_type ?? '',
+      pollType: poll.poll_type,
       canSubmitSuggestions,
       isEditing,
     });

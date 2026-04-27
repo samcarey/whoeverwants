@@ -67,9 +67,7 @@ export function pollDataToMultipollRequest(
   };
 }
 
-// Strip parenthesized suffixes and colon suffixes from option text for titles.
 export function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(); }
-// For locations, take just the name (first comma segment) then apply shortenOption.
 export function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
 
 /**

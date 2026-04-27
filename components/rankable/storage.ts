@@ -13,7 +13,7 @@ export interface RankableOption {
   top: number;
 }
 
-export interface SavedRankingState {
+interface SavedRankingState {
   mainList: RankableOption[];
   noPreferenceList: RankableOption[];
   linkedPairs: string[];

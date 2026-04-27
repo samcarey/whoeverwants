@@ -9,6 +9,7 @@ import { buildThreadFromMultipollDown, buildThreadSyncFromCache, buildMultipollM
 import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Multipoll } from "@/lib/types";
 import type { MultipollVoteItem } from "@/lib/api";
+import { buildMultipollVoteItem } from "@/components/SubPollBallot/voteDataBuilders";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import CompactNameField from "@/components/CompactNameField";
 import type { PollResults } from "@/lib/types";
@@ -518,13 +519,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       const staged = pendingMultipollChoices.get(sp.id);
       if (!staged) continue;
       const existing = userVoteMap.get(sp.id);
-      items.push({
-        sub_poll_id: sp.id,
-        vote_id: existing?.voteId ?? null,
-        vote_type: 'yes_no',
+      const voteData = {
+        vote_type: 'yes_no' as const,
         yes_no_choice: staged === 'abstain' ? null : staged,
         is_abstain: staged === 'abstain',
-      });
+      };
+      items.push(buildMultipollVoteItem(voteData, sp.id, existing?.voteId ?? null, {
+        pollType: 'yes_no',
+        canSubmitSuggestions: false,
+        isEditing: !!existing?.voteId,
+      }));
     }
     return items;
   };
@@ -642,13 +646,16 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       const voter_name = current
         ? current.voterName
         : (getUserName()?.trim() || null);
-      const item: MultipollVoteItem = {
-        sub_poll_id: pollId,
-        vote_id: current?.voteId ?? null,
-        vote_type: 'yes_no',
+      const voteData = {
+        vote_type: 'yes_no' as const,
         yes_no_choice: newChoice === 'abstain' ? null : newChoice,
         is_abstain: newChoice === 'abstain',
       };
+      const item = buildMultipollVoteItem(voteData, pollId, current?.voteId ?? null, {
+        pollType: 'yes_no',
+        canSubmitSuggestions: false,
+        isEditing: !!current?.voteId,
+      });
       const returned = await apiSubmitMultipollVotes(multipollId, { voter_name, items: [item] });
       const v = returned.find((r) => r.poll_id === pollId);
       if (!v) throw new Error('Vote response missing for sub-poll');

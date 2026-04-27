@@ -7,12 +7,12 @@
  * Centralising the construction keeps the two paths in lockstep — when a new
  * field lands on `MultipollVoteItem` it's added in exactly one place.
  */
-import type { OptionsMetadata } from "@/lib/types";
-import type { MultipollVoteItem } from "@/lib/api";
+import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
+import type { MultipollVoteItem, SubPollType } from "@/lib/api";
 
 export interface BallotInputs {
   pollId: string;
-  pollType: 'yes_no' | 'ranked_choice' | 'time' | string;
+  pollType: SubPollType;
   isAbstaining: boolean;
   yesNoChoice: 'yes' | 'no' | null;
   rankedChoices: string[];
@@ -22,7 +22,7 @@ export interface BallotInputs {
   hasSuggestionPhase: boolean;
   canSubmitSuggestions: boolean;
   inAvailabilityPhase: boolean;
-  voterDayTimeWindows: any[];
+  voterDayTimeWindows: DayTimeWindow[];
   durationMinValue: number | null;
   durationMaxValue: number | null;
   durationMinEnabled: boolean;
@@ -31,10 +31,10 @@ export interface BallotInputs {
   dislikedSlots: string[] | null;
   voterName: string;
   pollOptions: string[];
-  userVoteData: any;
+  userVoteData: { suggestions?: string[] } | null;
 }
 
-export type BuildVoteDataResult =
+type BuildVoteDataResult =
   | { ok: true; voteData: any; effectiveIsAbstaining: boolean }
   | { ok: false; error: string };
 
@@ -174,7 +174,7 @@ export function buildMultipollVoteItem(
   voteData: any,
   pollId: string,
   voteId: string | null,
-  options: { pollType: string; canSubmitSuggestions: boolean; isEditing: boolean },
+  options: { pollType: SubPollType; canSubmitSuggestions: boolean; isEditing: boolean },
 ): MultipollVoteItem {
   const item: MultipollVoteItem = {
     sub_poll_id: pollId,

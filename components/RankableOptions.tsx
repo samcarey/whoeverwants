@@ -24,8 +24,8 @@ import {
 import {
   loadSavedRanking,
   saveRanking,
-  shuffleArray as shuffleArrayBase,
-  createRankedOptions as createRankedOptionsBase,
+  shuffleArray,
+  createRankedOptions,
   type RankableOption,
 } from './rankable/storage';
 
@@ -64,9 +64,8 @@ interface RankableOptionsProps {
 
 export default function RankableOptions({ options, onRankingChange, disabled = false, storageKey, initialRanking, initialTiers, optionsMetadata, renderOption, preserveOrder = false, disableGrouping = false, newOptions }: RankableOptionsProps) {
 
-  // Thin wrappers that bind props/options to the pure helpers in
-  // rankable/storage.ts and keep stable callback identity for downstream
-  // useCallback deps.
+  // Bind props/options to the pure helpers in rankable/storage.ts so
+  // downstream useCallback deps see a stable identity for these.
   const loadSavedState = useCallback(
     () => loadSavedRanking(storageKey, options),
     [storageKey, options],
@@ -75,11 +74,6 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
     (mainList: RankableOption[], noPreferenceList: RankableOption[], linkedPairs: Set<string>) =>
       saveRanking(storageKey, mainList, noPreferenceList, linkedPairs),
     [storageKey],
-  );
-  const shuffleArray = useCallback(<T,>(array: T[]): T[] => shuffleArrayBase(array), []);
-  const createRankedOptions = useCallback(
-    (optionTexts: string[]) => createRankedOptionsBase(optionTexts),
-    [],
   );
 
   // State management - separate lists for main ranking and no preference
