@@ -68,8 +68,8 @@ export default function FloatingCopyLinkButton({ url }: FloatingCopyLinkButtonPr
     <button
         onClick={copyToClipboard}
         className="w-[26px] h-[26px] flex items-center justify-center opacity-60 hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 active:scale-95 rounded-full transition-all"
-        title={copied ? "Copied!" : "Copy poll link"}
-        aria-label={copied ? "Link copied to clipboard" : "Copy poll link to clipboard"}
+        title={copied ? "Copied!" : "Copy question link"}
+        aria-label={copied ? "Link copied to clipboard" : "Copy question link to clipboard"}
       >
         {copied ? (
           <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">

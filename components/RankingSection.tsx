@@ -11,22 +11,22 @@ import type { OptionsMetadata } from "@/lib/types";
 import type { ApiVote } from "@/lib/api";
 
 interface RankingSectionProps {
-  poll: any;
+  question: any;
   // Phase 5b: wrapper-level fields (response_deadline, prephase_deadline /
   // legacy suggestion_deadline) come in as separate props since they live on
-  // the parent multipoll, not the poll. SubPollBallot sources them from its
-  // `multipoll` prop and forwards them here.
+  // the parent poll, not the question. QuestionBallot sources them from its
+  // `poll` prop and forwards them here.
   suggestionDeadline?: string | null;
   responseDeadline?: string | null;
-  pollId: string;
-  pollOptions: string[];
+  questionId: string;
+  questionOptions: string[];
   rankedChoices: string[];
   handleRankingChange: (choices: string[], tiers: string[][]) => void;
   isAbstaining: boolean;
   setIsAbstaining: (val: boolean) => void;
   handleAbstain: () => void;
   isSubmitting: boolean;
-  isPollClosed: boolean;
+  isQuestionClosed: boolean;
   hasVoted: boolean;
   isEditingRanking: boolean;
   setIsEditingRanking: (val: boolean) => void;
@@ -45,9 +45,9 @@ interface RankingSectionProps {
   twoOptionDisplayOrder: string[];
   isEditingSuggestions: boolean;
   newOptions?: string[];
-  // Phase 3.4 follow-up B: when the parent multipoll wrapper renders the
-  // Submit button + voter name input externally, suppress the per-sub-poll
-  // Submit/voter-name UI here. The wrapper calls SubPollBallot's
+  // Phase 3.4 follow-up B: when the parent poll wrapper renders the
+  // Submit button + voter name input externally, suppress the per-question
+  // Submit/voter-name UI here. The wrapper calls QuestionBallot's
   // imperative `submit()` ref method, which routes through the same
   // submitVote flow this Submit button used to trigger.
   wrapperHandlesSubmit?: boolean;
@@ -56,18 +56,18 @@ interface RankingSectionProps {
 const rankingsVoterFilter = (v: ApiVote) => !!(v.ranked_choices && v.ranked_choices.length > 0);
 
 export default function RankingSection({
-  poll,
+  question,
   suggestionDeadline,
   responseDeadline,
-  pollId,
-  pollOptions,
+  questionId,
+  questionOptions,
   rankedChoices,
   handleRankingChange,
   isAbstaining,
   setIsAbstaining,
   handleAbstain,
   isSubmitting,
-  isPollClosed,
+  isQuestionClosed,
   hasVoted,
   isEditingRanking,
   setIsEditingRanking,
@@ -89,9 +89,9 @@ export default function RankingSection({
   wrapperHandlesSubmit = false,
 }: RankingSectionProps) {
   const hasSubmittedRankings = hasVoted && userVoteData?.ranked_choices?.length > 0;
-  // For suggestion polls, is_abstain means "abstained from suggestions" not "abstained from ranking".
+  // For suggestion questions, is_abstain means "abstained from suggestions" not "abstained from ranking".
   // Only is_ranking_abstain explicitly means ranking abstain.
-  // For non-suggestion polls, is_abstain means full abstain (including ranking).
+  // For non-suggestion questions, is_abstain means full abstain (including ranking).
   const abstainedNoRanking = hasVoted && !userVoteData?.ranked_choices?.length && (
     userVoteData?.is_ranking_abstain || (userVoteData?.is_abstain && !hasSuggestionPhase) || isAbstaining
   );
@@ -100,7 +100,7 @@ export default function RankingSection({
   const showSummary = canSubmitSuggestions && hasVoted && !isEditingRanking && (hasSubmittedRankings || abstainedNoRanking);
   const showBallot = !showSummary;
 
-  const editButton = !isPollClosed && !isLoadingVoteData ? (
+  const editButton = !isQuestionClosed && !isLoadingVoteData ? (
     <button
       onClick={() => {
         // Restore abstain state if user previously abstained from ranking
@@ -115,7 +115,7 @@ export default function RankingSection({
     </button>
   ) : null;
 
-  if (!canSubmitRankings || pollOptions.length === 0) {
+  if (!canSubmitRankings || questionOptions.length === 0) {
     if (canSubmitSuggestions && hasVoted && !isEditingSuggestions) {
       return (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg text-center">
@@ -129,7 +129,7 @@ export default function RankingSection({
         </div>
       );
     }
-    if (hasSuggestionPhase && !canSubmitSuggestions && pollOptions.length === 0) {
+    if (hasSuggestionPhase && !canSubmitSuggestions && questionOptions.length === 0) {
       return (
         <div className="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-center">
           <p className="text-gray-600 dark:text-gray-400 text-sm">
@@ -199,7 +199,7 @@ export default function RankingSection({
 
         {showBallot && (
           <>
-            {pollOptions.length === 2 && !canSubmitSuggestions ? (
+            {questionOptions.length === 2 && !canSubmitSuggestions ? (
               <>
                 <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3">
                   Select your preference
@@ -210,7 +210,7 @@ export default function RankingSection({
                       key={option}
                       onClick={(e) => {
                         if ((e.target as HTMLElement).closest?.('[data-place-name]')) return;
-                        // Two-option polls: a single tap picks one. Pass
+                        // Two-option questions: a single tap picks one. Pass
                         // the flat list and a singleton tier (no ties).
                         handleRankingChange([option], [[option]]);
                         setIsAbstaining(false);
@@ -232,13 +232,13 @@ export default function RankingSection({
                 <h4 className="text-base font-medium text-gray-900 dark:text-white mb-3">
                   Reorder from most to least preferred
                 </h4>
-                {pollOptions.length > 0 && (
+                {questionOptions.length > 0 && (
                   <RankableOptions
                     key={isEditingRanking ? 'editing' : 'new'}
-                    options={pollOptions}
+                    options={questionOptions}
                     onRankingChange={handleRankingChange}
                     disabled={isSubmitting || isAbstaining}
-                    storageKey={pollId ? `poll-ranking-${pollId}` : undefined}
+                    storageKey={questionId ? `question-ranking-${questionId}` : undefined}
                     initialRanking={isEditingRanking && userVoteData?.ranked_choices ? userVoteData.ranked_choices : undefined}
                     initialTiers={isEditingRanking && userVoteData?.ranked_choice_tiers ? userVoteData.ranked_choice_tiers : undefined}
                     optionsMetadata={optionsMetadata}
@@ -264,7 +264,7 @@ export default function RankingSection({
 
       {hasSuggestionPhase && hasVoted && !isEditingRanking && !isLoadingVoteData && (
         <div className="mt-2 mb-3">
-          <VoterList pollId={poll.id} label="Ranked" filter={rankingsVoterFilter} />
+          <VoterList questionId={question.id} label="Ranked" filter={rankingsVoterFilter} />
         </div>
       )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * TimeSlotBubbles — compact day-row bubble grid for time poll preferences.
+ * TimeSlotBubbles — compact day-row bubble grid for time question preferences.
  *
  * Layout: one row per day, day label on the left, tappable time bubbles on the right.
  * Each bubble cycles through: neutral → liked (green) → disliked (red) → neutral.

@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { PollResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
+import { QuestionResults, RankedChoiceRound, OptionsMetadata } from "@/lib/types";
 import { apiGetVotes, ApiRankedChoiceRound } from "@/lib/api";
 import OptionLabel, { isLocationEntry, isRestaurantEntry } from "./OptionLabel";
 
 interface CompactRankedChoiceResultsProps {
-  results: PollResults;
-  isPollClosed?: boolean;
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
   optionsMetadata?: OptionsMetadata | null;
@@ -31,7 +31,7 @@ interface RoundVisualization {
   roundEntries?: RankedChoiceRound[];
 }
 
-export default function CompactRankedChoiceResults({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata }: CompactRankedChoiceResultsProps) {
+export default function CompactRankedChoiceResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata }: CompactRankedChoiceResultsProps) {
   const router = useRouter();
   const [roundVisualizations, setRoundVisualizations] = useState<RoundVisualization[]>([]);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -65,7 +65,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         // If no rounds data, check if all votes are abstains
         if (apiRounds.length === 0) {
           try {
-            const allVotes = await apiGetVotes(results.poll_id);
+            const allVotes = await apiGetVotes(results.question_id);
             const rankedVotes = allVotes.filter(v => v.vote_type === 'ranked_choice');
             const hasNonAbstainVotes = rankedVotes.some(vote => !vote.is_abstain && !vote.is_ranking_abstain);
 
@@ -86,7 +86,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
         // Convert API rounds to RankedChoiceRound format for compatibility
         const roundData: RankedChoiceRound[] = apiRounds.map((r, idx) => ({
           id: `${r.round_number}-${r.option_name}`,
-          poll_id: results.poll_id,
+          question_id: results.question_id,
           round_number: r.round_number,
           option_name: r.option_name,
           vote_count: r.vote_count,
@@ -233,7 +233,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
     }
 
     fetchAndProcessData();
-  }, [results.poll_id, results.total_votes, results.winner, userVoteData, getUserPreferenceForRound]);
+  }, [results.question_id, results.total_votes, results.winner, userVoteData, getUserPreferenceForRound]);
 
   // Update URL hash when round index changes
   useEffect(() => {
@@ -475,7 +475,7 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 
                 {hasBordaTieBreaking && (
                   <BordaCountExplanation
-                    pollId={results.poll_id}
+                    questionId={results.question_id}
                     roundNumber={currentRound.roundNumber}
                     roundEntries={currentRound.roundEntries}
                   />
@@ -492,12 +492,12 @@ export default function CompactRankedChoiceResults({ results, isPollClosed, user
 
 // Component to show Borda count explanation when tie-breaking occurs
 interface BordaCountExplanationProps {
-  pollId: string;
+  questionId: string;
   roundNumber: number;
   roundEntries?: RankedChoiceRound[];
 }
 
-function BordaCountExplanation({ pollId, roundNumber, roundEntries }: BordaCountExplanationProps) {
+function BordaCountExplanation({ questionId, roundNumber, roundEntries }: BordaCountExplanationProps) {
   // Extract Borda data from round entries that have tie_broken_by_borda flag
   const bordaData = (roundEntries || [])
     .filter(r => r.tie_broken_by_borda && r.borda_score !== undefined)

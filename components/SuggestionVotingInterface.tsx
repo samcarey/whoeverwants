@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import PollResultsDisplay from "@/components/PollResults";
+import QuestionResultsDisplay from "@/components/QuestionResults";
 import OptionsInput, { type OptionsMetadata } from "@/components/OptionsInput";
 import type { ApiVote } from "@/lib/api";
 import SuggestionsList from "@/components/SuggestionsList";
@@ -12,7 +12,7 @@ import VoterList from "@/components/VoterList";
 const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
 
 interface SuggestionVotingInterfaceProps {
-  poll: any;
+  question: any;
   existingSuggestions: string[];
   suggestionChoices: string[];
   setSuggestionChoices: Dispatch<SetStateAction<string[]>>;
@@ -23,14 +23,14 @@ interface SuggestionVotingInterfaceProps {
   setVoterName: (name: string) => void;
   handleVoteClick: () => void;
   isSubmitting: boolean;
-  isPollClosed: boolean;
+  isQuestionClosed: boolean;
   isCreator: boolean;
   hasVoted: boolean;
   isEditingVote: boolean;
   setIsEditingVote: (editing: boolean) => void;
   userVoteData: any;
   isLoadingVoteData: boolean;
-  pollResults: any;
+  questionResults: any;
   loadingResults: boolean;
   loadExistingSuggestions: () => void;
   suggestionMetadata?: OptionsMetadata;
@@ -40,14 +40,14 @@ interface SuggestionVotingInterfaceProps {
   onCutoffClick?: () => void;
   isCuttingOff?: boolean;
   searchRadius?: number;
-  // Phase 3.4 follow-up B: when the parent multipoll wrapper renders the
-  // Submit button + voter name input externally, suppress the per-sub-poll
+  // Phase 3.4 follow-up B: when the parent poll wrapper renders the
+  // Submit button + voter name input externally, suppress the per-question
   // Submit/voter-name UI here.
   wrapperHandlesSubmit?: boolean;
 }
 
 export default function SuggestionVotingInterface({
-  poll,
+  question,
   existingSuggestions,
   suggestionChoices,
   setSuggestionChoices,
@@ -58,14 +58,14 @@ export default function SuggestionVotingInterface({
   setVoterName,
   handleVoteClick,
   isSubmitting,
-  isPollClosed,
+  isQuestionClosed,
   isCreator,
   hasVoted,
   isEditingVote,
   setIsEditingVote,
   userVoteData,
   isLoadingVoteData,
-  pollResults,
+  questionResults,
   loadingResults,
   loadExistingSuggestions,
   suggestionMetadata,
@@ -82,9 +82,9 @@ export default function SuggestionVotingInterface({
 
   // Helper function to convert existingSuggestions to format expected by SuggestionsList
   const getSuggestionsWithCounts = () => {
-    if (pollResults?.suggestion_counts && pollResults.suggestion_counts.length > 0) {
+    if (questionResults?.suggestion_counts && questionResults.suggestion_counts.length > 0) {
       // Use server-side suggestion counts when available
-      return pollResults.suggestion_counts;
+      return questionResults.suggestion_counts;
     } else {
       // Fallback to existingSuggestions without counts
       return existingSuggestions.map(suggestion => ({
@@ -160,8 +160,8 @@ export default function SuggestionVotingInterface({
     }
   }, [suggestionChoices, isEditingVote, isAbstaining, handleAbstain]);
 
-  // Poll is closed
-  if (isPollClosed) {
+  // Question is closed
+  if (isQuestionClosed) {
     return (
       <div className="text-center py-3">
         {loadingResults ? (
@@ -171,7 +171,7 @@ export default function SuggestionVotingInterface({
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
-        ) : pollResults ? (
+        ) : questionResults ? (
           <>
             {userVoteData?.is_abstain && (
               <div className="mt-4 flex justify-center">
@@ -209,9 +209,9 @@ export default function SuggestionVotingInterface({
             <SuggestionsList
               suggestions={getSuggestionsWithCounts()}
               userSuggestions={userVoteData?.is_abstain ? [] : (userVoteData?.suggestions || [])}
-              showVoteCounts={pollResults?.options && Array.isArray(pollResults.options)}
+              showVoteCounts={questionResults?.options && Array.isArray(questionResults.options)}
               showUserIndicator={true}
-              showEditButton={!isPollClosed}
+              showEditButton={!isQuestionClosed}
               onEditClick={() => setIsEditingVote(true)}
               isEditDisabled={isLoadingVoteData}
               optionsMetadata={optionsMetadata}
@@ -219,7 +219,7 @@ export default function SuggestionVotingInterface({
           ) : (
             <div className="flex items-center justify-between">
               <p className="text-gray-600 dark:text-gray-400">No suggestions available</p>
-              {!isPollClosed && (
+              {!isQuestionClosed && (
                 <button
                   onClick={() => setIsEditingVote(true)}
                   disabled={isLoadingVoteData}
@@ -233,9 +233,9 @@ export default function SuggestionVotingInterface({
         </div>
 
         {/* Suggestion respondents */}
-        {!isPollClosed && !isLoadingVoteData && (
+        {!isQuestionClosed && !isLoadingVoteData && (
           <div className="mt-5">
-            <VoterList pollId={poll.id} label="Suggested" filter={hasSuggestions} />
+            <VoterList questionId={question.id} label="Suggested" filter={hasSuggestions} />
           </div>
         )}
 
@@ -316,11 +316,11 @@ export default function SuggestionVotingInterface({
             setOptions={setNewSuggestions}
             isLoading={isSubmitting}
             label={isEditingVote ? "Add new suggestions:" : "Add new suggestions:"}
-            category={poll.category || 'custom'}
+            category={question.category || 'custom'}
             optionsMetadata={suggestionMetadata}
             onMetadataChange={onSuggestionMetadataChange}
-            referenceLatitude={poll.reference_latitude}
-            referenceLongitude={poll.reference_longitude}
+            referenceLatitude={question.reference_latitude}
+            referenceLongitude={question.reference_longitude}
             searchRadius={searchRadius}
           />
         </div>

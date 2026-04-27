@@ -46,7 +46,7 @@ export default function SuggestionsList({
     a.option.localeCompare(b.option)
   );
 
-  const isLocationPoll = suggestions.some(n => isLocationEntry(optionsMetadata?.[n.option]));
+  const isLocationQuestion = suggestions.some(n => isLocationEntry(optionsMetadata?.[n.option]));
 
   return (
     <div className={className}>
@@ -75,7 +75,7 @@ export default function SuggestionsList({
         </div>
       </div>
 
-      {isLocationPoll ? (
+      {isLocationQuestion ? (
         <div className="space-y-2 overflow-hidden">
           {sortedSuggestions.map((suggestion, index) => {
             const isUserSuggestion = userSuggestions.includes(suggestion.option);

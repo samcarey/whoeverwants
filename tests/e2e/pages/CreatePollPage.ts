@@ -1,10 +1,10 @@
 import { BasePage } from './BasePage';
 import { expect } from '@playwright/test';
 
-interface PollData {
+interface QuestionData {
   title: string;
   description?: string;
-  type: 'poll';
+  type: 'question';
   options?: readonly string[];
   deadline?: string;
   customDate?: string;
@@ -12,15 +12,15 @@ interface PollData {
   creatorName?: string;
 }
 
-export class CreatePollPage extends BasePage {
+export class CreateQuestionPage extends BasePage {
   // Form elements
   get titleInput() {
     return this.page.locator('#title');
   }
 
-  get pollTypeToggle() {
+  get questionTypeToggle() {
     return {
-      poll: this.page.locator('button:has-text("🗳️")').first(),
+      question: this.page.locator('button:has-text("🗳️")').first(),
     };
   }
 
@@ -63,15 +63,15 @@ export class CreatePollPage extends BasePage {
 
   get confirmModal() {
     return {
-      modal: this.page.locator('text="Create Poll"').locator('..').locator('..'), // Find modal by title text
-      confirmButton: this.page.locator('button:has-text("Create Poll")'),
+      modal: this.page.locator('text="Create Question"').locator('..').locator('..'), // Find modal by title text
+      confirmButton: this.page.locator('button:has-text("Create Question")'),
       cancelButton: this.page.locator('button:has-text("Cancel")')
     };
   }
 
   // Actions
-  async goToCreatePollPage() {
-    await this.navigate('/create-poll');
+  async goToCreateQuestionPage() {
+    await this.navigate('/create-question');
     await this.waitForLoad();
   }
 
@@ -79,9 +79,9 @@ export class CreatePollPage extends BasePage {
     await this.titleInput.fill(title);
   }
 
-  async selectPollType(type: 'poll') {
-    if (type === 'poll') {
-      await this.pollTypeToggle.poll.click();
+  async selectQuestionType(type: 'question') {
+    if (type === 'question') {
+      await this.questionTypeToggle.question.click();
     }
   }
 
@@ -114,23 +114,23 @@ export class CreatePollPage extends BasePage {
     await this.creatorNameInput.fill(name);
   }
 
-  async submitPoll() {
+  async submitQuestion() {
     await this.submitButton.click();
   }
 
   async confirmSubmission() {
-    // Click the "Create Poll" button in the modal
+    // Click the "Create Question" button in the modal
     await this.confirmModal.confirmButton.click();
     await this.waitForNoLoading();
   }
 
-  async createPoll(data: PollData) {
-    // Fill basic poll information
+  async createQuestion(data: QuestionData) {
+    // Fill basic question information
     await this.fillTitle(data.title);
     
-    // Select poll type (suggestion is default, so only click if changing to poll)
-    if (data.type === 'poll') {
-      await this.selectPollType(data.type);
+    // Select question type (suggestion is default, so only click if changing to question)
+    if (data.type === 'question') {
+      await this.selectQuestionType(data.type);
     }
 
     // Fill options if provided
@@ -153,8 +153,8 @@ export class CreatePollPage extends BasePage {
       await this.fillCreatorName(data.creatorName);
     }
 
-    // Submit the poll
-    await this.submitPoll();
+    // Submit the question
+    await this.submitQuestion();
     
     // Handle confirmation modal
     await this.confirmSubmission();
@@ -166,10 +166,10 @@ export class CreatePollPage extends BasePage {
     await expect(this.submitButton).toBeVisible();
   }
 
-  async verifyRedirectToPoll() {
-    // Wait for redirect to poll page (URL should change to /p/[id])
+  async verifyRedirectToQuestion() {
+    // Wait for redirect to question page (URL should change to /p/[id])
     // Handle browser-specific timing issues by waiting for either:
-    // 1. Direct redirect to poll page, OR
+    // 1. Direct redirect to question page, OR
     // 2. "Redirecting..." state followed by actual redirect
     
     try {
@@ -192,30 +192,30 @@ export class CreatePollPage extends BasePage {
         await this.page.waitForURL(/\/p\/[a-f0-9-]+/, { timeout: 30000 });
         
       } catch (secondError) {
-        // If still failing, check if we're on create-poll page and try webkit-specific fixes
+        // If still failing, check if we're on create-question page and try webkit-specific fixes
         const currentUrl = this.page.url();
-        if (currentUrl.includes('/create-poll')) {
-          console.log('Still on create-poll page, attempting webkit-specific fixes...');
+        if (currentUrl.includes('/create-question')) {
+          console.log('Still on create-question page, attempting webkit-specific fixes...');
           
           // Wait for network to settle
           await this.page.waitForLoadState('networkidle', { timeout: 10000 });
           
           // For webkit, sometimes we need to manually trigger the redirect
-          // by checking if there's a poll ID in the page source
+          // by checking if there's a question ID in the page source
           const pageContent = await this.page.content();
-          const pollIdMatch = pageContent.match(/\/p\/([a-f0-9-]+)/);
+          const questionIdMatch = pageContent.match(/\/p\/([a-f0-9-]+)/);
           
-          if (pollIdMatch) {
-            const pollId = pollIdMatch[1];
-            console.log(`Found poll ID in page content: ${pollId}, navigating directly...`);
+          if (questionIdMatch) {
+            const questionId = questionIdMatch[1];
+            console.log(`Found question ID in page content: ${questionId}, navigating directly...`);
             
-            // Navigate directly to the poll page
-            await this.page.goto(`http://localhost:3000/p/${pollId}`, {
+            // Navigate directly to the question page
+            await this.page.goto(`http://localhost:3000/p/${questionId}`, {
               waitUntil: 'domcontentloaded'
             });
           } else {
             // As a last resort, wait longer for the redirect
-            console.log('No poll ID found, waiting longer for redirect...');
+            console.log('No question ID found, waiting longer for redirect...');
             await this.page.waitForURL(/\/p\/[a-f0-9-]+/, { timeout: 30000 });
           }
         } else {

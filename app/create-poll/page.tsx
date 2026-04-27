@@ -6,16 +6,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
 import Link from "next/link";
 import {
-  apiCreateMultipoll,
-  apiFindDuplicatePoll,
-  CreateSubPollParams,
+  apiCreatePoll,
+  apiFindDuplicateQuestion,
+  CreateQuestionParams,
 } from "@/lib/api";
-import type { Multipoll, OptionsMetadata, Poll } from "@/lib/types";
+import type { Poll, OptionsMetadata, Question } from "@/lib/types";
 import CompactNameField from "@/components/CompactNameField";
 import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import { useAppPrefetch } from "@/lib/prefetch";
-import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
-import { triggerDiscoveryIfNeeded } from "@/lib/pollDiscovery";
+import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
+import { triggerDiscoveryIfNeeded } from "@/lib/questionDiscovery";
 import { getUserName, saveUserName, getUserMinResponses, saveUserMinResponses } from "@/lib/userProfile";
 import { debugLog } from "@/lib/debugLogger";
 import OptionsInput from "@/components/OptionsInput";
@@ -23,16 +23,16 @@ import CompactMinResponsesField from "@/components/CompactMinResponsesField";
 import { VOTING_CUTOFF_OPTIONS } from "@/components/VotingCutoffConditionsModal";
 import VotingCutoffField from "@/components/VotingCutoffField";
 import MinimumParticipationModal from "@/components/MinimumParticipationModal";
-import TimePollFields from "@/components/TimePollFields";
+import TimeQuestionFields from "@/components/TimeQuestionFields";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
-import * as pollBackTarget from "@/lib/pollBackTarget";
+import * as questionBackTarget from "@/lib/questionBackTarget";
 import {
-  multipollLookup,
-  pollDataToMultipollRequest,
+  pollLookup,
+  questionDataToPollRequest,
   shortenOption,
   shortenLocation,
   validateRankedChoiceOptions,
@@ -40,14 +40,14 @@ import {
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
-} from "./createPollHelpers";
+} from "./createQuestionHelpers";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-export function CreatePollContent() {
+export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,18 +56,18 @@ export function CreatePollContent() {
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
   const modeParam = searchParams.get('mode');
   // Optional category preselection from the What/When/Where bubble FAB.
-  // "When" uses ?mode=time (poll-type-level switch); "Where" uses ?category=restaurant.
+  // "When" uses ?mode=time (question-type-level switch); "Where" uses ?category=restaurant.
   // Restored from URL on mount only — subsequent edits go through CategoryForLine.
   const categoryParam = searchParams.get('category');
 
-  // Track relationship to source poll as part of form state
+  // Track relationship to source question as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const pollType = modeParam === 'time' ? 'time' : 'poll';
-  const setPollType = useCallback((type: 'poll' | 'time') => {
+  const questionType = modeParam === 'time' ? 'time' : 'question';
+  const setQuestionType = useCallback((type: 'question' | 'time') => {
     const url = new URL(window.location.href);
     if (type === 'time') {
       url.searchParams.set('mode', 'time');
@@ -117,14 +117,14 @@ export function CreatePollContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Phase 2.4: previously-committed sub-polls awaiting submit. The current
-  // form represents the *last* sub-poll; on submit we prepend these to the
-  // multipoll request. MVP only stages yes_no/ranked_choice (server enforces
-  // ≤1 time sub-poll).
-  const [stagedSubPolls, setStagedSubPolls] = useState<CreateSubPollParams[]>([]);
+  // Phase 2.4: previously-committed questions awaiting submit. The current
+  // form represents the *last* question; on submit we prepend these to the
+  // poll request. MVP only stages yes_no/ranked_choice (server enforces
+  // ≤1 time question).
+  const [stagedQuestions, setStagedQuestions] = useState<CreateQuestionParams[]>([]);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
-  const isSuggestionMode = pollType === 'poll' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
+  const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
 
   // Generate a title from the current form state
   const generateTitle = useCallback(() => {
@@ -169,7 +169,7 @@ export function CreatePollContent() {
       return base + forSuffix;
     };
 
-    if (pollType === 'poll') {
+    if (questionType === 'question') {
       if (category === 'yes_no') {
         return '';
       }
@@ -192,7 +192,7 @@ export function CreatePollContent() {
 
     // time
     return appendFor("Time?");
-  }, [pollType, category, options, forField]);
+  }, [questionType, category, options, forField]);
 
   // Focus details textarea when opening
   useEffect(() => {
@@ -209,7 +209,7 @@ export function CreatePollContent() {
     }
   }, [isAutoTitle, generateTitle]);
 
-  // Detect auto-generated titles from copied polls (handles old snapshots without is_auto_title)
+  // Detect auto-generated titles from copied questions (handles old snapshots without is_auto_title)
   useEffect(() => {
     const loaded = loadedTitleRef.current;
     if (!isAutoTitle && loaded) {
@@ -224,7 +224,7 @@ export function CreatePollContent() {
   // Auto-generated category text from options (shown in CategoryForLine when no explicit category)
   const generatedCategoryFromOptions = useMemo(() => {
     if (category !== 'custom') return '';
-    if (pollType !== 'poll') return '';
+    if (questionType !== 'question') return '';
     const filled = options.filter(o => o.trim()).map(shortenOption);
     if (filled.length === 0) return '';
     if (filled.length === 1) return filled[0];
@@ -244,7 +244,7 @@ export function CreatePollContent() {
     }
     if (included.length === filled.length) return joinWithOr(included);
     return `${included.join(', ')}, or ...`;
-  }, [category, pollType, options]);
+  }, [category, questionType, options]);
 
   // Handle category changes from CategoryForLine
   const handleCategoryChange = useCallback((val: string) => {
@@ -269,14 +269,14 @@ export function CreatePollContent() {
     }
   }, []);
 
-  // Set default deadline based on poll type
-  const isPreferencePoll = pollType === 'poll' && category !== 'yes_no';
-  const prevIsPreferencePollRef = useRef(isPreferencePoll);
+  // Set default deadline based on question type
+  const isPreferenceQuestion = questionType === 'question' && category !== 'yes_no';
+  const prevIsPreferenceQuestionRef = useRef(isPreferenceQuestion);
   useEffect(() => {
-    if (isPreferencePoll === prevIsPreferencePollRef.current) return;
-    prevIsPreferencePollRef.current = isPreferencePoll;
-    if (isPreferencePoll) {
-      // Switching to preference/suggestion poll: default to 4 weeks, force auto-title
+    if (isPreferenceQuestion === prevIsPreferenceQuestionRef.current) return;
+    prevIsPreferenceQuestionRef.current = isPreferenceQuestion;
+    if (isPreferenceQuestion) {
+      // Switching to preference/suggestion question: default to 4 weeks, force auto-title
       if (BASE_DEADLINE_OPTIONS.some(o => o.value === deadlineOption)) {
         setDeadlineOption('1week');
       }
@@ -287,7 +287,7 @@ export function CreatePollContent() {
         setDeadlineOption('10min');
       }
     }
-  }, [isPreferencePoll, deadlineOption]);
+  }, [isPreferenceQuestion, deadlineOption]);
 
   // Resolve voting deadline to minutes (null if no deadline or custom date/time)
   const getVotingDeadlineMinutes = useCallback((): number | null => {
@@ -354,11 +354,11 @@ export function CreatePollContent() {
         dayTimeWindows,
         minResponses,
         showPreliminaryResults,
-        stagedSubPolls,
+        stagedQuestions,
       };
-      localStorage.setItem('pollFormState', JSON.stringify(formState));
+      localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedSubPolls]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedQuestions]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -381,7 +381,7 @@ export function CreatePollContent() {
   // Load form state from localStorage
   const loadFormState = () => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('pollFormState');
+      const saved = localStorage.getItem('questionFormState');
       if (saved) {
         try {
           const formState = JSON.parse(saved);
@@ -405,7 +405,7 @@ export function CreatePollContent() {
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
-          if (Array.isArray(formState.stagedSubPolls)) setStagedSubPolls(formState.stagedSubPolls);
+          if (Array.isArray(formState.stagedQuestions)) setStagedQuestions(formState.stagedQuestions);
 
           return formState;
         } catch (error) {
@@ -420,9 +420,9 @@ export function CreatePollContent() {
   // Clear saved form state
   const clearFormState = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('pollFormState');
+      localStorage.removeItem('questionFormState');
 
-      // Also clean up any special poll creation data
+      // Also clean up any special question creation data
       if (voteFromSuggestion) {
         localStorage.removeItem(`vote-from-suggestion-${voteFromSuggestion}`);
       }
@@ -432,16 +432,16 @@ export function CreatePollContent() {
     }
   };
 
-  // Determine poll type based on form selection and options
-  const getPollType = (): 'yes_no' | 'ranked_choice' | 'time' => {
-    if (pollType === 'time' || category === 'time') return 'time';
+  // Determine question type based on form selection and options
+  const getQuestionType = (): 'yes_no' | 'ranked_choice' | 'time' => {
+    if (questionType === 'time' || category === 'time') return 'time';
     if (category === 'yes_no') return 'yes_no';
     return 'ranked_choice';
   };
 
 
 
-  // Validation for poll options with specific error messages
+  // Validation for question options with specific error messages
   const getValidationError = (): string | null => {
     // Check title first
     if (!title.trim()) {
@@ -468,15 +468,15 @@ export function CreatePollContent() {
       }
     }
 
-    const dbPollType = getPollType();
+    const dbQuestionType = getQuestionType();
 
-    if (dbPollType === 'ranked_choice') {
+    if (dbQuestionType === 'ranked_choice') {
       const optErr = validateRankedChoiceOptions(options, category);
       if (optErr) return optErr;
     }
 
-    // Time poll: every selected day needs a time slot
-    if (dbPollType === 'time') {
+    // Time question: every selected day needs a time slot
+    if (dbQuestionType === 'time') {
       if (dayTimeWindows.length === 0) {
         return "Please select at least one day.";
       }
@@ -532,34 +532,34 @@ export function CreatePollContent() {
     return getValidationError() === null;
   };
 
-  // Subset of getValidationError that only checks per-sub-poll fields. Skips
-  // title (multipoll-level), deadline (multipoll-level), and time
+  // Subset of getValidationError that only checks per-question fields. Skips
+  // title (poll-level), deadline (poll-level), and time
   // shapes (time can't be staged in MVP).
-  const getSubPollValidationError = (): string | null => {
-    const dbPollType = getPollType();
-    if (dbPollType !== 'yes_no' && dbPollType !== 'ranked_choice') {
-      return "Only yes/no and preference polls can be added as additional sections.";
+  const getQuestionValidationError = (): string | null => {
+    const dbQuestionType = getQuestionType();
+    if (dbQuestionType !== 'yes_no' && dbQuestionType !== 'ranked_choice') {
+      return "Only yes/no and preference questions can be added as additional sections.";
     }
-    if (dbPollType === 'ranked_choice') {
+    if (dbQuestionType === 'ranked_choice') {
       return validateRankedChoiceOptions(options, category);
     }
     return null;
   };
 
-  // Build a CreateSubPollParams from the current per-sub-poll form state.
-  // Mirrors the per-sub-poll branch of pollDataToMultipollRequest. Caller
-  // must run getSubPollValidationError() first.
-  const buildSubPollFromState = (): CreateSubPollParams => {
-    const dbPollType = getPollType() as 'yes_no' | 'ranked_choice';
+  // Build a CreateQuestionParams from the current per-question form state.
+  // Mirrors the per-question branch of questionDataToPollRequest. Caller
+  // must run getQuestionValidationError() first.
+  const buildQuestionFromState = (): CreateQuestionParams => {
+    const dbQuestionType = getQuestionType() as 'yes_no' | 'ranked_choice';
     const filledOptions = options.filter(opt => opt.trim() !== '');
-    const sub: CreateSubPollParams = {
-      poll_type: dbPollType,
+    const sub: CreateQuestionParams = {
+      question_type: dbQuestionType,
       is_auto_title: isAutoTitle,
     };
-    if (dbPollType === 'ranked_choice' && category !== 'custom') {
+    if (dbQuestionType === 'ranked_choice' && category !== 'custom') {
       sub.category = category;
     }
-    if (dbPollType === 'ranked_choice' && filledOptions.length > 0) {
+    if (dbQuestionType === 'ranked_choice' && filledOptions.length > 0) {
       sub.options = filledOptions;
     }
     if (Object.keys(optionsMetadata).length > 0) {
@@ -570,14 +570,14 @@ export function CreatePollContent() {
       sub.reference_longitude = refLongitude;
       sub.reference_location_label = refLocationLabel;
     }
-    if (dbPollType === 'ranked_choice') {
+    if (dbQuestionType === 'ranked_choice') {
       sub.min_responses = minResponses;
       sub.show_preliminary_results = showPreliminaryResults;
     }
     // Suggestion mode (ranked_choice with no pre-filled options): defer the
-    // prephase deadline to the multipoll level; sub_poll-level minutes still
-    // travels along since the legacy poll columns are duplicated server-side.
-    if (dbPollType === 'ranked_choice' && filledOptions.length === 0) {
+    // prephase deadline to the poll level; question-level minutes still
+    // travels along since the legacy question columns are duplicated server-side.
+    if (dbQuestionType === 'ranked_choice' && filledOptions.length === 0) {
       const cutoffMinutes = getSuggestionCutoffMinutes();
       sub.suggestion_deadline_minutes =
         cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
@@ -586,15 +586,15 @@ export function CreatePollContent() {
     return sub;
   };
 
-  // "+ Add another section" handler. Validates current sub-poll, pushes it
-  // onto stagedSubPolls, and resets per-sub-poll state so the form is ready
-  // for the next one. Shared multipoll fields (creator name, deadline,
+  // "+ Add another section" handler. Validates current question, pushes it
+  // onto stagedQuestions, and resets per-question state so the form is ready
+  // for the next one. Shared poll fields (creator name, deadline,
   // details, suggestion cutoff, follow_up_to) are preserved.
   const handleAddSection = () => {
-    const subErr = getSubPollValidationError();
+    const subErr = getQuestionValidationError();
     if (subErr) { setError(subErr); return; }
     setError(null);
-    setStagedSubPolls(prev => [...prev, buildSubPollFromState()]);
+    setStagedQuestions(prev => [...prev, buildQuestionFromState()]);
     setTitle('');
     setIsAutoTitle(true);
     setOptions(['']);
@@ -608,12 +608,12 @@ export function CreatePollContent() {
     setShowPreliminaryResults(true);
   };
 
-  const handleRemoveStagedSubPoll = (index: number) => {
-    setStagedSubPolls(prev => prev.filter((_, i) => i !== index));
+  const handleRemoveStagedQuestion = (index: number) => {
+    setStagedQuestions(prev => prev.filter((_, i) => i !== index));
   };
 
-  const summarizeStagedSubPoll = (sub: CreateSubPollParams): string => {
-    if (sub.poll_type === 'yes_no') return 'Yes / No';
+  const summarizeStagedQuestion = (sub: CreateQuestionParams): string => {
+    if (sub.question_type === 'yes_no') return 'Yes / No';
     const filled = (sub.options ?? []).filter(o => o.trim() !== '');
     if (filled.length === 0) return 'Suggestions';
     if (filled.length === 1) return filled[0];
@@ -624,8 +624,8 @@ export function CreatePollContent() {
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
   const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    setSubmitPortal(document.getElementById('create-poll-submit-portal'));
-    setTitlePortal(document.getElementById('create-poll-title-portal'));
+    setSubmitPortal(document.getElementById('create-question-submit-portal'));
+    setTitlePortal(document.getElementById('create-question-title-portal'));
   }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
@@ -652,7 +652,7 @@ export function CreatePollContent() {
 
   // Initialize state from URL params
   useEffect(() => {
-    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, duplicateOf: duplicateOfParam, voteFromSuggestion: voteFromSuggestionParam }, 'CreatePoll');
+    debugLog.logObject('Create question page loaded with params', { followUpTo: followUpToParam, duplicateOf: duplicateOfParam, voteFromSuggestion: voteFromSuggestionParam }, 'CreateQuestion');
     if (followUpToParam) setFollowUpTo(followUpToParam);
     if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
     if (voteFromSuggestionParam) setVoteFromSuggestion(voteFromSuggestionParam);
@@ -689,9 +689,9 @@ export function CreatePollContent() {
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
-  // Load duplicate data if this is a duplicate (for follow-up polls)
+  // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
-    debugLog.logObject('Duplicate useEffect running', { duplicateOfParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+    debugLog.logObject('Duplicate useEffect running', { duplicateOfParam, windowExists: typeof window !== 'undefined' }, 'CreateQuestion');
 
     if (duplicateOfParam && typeof window !== 'undefined') {
       // Set the duplicate relationship in state
@@ -700,12 +700,12 @@ export function CreatePollContent() {
       const duplicateDataKey = `duplicate-data-${duplicateOfParam}`;
       const savedDuplicateData = localStorage.getItem(duplicateDataKey);
 
-      debugLog.logObject('Duplicate data lookup', { duplicateDataKey, found: !!savedDuplicateData, data: savedDuplicateData }, 'CreatePoll');
+      debugLog.logObject('Duplicate data lookup', { duplicateDataKey, found: !!savedDuplicateData, data: savedDuplicateData }, 'CreateQuestion');
 
       if (savedDuplicateData) {
         try {
           const duplicateData = JSON.parse(savedDuplicateData);
-          debugLog.logObject('Parsed duplicate data', duplicateData, 'CreatePoll');
+          debugLog.logObject('Parsed duplicate data', duplicateData, 'CreateQuestion');
 
           // Auto-fill form with duplicate data
           setTitle(duplicateData.title || "");
@@ -716,17 +716,17 @@ export function CreatePollContent() {
           setDetails(duplicateData.details || "");
           if (duplicateData.details) setDetailsOpen(true);
 
-          // Set poll type based on duplicated poll
-          if (duplicateData.poll_type === 'ranked_choice') {
-            setPollType('poll');
+          // Set question type based on duplicated question
+          if (duplicateData.question_type === 'ranked_choice') {
+            setQuestionType('question');
             setOptions(duplicateData.options || ['']);
-          } else if (duplicateData.poll_type === 'time') {
-            setPollType('time');
+          } else if (duplicateData.question_type === 'time') {
+            setQuestionType('time');
             setOptions(['']);
             if (duplicateData.min_availability_percent != null) setMinimumParticipation(duplicateData.min_availability_percent);
           } else {
-            // yes_no poll
-            setPollType('poll');
+            // yes_no question
+            setQuestionType('question');
             setOptions(['']);
           }
           if (duplicateData.response_deadline) {
@@ -756,10 +756,10 @@ export function CreatePollContent() {
           if (duplicateData.min_responses != null) setMinResponses(duplicateData.min_responses);
           if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
 
-          // Don't clean up the duplicate data yet - keep it until poll is created
+          // Don't clean up the duplicate data yet - keep it until question is created
           // so that refresh doesn't lose the data
           // Keep the duplicate URL parameter so refresh works correctly
-          debugLog.info('Loaded duplicate data from localStorage (will clean up after submission)', 'CreatePoll');
+          debugLog.info('Loaded duplicate data from localStorage (will clean up after submission)', 'CreateQuestion');
         } catch (error) {
           console.error('Error loading duplicate data:', error);
         }
@@ -767,9 +767,9 @@ export function CreatePollContent() {
     }
   }, [duplicateOfParam]);
 
-  // Load vote-from-suggestion data if creating preference poll from suggestions
+  // Load vote-from-suggestion data if creating preference question from suggestions
   useEffect(() => {
-    debugLog.logObject('VoteFromSuggestion useEffect running', { voteFromSuggestionParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
+    debugLog.logObject('VoteFromSuggestion useEffect running', { voteFromSuggestionParam, windowExists: typeof window !== 'undefined' }, 'CreateQuestion');
 
     if (voteFromSuggestionParam && typeof window !== 'undefined') {
       // Set the vote-from-suggestion relationship in state
@@ -778,28 +778,28 @@ export function CreatePollContent() {
       const voteDataKey = `vote-from-suggestion-${voteFromSuggestionParam}`;
       const savedVoteData = localStorage.getItem(voteDataKey);
 
-      debugLog.logObject('Vote data lookup', { voteDataKey, found: !!savedVoteData, data: savedVoteData }, 'CreatePoll');
+      debugLog.logObject('Vote data lookup', { voteDataKey, found: !!savedVoteData, data: savedVoteData }, 'CreateQuestion');
 
       if (savedVoteData) {
         try {
           const voteData = JSON.parse(savedVoteData);
-          debugLog.logObject('Parsed vote data', voteData, 'CreatePoll');
+          debugLog.logObject('Parsed vote data', voteData, 'CreateQuestion');
 
-          // Auto-fill form with preference poll type and nominated options
+          // Auto-fill form with preference question type and nominated options
           setTitle(voteData.title || "");
           if (!voteData.is_auto_title && voteData.title) {
             setIsAutoTitle(false);
             loadedTitleRef.current = voteData.title;
           }
-          setPollType('poll'); // Set to preference poll
+          setQuestionType('question'); // Set to preference question
           setOptions(voteData.options && voteData.options.length > 0 ? voteData.options : ['']);
 
-          // Don't clean up the vote data yet - keep it until poll is created
+          // Don't clean up the vote data yet - keep it until question is created
           // so that refresh doesn't lose the data
-          debugLog.info('Loaded vote data from localStorage (will clean up after submission)', 'CreatePoll');
+          debugLog.info('Loaded vote data from localStorage (will clean up after submission)', 'CreateQuestion');
 
           // Keep the voteFromSuggestion parameter so refresh works
-          // Also set followUpTo parameter to link the new poll
+          // Also set followUpTo parameter to link the new question
           if (voteData.followUpTo) {
             const url = new URL(window.location.href);
             url.searchParams.set('followUpTo', voteData.followUpTo);
@@ -821,12 +821,12 @@ export function CreatePollContent() {
     }
   }, [isClient, customDate, customTime]);
 
-  // Save form state whenever form data changes (pollType is saved separately)
+  // Save form state whenever form data changes (questionType is saved separately)
   useEffect(() => {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedQuestions]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -970,8 +970,8 @@ export function CreatePollContent() {
         return;
       }
       
-      // Determine poll type and get options
-      const pollType = getPollType();
+      // Determine question type and get options
+      const questionType = getQuestionType();
       const filledOptions = options.filter(opt => opt.trim() !== '');
 
       const responseDeadline = calculateDeadline();
@@ -998,18 +998,18 @@ export function CreatePollContent() {
       // Generate creator secret
       const creatorSecret = generateCreatorSecret();
       
-      // Prepare poll data
-      const dbPollType = getPollType();
-      // Phase 2.4: when there are staged sub-polls, the wrapper's title isn't
+      // Prepare question data
+      const dbQuestionType = getQuestionType();
+      // Phase 2.4: when there are staged questions, the wrapper's title isn't
       // a meaningful description of the current form alone. Drop it so the
-      // server's `generate_multipoll_title()` builds a title from all sub-poll
+      // server's `generate_poll_title()` builds a title from all question
       // categories (e.g. "Yes/No and Restaurant"). User-edited titles
       // (isAutoTitle === false) still pass through as the explicit override.
       const wrapperTitle =
-        stagedSubPolls.length > 0 && isAutoTitle ? null : title;
-      const pollData: any = {
+        stagedQuestions.length > 0 && isAutoTitle ? null : title;
+      const questionData: any = {
         title: wrapperTitle,
-        poll_type: dbPollType,
+        question_type: dbQuestionType,
         response_deadline: responseDeadline,
         creator_secret: creatorSecret,
         is_auto_title: isAutoTitle,
@@ -1017,99 +1017,99 @@ export function CreatePollContent() {
 
       // Add creator_name if provided (may fail if column doesn't exist yet)
       if (creatorName.trim()) {
-        pollData.creator_name = creatorName.trim();
+        questionData.creator_name = creatorName.trim();
       }
 
       // Add details if provided
       if (details.trim()) {
-        pollData.details = details.trim();
+        questionData.details = details.trim();
       }
 
-      // Add follow-up reference if this is a follow-up poll
+      // Add follow-up reference if this is a follow-up question
       if (followUpTo) {
-        pollData.follow_up_to = followUpTo;
+        questionData.follow_up_to = followUpTo;
       }
       // Add duplicate as follow-up reference if this is a duplicate
       if (duplicateOf) {
-        pollData.follow_up_to = duplicateOf;
+        questionData.follow_up_to = duplicateOf;
       }
 
-      // Add category for ranked_choice polls
-      if (dbPollType === 'ranked_choice' && category !== 'custom') {
-        pollData.category = category;
+      // Add category for ranked_choice questions
+      if (dbQuestionType === 'ranked_choice' && category !== 'custom') {
+        questionData.category = category;
       }
 
       // Add reference location if set
       if (refLatitude !== undefined && refLongitude !== undefined) {
-        pollData.reference_latitude = refLatitude;
-        pollData.reference_longitude = refLongitude;
-        pollData.reference_location_label = refLocationLabel;
+        questionData.reference_latitude = refLatitude;
+        questionData.reference_longitude = refLongitude;
+        questionData.reference_location_label = refLocationLabel;
       }
 
       // Add options metadata (thumbnails & info links from autocomplete)
       if (Object.keys(optionsMetadata).length > 0) {
-        pollData.options_metadata = optionsMetadata;
+        questionData.options_metadata = optionsMetadata;
       }
 
-      // Add options for ranked choice polls with pre-defined options
+      // Add options for ranked choice questions with pre-defined options
       // (skip for suggestion mode — options will be populated from suggestions)
-      if (dbPollType === 'ranked_choice' && filledOptions.length > 0) {
-        pollData.options = filledOptions;
+      if (dbQuestionType === 'ranked_choice' && filledOptions.length > 0) {
+        questionData.options = filledOptions;
       }
 
-      // Add suggestion deadline for polls with no options (suggestion phase)
+      // Add suggestion deadline for questions with no options (suggestion phase)
       if (isSuggestionMode) {
         if (suggestionCutoff === 'custom' && customSuggestionDate && customSuggestionTime) {
           // Custom: send absolute deadline (not deferred)
           const cutoffDate = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
-          pollData.suggestion_deadline = cutoffDate.toISOString();
+          questionData.suggestion_deadline = cutoffDate.toISOString();
         } else {
           // Fractional or absolute: compute minutes and defer until first suggestion
           const cutoffMinutes = getSuggestionCutoffMinutes();
-          pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
+          questionData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
         }
-        pollData.allow_pre_ranking = allowPreRanking;
+        questionData.allow_pre_ranking = allowPreRanking;
       }
 
-      // Add time poll specific fields
-      if (dbPollType === 'time') {
+      // Add time question specific fields
+      if (dbQuestionType === 'time') {
         if (dayTimeWindows.length > 0) {
-          pollData.day_time_windows = dayTimeWindows;
+          questionData.day_time_windows = dayTimeWindows;
         }
         if (durationMinEnabled || durationMaxEnabled) {
-          pollData.duration_window = {
+          questionData.duration_window = {
             minValue: durationMinValue,
             maxValue: durationMaxValue,
             minEnabled: durationMinEnabled,
             maxEnabled: durationMaxEnabled
           };
         }
-        pollData.min_availability_percent = minimumParticipation;
+        questionData.min_availability_percent = minimumParticipation;
         // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
         const cutoffMinutes = getSuggestionCutoffMinutes();
-        pollData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
+        questionData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
       }
 
-      // Add min_responses and show_preliminary_results for preference polls
-      if (dbPollType === 'ranked_choice') {
-        pollData.min_responses = minResponses;
-        pollData.show_preliminary_results = showPreliminaryResults;
+      // Add min_responses and show_preliminary_results for preference questions
+      if (dbQuestionType === 'ranked_choice') {
+        questionData.min_responses = minResponses;
+        questionData.show_preliminary_results = showPreliminaryResults;
       }
 
-      // Check for duplicate follow-up poll before creating
+      // Check for duplicate follow-up question before creating
       if (followUpTo) {
         try {
-          const existing = await apiFindDuplicatePoll(title, followUpTo);
+          const existing = await apiFindDuplicateQuestion(title, followUpTo);
           if (existing) {
-            // Phase 5b: short_id lives on the multipoll wrapper. Resolve via
-            // the parent multipoll so the redirect targets the friendly URL.
-            const lookup = multipollLookup();
-            const wrapper = existing.multipoll_id ? lookup(existing.multipoll_id) : null;
+            // Phase 5b: short_id lives on the poll wrapper. Resolve via
+            // the parent poll so the redirect targets the friendly URL.
+            const lookup = pollLookup();
+            const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
             const rootRouteId = wrapper
               ? findThreadRootRouteId(wrapper, lookup)
               : shortId;
-            pollBackTarget.set(shortId, rootRouteId);
+            questionBackTarget.set(shortId, rootRouteId);
             router.replace(`/p/${shortId}`);
             return;
           }
@@ -1118,43 +1118,43 @@ export function CreatePollContent() {
         }
       }
 
-      // Every poll routes through the multipoll API. The wrapper is invisible
-      // for 1-sub-poll multipolls; voting/results continue to use the per-poll
+      // Every question routes through the poll API. The wrapper is invisible
+      // for 1-question polls; voting/results continue to use the per-question
       // endpoints.
+      let createdQuestion: Question;
       let createdPoll: Poll;
-      let createdMultipoll: Multipoll;
       try {
-        createdMultipoll = await apiCreateMultipoll(
-          pollDataToMultipollRequest(pollData, stagedSubPolls),
+        createdPoll = await apiCreatePoll(
+          questionDataToPollRequest(questionData, stagedQuestions),
         );
-        // The current form's sub-poll is the LAST one (staged are prepended).
-        createdPoll = createdMultipoll.sub_polls[createdMultipoll.sub_polls.length - 1];
+        // The current form's question is the LAST one (staged are prepended).
+        createdQuestion = createdPoll.questions[createdPoll.questions.length - 1];
       } catch (apiError: any) {
-        console.error("Error creating poll:", apiError);
-        setError(apiError.message || "Failed to create poll. Please try again.");
+        console.error("Error creating question:", apiError);
+        setError(apiError.message || "Failed to create question. Please try again.");
         setIsLoading(false);
         isSubmittingRef.current = false;
         reEnableForm(form);
         return;
       }
 
-      // Record creation for every sub-poll so the creator gets access +
+      // Record creation for every question so the creator gets access +
       // creator_secret for all of them. The wrapper's secret is shared across
-      // sub-polls server-side; recordPollCreation just persists the mapping
-      // locally per poll id (used by FollowUp/Close/Reopen actions).
-      for (const sp of createdMultipoll.sub_polls) {
-        recordPollCreation(sp.id, creatorSecret);
+      // questions server-side; recordQuestionCreation just persists the mapping
+      // locally per question id (used by FollowUp/Close/Reopen actions).
+      for (const sp of createdPoll.questions) {
+        recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      // For suggestion polls, creators vote after creation like any other participant
+      // For suggestion questions, creators vote after creation like any other participant
       // No initial vote is created
 
-      // Trigger poll discovery if this is a follow-up poll
+      // Trigger question discovery if this is a follow-up question
       if (followUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
         } catch (error) {
-          // Don't fail the poll creation if discovery fails
+          // Don't fail the question creation if discovery fails
         }
       }
 
@@ -1163,20 +1163,20 @@ export function CreatePollContent() {
         saveUserName(creatorName.trim());
       }
 
-      // Clear saved form state since poll was created successfully
+      // Clear saved form state since question was created successfully
       clearFormState();
 
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Navigate to the new poll. `pollBackTarget.set` records the thread
-      // URL so the poll page's back button leads to the thread containing
+      // Navigate to the new question. `questionBackTarget.set` records the thread
+      // URL so the question page's back button leads to the thread containing
       // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      // Phase 5b: short_id lives on the multipoll wrapper, so the redirect
+      // Phase 5b: short_id lives on the poll wrapper, so the redirect
       // targets the wrapper's friendly URL. The thread back target walks
-      // multipoll-level chains via findThreadRootRouteId.
-      const redirectId = createdMultipoll.short_id ?? createdPoll.id;
-      pollBackTarget.set(redirectId, findThreadRootRouteId(createdMultipoll, multipollLookup()));
+      // poll-level chains via findThreadRootRouteId.
+      const redirectId = createdPoll.short_id ?? createdQuestion.id;
+      questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1245,7 +1245,7 @@ export function CreatePollContent() {
   const submitDisabled = isLoading || isSubmitted || !!validationError;
 
   return (
-    <div className="poll-content">
+    <div className="question-content">
       {submitPortal && createPortal(
         <button
           type="button"
@@ -1264,7 +1264,7 @@ export function CreatePollContent() {
       )}
 
       {titlePortal && createPortal(
-        pollType === 'poll' ? (
+        questionType === 'question' ? (
           <CategoryForLine
             category={category}
             onCategoryChange={handleCategoryChange}
@@ -1285,11 +1285,11 @@ export function CreatePollContent() {
         </div>
       )}
 
-      {stagedSubPolls.length > 0 && (
+      {stagedQuestions.length > 0 && (
         <ul className="mb-4 space-y-1.5">
-          {stagedSubPolls.map((sub, i) => {
+          {stagedQuestions.map((sub, i) => {
             const builtIn = sub.category ? getBuiltInType(sub.category) : undefined;
-            const icon = builtIn?.icon || (sub.poll_type === 'yes_no' ? '👍' : '🗳️');
+            const icon = builtIn?.icon || (sub.question_type === 'yes_no' ? '👍' : '🗳️');
             const label = builtIn?.label || (sub.category && sub.category !== 'custom' ? sub.category : 'Section');
             return (
               <li
@@ -1299,11 +1299,11 @@ export function CreatePollContent() {
                 <span className="text-lg leading-none" aria-hidden>{icon}</span>
                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
                 <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
-                  {summarizeStagedSubPoll(sub)}
+                  {summarizeStagedQuestion(sub)}
                 </span>
                 <button
                   type="button"
-                  onClick={() => handleRemoveStagedSubPoll(i)}
+                  onClick={() => handleRemoveStagedQuestion(i)}
                   disabled={isLoading}
                   className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
                   aria-label={`Remove ${label} section`}
@@ -1324,21 +1324,21 @@ export function CreatePollContent() {
           // Do nothing - all submission is handled by button onClick
         }} className="space-y-4">
           {/* Non-default modes: show link back to preferences form */}
-          {pollType === 'time' && (
+          {questionType === 'time' && (
             <div className="flex justify-center">
               <button
                 type="button"
-                onClick={() => setPollType('poll')}
+                onClick={() => setQuestionType('question')}
                 className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
               >
-                Switch to Preferences Poll
+                Switch to Preferences Question
               </button>
             </div>
           )}
 
           {/* Category and For fields are now in the header via CategoryForLine */}
 
-          {/* Reference location for location polls */}
+          {/* Reference location for location questions */}
           {isLocationLikeCategory(category) && (
             <ReferenceLocationInput
               latitude={refLatitude}
@@ -1355,10 +1355,10 @@ export function CreatePollContent() {
             />
           )}
 
-          {/* Time poll: Duration + DayTimeWindows + threshold + deadlines */}
-          {(pollType === 'time' || (pollType === 'poll' && category === 'time')) && (
+          {/* Time question: Duration + DayTimeWindows + threshold + deadlines */}
+          {(questionType === 'time' || (questionType === 'question' && category === 'time')) && (
             <>
-              <TimePollFields
+              <TimeQuestionFields
                 disabled={isLoading}
                 durationMinValue={durationMinValue}
                 durationMaxValue={durationMaxValue}
@@ -1482,8 +1482,8 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Options field for poll type (ranked choice / suggestions) */}
-          {pollType === 'poll' && category !== 'yes_no' && category !== 'time' && (
+          {/* Options field for question type (ranked choice / suggestions) */}
+          {questionType === 'question' && category !== 'yes_no' && category !== 'time' && (
             <>
               <OptionsInput
                 options={options}
@@ -1501,11 +1501,11 @@ export function CreatePollContent() {
           )}
 
 
-          {/* Title for yes/no polls - rendered above voting cutoff */}
+          {/* Title for yes/no questions - rendered above voting cutoff */}
           {category === 'yes_no' && titleField}
 
-          {/* Voting cutoff (yes/no and preference polls), min responses, suggestion cutoff */}
-          {pollType === 'poll' && category !== 'time' && (
+          {/* Voting cutoff (yes/no and preference questions), min responses, suggestion cutoff */}
+          {questionType === 'question' && category !== 'time' && (
             <>
               <VotingCutoffField
                 deadlineOption={deadlineOption}
@@ -1517,7 +1517,7 @@ export function CreatePollContent() {
                 isLoading={isLoading}
                 isClient={isClient}
               />
-              {isPreferencePoll && (
+              {isPreferenceQuestion && (
               <CompactMinResponsesField
                 value={minResponses}
                 setValue={(val) => {
@@ -1656,18 +1656,18 @@ export function CreatePollContent() {
             </>
           )}
 
-          {/* Title for time polls - rendered below close after */}
-          {pollType !== 'poll' && titleField}
+          {/* Title for time questions - rendered below close after */}
+          {questionType !== 'question' && titleField}
 
           {/* Phase 2.4: stage the current section and start a new one. Hidden
-              when the current form is time (≤1 time sub-poll allowed; user
+              when the current form is time (≤1 time question allowed; user
               submits with just the current time form). */}
-          {pollType === 'poll' && category !== 'time' && (
+          {questionType === 'question' && category !== 'time' && (
             <div className="flex justify-center pt-1">
               <button
                 type="button"
                 onClick={handleAddSection}
-                disabled={isLoading || !!getSubPollValidationError()}
+                disabled={isLoading || !!getQuestionValidationError()}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
               >
                 + Add another section
@@ -1745,7 +1745,7 @@ export function CreatePollContent() {
 }
 
 // Redirect /create-poll to /?create so the modal opens over the home page.
-export default function CreatePollRedirect() {
+export default function CreateQuestionRedirect() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     params.set('create', '1');

@@ -1,7 +1,7 @@
-export interface PollTestData {
+export interface QuestionTestData {
   title: string;
   description?: string;
-  type: 'poll';
+  type: 'question';
   options?: readonly string[];
   deadline?: string;
   customDate?: string;
@@ -9,17 +9,17 @@ export interface PollTestData {
   creatorName?: string;
 }
 
-export const testPolls = {
+export const testQuestions = {
   yesNo: {
     title: 'Should we have pizza for lunch?',
-    type: 'poll' as const,
+    type: 'question' as const,
     deadline: '10min',
     creatorName: 'Test User'
   },
 
   rankedChoice: {
     title: 'What should we watch tonight?',
-    type: 'poll' as const,
+    type: 'question' as const,
     options: ['Action Movie', 'Comedy Show', 'Documentary'],
     deadline: '1hr',
     creatorName: 'Movie Buff'
@@ -27,7 +27,7 @@ export const testPolls = {
 
   customDeadline: {
     title: 'Weekend activity planning',
-    type: 'poll' as const,
+    type: 'question' as const,
     options: ['Hiking', 'Beach Day', 'Museum Visit'],
     deadline: 'custom',
     customDate: '2025-12-31',

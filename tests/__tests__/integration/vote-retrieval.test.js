@@ -16,30 +16,30 @@ describe('Vote Storage and Retrieval', () => {
 
   describe('Vote Data Structure', () => {
     it('should store vote with correct structure', () => {
-      const pollId = 'test-poll-123'
+      const questionId = 'test-question-123'
       const voteId = 'vote-456'
 
-      const votedPolls = { [pollId]: true }
-      const pollVoteIds = { [pollId]: voteId }
+      const votedQuestions = { [questionId]: true }
+      const questionVoteIds = { [questionId]: voteId }
 
-      localStorage.setItem('votedPolls', JSON.stringify(votedPolls))
-      localStorage.setItem('pollVoteIds', JSON.stringify(pollVoteIds))
+      localStorage.setItem('votedQuestions', JSON.stringify(votedQuestions))
+      localStorage.setItem('questionVoteIds', JSON.stringify(questionVoteIds))
 
-      const storedVotedPolls = JSON.parse(localStorage.getItem('votedPolls'))
-      const storedVoteIds = JSON.parse(localStorage.getItem('pollVoteIds'))
+      const storedVotedQuestions = JSON.parse(localStorage.getItem('votedQuestions'))
+      const storedVoteIds = JSON.parse(localStorage.getItem('questionVoteIds'))
 
-      expect(storedVotedPolls[pollId]).toBe(true)
-      expect(storedVoteIds[pollId]).toBe(voteId)
+      expect(storedVotedQuestions[questionId]).toBe(true)
+      expect(storedVoteIds[questionId]).toBe(voteId)
     })
 
     it('should retrieve vote ID from localStorage', () => {
-      const pollId = 'test-poll-123'
+      const questionId = 'test-question-123'
       const voteId = 'vote-456'
 
-      localStorage.setItem('pollVoteIds', JSON.stringify({ [pollId]: voteId }))
+      localStorage.setItem('questionVoteIds', JSON.stringify({ [questionId]: voteId }))
 
-      const stored = JSON.parse(localStorage.getItem('pollVoteIds') || '{}')
-      const retrievedVoteId = stored[pollId] || null
+      const stored = JSON.parse(localStorage.getItem('questionVoteIds') || '{}')
+      const retrievedVoteId = stored[questionId] || null
 
       expect(retrievedVoteId).toBe(voteId)
     })
@@ -50,7 +50,7 @@ describe('Vote Storage and Retrieval', () => {
       // Simulates what the API returns
       const apiVote = {
         id: 'vote-789',
-        poll_id: 'poll-123',
+        question_id: 'question-123',
         vote_type: 'yes_no',
         yes_no_choice: 'yes',
         ranked_choices: null,
@@ -66,7 +66,7 @@ describe('Vote Storage and Retrieval', () => {
     it('should handle ranked choice vote data structure correctly', () => {
       const apiVote = {
         id: 'vote-999',
-        poll_id: 'poll-456',
+        question_id: 'question-456',
         vote_type: 'ranked_choice',
         yes_no_choice: null,
         ranked_choices: ['Option A', 'Option B', 'Option C'],
@@ -82,20 +82,20 @@ describe('Vote Storage and Retrieval', () => {
 
   describe('Vote Retrieval Bug', () => {
     it('should correctly retrieve and display YES vote (not NO)', () => {
-      const pollId = 'bug-test-poll'
+      const questionId = 'bug-test-question'
       const voteId = 'bug-test-vote'
 
       // Simulates API response for a yes vote
       const apiVote = {
         id: voteId,
-        poll_id: pollId,
+        question_id: questionId,
         vote_type: 'yes_no',
         yes_no_choice: 'yes',
       }
 
       // Store vote ID in localStorage
-      localStorage.setItem('pollVoteIds', JSON.stringify({ [pollId]: voteId }))
-      localStorage.setItem('votedPolls', JSON.stringify({ [pollId]: true }))
+      localStorage.setItem('questionVoteIds', JSON.stringify({ [questionId]: voteId }))
+      localStorage.setItem('votedQuestions', JSON.stringify({ [questionId]: true }))
 
       // The vote should be YES, not NO
       expect(apiVote.yes_no_choice).toBe('yes')

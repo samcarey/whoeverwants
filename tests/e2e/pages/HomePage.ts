@@ -3,12 +3,12 @@ import { expect } from '@playwright/test';
 
 export class HomePage extends BasePage {
   // Page elements
-  get createPollButton() {
+  get createQuestionButton() {
     return this.page.locator('a[href*="create"], button:has-text("Create"), a:has-text("Create")').first();
   }
 
-  get pollsList() {
-    return this.page.locator('[data-testid="polls-list"], .poll-item, .poll-card');
+  get questionsList() {
+    return this.page.locator('[data-testid="questions-list"], .question-item, .question-card');
   }
 
   get pageHeading() {
@@ -21,25 +21,25 @@ export class HomePage extends BasePage {
     await this.waitForLoad();
   }
 
-  async clickCreatePoll() {
-    await this.createPollButton.click();
+  async clickCreateQuestion() {
+    await this.createQuestionButton.click();
     await this.waitForLoad();
   }
 
-  async navigateToCreatePoll() {
-    if (await this.createPollButton.isVisible()) {
+  async navigateToCreateQuestion() {
+    if (await this.createQuestionButton.isVisible()) {
       try {
-        await this.clickCreatePoll();
+        await this.clickCreateQuestion();
         // Wait for URL to change after navigation
         await this.page.waitForURL(/create/, { timeout: 10000 });
       } catch (error) {
         // Fallback: navigate directly if button click doesn't work
-        await this.navigate('/create-poll');
+        await this.navigate('/create-question');
         await this.waitForLoad();
       }
     } else {
       // Navigate directly if no button found
-      await this.navigate('/create-poll');
+      await this.navigate('/create-question');
       await this.waitForLoad();
     }
   }
@@ -50,6 +50,6 @@ export class HomePage extends BasePage {
   }
 
   async verifyCreateButtonVisible() {
-    await expect(this.createPollButton).toBeVisible();
+    await expect(this.createQuestionButton).toBeVisible();
   }
 }

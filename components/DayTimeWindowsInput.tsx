@@ -16,7 +16,7 @@ interface DayTimeWindowsInputProps {
   onChange: (windows: TimeWindow[]) => void;
   onDelete: () => void; // Delete entire day
   disabled?: boolean;
-  pollWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
+  questionWindows?: TimeWindow[]; // Creator's windows for this day (constrains voter edits)
   minDurationMinutes?: number | null; // Minimum duration in minutes for validation
 }
 
@@ -57,7 +57,7 @@ export default function DayTimeWindowsInput({
   onChange,
   onDelete,
   disabled = false,
-  pollWindows,
+  questionWindows,
   minDurationMinutes,
 }: DayTimeWindowsInputProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -106,7 +106,7 @@ export default function DayTimeWindowsInput({
     onChange(updated);
   };
 
-  const isVoterForm = !!pollWindows;
+  const isVoterForm = !!questionWindows;
 
   return (
     <div className="flex items-center gap-3 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -195,7 +195,7 @@ export default function DayTimeWindowsInput({
         })}
 
         {/* Add button - hidden on voter ballots */}
-        {!pollWindows && (
+        {!questionWindows && (
           <button
             type="button"
             onClick={handleAddWindow}
@@ -217,8 +217,8 @@ export default function DayTimeWindowsInput({
         minValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].min : "09:00"}
         maxValue={editingIndex !== null && windows[editingIndex] ? windows[editingIndex].max : "17:00"}
         onApply={handleModalApply}
-        constraintMin={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].min : undefined}
-        constraintMax={pollWindows && editingIndex !== null && pollWindows[editingIndex] ? pollWindows[editingIndex].max : undefined}
+        constraintMin={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].min : undefined}
+        constraintMax={questionWindows && editingIndex !== null && questionWindows[editingIndex] ? questionWindows[editingIndex].max : undefined}
         minDurationMinutes={minDurationMinutes}
       />
     </div>

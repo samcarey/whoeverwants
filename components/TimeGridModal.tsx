@@ -18,7 +18,7 @@ function minutesToTime(totalMinutes: number): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
-/** Clamp the "start" time so it can't go below the poll window's min */
+/** Clamp the "start" time so it can't go below the question window's min */
 function clampTimeMin(value: string, constraintMin: string, constraintMax: string): string {
   const crossesMidnight = constraintMax <= constraintMin;
   if (!crossesMidnight) {
@@ -34,7 +34,7 @@ function clampTimeMin(value: string, constraintMin: string, constraintMax: strin
   }
 }
 
-/** Clamp the "end" time so it can't go above the poll window's max */
+/** Clamp the "end" time so it can't go above the question window's max */
 function clampTimeMax(value: string, constraintMin: string, constraintMax: string): string {
   const crossesMidnight = constraintMax <= constraintMin;
   if (!crossesMidnight) {
@@ -56,8 +56,8 @@ interface TimeGridModalProps {
   minValue: string | null;
   maxValue: string | null;
   onApply: (min: string | null, max: string | null) => void;
-  constraintMin?: string;  // Poll window's min — voter's min can't go below this
-  constraintMax?: string;  // Poll window's max — voter's max can't go above this
+  constraintMin?: string;  // Question window's min — voter's min can't go below this
+  constraintMax?: string;  // Question window's max — voter's max can't go above this
   minDurationMinutes?: number | null; // Minimum required duration in minutes
 }
 
@@ -129,7 +129,7 @@ export default function TimeGridModal({
   }, [minValue, maxValue, isOpen]);
 
   // Allow free movement of min and max — cross-midnight ranges (max < min) are valid
-  // When constraints exist (voter editing a poll window), clamp to poll bounds
+  // When constraints exist (voter editing a question window), clamp to question bounds
   // Note: min==max prevention is handled by the wheel item filtering in TimeCounterInput
   const handleMinChange = useCallback((newMin: string | null) => {
     if (newMin && constraintMin && constraintMax) {

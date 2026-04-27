@@ -1,67 +1,67 @@
 /**
- * Pure helpers + constants for the create-poll form.
+ * Pure helpers + constants for the create-question form.
  *
  * Lives next to page.tsx because nothing else in the app uses these;
  * they're factored out only to keep page.tsx focused on the React
  * component. If a helper grows callsites in other files, promote to
  * `lib/`.
  */
-import { CreateMultipollParams, CreateSubPollParams } from "@/lib/api";
-import { getCachedAccessibleMultipolls } from "@/lib/pollCache";
-import { buildMultipollMap } from "@/lib/threadUtils";
+import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
+import { getCachedAccessiblePolls } from "@/lib/questionCache";
+import { buildPollMap } from "@/lib/threadUtils";
 
-export function multipollLookup() {
-  const byMultipoll = buildMultipollMap(getCachedAccessibleMultipolls() ?? []);
-  return (multipollId: string) => byMultipoll.get(multipollId) ?? null;
+export function pollLookup() {
+  const byPoll = buildPollMap(getCachedAccessiblePolls() ?? []);
+  return (pollId: string) => byPoll.get(pollId) ?? null;
 }
 
 /**
- * Translate the existing flat pollData object into a CreateMultipollRequest
- * with one sub-poll. Wrapper-level fields (creator_secret, response_deadline,
+ * Translate the existing flat questionData object into a CreatePollRequest
+ * with one question. Wrapper-level fields (creator_secret, response_deadline,
  * follow_up_to, title, voting cutoff, prephase deadlines) live on the
- * multipoll; everything ballot-shaped stays on the sub-poll. follow_up_to is
- * a POLL id — the server resolves it to the parent's multipoll_id
+ * poll; everything ballot-shaped stays on the question. follow_up_to is
+ * a QUESTION id — the server resolves it to the parent's poll_id
  * automatically. Wrapper-level `context` carries today's `details` field;
- * per-sub-poll `context` is unused for 1-sub-poll multipolls and Phase 2.4
+ * per-question `context` is unused for 1-question polls and Phase 2.4
  * will start populating it for disambiguation. Pydantic supplies defaults
  * for omitted fields.
  *
- * Phase 2.4: `additionalSubPolls` are prepended to the sub_polls array so
- * staged drafts come first (display order) and the current form's sub-poll
- * is the last one. Server validates the combined list (≤1 time sub-poll,
- * distinct contexts for same-kind sub-polls).
+ * Phase 2.4: `additionalQuestions` are prepended to the questions array so
+ * staged drafts come first (display order) and the current form's question
+ * is the last one. Server validates the combined list (≤1 time question,
+ * distinct contexts for same-kind questions).
  */
-export function pollDataToMultipollRequest(
-  pollData: any,
-  additionalSubPolls: CreateSubPollParams[] = [],
-): CreateMultipollParams {
+export function questionDataToPollRequest(
+  questionData: any,
+  additionalQuestions: CreateQuestionParams[] = [],
+): CreatePollParams {
   return {
-    creator_secret: pollData.creator_secret,
-    creator_name: pollData.creator_name,
-    response_deadline: pollData.response_deadline,
-    prephase_deadline: pollData.suggestion_deadline,
-    prephase_deadline_minutes: pollData.suggestion_deadline_minutes,
-    follow_up_to: pollData.follow_up_to,
-    title: pollData.title,
-    context: pollData.details,
-    sub_polls: [
-      ...additionalSubPolls,
+    creator_secret: questionData.creator_secret,
+    creator_name: questionData.creator_name,
+    response_deadline: questionData.response_deadline,
+    prephase_deadline: questionData.suggestion_deadline,
+    prephase_deadline_minutes: questionData.suggestion_deadline_minutes,
+    follow_up_to: questionData.follow_up_to,
+    title: questionData.title,
+    context: questionData.details,
+    questions: [
+      ...additionalQuestions,
       {
-        poll_type: pollData.poll_type,
-        category: pollData.category,
-        options: pollData.options,
-        options_metadata: pollData.options_metadata,
-        suggestion_deadline_minutes: pollData.suggestion_deadline_minutes,
-        allow_pre_ranking: pollData.allow_pre_ranking,
-        min_responses: pollData.min_responses,
-        show_preliminary_results: pollData.show_preliminary_results,
-        min_availability_percent: pollData.min_availability_percent,
-        day_time_windows: pollData.day_time_windows,
-        duration_window: pollData.duration_window,
-        reference_latitude: pollData.reference_latitude,
-        reference_longitude: pollData.reference_longitude,
-        reference_location_label: pollData.reference_location_label,
-        is_auto_title: pollData.is_auto_title,
+        question_type: questionData.question_type,
+        category: questionData.category,
+        options: questionData.options,
+        options_metadata: questionData.options_metadata,
+        suggestion_deadline_minutes: questionData.suggestion_deadline_minutes,
+        allow_pre_ranking: questionData.allow_pre_ranking,
+        min_responses: questionData.min_responses,
+        show_preliminary_results: questionData.show_preliminary_results,
+        min_availability_percent: questionData.min_availability_percent,
+        day_time_windows: questionData.day_time_windows,
+        duration_window: questionData.duration_window,
+        reference_latitude: questionData.reference_latitude,
+        reference_longitude: questionData.reference_longitude,
+        reference_location_label: questionData.reference_location_label,
+        is_auto_title: questionData.is_auto_title,
       },
     ],
   };
@@ -71,7 +71,7 @@ export function shortenOption(text: string) { return text.split(/[:(]/)[0].trim(
 export function shortenLocation(text: string) { return shortenOption(text.split(',')[0].trim()); }
 
 /**
- * Shared between full-form validation and the per-sub-poll staging validator.
+ * Shared between full-form validation and the per-question staging validator.
  * Returns null when ranked_choice options are valid (or empty — suggestion mode).
  */
 export function validateRankedChoiceOptions(
@@ -81,7 +81,7 @@ export function validateRankedChoiceOptions(
   const filledOptions = options.filter(opt => opt.trim() !== '');
   const maxOptionLength = category === 'custom' ? 35 : 200;
   if (filledOptions.some(opt => opt.length > maxOptionLength)) {
-    return `Poll options must be ${maxOptionLength} characters or less.`;
+    return `Question options must be ${maxOptionLength} characters or less.`;
   }
   if (filledOptions.length > 0) {
     let lastFilledIndex = -1;
@@ -99,7 +99,7 @@ export function validateRankedChoiceOptions(
   }
   const uniqueOptions = new Set(filledOptions.map(opt => opt.trim()));
   if (uniqueOptions.size !== filledOptions.length) {
-    return "All poll options must be unique (no duplicates).";
+    return "All question options must be unique (no duplicates).";
   }
   return null;
 }

@@ -118,7 +118,7 @@ class TestCountYesNoVotes:
         assert result.no_percentage == 0
         assert result.winner == "yes"
 
-    def test_large_poll(self):
+    def test_large_question(self):
         votes = (
             [{"yes_no_choice": "yes"} for _ in range(67)]
             + [{"yes_no_choice": "no"} for _ in range(30)]

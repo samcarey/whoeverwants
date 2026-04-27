@@ -1,22 +1,22 @@
 import { BasePage } from './BasePage';
 import { expect } from '@playwright/test';
 
-export class PollPage extends BasePage {
-  constructor(page: any, private pollId?: string) {
+export class QuestionPage extends BasePage {
+  constructor(page: any, private questionId?: string) {
     super(page);
   }
 
   // Page elements
-  get pollTitle() {
-    return this.page.locator('h1, .poll-title').first();
+  get questionTitle() {
+    return this.page.locator('h1, .question-title').first();
   }
 
-  get pollDescription() {
-    return this.page.locator('.poll-description, .description');
+  get questionDescription() {
+    return this.page.locator('.question-description, .description');
   }
 
   get votingInterface() {
-    // Different interfaces for different poll types - look for any voting interface
+    // Different interfaces for different question types - look for any voting interface
     return this.page.locator('text="Select your preference"').or(
       this.page.locator('text="All suggestions:"')
     ).or(
@@ -31,7 +31,7 @@ export class PollPage extends BasePage {
   }
 
   get resultsSection() {
-    return this.page.locator('.results, [data-testid="results"], .poll-results').first();
+    return this.page.locator('.results, [data-testid="results"], .question-results').first();
   }
 
   get voteOptions() {
@@ -51,8 +51,8 @@ export class PollPage extends BasePage {
     return this.page.locator('button:has-text("Edit")');
   }
 
-  get closePollButton() {
-    return this.page.locator('button:has-text("Close Poll")');
+  get closeQuestionButton() {
+    return this.page.locator('button:has-text("Close Question")');
   }
 
   get allSuggestionsHeader() {
@@ -85,10 +85,10 @@ export class PollPage extends BasePage {
   }
 
   // Actions
-  async goToPollPage(pollId?: string) {
-    const id = pollId || this.pollId;
+  async goToQuestionPage(questionId?: string) {
+    const id = questionId || this.questionId;
     if (!id) {
-      throw new Error('Poll ID is required to navigate to poll page');
+      throw new Error('Question ID is required to navigate to question page');
     }
     await this.navigate(`/p/${id}`);
     await this.waitForLoad();
@@ -128,9 +128,9 @@ export class PollPage extends BasePage {
     await lastInput.fill(text);
   }
 
-  async closePoll() {
-    await this.closePollButton.click();
-    await this.page.waitForTimeout(3000); // Wait for poll to close
+  async closeQuestion() {
+    await this.closeQuestionButton.click();
+    await this.page.waitForTimeout(3000); // Wait for question to close
   }
 
   // Abstain-specific actions
@@ -154,10 +154,10 @@ export class PollPage extends BasePage {
   }
 
   // Assertions
-  async verifyPollLoaded(expectedTitle?: string) {
-    await expect(this.pollTitle).toBeVisible();
+  async verifyQuestionLoaded(expectedTitle?: string) {
+    await expect(this.questionTitle).toBeVisible();
     if (expectedTitle) {
-      await expect(this.pollTitle).toContainText(expectedTitle);
+      await expect(this.questionTitle).toContainText(expectedTitle);
     }
   }
 
@@ -169,10 +169,10 @@ export class PollPage extends BasePage {
     await expect(this.resultsSection).toBeVisible();
   }
 
-  async verifyPollClosed() {
-    // Check for poll closed message or results being shown
-    const pollClosedText = this.page.locator('text=/poll.*closed/i');
-    await expect(pollClosedText).toBeVisible();
+  async verifyQuestionClosed() {
+    // Check for question closed message or results being shown
+    const questionClosedText = this.page.locator('text=/question.*closed/i');
+    await expect(questionClosedText).toBeVisible();
   }
 
   async verifyDeadlineShown() {

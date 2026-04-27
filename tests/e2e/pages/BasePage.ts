@@ -41,7 +41,7 @@ export class BasePage {
         
         // Verify we're on the expected path or handle common redirects
         const currentUrl = this.page.url();
-        if (path.includes('/create-poll') && currentUrl.includes('/')) {
+        if (path.includes('/create-question') && currentUrl.includes('/')) {
           // If we got redirected to home, try navigation again
           if (currentUrl === baseUrl + '/' || currentUrl === baseUrl) {
             attempts++;

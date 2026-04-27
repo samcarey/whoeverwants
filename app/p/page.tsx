@@ -2,11 +2,11 @@
 
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
-import { apiGetPollById, apiGetMultipollById } from "@/lib/api";
+import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
 
 export const dynamic = 'force-dynamic';
 
-function PollRedirect() {
+function QuestionRedirect() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = searchParams.get('id');
@@ -16,11 +16,11 @@ function PollRedirect() {
     async function handleRedirect() {
       if (id) {
         try {
-          // Phase 5b: short_id lives on the multipoll wrapper. Walk the
-          // sub-poll → multipoll path to resolve the friendly URL.
-          const poll = await apiGetPollById(id);
-          const multipollId = poll?.multipoll_id;
-          const wrapper = multipollId ? await apiGetMultipollById(multipollId).catch(() => null) : null;
+          // Phase 5b: short_id lives on the poll wrapper. Walk the
+          // question → poll path to resolve the friendly URL.
+          const question = await apiGetQuestionById(id);
+          const pollId = question?.poll_id;
+          const wrapper = pollId ? await apiGetPollById(pollId).catch(() => null) : null;
           if (wrapper?.short_id) {
             router.replace(`/p/${wrapper.short_id}`);
           } else {
@@ -40,10 +40,10 @@ function PollRedirect() {
   return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
 }
 
-export default function PollPage() {
+export default function QuestionPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <PollRedirect />
+      <QuestionRedirect />
     </Suspense>
   );
 }

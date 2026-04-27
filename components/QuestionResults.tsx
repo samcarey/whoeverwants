@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { PollResults, OptionsMetadata } from "@/lib/types";
+import { QuestionResults, OptionsMetadata } from "@/lib/types";
 import CompactRankedChoiceResults from "./CompactRankedChoiceResults";
 import {
   formatDayLabel,
@@ -14,41 +14,41 @@ import {
 } from "@/lib/timeUtils";
 
 
-interface PollResultsProps {
-  results: PollResults;
-  isPollClosed?: boolean;
+interface QuestionResultsProps {
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
   userVoteData?: any;
   onFollowUpClick?: () => void;
   optionsMetadata?: OptionsMetadata | null;
-  // For yes/no polls: keeps the winner card rendered in a stable DOM
+  // For yes/no questions: keeps the winner card rendered in a stable DOM
   // position and hides the losing card (via grid-rows animation) when true.
   // Used by the thread view so the winner doesn't flicker across
   // expand/collapse transitions.
   hideLoser?: boolean;
-  // For yes/no polls: the current viewer's choice (if voted). When defined
+  // For yes/no questions: the current viewer's choice (if voted). When defined
   // along with onVoteChange, the option cards + abstain row become
   // tappable — clicking a different option fires onVoteChange(newChoice).
   userVoteChoice?: 'yes' | 'no' | 'abstain' | null;
   onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void;
 }
 
-export default function PollResultsDisplay({ results, isPollClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: PollResultsProps) {
-  if (results.poll_type === 'yes_no') {
-    return <YesNoResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
+export default function QuestionResultsDisplay({ results, isQuestionClosed, userVoteData, onFollowUpClick, optionsMetadata, hideLoser, userVoteChoice, onVoteChange }: QuestionResultsProps) {
+  if (results.question_type === 'yes_no') {
+    return <YesNoResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} hideLoser={hideLoser} userVoteChoice={userVoteChoice} onVoteChange={onVoteChange} />;
   }
 
-  if (results.poll_type === 'ranked_choice') {
-    return <CompactRankedChoiceResults results={results} isPollClosed={isPollClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
+  if (results.question_type === 'ranked_choice') {
+    return <CompactRankedChoiceResults results={results} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} onFollowUpClick={onFollowUpClick} optionsMetadata={optionsMetadata} />;
   }
 
-  if (results.poll_type === 'time') {
-    return <TimeResults results={results} isPollClosed={isPollClosed} />;
+  if (results.question_type === 'time') {
+    return <TimeResults results={results} isQuestionClosed={isQuestionClosed} />;
   }
 
   return null;
 }
 
-function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: PollResults, isPollClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
+function YesNoResults({ results, isQuestionClosed, userVoteData, onFollowUpClick, hideLoser = false, userVoteChoice, onVoteChange }: { results: QuestionResults, isQuestionClosed?: boolean, userVoteData?: any, onFollowUpClick?: () => void, hideLoser?: boolean, userVoteChoice?: 'yes' | 'no' | 'abstain' | null, onVoteChange?: (newChoice: 'yes' | 'no' | 'abstain') => void }) {
   const yesCount = results.yes_count || 0;
   const noCount = results.no_count || 0;
   const yesPercentage = results.yes_percentage || 0;
@@ -72,9 +72,9 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   const userVotedYes = voteChoice === 'yes';
   const userVotedNo = voteChoice === 'no';
   const userAbstained = voteChoice === 'abstain';
-  // Cards/abstain are tappable whenever the poll is open and a vote handler
+  // Cards/abstain are tappable whenever the question is open and a vote handler
   // was passed in — including the first-vote case (voteChoice === null).
-  const canVote = !isPollClosed && !!onVoteChange;
+  const canVote = !isQuestionClosed && !!onVoteChange;
 
   const yesIsWinner = winner === 'yes';
   const noIsWinner = winner === 'no';
@@ -228,7 +228,7 @@ function YesNoResults({ results, isPollClosed, userVoteData, onFollowUpClick, hi
   );
 }
 
-function TimeResults({ results, isPollClosed }: { results: PollResults; isPollClosed?: boolean }) {
+function TimeResults({ results, isQuestionClosed }: { results: QuestionResults; isQuestionClosed?: boolean }) {
   const winner = results.winner;
   const options = results.options ?? [];
   const availCounts = results.availability_counts;
@@ -240,11 +240,11 @@ function TimeResults({ results, isPollClosed }: { results: PollResults; isPollCl
   // order from the backend, so no sort is needed before grouping.
   const slotsByDay = useMemo(() => groupSlotsByDay(options), [options]);
 
-  if (!isPollClosed) {
+  if (!isQuestionClosed) {
     return (
       <div className="text-center py-3">
         <div className="text-gray-600 dark:text-gray-400 text-sm">
-          Results will show when the poll closes
+          Results will show when the question closes
         </div>
       </div>
     );
@@ -382,10 +382,10 @@ function formatSlotCompact(slot: string): string {
 
 export function CompactRankedChoicePreview({
   results,
-  isPollClosed,
+  isQuestionClosed,
 }: {
-  results: PollResults;
-  isPollClosed?: boolean;
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
@@ -396,7 +396,7 @@ export function CompactRankedChoicePreview({
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className="text-xs shrink-0">🏆</span>
       <span
-        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
+        className={`${PILL_CLASS} ${isQuestionClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={winner}
       >
         {winner}
@@ -408,7 +408,7 @@ export function CompactRankedChoicePreview({
 export function CompactSuggestionPreview({
   results,
 }: {
-  results: PollResults;
+  results: QuestionResults;
 }) {
   const suggestionCount = (results.suggestion_counts || []).length;
   if (suggestionCount === 0) {
@@ -425,10 +425,10 @@ export function CompactSuggestionPreview({
 
 export function CompactTimePreview({
   results,
-  isPollClosed,
+  isQuestionClosed,
 }: {
-  results: PollResults;
-  isPollClosed?: boolean;
+  results: QuestionResults;
+  isQuestionClosed?: boolean;
 }) {
   const totalVotes = results.total_votes || 0;
   const winner = results.winner;
@@ -439,7 +439,7 @@ export function CompactTimePreview({
     <div className="flex items-center justify-end gap-2 min-w-0">
       <span className="text-xs shrink-0">📅</span>
       <span
-        className={`${PILL_CLASS} ${isPollClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
+        className={`${PILL_CLASS} ${isQuestionClosed ? PILL_COLORS_CLOSED : PILL_COLORS_OPEN}`}
         title={formatTimeSlot(winner)}
       >
         {formatSlotCompact(winner)}

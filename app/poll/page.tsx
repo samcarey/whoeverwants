@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 export const dynamic = 'force-dynamic';
 
-function PollRedirect() {
+function QuestionRedirect() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = searchParams.get('id');
@@ -25,10 +25,10 @@ function PollRedirect() {
   return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
 }
 
-export default function PollPage() {
+export default function QuestionPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <PollRedirect />
+      <QuestionRedirect />
     </Suspense>
   );
 }

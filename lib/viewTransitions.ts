@@ -7,7 +7,7 @@
  * fully rendered page rather than a stale DOM.
  */
 
-import { normalizePath } from './pollId';
+import { normalizePath } from './questionId';
 
 export type NavDirection = 'forward' | 'back';
 
@@ -22,7 +22,7 @@ export function supportsViewTransitions(): boolean {
 
 // Next.js App Router calls `history.pushState` internally, which doesn't fire
 // `popstate`. We patch pushState/replaceState to dispatch a custom event so
-// waits can be event-driven instead of polling.
+// waits can be event-driven instead of questioning.
 const URL_CHANGE_EVENT = '__app:urlchange';
 declare global {
   interface Window { __urlEventInstalled?: boolean }
@@ -45,7 +45,7 @@ if (typeof window !== 'undefined' && !window.__urlEventInstalled) {
   window.addEventListener('popstate', dispatch);
 }
 
-/** Await a URL-change predicate, with a 50 ms safety poll for URL mutations
+/** Await a URL-change predicate, with a 50 ms safety question for URL mutations
  *  that bypass history.*State, plus a deadline. Returns true on predicate pass. */
 async function waitForUrlChange(predicate: () => boolean, deadline: number): Promise<boolean> {
   if (predicate()) return true;

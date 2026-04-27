@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
 from middleware import RateLimitMiddleware
-from routers.multipolls import router as multipolls_router
 from routers.polls import router as polls_router
+from routers.questions import router as questions_router
 from routers.search import router as search_router
 from routers.client_logs import router as client_logs_router
 
@@ -26,8 +26,8 @@ app.add_middleware(
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
+app.include_router(questions_router)
 app.include_router(polls_router)
-app.include_router(multipolls_router)
 app.include_router(search_router)
 app.include_router(client_logs_router)
 

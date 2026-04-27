@@ -1,4 +1,4 @@
-// Base62 encoding/decoding utilities for short poll IDs
+// Base62 encoding/decoding utilities for short question IDs
 // Uses: 0-9, A-Z, a-z (62 characters total)
 
 const BASE62_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';

@@ -41,11 +41,23 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
 } else {
   const apiDest = getApiRewriteDestination();
 
-  // Proxy /api/polls to the backend API (same-origin for Safari ITP compatibility)
+  // Proxy /api/questions to the backend API (same-origin for Safari ITP compatibility)
   nextConfig.rewrites = async () => ({
     beforeFiles: [
       // API rewrites must be in beforeFiles so they take priority over
       // the trailingSlash redirect (which otherwise 308s API POST requests)
+      {
+        source: '/api/questions',
+        destination: `${apiDest}/api/questions`,
+      },
+      {
+        source: '/api/questions/',
+        destination: `${apiDest}/api/questions`,
+      },
+      {
+        source: '/api/questions/:path*',
+        destination: `${apiDest}/api/questions/:path*`,
+      },
       {
         source: '/api/polls',
         destination: `${apiDest}/api/polls`,
@@ -57,18 +69,6 @@ if (process.env.NEXT_OUTPUT === 'standalone') {
       {
         source: '/api/polls/:path*',
         destination: `${apiDest}/api/polls/:path*`,
-      },
-      {
-        source: '/api/multipolls',
-        destination: `${apiDest}/api/multipolls`,
-      },
-      {
-        source: '/api/multipolls/',
-        destination: `${apiDest}/api/multipolls`,
-      },
-      {
-        source: '/api/multipolls/:path*',
-        destination: `${apiDest}/api/multipolls/:path*`,
       },
       {
         source: '/api/search/:path*',

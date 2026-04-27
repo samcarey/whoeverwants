@@ -1,116 +1,150 @@
-import type { Multipoll, Poll } from "@/lib/types";
-import { cachePoll } from "@/lib/pollCache";
+import type { Poll } from "@/lib/types";
+import type { OptionsMetadata } from "@/lib/types";
 import {
-  apiFetch,
-  ApiError,
-  coalesced,
-  toPoll,
-  toMultipoll,
-  toPollResults,
-} from "./_internal";
-import { cacheMultipoll, cachePollResults } from "@/lib/pollCache";
-import { apiGetMultipollByShortId } from "./multipolls";
+  cachePoll,
+  getCachedPollById,
+  getCachedPollByShortId,
+  invalidatePoll,
+} from "@/lib/questionCache";
+import { pollFetch, coalesced, toPoll } from "./_internal";
 
-// Phase 5: legacy `apiCreatePoll` (POST /api/polls) is gone — everything goes
-// through `apiCreateMultipoll`. Same for the per-poll close/reopen/cutoff/
-// thread-title/vote helpers — see the corresponding multipoll-level helpers
-// in ./multipolls.ts.
+// Mirrors server/routers/polls.py. Polls wrap one or more questions;
+// a 1-question poll renders identically to today's single question. See
+// docs/poll-phasing.md.
+
+export type QuestionType = 'yes_no' | 'ranked_choice' | 'time';
+
+export interface CreateQuestionParams {
+  question_type?: QuestionType;
+  category?: string | null;
+  options?: string[] | null;
+  options_metadata?: OptionsMetadata | null;
+  context?: string | null;
+  suggestion_deadline_minutes?: number | null;
+  allow_pre_ranking?: boolean;
+  min_responses?: number | null;
+  show_preliminary_results?: boolean;
+  min_availability_percent?: number;
+  day_time_windows?: any[] | null;
+  duration_window?: any | null;
+  reference_latitude?: number | null;
+  reference_longitude?: number | null;
+  reference_location_label?: string | null;
+  is_auto_title?: boolean;
+}
+
+export interface CreatePollParams {
+  creator_secret: string;
+  creator_name?: string | null;
+  response_deadline?: string | null;
+  prephase_deadline?: string | null;
+  prephase_deadline_minutes?: number | null;
+  follow_up_to?: string | null;
+  thread_title?: string | null;
+  context?: string | null;
+  title?: string | null;
+  questions: CreateQuestionParams[];
+}
+
+export async function apiCreatePoll(params: CreatePollParams): Promise<Poll> {
+  const data = await pollFetch('', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  const poll = toPoll(data);
+  cachePoll(poll);
+  return poll;
+}
 
 const pollInFlight = new Map<string, Promise<Poll>>();
 
-/** Resolve an "anchor poll" for a multipoll's short_id. Phase 5b: short_id
- *  lives on the multipoll wrapper, so we fetch the wrapper (warming the
- *  multipoll cache + its sub-polls in the per-poll cache) and return its
- *  first sub-poll. Callers use this to bootstrap thread building, where any
- *  sub-poll of the target multipoll is sufficient. */
 export async function apiGetPollByShortId(shortId: string): Promise<Poll> {
-  const mp = await apiGetMultipollByShortId(shortId);
-  if (!mp.sub_polls.length) {
-    throw new ApiError(404, 'Multipoll has no sub-polls');
-  }
-  return mp.sub_polls[0];
+  return coalesced(
+    pollInFlight,
+    `short:${shortId}`,
+    getCachedPollByShortId(shortId),
+    async () => {
+      const data = await pollFetch(`/${encodeURIComponent(shortId)}`);
+      const poll = toPoll(data);
+      cachePoll(poll);
+      return poll;
+    },
+  );
 }
 
 export async function apiGetPollById(pollId: string): Promise<Poll> {
-  return coalesced(pollInFlight, `id:${pollId}`, null, async () => {
-    const data = await apiFetch(`/${encodeURIComponent(pollId)}`);
-    const poll = toPoll(data);
-    cachePoll(poll);
-    return poll;
-  });
+  return coalesced(
+    pollInFlight,
+    `id:${pollId}`,
+    getCachedPollById(pollId),
+    async () => {
+      const data = await pollFetch(`/by-id/${encodeURIComponent(pollId)}`);
+      const poll = toPoll(data);
+      cachePoll(poll);
+      return poll;
+    },
+  );
 }
 
-export async function apiFindDuplicatePoll(title: string, followUpTo: string): Promise<Poll | null> {
-  try {
-    const params = new URLSearchParams({ title, follow_up_to: followUpTo });
-    const data = await apiFetch(`/find-duplicate?${params}`);
-    return toPoll(data);
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
-      return null;
-    }
-    throw err;
-  }
-}
-
-export async function apiGetRelatedPolls(pollIds: string[]): Promise<{
-  allRelatedIds: string[];
-  originalCount: number;
-  discoveredCount: number;
-}> {
-  if (pollIds.length === 0) return { allRelatedIds: [], originalCount: 0, discoveredCount: 0 };
-  const data = await apiFetch<{ all_related_ids: string[]; original_count: number; discovered_count: number }>('/related', {
+// Poll-level operations: close/reopen/cutoff the wrapper + every question
+// atomically. Each helper invalidates the poll cache (which cascades to
+// every question) and the accessible-questions cache so the next read reflects
+// the mutation.
+async function pollOperation(
+  pollId: string,
+  path: 'close' | 'reopen' | 'cutoff-suggestions' | 'cutoff-availability',
+  body: Record<string, unknown>,
+): Promise<Poll> {
+  const data = await pollFetch(`/${encodeURIComponent(pollId)}/${path}`, {
     method: 'POST',
-    body: JSON.stringify({ poll_ids: pollIds }),
+    body: JSON.stringify(body),
   });
-  return {
-    allRelatedIds: data.all_related_ids,
-    originalCount: data.original_count,
-    discoveredCount: data.discovered_count,
-  };
+  const poll = toPoll(data);
+  invalidatePoll(pollId);
+  cachePoll(poll);
+  return poll;
 }
 
-// Phase 5b: returns Multipoll[] instead of Poll[]. The multipoll is the unit
-// of identity (per the addressability paradigm), so the FE consumes
-// wrapper-level fields (response_deadline, is_closed, etc.) from each
-// Multipoll directly. cacheMultipoll cascades each sub-poll into the per-poll
-// cache so apiGetPollById hits warm cache. Inline `results` on each sub-poll
-// are also mirrored into the per-poll results cache so apiGetPollResults
-// avoids a late re-fetch.
-export async function apiGetAccessiblePolls(pollIds: string[]): Promise<Multipoll[]> {
-  if (pollIds.length === 0) return [];
-  const data: any[] = await apiFetch('/accessible', {
+export async function apiClosePoll(
+  pollId: string,
+  creatorSecret: string,
+  closeReason: string = 'manual',
+): Promise<Poll> {
+  return pollOperation(pollId, 'close', {
+    creator_secret: creatorSecret,
+    close_reason: closeReason,
+  });
+}
+
+export async function apiReopenPoll(
+  pollId: string,
+  creatorSecret: string,
+): Promise<Poll> {
+  return pollOperation(pollId, 'reopen', { creator_secret: creatorSecret });
+}
+
+export async function apiCutoffPollSuggestions(
+  pollId: string,
+  creatorSecret: string,
+): Promise<Poll> {
+  return pollOperation(pollId, 'cutoff-suggestions', { creator_secret: creatorSecret });
+}
+
+export async function apiCutoffPollAvailability(
+  pollId: string,
+  creatorSecret: string,
+): Promise<Poll> {
+  return pollOperation(pollId, 'cutoff-availability', { creator_secret: creatorSecret });
+}
+
+/** Update (or clear) a poll's thread_title override. Empty string clears it. */
+export async function apiUpdatePollThreadTitle(pollId: string, threadTitle: string | null): Promise<Poll> {
+  const data = await pollFetch<any>(`/${encodeURIComponent(pollId)}/thread-title`, {
     method: 'POST',
-    body: JSON.stringify({ poll_ids: pollIds, include_results: true }),
+    body: JSON.stringify({ thread_title: threadTitle }),
   });
-  return data.map(d => {
-    const multipoll = toMultipoll(d);
-    cacheMultipoll(multipoll);
-    // Mirror inline per-sub-poll results into the per-poll results cache so
-    // apiGetPollResults hits it without a late re-fetch (avoids layout shift
-    // when the thread page warms results on viewport intersection).
-    for (let i = 0; i < (Array.isArray(d.sub_polls) ? d.sub_polls.length : 0); i++) {
-      const subData = d.sub_polls[i];
-      if (subData?.results) {
-        const results = toPollResults(subData.results);
-        cachePollResults(subData.id, results);
-        // toPoll() in toMultipoll consumed sub_polls already, but didn't
-        // attach results to the Poll — mirror them here so consumers reading
-        // multipoll.sub_polls[i].results see them.
-        if (multipoll.sub_polls[i]) {
-          multipoll.sub_polls[i].results = results;
-        }
-      }
-    }
-    return multipoll;
-  });
-}
-
-export async function apiGetAllPollIds(): Promise<string[]> {
-  try {
-    const data: { poll_ids: string[] } = await apiFetch('/dev/all-ids');
-    return data.poll_ids;
-  } catch {
-    return [];
-  }
+  const poll = toPoll(data);
+  invalidatePoll(pollId);
+  cachePoll(poll);
+  return poll;
 }

@@ -1,5 +1,5 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll } from '../../helpers/poll-builder.js'
+import { createQuestion } from '../../helpers/question-builder.js'
 import { isApiAvailable } from '../../helpers/database.js'
 
 let apiUp = false
@@ -12,7 +12,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
   describe('Immediate Winners', () => {
     it('declares winner immediately when candidate has majority in first round', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C'],
           ['A', 'C', 'B'],
@@ -33,7 +33,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
 
     it('continues to elimination when no candidate has majority', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C'],
           ['A', 'C', 'B'],
@@ -60,7 +60,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
   describe('Sequential Elimination', () => {
     it('eliminates candidates one by one until winner emerges', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B', 'C', 'D'],
           ['A', 'C', 'B', 'D'],
@@ -87,7 +87,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
 
     it('handles complex vote redistribution across multiple rounds', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'D', 'B', 'C'],
           ['B', 'D', 'A', 'C'],
@@ -117,7 +117,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
   describe('Vote Transfer Logic', () => {
     it('transfers votes correctly when preferred candidate is eliminated', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C'],
           ['B', 'C', 'A'],
@@ -140,7 +140,7 @@ describe('Basic Ranked Choice Voting Scenarios', () => {
 
     it('skips eliminated candidates when transferring votes', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B', 'C', 'D'],
           ['C', 'A', 'B', 'D'],

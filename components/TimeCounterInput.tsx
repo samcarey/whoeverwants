@@ -52,21 +52,21 @@ function isInWindow(mins: number, minMins: number, maxMins: number): boolean {
 
 /**
  * Check if a candidate time is valid relative to the sibling picker's value.
- * For non-cross-midnight poll windows: min must be < max (no cross-midnight voter ranges).
- * For cross-midnight poll windows: only exclude exact equality (min !== max).
+ * For non-cross-midnight question windows: min must be < max (no cross-midnight voter ranges).
+ * For cross-midnight question windows: only exclude exact equality (min !== max).
  */
 function isValidVsSibling(
   t: number,
   sibMins: number,
   role: 'min' | 'max' | undefined,
-  pollCrossesMidnight: boolean,
+  questionCrossesMidnight: boolean,
 ): boolean {
   if (sibMins < 0) return true; // no sibling constraint
-  if (pollCrossesMidnight) {
-    // Cross-midnight poll: only prevent exact 24h (min === max)
+  if (questionCrossesMidnight) {
+    // Cross-midnight question: only prevent exact 24h (min === max)
     return t !== sibMins;
   }
-  // Non-cross-midnight poll: voter's min must be strictly < voter's max
+  // Non-cross-midnight question: voter's min must be strictly < voter's max
   if (role === 'min') return t < sibMins;
   if (role === 'max') return t > sibMins;
   return t !== sibMins; // fallback
@@ -97,7 +97,7 @@ export default function TimeCounterInput({
   const constrained = !!constraintMin && !!constraintMax;
   const cMinMins = constrained ? timeToMins(constraintMin!) : 0;
   const cMaxMins = constrained ? timeToMins(constraintMax!) : 0;
-  const pollCrossesMidnight = constrained && cMaxMins <= cMinMins && cMinMins !== cMaxMins;
+  const questionCrossesMidnight = constrained && cMaxMins <= cMinMins && cMinMins !== cMaxMins;
 
   // Only filter against sibling when constraint window is < 24h
   const constraintIs24h = constrained && cMinMins === cMaxMins;
@@ -131,10 +131,10 @@ export default function TimeCounterInput({
   // All valid hours in chronological order across AM/PM.
   // Hours where no valid minute passes both window and sibling checks are excluded.
 
-  /** Check if time t is valid: in the poll window AND valid vs sibling */
+  /** Check if time t is valid: in the question window AND valid vs sibling */
   const isTimeValid = useCallback((t: number) => {
-    return isInWindow(t, cMinMins, cMaxMins) && isValidVsSibling(t, sibMins, role, pollCrossesMidnight);
-  }, [cMinMins, cMaxMins, sibMins, role, pollCrossesMidnight]);
+    return isInWindow(t, cMinMins, cMaxMins) && isValidVsSibling(t, sibMins, role, questionCrossesMidnight);
+  }, [cMinMins, cMaxMins, sibMins, role, questionCrossesMidnight]);
 
   const constrainedHours = useMemo(() => {
     if (!constrained) return [];

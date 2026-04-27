@@ -1,18 +1,18 @@
 /**
- * Shared builders for SubPollBallot vote submission.
+ * Shared builders for QuestionBallot vote submission.
  *
- * `handleVoteClick` / `submitVote` (immediate per-sub-poll submit) and
- * `prepareBatchVoteItem` (multi-sub-poll wrapper Submit) both build the same
- * `voteData` payload and `MultipollVoteItem` from the same per-sub-poll state.
+ * `handleVoteClick` / `submitVote` (immediate per-question submit) and
+ * `prepareBatchVoteItem` (multi-question wrapper Submit) both build the same
+ * `voteData` payload and `PollVoteItem` from the same per-question state.
  * Centralising the construction keeps the two paths in lockstep — when a new
- * field lands on `MultipollVoteItem` it's added in exactly one place.
+ * field lands on `PollVoteItem` it's added in exactly one place.
  */
 import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
-import type { MultipollVoteItem, SubPollType } from "@/lib/api";
+import type { PollVoteItem, QuestionType } from "@/lib/api";
 
 export interface BallotInputs {
-  pollId: string;
-  pollType: SubPollType;
+  questionId: string;
+  questionType: QuestionType;
   isAbstaining: boolean;
   yesNoChoice: 'yes' | 'no' | null;
   rankedChoices: string[];
@@ -30,7 +30,7 @@ export interface BallotInputs {
   likedSlots: string[] | null;
   dislikedSlots: string[] | null;
   voterName: string;
-  pollOptions: string[];
+  questionOptions: string[];
   userVoteData: { suggestions?: string[] } | null;
 }
 
@@ -39,8 +39,8 @@ type BuildVoteDataResult =
   | { ok: false; error: string };
 
 /**
- * Validate ballot state and build the per-poll-type `voteData` payload that
- * `MultipollVoteItem` is derived from.
+ * Validate ballot state and build the per-question-type `voteData` payload that
+ * `PollVoteItem` is derived from.
  *
  * The "empty ranked_choice ballot during the suggestion phase counts as an
  * implicit abstain" rule means the effective abstain flag can differ from the
@@ -50,7 +50,7 @@ type BuildVoteDataResult =
 export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
   let effectiveIsAbstaining = state.isAbstaining;
 
-  if (state.pollType === 'yes_no') {
+  if (state.questionType === 'yes_no') {
     if (!state.yesNoChoice && !state.isAbstaining) {
       return { ok: false, error: "Please select Yes, No, or Abstain" };
     }
@@ -58,7 +58,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
       ok: true,
       effectiveIsAbstaining,
       voteData: {
-        poll_id: state.pollId,
+        question_id: state.questionId,
         vote_type: 'yes_no' as const,
         yes_no_choice: state.isAbstaining ? null : state.yesNoChoice,
         is_abstain: state.isAbstaining,
@@ -67,7 +67,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
     };
   }
 
-  if (state.pollType === 'ranked_choice') {
+  if (state.questionType === 'ranked_choice') {
     const filteredRankedChoices = state.rankedChoices.filter(c => c && c.trim().length > 0);
     const filteredSuggestionsForValidation = state.suggestionChoices.filter(c => c && c.trim().length > 0);
     const filteredTiers: string[][] = state.rankedChoiceTiers
@@ -87,7 +87,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
       }
     }
 
-    const invalidChoices = filteredRankedChoices.filter(c => !state.pollOptions.includes(c));
+    const invalidChoices = filteredRankedChoices.filter(c => !state.questionOptions.includes(c));
     if (invalidChoices.length > 0) {
       return { ok: false, error: "Invalid options detected. Please refresh and try again." };
     }
@@ -115,7 +115,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
       ok: true,
       effectiveIsAbstaining,
       voteData: {
-        poll_id: state.pollId,
+        question_id: state.questionId,
         vote_type: 'ranked_choice' as const,
         ranked_choices: effectiveIsAbstaining || !hasRankings ? null : filteredRankedChoices,
         ranked_choice_tiers: effectiveIsAbstaining || !hasRankings || !hasTies ? null : filteredTiers,
@@ -128,7 +128,7 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
     };
   }
 
-  if (state.pollType === 'time') {
+  if (state.questionType === 'time') {
     if (state.inAvailabilityPhase) {
       return {
         ok: true,
@@ -164,20 +164,20 @@ export function buildVoteData(state: BallotInputs): BuildVoteDataResult {
 }
 
 /**
- * Convert a built voteData payload into a MultipollVoteItem for the batched
- * `POST /api/multipolls/{id}/votes` endpoint.
+ * Convert a built voteData payload into a PollVoteItem for the batched
+ * `POST /api/polls/{id}/votes` endpoint.
  *
  * `suggestions` is omitted on ranked_choice edits past the suggestion-phase
  * deadline so the server's COALESCE leaves the existing column alone.
  */
-export function buildMultipollVoteItem(
+export function buildPollVoteItem(
   voteData: any,
-  pollId: string,
+  questionId: string,
   voteId: string | null,
-  options: { pollType: SubPollType; canSubmitSuggestions: boolean; isEditing: boolean },
-): MultipollVoteItem {
-  const item: MultipollVoteItem = {
-    sub_poll_id: pollId,
+  options: { questionType: QuestionType; canSubmitSuggestions: boolean; isEditing: boolean },
+): PollVoteItem {
+  const item: PollVoteItem = {
+    question_id: questionId,
     vote_id: options.isEditing ? voteId : null,
     vote_type: voteData.vote_type,
     yes_no_choice: voteData.yes_no_choice ?? null,
@@ -191,7 +191,7 @@ export function buildMultipollVoteItem(
     liked_slots: voteData.liked_slots ?? null,
     disliked_slots: voteData.disliked_slots ?? null,
   };
-  if (!(options.isEditing && options.pollType === 'ranked_choice' && !options.canSubmitSuggestions)) {
+  if (!(options.isEditing && options.questionType === 'ranked_choice' && !options.canSubmitSuggestions)) {
     item.suggestions = voteData.suggestions ?? null;
   }
   return item;

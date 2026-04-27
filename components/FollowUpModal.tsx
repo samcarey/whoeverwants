@@ -4,37 +4,37 @@ import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
 import FollowUpHeader from "@/components/FollowUpHeader";
-import { Poll, Multipoll } from "@/lib/types";
-import { buildPollSnapshot } from "@/lib/pollCreator";
+import { Question, Poll } from "@/lib/types";
+import { buildQuestionSnapshot } from "@/lib/questionCreator";
 import { formatShortDateTime } from "@/lib/timeUtils";
 
 interface FollowUpModalProps {
   isOpen: boolean;
-  poll: Poll;
+  question: Question;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
-  // close_reason) come from the parent multipoll. Caller passes it so this
+  // close_reason) come from the parent poll. Caller passes it so this
   // modal can render the closed-state copy + build follow-up/duplicate
   // snapshots correctly.
-  multipoll: Multipoll;
+  poll: Poll;
   onClose: () => void;
   totalVotes?: number;
   // When provided, renders a Forget button alongside the others. The parent is
-  // responsible for confirmation + actually removing the poll.
+  // responsible for confirmation + actually removing the question.
   onDelete?: () => void;
   // When provided, renders a Reopen button on a new row. Only shown when the
-  // poll is closed AND the caller deems reopening possible (e.g., creator in
+  // question is closed AND the caller deems reopening possible (e.g., creator in
   // dev mode).
   onReopen?: () => void;
   // When provided, renders a Close Poll button on a new row. Only shown when
-  // the poll is open AND the caller deems closing possible (creator or dev).
-  onClosePoll?: () => void;
+  // the question is open AND the caller deems closing possible (creator or dev).
+  onCloseQuestion?: () => void;
   // When provided, renders an End Availability Phase button on a new row. Only
-  // shown when the poll is a time poll in the availability phase AND the caller
+  // shown when the question is a time question in the availability phase AND the caller
   // deems ending possible (creator or dev).
   onCutoffAvailability?: () => void;
 }
 
-export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalVotes, onDelete, onReopen, onClosePoll, onCutoffAvailability }: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, question, poll, onClose, totalVotes, onDelete, onReopen, onCloseQuestion, onCutoffAvailability }: FollowUpModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   // Ignore the synthetic click that fires immediately after the long-press
@@ -52,24 +52,24 @@ export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalV
     onClose();
   };
 
-  const pollSnapshot = {
-    ...buildPollSnapshot(poll, multipoll),
+  const questionSnapshot = {
+    ...buildQuestionSnapshot(question, poll),
     total_votes: totalVotes,
   };
 
-  const deadline = multipoll.response_deadline ? new Date(multipoll.response_deadline) : null;
+  const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
   const now = new Date();
   const isExpired = !!(deadline && deadline <= now);
-  const isClosed = !!multipoll.is_closed;
+  const isClosed = !!poll.is_closed;
 
   // Priority: max-capacity and manual-close messages take precedence over
   // the plain "Expired on …" label. These used to render inline in the card
   // status block; they live here now so the card stays focused on results.
   let closedText: string | null = null;
-  if (isClosed && multipoll.close_reason === 'max_capacity') {
-    closedText = 'Poll auto-closed. Capacity reached.';
-  } else if (isClosed && multipoll.close_reason === 'manual') {
-    const closedAt = multipoll.updated_at ? new Date(multipoll.updated_at) : null;
+  if (isClosed && poll.close_reason === 'max_capacity') {
+    closedText = 'Question auto-closed. Capacity reached.';
+  } else if (isClosed && poll.close_reason === 'manual') {
+    const closedAt = poll.updated_at ? new Date(poll.updated_at) : null;
     closedText = closedAt
       ? `Closed manually on ${formatShortDateTime(closedAt)}`
       : 'Closed manually';
@@ -113,8 +113,8 @@ export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalV
           <div className="flex gap-3">
             <button
               onClick={() => {
-                localStorage.setItem(`duplicate-data-${poll.id}`, JSON.stringify(pollSnapshot));
-                router.push(`${pathname}?create=1&duplicate=${poll.id}`);
+                localStorage.setItem(`duplicate-data-${question.id}`, JSON.stringify(questionSnapshot));
+                router.push(`${pathname}?create=1&duplicate=${question.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
@@ -162,10 +162,10 @@ export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalV
             </button>
           )}
 
-          {onClosePoll && (
+          {onCloseQuestion && (
             <button
               onClick={() => {
-                onClosePoll();
+                onCloseQuestion();
                 onClose();
               }}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 mt-3 bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
@@ -194,13 +194,13 @@ export default function FollowUpModal({ isOpen, poll, multipoll, onClose, totalV
             </button>
           )}
 
-          {/* Follow-up link — shown at the bottom of the modal when this poll
+          {/* Follow-up link — shown at the bottom of the modal when this question
                follows up on another. Tapping the parent name navigates to that
-               multipoll (which opens the containing thread with that card
-               expanded). Phase 5: chain pointers are multipoll-level. */}
-          {poll.multipoll_follow_up_to && (
+               poll (which opens the containing thread with that card
+               expanded). Phase 5: chain pointers are poll-level. */}
+          {question.poll_follow_up_to && (
             <div className="mt-4">
-              <FollowUpHeader followUpToMultipollId={poll.multipoll_follow_up_to} />
+              <FollowUpHeader followUpToPollId={question.poll_follow_up_to} />
             </div>
           )}
         </div>

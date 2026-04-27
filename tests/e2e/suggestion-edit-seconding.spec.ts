@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Suggestion Poll Edit - Seconding Others', () => {
+test.describe('Suggestion Question Edit - Seconding Others', () => {
   test('should allow seconding other suggestions when editing ballot', async ({ page, context }) => {
-    // Create a suggestion poll
-    await page.goto('http://localhost:3000/create-poll');
+    // Create a suggestion question
+    await page.goto('http://localhost:3000/create-question');
 
     // Wait for page to load
     await page.waitForSelector('input[placeholder="Enter your title..."]');
@@ -12,16 +12,16 @@ test.describe('Suggestion Poll Edit - Seconding Others', () => {
     const suggestionButton = page.locator('button[role="radio"][aria-checked="true"]').filter({ hasText: 'Suggestions' });
     await expect(suggestionButton).toBeVisible();
 
-    // Fill poll details
+    // Fill question details
     await page.fill('input[placeholder="Enter your title..."]', 'Test Suggestion Edit Seconding');
 
-    // Submit the poll
-    await page.click('button:has-text("Create Poll")');
+    // Submit the question
+    await page.click('button:has-text("Create Question")');
 
-    // Wait for navigation to poll page
+    // Wait for navigation to question page
     await page.waitForURL(/\/p\/.+/);
-    const pollUrl = page.url();
-    console.log('Created poll:', pollUrl);
+    const questionUrl = page.url();
+    console.log('Created question:', questionUrl);
 
     // First user submits two suggestions
     await page.fill('input[placeholder="Enter a suggestion"]', 'First user idea 1');
@@ -43,7 +43,7 @@ test.describe('Suggestion Poll Edit - Seconding Others', () => {
     // Open in new incognito context (second browser)
     const context2 = await context.browser()?.newContext() || context;
     const page2 = await context2.newPage();
-    await page2.goto(pollUrl);
+    await page2.goto(questionUrl);
 
     // Second user should see existing suggestions as buttons
     await expect(page2.locator('h5:has-text("Existing suggestions (select to second):")')).toBeVisible();
@@ -132,15 +132,15 @@ test.describe('Suggestion Poll Edit - Seconding Others', () => {
   });
 
   test('should preserve distinction between created and seconded suggestions', async ({ page, context }) => {
-    // Create a suggestion poll
-    await page.goto('http://localhost:3000/create-poll');
+    // Create a suggestion question
+    await page.goto('http://localhost:3000/create-question');
 
     await page.waitForSelector('input[placeholder="Enter your title..."]');
     await page.fill('input[placeholder="Enter your title..."]', 'Test Created vs Seconded');
-    await page.click('button:has-text("Create Poll")');
+    await page.click('button:has-text("Create Question")');
 
     await page.waitForURL(/\/p\/.+/);
-    const pollUrl = page.url();
+    const questionUrl = page.url();
 
     // First user creates suggestion
     await page.fill('input[placeholder="Enter a suggestion"]', 'Original idea');
@@ -151,7 +151,7 @@ test.describe('Suggestion Poll Edit - Seconding Others', () => {
     // Second user seconds it and adds their own
     const context2 = await context.browser()?.newContext() || context;
     const page2 = await context2.newPage();
-    await page2.goto(pollUrl);
+    await page2.goto(questionUrl);
 
     // Second the existing suggestion
     await page2.click('button:has-text("Original idea")');

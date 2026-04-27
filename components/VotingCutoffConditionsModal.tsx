@@ -84,7 +84,7 @@ export default function VotingCutoffConditionsModal({
         <div className="bg-white dark:bg-gray-900 rounded-xl p-6 mx-4 max-w-sm w-full shadow-xl">
           <h3 className="text-lg font-semibold mb-4">Voting Cutoff Conditions</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            The poll will close when any of these conditions are met.
+            The question will close when any of these conditions are met.
           </p>
 
           {/* Deadline condition */}

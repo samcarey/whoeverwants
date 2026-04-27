@@ -1,35 +1,35 @@
 /**
- * Per-poll back-button override.
+ * Per-question back-button override.
  *
- * When the create-poll flow lands the user on a new poll page, the natural
+ * When the create-question flow lands the user on a new question page, the natural
  * back destination is wherever they were when they opened the create modal
- * (home page, some thread, another poll). We want back to lead to the thread
- * containing the new poll instead.
+ * (home page, some thread, another question). We want back to lead to the thread
+ * containing the new question instead.
  *
- * `set()` records the thread URL for a just-created poll; `consume()` reads
+ * `set()` records the thread URL for a just-created question; `consume()` reads
  * and removes it. Scoped to `sessionStorage`, so entries disappear on tab
- * close. Key namespace: `pollBackTarget:<pollRouteId>`.
+ * close. Key namespace: `questionBackTarget:<questionRouteId>`.
  */
 
-import { normalizePath } from './pollId';
+import { normalizePath } from './questionId';
 
-const KEY_PREFIX = 'pollBackTarget:';
+const KEY_PREFIX = 'questionBackTarget:';
 
 /** Record `/thread/<threadRootRouteId>` as the back destination for the given
- *  poll page. Skipped when the page currently underneath the create modal
+ *  question page. Skipped when the page currently underneath the create modal
  *  already matches — natural `history.back()` will land there anyway, and an
  *  explicit override would just add a duplicate history entry. */
-export function set(pollRouteId: string, threadRootRouteId: string): void {
+export function set(questionRouteId: string, threadRootRouteId: string): void {
   if (typeof window === 'undefined') return;
   const threadPath = `/thread/${threadRootRouteId}`;
   if (normalizePath(window.location.pathname) === threadPath) return;
-  sessionStorage.setItem(KEY_PREFIX + pollRouteId, threadPath);
+  sessionStorage.setItem(KEY_PREFIX + questionRouteId, threadPath);
 }
 
-/** Read and remove the custom back target for a poll. Returns null if none. */
-export function consume(pollRouteId: string): string | null {
+/** Read and remove the custom back target for a question. Returns null if none. */
+export function consume(questionRouteId: string): string | null {
   if (typeof window === 'undefined') return null;
-  const key = KEY_PREFIX + pollRouteId;
+  const key = KEY_PREFIX + questionRouteId;
   const value = sessionStorage.getItem(key);
   if (value !== null) sessionStorage.removeItem(key);
   return value;

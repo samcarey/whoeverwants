@@ -1,17 +1,17 @@
-import { apiCreateTestPoll, apiSubmitTestVote, apiClosePoll, apiGetResults } from './database.js'
+import { apiCreateTestQuestion, apiSubmitTestVote, apiCloseQuestion, apiGetResults } from './database.js'
 import { expect } from 'vitest'
 
-export function createPoll(options) {
-  return new PollBuilder(options)
+export function createQuestion(options) {
+  return new QuestionBuilder(options)
 }
 
-class PollBuilder {
+class QuestionBuilder {
   constructor(options) {
-    this.pollOptions = options
+    this.questionOptions = options
     this.votes = []
     this.expectedRounds = []
     this.expectedWinner = null
-    this.testPollId = null
+    this.testQuestionId = null
     this.creatorSecret = null
   }
 
@@ -31,29 +31,29 @@ class PollBuilder {
   }
 
   async run() {
-    // Step 1: Create test poll via API
+    // Step 1: Create test question via API
     this.creatorSecret = `test-secret-${Date.now()}-${Math.random()}`
-    const poll = await apiCreateTestPoll({
-      title: `Test Poll ${Date.now()}`,
-      poll_type: 'ranked_choice',
-      options: this.pollOptions,
+    const question = await apiCreateTestQuestion({
+      title: `Test Question ${Date.now()}`,
+      question_type: 'ranked_choice',
+      options: this.questionOptions,
       creator_secret: this.creatorSecret,
     })
 
-    this.testPollId = poll.id
+    this.testQuestionId = question.id
 
     // Step 2: Insert votes via API
     for (const voteArray of this.votes) {
-      await apiSubmitTestVote(poll.id, {
+      await apiSubmitTestVote(question.id, {
         vote_type: 'ranked_choice',
         ranked_choices: voteArray,
-        _multipoll_id: poll._multipoll_id,
+        _poll_id: question._poll_id,
       })
     }
 
-    // Step 3: Close poll to trigger IRV calculation, then get results
-    await apiClosePoll(poll.id, this.creatorSecret, poll._multipoll_id)
-    const results = await apiGetResults(poll.id)
+    // Step 3: Close question to trigger IRV calculation, then get results
+    await apiCloseQuestion(question.id, this.creatorSecret, question._poll_id)
+    const results = await apiGetResults(question.id)
 
     // Step 4: Assert expected results
     this._assertResults(results)

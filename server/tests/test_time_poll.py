@@ -1,6 +1,6 @@
-"""Tests for time-poll algorithm helpers."""
+"""Tests for time-question algorithm helpers."""
 
-from algorithms.time_poll import (
+from algorithms.time_question import (
     compute_slot_availability,
     filter_slots_by_min_availability,
 )

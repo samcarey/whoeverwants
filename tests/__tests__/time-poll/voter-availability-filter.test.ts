@@ -53,7 +53,7 @@ describe('isVoterAvailableForSlot', () => {
 });
 
 describe('filtering generated slots by voter availability (preference phase)', () => {
-  // Mirrors the logic used in SubPollBallot.preferenceSlotsForVoter:
+  // Mirrors the logic used in QuestionBallot.preferenceSlotsForVoter:
   // only present slots the voter said they were available for.
   const filter = (slots: string[], voter: Dtw[]) =>
     slots.filter(s => isVoterAvailableForSlot(s, voter));

@@ -3,18 +3,18 @@
 import { useRouter, usePathname } from "next/navigation";
 
 interface FollowUpButtonProps {
-  pollId: string;
-  isPollClosed: boolean;
+  questionId: string;
+  isQuestionClosed: boolean;
   className?: string;
 }
 
-export default function FollowUpButton({ pollId, isPollClosed, className = "" }: FollowUpButtonProps) {
+export default function FollowUpButton({ questionId, isQuestionClosed, className = "" }: FollowUpButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   return (
     <button
-      onClick={() => router.push(`${pathname}?create=1&followUpTo=${pollId}`)}
+      onClick={() => router.push(`${pathname}?create=1&followUpTo=${questionId}`)}
       className={`inline-flex items-center gap-2 px-4 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600 active:scale-95 text-gray-900 dark:text-white font-medium text-sm rounded-lg transition-all duration-200 border border-gray-200 dark:border-gray-700 ${className}`}
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

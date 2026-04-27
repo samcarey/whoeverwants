@@ -14,7 +14,7 @@ export interface DayTimeWindow {
   windows: TimeWindow[];
 }
 
-interface TimePollFieldsProps {
+interface TimeQuestionFieldsProps {
   disabled?: boolean;
   // Duration props
   durationMinValue?: number | null;
@@ -28,9 +28,9 @@ interface TimePollFieldsProps {
   // Day time windows props
   dayTimeWindows?: DayTimeWindow[];
   onDayTimeWindowsChange?: (dayTimeWindows: DayTimeWindow[]) => void;
-  // Poll-level condition restrictions (for voting form)
-  pollDayTimeWindows?: DayTimeWindow[];
-  pollDurationWindow?: {
+  // Question-level condition restrictions (for voting form)
+  questionDayTimeWindows?: DayTimeWindow[];
+  questionDurationWindow?: {
     minValue: number | null;
     maxValue: number | null;
     minEnabled: boolean;
@@ -39,10 +39,10 @@ interface TimePollFieldsProps {
   highlightDaysButton?: boolean;
 }
 
-// Time-poll creation/voting form section: duration + per-day time windows.
+// Time-question creation/voting form section: duration + per-day time windows.
 // Replaces the broader ParticipationConditions component that died with the
-// participation poll type (migration 094).
-export default function TimePollFields({
+// participation question type (migration 094).
+export default function TimeQuestionFields({
   disabled = false,
   durationMinValue = null,
   durationMaxValue = null,
@@ -54,10 +54,10 @@ export default function TimePollFields({
   onDurationMaxEnabledChange,
   dayTimeWindows = [],
   onDayTimeWindowsChange,
-  pollDayTimeWindows,
-  pollDurationWindow,
+  questionDayTimeWindows,
+  questionDurationWindow,
   highlightDaysButton = false,
-}: TimePollFieldsProps) {
+}: TimeQuestionFieldsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Cache windows for removed days so they can be restored on re-add
   const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
@@ -110,7 +110,7 @@ export default function TimePollFields({
   };
 
   const selectedDays = dayTimeWindows.map(dtw => dtw.day);
-  const allowedDays = pollDayTimeWindows?.map(dtw => dtw.day);
+  const allowedDays = questionDayTimeWindows?.map(dtw => dtw.day);
 
   // Convert minimum duration from hours to minutes for time window validation
   const minDurationMinutes = durationMinEnabled && durationMinValue != null
@@ -118,7 +118,7 @@ export default function TimePollFields({
     : null;
 
   return (
-    <div className="space-y-3" data-testid="time-poll-fields">
+    <div className="space-y-3" data-testid="time-question-fields">
       {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>
@@ -133,10 +133,10 @@ export default function TimePollFields({
             onMaxChange={onDurationMaxChange}
             onMaxEnabledChange={onDurationMaxEnabledChange}
             increment={0.25}
-            minLimit={pollDurationWindow?.minEnabled ? pollDurationWindow.minValue ?? 0.25 : 0.25}
-            maxLimit={pollDurationWindow?.maxEnabled ? pollDurationWindow.maxValue ?? undefined : undefined}
-            minRequired={pollDurationWindow?.minEnabled ?? false}
-            maxRequired={pollDurationWindow?.maxEnabled ?? false}
+            minLimit={questionDurationWindow?.minEnabled ? questionDurationWindow.minValue ?? 0.25 : 0.25}
+            maxLimit={questionDurationWindow?.maxEnabled ? questionDurationWindow.maxValue ?? undefined : undefined}
+            minRequired={questionDurationWindow?.minEnabled ?? false}
+            maxRequired={questionDurationWindow?.maxEnabled ?? false}
             disabled={disabled}
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
@@ -174,7 +174,7 @@ export default function TimePollFields({
               onChange={(windows) => handleDayWindowsChange(dayTimeWindow.day, windows)}
               onDelete={() => handleDeleteDay(dayTimeWindow.day)}
               disabled={disabled}
-              pollWindows={pollDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
+              questionWindows={questionDayTimeWindows?.find(p => p.day === dayTimeWindow.day)?.windows}
               minDurationMinutes={minDurationMinutes}
             />
           ))}

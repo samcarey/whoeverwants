@@ -2,14 +2,14 @@
 // Tests that need a running Python API server use these helpers.
 // Tests are skipped gracefully when no server is available.
 //
-// Phase 5: legacy `POST /api/polls` was removed; every poll lives inside a
-// multipoll wrapper. These helpers wrap a 1-sub-poll multipoll for each
-// `apiCreateTestPoll` call and route votes/close through the multipoll
-// endpoints. The returned object is the sub-poll (Poll-shaped) augmented
-// with `_multipoll_id` so subsequent helpers can target the wrapper.
+// Phase 5: legacy `POST /api/questions` was removed; every question lives inside a
+// poll wrapper. These helpers wrap a 1-question poll for each
+// `apiCreateTestQuestion` call and route votes/close through the poll
+// endpoints. The returned object is the question (Question-shaped) augmented
+// with `_poll_id` so subsequent helpers can target the wrapper.
 
-const TEST_API_BASE = process.env.TEST_API_URL || 'http://localhost:8000/api/polls'
-const TEST_MULTIPOLL_BASE = TEST_API_BASE.replace('/api/polls', '/api/multipolls')
+const TEST_API_BASE = process.env.TEST_API_URL || 'http://localhost:8000/api/questions'
+const TEST_POLL_BASE = TEST_API_BASE.replace('/api/questions', '/api/polls')
 
 let _apiAvailable = null
 
@@ -23,7 +23,7 @@ export async function isApiAvailable() {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 2000)
-    const res = await fetch(TEST_API_BASE.replace('/api/polls', '/health'), {
+    const res = await fetch(TEST_API_BASE.replace('/api/questions', '/health'), {
       signal: controller.signal,
     })
     clearTimeout(timeout)
@@ -43,15 +43,15 @@ export function getApiBase() {
 }
 
 /**
- * Helper: create a poll via the Python API. Wraps a 1-sub-poll multipoll
+ * Helper: create a question via the Python API. Wraps a 1-question poll
  * around the legacy params shape so existing tests don't have to be rewritten.
- * Returns the sub-poll augmented with `_multipoll_id` (used by subsequent
- * `apiClosePoll` / `apiSubmitTestVote` calls).
+ * Returns the question augmented with `_poll_id` (used by subsequent
+ * `apiCloseQuestion` / `apiSubmitTestVote` calls).
  */
-export async function apiCreateTestPoll(params) {
+export async function apiCreateTestQuestion(params) {
   const {
     title,
-    poll_type,
+    question_type,
     options,
     response_deadline,
     creator_secret,
@@ -85,9 +85,9 @@ export async function apiCreateTestPoll(params) {
     thread_title,
     prephase_deadline: suggestion_deadline,
     prephase_deadline_minutes: suggestion_deadline_minutes,
-    sub_polls: [
+    questions: [
       {
-        poll_type: poll_type || 'yes_no',
+        question_type: question_type || 'yes_no',
         category: category || 'custom',
         options,
         options_metadata,
@@ -106,43 +106,43 @@ export async function apiCreateTestPoll(params) {
       },
     ],
   }
-  const res = await fetch(TEST_MULTIPOLL_BASE, {
+  const res = await fetch(TEST_POLL_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
     const detail = await res.text()
-    throw new Error(`Failed to create poll: ${res.status} ${detail}`)
+    throw new Error(`Failed to create question: ${res.status} ${detail}`)
   }
-  const multipoll = await res.json()
-  const sub = multipoll.sub_polls[0]
-  sub._multipoll_id = multipoll.id
+  const poll = await res.json()
+  const sub = poll.questions[0]
+  sub._poll_id = poll.id
   return sub
 }
 
 /**
- * Helper: submit a vote via the multipoll batch endpoint.
- * `pollId` is the sub-poll id; the helper looks up the multipoll either via
- * `params._multipoll_id` (when provided) or fetches the sub-poll first.
+ * Helper: submit a vote via the poll batch endpoint.
+ * `questionId` is the question id; the helper looks up the poll either via
+ * `params._poll_id` (when provided) or fetches the question first.
  */
-export async function apiSubmitTestVote(pollId, params) {
-  const { _multipoll_id, voter_name, ...item } = params
-  let multipollId = _multipoll_id
-  if (!multipollId) {
-    const pollRes = await fetch(`${TEST_API_BASE}/${pollId}`)
-    if (!pollRes.ok) {
+export async function apiSubmitTestVote(questionId, params) {
+  const { _poll_id, voter_name, ...item } = params
+  let pollId = _poll_id
+  if (!pollId) {
+    const questionRes = await fetch(`${TEST_API_BASE}/${questionId}`)
+    if (!questionRes.ok) {
       // Surface as a "submit vote" error so callers see a consistent message.
-      throw new Error(`Failed to submit vote: ${pollRes.status} ${await pollRes.text()}`)
+      throw new Error(`Failed to submit vote: ${questionRes.status} ${await questionRes.text()}`)
     }
-    multipollId = (await pollRes.json()).multipoll_id
+    pollId = (await questionRes.json()).poll_id
   }
-  const res = await fetch(`${TEST_MULTIPOLL_BASE}/${multipollId}/votes`, {
+  const res = await fetch(`${TEST_POLL_BASE}/${pollId}/votes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       voter_name,
-      items: [{ sub_poll_id: pollId, ...item }],
+      items: [{ question_id: questionId, ...item }],
     }),
   })
   if (!res.ok) {
@@ -154,34 +154,34 @@ export async function apiSubmitTestVote(pollId, params) {
 }
 
 /**
- * Helper: close a poll via the multipoll close endpoint.
- * `pollId` may be either a sub-poll id (we fetch the multipoll_id) or already
- * carry `_multipoll_id` if the caller knows it.
+ * Helper: close a question via the poll close endpoint.
+ * `questionId` may be either a question id (we fetch the poll_id) or already
+ * carry `_poll_id` if the caller knows it.
  */
-export async function apiClosePoll(pollId, creatorSecret, multipollId) {
-  let mpId = multipollId
+export async function apiCloseQuestion(questionId, creatorSecret, pollId) {
+  let mpId = pollId
   if (!mpId) {
-    const pollRes = await fetch(`${TEST_API_BASE}/${pollId}`)
-    if (!pollRes.ok) throw new Error(`Failed to fetch poll: ${pollRes.status}`)
-    mpId = (await pollRes.json()).multipoll_id
+    const questionRes = await fetch(`${TEST_API_BASE}/${questionId}`)
+    if (!questionRes.ok) throw new Error(`Failed to fetch question: ${questionRes.status}`)
+    mpId = (await questionRes.json()).poll_id
   }
-  const res = await fetch(`${TEST_MULTIPOLL_BASE}/${mpId}/close`, {
+  const res = await fetch(`${TEST_POLL_BASE}/${mpId}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ creator_secret: creatorSecret, close_reason: 'manual' }),
   })
   if (!res.ok) {
     const detail = await res.text()
-    throw new Error(`Failed to close poll: ${res.status} ${detail}`)
+    throw new Error(`Failed to close question: ${res.status} ${detail}`)
   }
   return res.json()
 }
 
 /**
- * Helper: get poll results via the Python API.
+ * Helper: get question results via the Python API.
  */
-export async function apiGetResults(pollId) {
-  const res = await fetch(`${TEST_API_BASE}/${pollId}/results`)
+export async function apiGetResults(questionId) {
+  const res = await fetch(`${TEST_API_BASE}/${questionId}/results`)
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`Failed to get results: ${res.status} ${detail}`)
@@ -190,10 +190,10 @@ export async function apiGetResults(pollId) {
 }
 
 /**
- * Helper: get votes for a poll via the Python API.
+ * Helper: get votes for a question via the Python API.
  */
-export async function apiGetVotes(pollId) {
-  const res = await fetch(`${TEST_API_BASE}/${pollId}/votes`)
+export async function apiGetVotes(questionId) {
+  const res = await fetch(`${TEST_API_BASE}/${questionId}/votes`)
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`Failed to get votes: ${res.status} ${detail}`)
@@ -202,22 +202,22 @@ export async function apiGetVotes(pollId) {
 }
 
 /**
- * Helper: edit an existing vote via the multipoll batch endpoint.
+ * Helper: edit an existing vote via the poll batch endpoint.
  */
-export async function apiEditTestVote(pollId, voteId, params) {
-  const { _multipoll_id, voter_name, ...item } = params
-  let multipollId = _multipoll_id
-  if (!multipollId) {
-    const pollRes = await fetch(`${TEST_API_BASE}/${pollId}`)
-    if (!pollRes.ok) throw new Error(`Failed to fetch poll: ${pollRes.status}`)
-    multipollId = (await pollRes.json()).multipoll_id
+export async function apiEditTestVote(questionId, voteId, params) {
+  const { _poll_id, voter_name, ...item } = params
+  let pollId = _poll_id
+  if (!pollId) {
+    const questionRes = await fetch(`${TEST_API_BASE}/${questionId}`)
+    if (!questionRes.ok) throw new Error(`Failed to fetch question: ${questionRes.status}`)
+    pollId = (await questionRes.json()).poll_id
   }
-  const res = await fetch(`${TEST_MULTIPOLL_BASE}/${multipollId}/votes`, {
+  const res = await fetch(`${TEST_POLL_BASE}/${pollId}/votes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       voter_name,
-      items: [{ sub_poll_id: pollId, vote_id: voteId, ...item }],
+      items: [{ question_id: questionId, vote_id: voteId, ...item }],
     }),
   })
   if (!res.ok) {
@@ -233,8 +233,8 @@ export function getTestDatabase() {
   throw new Error('Supabase removed. Use API helpers from this module.')
 }
 
-export async function cleanupTestPolls() {
-  // No-op: test polls are cleaned up by the server or left as test data
+export async function cleanupTestQuestions() {
+  // No-op: test questions are cleaned up by the server or left as test data
 }
 
 export async function ensureMigrationsApplied() {

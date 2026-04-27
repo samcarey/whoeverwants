@@ -2,21 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { isApiAvailable, apiCreateTestPoll, apiSubmitTestVote } from '../../helpers/database.js'
+import { isApiAvailable, apiCreateTestQuestion, apiSubmitTestVote } from '../../helpers/database.js'
 
 let apiUp = false
-let testPollId = null
+let testQuestionId = null
 
 beforeAll(async () => {
   apiUp = await isApiAvailable()
   if (apiUp) {
-    const poll = await apiCreateTestPoll({
-      title: 'Test Poll for Ballot Validation',
-      poll_type: 'ranked_choice',
+    const question = await apiCreateTestQuestion({
+      title: 'Test Question for Ballot Validation',
+      question_type: 'ranked_choice',
       options: ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta'],
       creator_secret: 'validation-test-secret-' + Date.now(),
     })
-    testPollId = poll.id
+    testQuestionId = question.id
   }
 })
 
@@ -55,25 +55,25 @@ describe('Ballot Validation Tests', () => {
     })
   })
 
-  describe('2. Poll Option Validation', () => {
-    const pollOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
+  describe('2. Question Option Validation', () => {
+    const questionOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
 
-    it('should accept ballot with all valid poll options', () => {
+    it('should accept ballot with all valid question options', () => {
       const validBallot = ['Option Alpha', 'Option Beta']
-      const invalidChoices = validBallot.filter(choice => !pollOptions.includes(choice))
+      const invalidChoices = validBallot.filter(choice => !questionOptions.includes(choice))
       expect(invalidChoices.length).toBe(0)
     })
 
     it('should reject ballot with invalid options', () => {
       const invalidBallot = ['Option Alpha', 'Invalid Option', 'Option Beta']
-      const invalidChoices = invalidBallot.filter(choice => !pollOptions.includes(choice))
+      const invalidChoices = invalidBallot.filter(choice => !questionOptions.includes(choice))
       expect(invalidChoices.length).toBe(1)
       expect(invalidChoices).toContain('Invalid Option')
     })
 
     it('should handle case sensitivity correctly', () => {
       const caseSensitiveBallot = ['option alpha', 'OPTION BETA', 'Option Gamma']
-      const invalidChoices = caseSensitiveBallot.filter(choice => !pollOptions.includes(choice))
+      const invalidChoices = caseSensitiveBallot.filter(choice => !questionOptions.includes(choice))
       expect(invalidChoices.length).toBe(2)
     })
 
@@ -121,17 +121,17 @@ describe('Ballot Validation Tests', () => {
     })
 
     it('should provide clear error for invalid options', () => {
-      const pollOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
+      const questionOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
       const getErrorMessage = (choices, validOptions) => {
         const invalidChoices = choices.filter(choice => !validOptions.includes(choice))
         if (invalidChoices.length > 0) return "Invalid options detected. Please refresh and try again."
         return null
       }
-      expect(getErrorMessage(['Option Alpha', 'Fake Option'], pollOptions)).toBe("Invalid options detected. Please refresh and try again.")
+      expect(getErrorMessage(['Option Alpha', 'Fake Option'], questionOptions)).toBe("Invalid options detected. Please refresh and try again.")
     })
 
     it('should handle multiple validation errors appropriately', () => {
-      const pollOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
+      const questionOptions = ['Option Alpha', 'Option Beta', 'Option Gamma', 'Option Delta']
       const getValidationErrors = (choices, validOptions) => {
         const errors = []
         const filteredChoices = choices.filter(choice => choice && choice.trim().length > 0)
@@ -140,9 +140,9 @@ describe('Ballot Validation Tests', () => {
         if (invalidChoices.length > 0) errors.push("Invalid options detected. Please refresh and try again.")
         return errors
       }
-      expect(getValidationErrors([], pollOptions)).toEqual(["Please rank at least one option"])
-      expect(getValidationErrors(['Fake Option'], pollOptions)).toEqual(["Invalid options detected. Please refresh and try again."])
-      expect(getValidationErrors(['Option Alpha'], pollOptions)).toEqual([])
+      expect(getValidationErrors([], questionOptions)).toEqual(["Please rank at least one option"])
+      expect(getValidationErrors(['Fake Option'], questionOptions)).toEqual(["Invalid options detected. Please refresh and try again."])
+      expect(getValidationErrors(['Option Alpha'], questionOptions)).toEqual([])
     })
   })
 
@@ -150,7 +150,7 @@ describe('Ballot Validation Tests', () => {
     it('should reject vote with invalid vote type', async ({ skip }) => {
       if (!apiUp) skip()
       try {
-        await apiSubmitTestVote(testPollId, {
+        await apiSubmitTestVote(testQuestionId, {
           vote_type: 'invalid_type',
           ranked_choices: ['Option Alpha'],
         })
@@ -162,7 +162,7 @@ describe('Ballot Validation Tests', () => {
 
     it('should accept valid ranked choice vote', async ({ skip }) => {
       if (!apiUp) skip()
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: ['Option Alpha', 'Option Beta'],
       })
@@ -170,7 +170,7 @@ describe('Ballot Validation Tests', () => {
       expect(vote.ranked_choices).toEqual(['Option Alpha', 'Option Beta'])
     })
 
-    it('should reject vote for non-existent poll', async ({ skip }) => {
+    it('should reject vote for non-existent question', async ({ skip }) => {
       if (!apiUp) skip()
       try {
         await apiSubmitTestVote('00000000-0000-0000-0000-000000000000', {

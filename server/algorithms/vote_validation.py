@@ -1,24 +1,24 @@
-"""Vote structure validation for all poll types.
+"""Vote structure validation for all question types.
 
-Enforces that each vote contains exactly the fields required for its poll type
-and no fields belonging to other poll types. Mirrors the database CHECK constraint
+Enforces that each vote contains exactly the fields required for its question type
+and no fields belonging to other question types. Mirrors the database CHECK constraint
 from migration 094.
 
 Rules:
 - yes_no: requires yes_no_choice ("yes" or "no"), forbids ranked_choices/suggestions
 - ranked_choice: requires ranked_choices and/or suggestions (suggestions allowed
-  for polls with a suggestion phase). Forbids yes_no_choice.
+  for questions with a suggestion phase). Forbids yes_no_choice.
 - All types: is_abstain=True relaxes the "required" field constraint
 """
 
 
 class VoteValidationError(Exception):
-    """Raised when a vote's structure doesn't match its poll type."""
+    """Raised when a vote's structure doesn't match its question type."""
     pass
 
 
 def validate_vote(
-    poll_type: str,
+    question_type: str,
     vote_type: str,
     yes_no_choice: str | None = None,
     ranked_choices: list[str] | None = None,
@@ -28,35 +28,35 @@ def validate_vote(
     is_ranking_abstain: bool = False,
     has_suggestion_phase: bool = False,
 ) -> None:
-    """Validate vote structure for a given poll type.
+    """Validate vote structure for a given question type.
 
     Args:
-        has_suggestion_phase: If True, the ranked_choice poll has a suggestion
+        has_suggestion_phase: If True, the ranked_choice question has a suggestion
             phase and suggestions are allowed in the vote.
 
     Raises VoteValidationError if the vote is invalid.
     """
-    # vote_type must match poll_type
-    if vote_type != poll_type:
+    # vote_type must match question_type
+    if vote_type != question_type:
         raise VoteValidationError(
-            f"Vote type '{vote_type}' does not match poll type '{poll_type}'"
+            f"Vote type '{vote_type}' does not match question type '{question_type}'"
         )
 
-    if poll_type == "yes_no":
+    if question_type == "yes_no":
         if ranked_choice_tiers:
-            raise VoteValidationError("ranked_choice_tiers not allowed for yes/no polls")
+            raise VoteValidationError("ranked_choice_tiers not allowed for yes/no questions")
         _validate_yes_no_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
-    elif poll_type == "ranked_choice":
+    elif question_type == "ranked_choice":
         _validate_ranked_choice_vote(
             yes_no_choice, ranked_choices, ranked_choice_tiers, suggestions,
             is_abstain, is_ranking_abstain, has_suggestion_phase,
         )
-    elif poll_type == "time":
+    elif question_type == "time":
         if ranked_choice_tiers:
-            raise VoteValidationError("ranked_choice_tiers not allowed for time polls")
+            raise VoteValidationError("ranked_choice_tiers not allowed for time questions")
         _validate_time_vote(yes_no_choice, ranked_choices, suggestions, is_abstain)
     else:
-        raise VoteValidationError(f"Unknown poll type: {poll_type}")
+        raise VoteValidationError(f"Unknown question type: {question_type}")
 
 
 def _validate_yes_no_vote(
@@ -65,17 +65,17 @@ def _validate_yes_no_vote(
     suggestions: list[str] | None,
     is_abstain: bool,
 ) -> None:
-    # Forbid other poll type fields
+    # Forbid other question type fields
     if ranked_choices:
-        raise VoteValidationError("ranked_choices not allowed for yes/no polls")
+        raise VoteValidationError("ranked_choices not allowed for yes/no questions")
     if suggestions:
-        raise VoteValidationError("suggestions not allowed for yes/no polls")
+        raise VoteValidationError("suggestions not allowed for yes/no questions")
 
     if is_abstain:
         return  # No further validation needed
 
     if not yes_no_choice:
-        raise VoteValidationError("yes_no_choice is required for yes/no polls")
+        raise VoteValidationError("yes_no_choice is required for yes/no questions")
     if yes_no_choice not in ("yes", "no"):
         raise VoteValidationError(
             f"yes_no_choice must be 'yes' or 'no', got '{yes_no_choice}'"
@@ -92,15 +92,15 @@ def _validate_ranked_choice_vote(
     has_suggestion_phase: bool = False,
 ) -> None:
     if yes_no_choice:
-        raise VoteValidationError("yes_no_choice not allowed for ranked choice polls")
+        raise VoteValidationError("yes_no_choice not allowed for ranked choice questions")
 
-    # Suggestions are only allowed on polls with a suggestion phase
+    # Suggestions are only allowed on questions with a suggestion phase
     if suggestions and not has_suggestion_phase:
-        raise VoteValidationError("suggestions not allowed for ranked choice polls without a suggestion phase")
+        raise VoteValidationError("suggestions not allowed for ranked choice questions without a suggestion phase")
 
-    # is_ranking_abstain only makes sense for suggestion-phase polls
+    # is_ranking_abstain only makes sense for suggestion-phase questions
     if is_ranking_abstain and not has_suggestion_phase:
-        raise VoteValidationError("is_ranking_abstain not allowed for ranked choice polls without a suggestion phase")
+        raise VoteValidationError("is_ranking_abstain not allowed for ranked choice questions without a suggestion phase")
 
     # ranked_choice_tiers structural check: must be a list of non-empty lists
     # of strings when present.
@@ -142,7 +142,7 @@ def _validate_ranked_choice_vote(
 
     if not has_rankings and not has_suggestions:
         raise VoteValidationError(
-            "ranked_choices or suggestions is required for ranked choice polls"
+            "ranked_choices or suggestions is required for ranked choice questions"
         )
 
 
@@ -153,9 +153,9 @@ def _validate_time_vote(
     is_abstain: bool,
 ) -> None:
     if yes_no_choice:
-        raise VoteValidationError("yes_no_choice not allowed for time polls")
+        raise VoteValidationError("yes_no_choice not allowed for time questions")
     if suggestions:
-        raise VoteValidationError("suggestions not allowed for time polls")
+        raise VoteValidationError("suggestions not allowed for time questions")
     if is_abstain:
         return
     # Must provide voter_day_time_windows (checked in router) or ranked_choices

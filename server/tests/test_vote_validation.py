@@ -63,7 +63,7 @@ class TestRankedChoiceValidation:
             validate_vote("ranked_choice", "ranked_choice", ranked_choices=["a"], suggestions=["b"])
 
     def test_suggestions_allowed_with_suggestion_phase(self):
-        """Suggestions are allowed when the poll has a suggestion phase."""
+        """Suggestions are allowed when the question has a suggestion phase."""
         validate_vote(
             "ranked_choice", "ranked_choice",
             suggestions=["a", "b"],
@@ -178,7 +178,7 @@ class TestRankedChoiceTiersValidation:
             )
 
 
-class TestUnknownPollType:
-    def test_unknown_poll_type(self):
-        with pytest.raises(VoteValidationError, match="Unknown poll type"):
+class TestUnknownQuestionType:
+    def test_unknown_question_type(self):
+        with pytest.raises(VoteValidationError, match="Unknown question type"):
             validate_vote("unknown_type", "unknown_type")

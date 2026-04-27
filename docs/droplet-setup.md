@@ -74,7 +74,7 @@ Internet
   │
   ├── whoeverwants.com ──────────► Vercel (Next.js frontend, CDN, auto-TLS)
   │                                   │
-  │                                   └── /api/polls* calls ──► api.whoeverwants.com
+  │                                   └── /api/questions* calls ──► api.whoeverwants.com
   │
   ├── api.whoeverwants.com:443 ──► Caddy ──► localhost:8000 ──► FastAPI (Docker: api)
   │                                              │ rate limiting (120 GET, 30 POST per IP/min)
@@ -289,7 +289,7 @@ bash scripts/remote.sh "docker compose ps" /root/whoeverwants
 # Expected: db and api containers running
 
 bash scripts/remote.sh "docker exec -i whoeverwants-db-1 psql -U whoeverwants -c '\dt'"
-# Expected: _migrations, polls, ranked_choice_rounds, votes tables
+# Expected: _migrations, questions, ranked_choice_rounds, votes tables
 
 bash scripts/remote.sh "crontab -l"
 # Expected: backup-db.sh (daily 3AM) and health-check.sh (every 5min)

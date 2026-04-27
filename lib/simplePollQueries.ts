@@ -1,38 +1,38 @@
-// Simple poll queries using browser storage for access control
-// No fingerprinting, no complex RLS - just localStorage poll lists
+// Simple question queries using browser storage for access control
+// No fingerprinting, no complex RLS - just localStorage question lists
 
-import type { Multipoll, Poll } from '@/lib/types';
-import { apiGetAccessiblePolls, apiGetPollById } from '@/lib/api';
-import { getAccessiblePollIds, addAccessiblePollId } from '@/lib/browserPollAccess';
+import type { Poll, Question } from '@/lib/types';
+import { apiGetAccessibleQuestions, apiGetQuestionById } from '@/lib/api';
+import { getAccessibleQuestionIds, addAccessibleQuestionId } from '@/lib/browserQuestionAccess';
 import {
-  cacheAccessibleMultipolls,
-  getCachedAccessibleMultipolls,
-  cachePoll,
-} from '@/lib/pollCache';
+  cacheAccessiblePolls,
+  getCachedAccessiblePolls,
+  cacheQuestion,
+} from '@/lib/questionCache';
 
-// Coalesce concurrent getAccessibleMultipolls calls (e.g., StrictMode double-mount)
-let inFlight: Promise<Multipoll[]> | null = null;
+// Coalesce concurrent getAccessiblePolls calls (e.g., StrictMode double-mount)
+let inFlight: Promise<Poll[]> | null = null;
 
-/** Get the multipoll wrappers this browser has access to. Phase 5b: returns
- *  Multipoll[] (the wrappers covering the user's accessible sub-polls).
- *  Wrapper-level fields live on each Multipoll; sub-polls inside contain the
- *  per-sub-poll fields. */
-export async function getAccessibleMultipolls(): Promise<Multipoll[]> {
+/** Get the poll wrappers this browser has access to. Phase 5b: returns
+ *  Poll[] (the wrappers covering the user's accessible questions).
+ *  Wrapper-level fields live on each Poll; questions inside contain the
+ *  per-question fields. */
+export async function getAccessiblePolls(): Promise<Poll[]> {
   try {
-    const accessibleIds = getAccessiblePollIds();
+    const accessibleIds = getAccessibleQuestionIds();
 
     if (accessibleIds.length === 0) {
       return [];
     }
 
-    // Return cached result if fresh and every accessible sub-poll id is
-    // covered by some cached multipoll's sub_polls. A new id (e.g. just
+    // Return cached result if fresh and every accessible question id is
+    // covered by some cached poll's questions. A new id (e.g. just
     // discovered) means we need to re-fetch.
-    const cached = getCachedAccessibleMultipolls();
+    const cached = getCachedAccessiblePolls();
     if (cached) {
-      const cachedSubPollIds = new Set<string>();
-      for (const mp of cached) for (const sp of mp.sub_polls) cachedSubPollIds.add(sp.id);
-      const allPresent = accessibleIds.every(id => cachedSubPollIds.has(id));
+      const cachedQuestionIds = new Set<string>();
+      for (const mp of cached) for (const sp of mp.questions) cachedQuestionIds.add(sp.id);
+      const allPresent = accessibleIds.every(id => cachedQuestionIds.has(id));
       if (allPresent) return cached;
     }
 
@@ -41,9 +41,9 @@ export async function getAccessibleMultipolls(): Promise<Multipoll[]> {
 
     inFlight = (async () => {
       try {
-        const multipolls = await apiGetAccessiblePolls(accessibleIds);
-        cacheAccessibleMultipolls(multipolls);
-        return multipolls;
+        const polls = await apiGetAccessibleQuestions(accessibleIds);
+        cacheAccessiblePolls(polls);
+        return polls;
       } finally {
         inFlight = null;
       }
@@ -51,53 +51,53 @@ export async function getAccessibleMultipolls(): Promise<Multipoll[]> {
 
     return inFlight;
   } catch (error) {
-    console.error('Error in getAccessibleMultipolls:', error);
+    console.error('Error in getAccessiblePolls:', error);
     return [];
   }
 }
 
-/** Backwards-compatible flat poll list. Most callsites should switch to
- *  `getAccessibleMultipolls` so they can read wrapper-level fields directly,
+/** Backwards-compatible flat question list. Most callsites should switch to
+ *  `getAccessiblePolls` so they can read wrapper-level fields directly,
  *  but this helper is kept for the prefetcher / other places that just need
- *  every accessible Poll for a per-id loop. */
-export async function getAccessiblePolls(): Promise<Poll[]> {
-  const multipolls = await getAccessibleMultipolls();
-  const polls: Poll[] = [];
-  for (const mp of multipolls) for (const sp of mp.sub_polls) polls.push(sp);
-  return polls;
+ *  every accessible Question for a per-id loop. */
+export async function getAccessibleQuestions(): Promise<Question[]> {
+  const polls = await getAccessiblePolls();
+  const questions: Question[] = [];
+  for (const mp of polls) for (const sp of mp.questions) questions.push(sp);
+  return questions;
 }
 
-// Get a specific poll by ID and grant access if found
-export async function getPollWithAccess(pollId: string): Promise<Poll | null> {
+// Get a specific question by ID and grant access if found
+export async function getQuestionWithAccess(questionId: string): Promise<Question | null> {
   try {
-    const data = await apiGetPollById(pollId);
+    const data = await apiGetQuestionById(questionId);
 
-    // Grant access to this poll by adding to browser storage
-    addAccessiblePollId(data.id);
-    cachePoll(data);
+    // Grant access to this question by adding to browser storage
+    addAccessibleQuestionId(data.id);
+    cacheQuestion(data);
 
     return data;
   } catch (error) {
-    console.log('Poll not found:', pollId);
+    console.log('Question not found:', questionId);
     return null;
   }
 }
 
-// Record that this browser created a poll (grants full access)
-export async function recordPollCreation(pollId: string): Promise<void> {
+// Record that this browser created a question (grants full access)
+export async function recordQuestionCreation(questionId: string): Promise<void> {
   try {
-    // Add to accessible polls list
-    addAccessiblePollId(pollId);
-    console.log('Recorded poll creation for browser:', pollId.substring(0, 8) + '...');
+    // Add to accessible questions list
+    addAccessibleQuestionId(questionId);
+    console.log('Recorded question creation for browser:', questionId.substring(0, 8) + '...');
   } catch (error) {
-    console.error('Error recording poll creation:', error);
+    console.error('Error recording question creation:', error);
   }
 }
 
-// Check if a poll exists (without granting access)
-export async function pollExists(pollId: string): Promise<boolean> {
+// Check if a question exists (without granting access)
+export async function questionExists(questionId: string): Promise<boolean> {
   try {
-    await apiGetPollById(pollId);
+    await apiGetQuestionById(questionId);
     return true;
   } catch (error) {
     return false;

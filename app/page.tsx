@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { Multipoll } from "@/lib/types";
-import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
-import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { apiGetAllPollIds } from "@/lib/api";
-import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { getCachedAccessibleMultipolls } from "@/lib/pollCache";
+import type { Poll } from "@/lib/types";
+import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
+import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
+import { apiGetAllQuestionIds } from "@/lib/api";
+import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
+import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
@@ -36,11 +36,11 @@ const activityPhrases = [
 
 export default function Home() {
   // Cache-seed avoids loading flash on view-transition return from a thread.
-  const [{ multipolls: initialMultipolls, loading: initialLoading }] = useState(() => {
-    const cached = typeof window === "undefined" ? null : getCachedAccessibleMultipolls();
-    return { multipolls: cached ?? [], loading: cached === null };
+  const [{ polls: initialPolls, loading: initialLoading }] = useState(() => {
+    const cached = typeof window === "undefined" ? null : getCachedAccessiblePolls();
+    return { polls: cached ?? [], loading: cached === null };
   });
-  const [multipolls, setMultipolls] = useState<Multipoll[]>(initialMultipolls);
+  const [polls, setPolls] = useState<Poll[]>(initialPolls);
   const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
   const [currentPhrase, setCurrentPhrase] = useState<string>("");
@@ -125,21 +125,21 @@ export default function Home() {
     }
   }, [fontSize, displayedPhrase]);
 
-  // Fetch polls
+  // Fetch questions
   useEffect(() => {
-    async function fetchPolls() {
+    async function fetchQuestions() {
       try {
         setLoading(true);
         setError(null);
 
-        // Dev mode: if ?dev=1 in URL, import all poll IDs from the database
+        // Dev mode: if ?dev=1 in URL, import all question IDs from the database
         if (typeof window !== 'undefined') {
           const params = new URLSearchParams(window.location.search);
           if (params.get('dev') === '1') {
-            const allIds = await apiGetAllPollIds();
+            const allIds = await apiGetAllQuestionIds();
             if (allIds.length > 0) {
               for (const id of allIds) {
-                addAccessiblePollId(id);
+                addAccessibleQuestionId(id);
               }
               // Remove ?dev=1 from URL without reload
               params.delete('dev');
@@ -151,23 +151,23 @@ export default function Home() {
           }
         }
 
-        // First, discover any new follow-up polls
+        // First, discover any new follow-up questions
         try {
-          const discoveryResult = await discoverRelatedPolls();
-          if (discoveryResult.newPollIds.length > 0) {
+          const discoveryResult = await discoverRelatedQuestions();
+          if (discoveryResult.newQuestionIds.length > 0) {
           }
         } catch (discoveryError) {
         }
 
-        // Get multipolls this browser has access to
-        const data = await getAccessibleMultipolls();
+        // Get polls this browser has access to
+        const data = await getAccessiblePolls();
         if (!data) {
-          console.error("Error fetching accessible polls");
+          console.error("Error fetching accessible questions");
           setError("Failed to load polls");
           return;
         }
 
-        setMultipolls(data);
+        setPolls(data);
       } catch (error) {
         console.error("Unexpected error:", error);
         setError("An unexpected error occurred");
@@ -176,32 +176,32 @@ export default function Home() {
       }
     }
 
-    fetchPolls();
+    fetchQuestions();
   }, []);
 
-  // Extract fetchPolls function for reuse in pull-to-refresh
-  const refreshPolls = async () => {
+  // Extract fetchQuestions function for reuse in pull-to-refresh
+  const refreshQuestions = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // First, discover any new follow-up polls
+      // First, discover any new follow-up questions
       try {
-        const discoveryResult = await discoverRelatedPolls();
-        if (discoveryResult.newPollIds.length > 0) {
+        const discoveryResult = await discoverRelatedQuestions();
+        if (discoveryResult.newQuestionIds.length > 0) {
         }
       } catch (discoveryError) {
       }
 
-      // Get multipolls this browser has access to
-      const data = await getAccessibleMultipolls();
+      // Get polls this browser has access to
+      const data = await getAccessiblePolls();
       if (!data) {
-        console.error("Error fetching accessible polls");
+        console.error("Error fetching accessible questions");
         setError("Failed to load polls");
         return;
       }
 
-      setMultipolls(data);
+      setPolls(data);
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred");
@@ -229,14 +229,14 @@ export default function Home() {
         </div>
       )}
 
-      {!loading && !error && multipolls.length === 0 && (
+      {!loading && !error && polls.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-          Once you create a poll or open a link from someone, it will be shown here.
+          Once you create a question or open a link from someone, it will be shown here.
         </div>
       )}
 
       {!loading && !error && (
-        <ThreadList multipolls={multipolls} />
+        <ThreadList polls={polls} />
       )}
 
     </>
