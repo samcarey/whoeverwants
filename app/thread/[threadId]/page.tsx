@@ -6,21 +6,20 @@ import { Poll } from "@/lib/types";
 import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
 import { discoverRelatedPolls } from "@/lib/pollDiscovery";
 import { buildThreadFromMultipollDown, buildThreadSyncFromCache, buildMultipollMap } from "@/lib/threadUtils";
-import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, apiSubmitMultipollVotes, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
+import { apiGetPollById, apiGetPollByShortId, apiGetPollResults, apiGetVotes, apiCloseMultipoll, apiReopenMultipoll, apiCutoffMultipollAvailability, apiGetMultipollById, POLL_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Multipoll } from "@/lib/types";
-import type { MultipollVoteItem } from "@/lib/api";
-import { buildMultipollVoteItem } from "@/components/SubPollBallot/voteDataBuilders";
-import { getUserName, saveUserName } from "@/lib/userProfile";
+import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
+import { getUserName } from "@/lib/userProfile";
 import CompactNameField from "@/components/CompactNameField";
 import type { PollResults } from "@/lib/types";
 import { addAccessiblePollId, getAccessiblePollIds, getCreatorSecret } from "@/lib/browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId, getCachedPollResults, invalidatePoll, getMultipollForPoll } from "@/lib/pollCache";
+import { getCachedPollById, getCachedPollByShortId } from "@/lib/pollCache";
 import { isUuidLike } from "@/lib/pollId";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/pollListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { loadVotedPolls, setVotedPollFlag, getStoredVoteId, setStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
+import { loadVotedPolls, getStoredVoteId, parseYesNoChoice } from "@/lib/votedPollsStorage";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import ClientOnly from "@/components/ClientOnly";
@@ -171,62 +170,29 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
     }
     return seed;
   });
-  // Current viewer's yes_no vote state per poll (resolved from the stored
-  // voteId in localStorage + the poll's vote list). Drives the Your-Vote
-  // badge + tap-to-change flow on the external YesNoResults. voterName is
-  // preserved so edits round-trip cleanly.
-  type UserYesNoVote = { choice: 'yes' | 'no' | 'abstain' | null; voteId: string; voterName: string | null };
-  const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(() => new Map());
-  // Pending vote change awaiting confirmation. { pollId, newChoice }.
-  const [pendingVoteChange, setPendingVoteChange] = useState<
-    { pollId: string; newChoice: 'yes' | 'no' | 'abstain' } | null
-  >(null);
-  const [voteChangeSubmitting, setVoteChangeSubmitting] = useState(false);
-
-  // Staged yes/no choices, keyed by sub_poll_id. Taps on a multi-yes_no
-  // group's external card write here instead of firing apiSubmitVote
-  // immediately — the wrapper-level Submit commits them as one batch.
-  const [pendingMultipollChoices, setPendingMultipollChoices] = useState<Map<string, 'yes' | 'no' | 'abstain'>>(() => new Map());
-  const [multipollVoterNames, setMultipollVoterNames] = useState<Map<string, string>>(() => new Map());
-  // Single setter that callers (the all-yes_no Submit row + Phase 3.4
-  // follow-up B's wrapper Submit) share — same-value guard avoids no-op
-  // re-renders.
-  const setMultipollVoterName = useRef((id: string, name: string) => {
-    setMultipollVoterNames((prev) => (prev.get(id) === name ? prev : new Map(prev).set(id, name)));
-  }).current;
-  // Snapshots subPolls + the prepared MultipollVoteItems at button-tap time so
-  // edits to the form between the click and the modal confirm don't leak into
-  // the in-flight batch. preparedNonYesNo is empty for all-yes_no groups (the
-  // wrapper builds yes_no items from pendingMultipollChoices at confirm time).
-  type PreparedNonYesNoEntry = {
-    pollId: string;
-    item: MultipollVoteItem;
-    commit: (vote: ApiVote) => void;
-    fail: (errorMessage: string) => void;
-  };
-  const [pendingMultipollSubmit, setPendingMultipollSubmit] = useState<
-    {
-      multipollId: string;
-      subPolls: Poll[];
-      stagedCount: number;
-      preparedNonYesNo: PreparedNonYesNoEntry[];
-    } | null
-  >(null);
-  const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(() => new Set());
-  const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(() => new Map());
-  // Phase 3.4 follow-up B: SubPollBallot signals visibility + label for the
-  // wrapper-rendered Submit button. Same-value guard avoids re-render churn.
-  type WrapperSubmitState = { visible: boolean; label: string };
-  const [wrapperSubmitState, setWrapperSubmitState] = useState<Map<string, WrapperSubmitState>>(() => new Map());
-  const handleWrapperSubmitStateChange = useRef((pollId: string, state: WrapperSubmitState) => {
-    setWrapperSubmitState((prev) => {
-      const cur = prev.get(pollId);
-      if (cur && cur.visible === state.visible && cur.label === state.label) return prev;
-      const next = new Map(prev);
-      next.set(pollId, state);
-      return next;
-    });
-  }).current;
+  // Voting state + handlers for the thread page. See lib/useThreadVoting.ts.
+  // votedPollIds / abstainedPollIds stay on the page because they're seeded
+  // synchronously alongside the cached thread; the hook pushes fresh values
+  // back through the setters after every successful vote write.
+  const {
+    userVoteMap,
+    setUserVoteMap,
+    pendingVoteChange,
+    setPendingVoteChange,
+    voteChangeSubmitting,
+    pendingMultipollChoices,
+    setPendingMultipollChoices,
+    multipollVoterNames,
+    setMultipollVoterName,
+    pendingMultipollSubmit,
+    setPendingMultipollSubmit,
+    multipollSubmitting,
+    multipollSubmitError,
+    wrapperSubmitState,
+    handleWrapperSubmitStateChange,
+    confirmMultipollSubmit,
+    confirmVoteChange,
+  } = useThreadVoting({ thread, setVotedPollIds, setAbstainedPollIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
   // Refs for each card wrapper so we can scroll the expanded card into view
@@ -511,176 +477,6 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
       window.removeEventListener(POLL_VOTES_CHANGED_EVENT, onVotesChanged);
     };
   }, [thread, visiblePollIds]);
-
-  const buildYesNoMultipollItems = (subPolls: Poll[]): MultipollVoteItem[] => {
-    const items: MultipollVoteItem[] = [];
-    for (const sp of subPolls) {
-      if (sp.poll_type !== 'yes_no') continue;
-      const staged = pendingMultipollChoices.get(sp.id);
-      if (!staged) continue;
-      const existing = userVoteMap.get(sp.id);
-      const voteData = {
-        vote_type: 'yes_no' as const,
-        yes_no_choice: staged === 'abstain' ? null : staged,
-        is_abstain: staged === 'abstain',
-      };
-      items.push(buildMultipollVoteItem(voteData, sp.id, existing?.voteId ?? null, {
-        pollType: 'yes_no',
-        canSubmitSuggestions: false,
-        isEditing: !!existing?.voteId,
-      }));
-    }
-    return items;
-  };
-
-  // Atomic on the server: any item failure rolls back the whole batch.
-  const confirmMultipollSubmit = async (
-    multipollId: string,
-    subPolls: Poll[],
-    preparedNonYesNo: PreparedNonYesNoEntry[],
-  ) => {
-    setMultipollSubmitting((prev) => {
-      if (prev.has(multipollId)) return prev;
-      const next = new Set(prev);
-      next.add(multipollId);
-      return next;
-    });
-    setMultipollSubmitError((prev) => {
-      if (!prev.has(multipollId)) return prev;
-      const next = new Map(prev);
-      next.delete(multipollId);
-      return next;
-    });
-    try {
-      const yesNoItems = buildYesNoMultipollItems(subPolls);
-      const nonYesNoItems = preparedNonYesNo.map((p) => p.item);
-      const items: MultipollVoteItem[] = [...yesNoItems, ...nonYesNoItems];
-      if (items.length === 0) {
-        setPendingMultipollSubmit(null);
-        return;
-      }
-      const voterNameRaw = multipollVoterNames.get(multipollId) ?? getUserName() ?? '';
-      const voter_name = voterNameRaw.trim() || null;
-      const returnedVotes = await apiSubmitMultipollVotes(multipollId, { voter_name, items });
-
-      const subPollById = new Map(subPolls.map((sp) => [sp.id, sp]));
-      setUserVoteMap((prev) => {
-        const next = new Map(prev);
-        for (const v of returnedVotes) {
-          const sp = subPollById.get(v.poll_id);
-          if (!sp || sp.poll_type !== 'yes_no') continue;
-          next.set(sp.id, {
-            choice: parseYesNoChoice(v),
-            voteId: v.id,
-            voterName: v.voter_name ?? null,
-          });
-        }
-        return next;
-      });
-
-      const returnedByPollId = new Map(returnedVotes.map((v) => [v.poll_id, v]));
-      for (const prepared of preparedNonYesNo) {
-        const v = returnedByPollId.get(prepared.pollId);
-        if (v) prepared.commit(v);
-      }
-
-      for (const v of returnedVotes) {
-        setStoredVoteId(v.poll_id, v.id);
-        setVotedPollFlag(v.poll_id, v.is_abstain ? 'abstained' : true);
-      }
-      const fresh = loadVotedPolls();
-      setVotedPollIds(fresh.votedPollIds);
-      setAbstainedPollIds(fresh.abstainedPollIds);
-
-      setPendingMultipollChoices((prev) => {
-        let mutated = false;
-        for (const sp of subPolls) {
-          if (prev.has(sp.id)) { mutated = true; break; }
-        }
-        if (!mutated) return prev;
-        const next = new Map(prev);
-        for (const sp of subPolls) next.delete(sp.id);
-        return next;
-      });
-
-      if (voter_name) saveUserName(voter_name);
-
-      for (const v of returnedVotes) {
-        window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: v.poll_id } }));
-      }
-
-      setPendingMultipollSubmit(null);
-    } catch (err: unknown) {
-      console.error('Multipoll vote submit failed:', err);
-      const message = err instanceof Error ? err.message : 'Submit failed.';
-      for (const prepared of preparedNonYesNo) prepared.fail(message);
-      setMultipollSubmitError((prev) => { const next = new Map(prev); next.set(multipollId, message); return next; });
-    } finally {
-      setMultipollSubmitting((prev) => {
-        if (!prev.has(multipollId)) return prev;
-        const next = new Set(prev);
-        next.delete(multipollId);
-        return next;
-      });
-    }
-  };
-
-  const confirmVoteChange = async () => {
-    if (!pendingVoteChange) return;
-    const { pollId, newChoice } = pendingVoteChange;
-    const current = userVoteMap.get(pollId);
-    const subPoll = thread?.polls.find((p) => p.id === pollId);
-    const multipollId = subPoll?.multipoll_id ?? null;
-    if (!multipollId) {
-      // Phase 5: every poll has a multipoll wrapper, so this branch is dead.
-      // Surface as a runtime error rather than silently dropping the vote.
-      console.error('confirmVoteChange called for poll without multipoll_id');
-      return;
-    }
-    setVoteChangeSubmitting(true);
-    try {
-      // Route every yes_no tap-to-change through the unified multipoll endpoint
-      // as a single-item batch. Matches the architectural "vote submission is
-      // always atomic across the multipoll" rule (see CLAUDE.md → Multipoll
-      // System), even when the multipoll has only one sub-poll.
-      const voter_name = current
-        ? current.voterName
-        : (getUserName()?.trim() || null);
-      const voteData = {
-        vote_type: 'yes_no' as const,
-        yes_no_choice: newChoice === 'abstain' ? null : newChoice,
-        is_abstain: newChoice === 'abstain',
-      };
-      const item = buildMultipollVoteItem(voteData, pollId, current?.voteId ?? null, {
-        pollType: 'yes_no',
-        canSubmitSuggestions: false,
-        isEditing: !!current?.voteId,
-      });
-      const returned = await apiSubmitMultipollVotes(multipollId, { voter_name, items: [item] });
-      const v = returned.find((r) => r.poll_id === pollId);
-      if (!v) throw new Error('Vote response missing for sub-poll');
-      const resultVoteId = v.id;
-      const resultVoterName = v.voter_name ?? null;
-      if (!current) setStoredVoteId(pollId, resultVoteId);
-      if (voter_name) saveUserName(voter_name);
-      invalidatePoll(pollId);
-      setUserVoteMap((prev) => {
-        const next = new Map(prev);
-        next.set(pollId, { choice: newChoice, voteId: resultVoteId, voterName: resultVoterName });
-        return next;
-      });
-      setVotedPollFlag(pollId, newChoice === 'abstain' ? 'abstained' : true);
-      const fresh = loadVotedPolls();
-      setVotedPollIds(fresh.votedPollIds);
-      setAbstainedPollIds(fresh.abstainedPollIds);
-      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId } }));
-      setPendingVoteChange(null);
-    } catch (err) {
-      console.error('Vote submit/change failed:', err);
-    } finally {
-      setVoteChangeSubmitting(false);
-    }
-  };
 
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
