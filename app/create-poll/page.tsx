@@ -29,8 +29,8 @@ import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
-import { getCachedAccessiblePolls, getCachedPollById } from "@/lib/pollCache";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { getCachedAccessiblePolls } from "@/lib/pollCache";
+import { findThreadRootRouteId, buildPollByMultipollMap } from "@/lib/threadUtils";
 import * as pollBackTarget from "@/lib/pollBackTarget";
 export const dynamic = 'force-dynamic';
 
@@ -38,25 +38,20 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-// Look up polls by id for `findThreadRootRouteId`. Consults the accessible
-// list cache (pre-built into a Map for O(1) walks), then falls back to the
-// per-poll cache so ancestor chains can be walked even when the user arrives
-// at the create modal from a poll page without the full list cached.
-function pollChainLookup() {
-  const accessible = getCachedAccessiblePolls() ?? [];
-  const byId = new Map(accessible.map(p => [p.id, p]));
-  return (id: string) => byId.get(id) ?? getCachedPollById(id);
+function pollByMultipollLookup() {
+  const byMultipoll = buildPollByMultipollMap(getCachedAccessiblePolls() ?? []);
+  return (multipollId: string) => byMultipoll.get(multipollId) ?? null;
 }
 
 // Phase 2.2: translate the existing flat pollData object into a
 // CreateMultipollRequest with one sub-poll. Wrapper-level fields
-// (creator_secret, response_deadline, follow_up_to/fork_of, title, voting
-// cutoff, prephase deadlines) live on the multipoll; everything ballot-shaped
-// stays on the sub-poll. follow_up_to/fork_of are POLL ids — the server
-// resolves them to the parent's multipoll_id automatically. Wrapper-level
-// `context` carries today's `details` field; per-sub-poll `context` is
-// unused for 1-sub-poll multipolls and Phase 2.4 will start populating it
-// for disambiguation. Pydantic supplies defaults for omitted fields.
+// (creator_secret, response_deadline, follow_up_to, title, voting cutoff,
+// prephase deadlines) live on the multipoll; everything ballot-shaped stays
+// on the sub-poll. follow_up_to is a POLL id — the server resolves it to the
+// parent's multipoll_id automatically. Wrapper-level `context` carries
+// today's `details` field; per-sub-poll `context` is unused for 1-sub-poll
+// multipolls and Phase 2.4 will start populating it for disambiguation.
+// Pydantic supplies defaults for omitted fields.
 //
 // Phase 2.4: `additionalSubPolls` are prepended to the sub_polls array so
 // staged drafts come first (display order) and the current form's sub-poll
@@ -73,7 +68,6 @@ function pollDataToMultipollRequest(
     prephase_deadline: pollData.suggestion_deadline,
     prephase_deadline_minutes: pollData.suggestion_deadline_minutes,
     follow_up_to: pollData.follow_up_to,
-    fork_of: pollData.fork_of,
     title: pollData.title,
     context: pollData.details,
     sub_polls: [
@@ -173,7 +167,6 @@ export function CreatePollContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const followUpToParam = searchParams.get('followUpTo');
-  const forkOfParam = searchParams.get('fork');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
   const modeParam = searchParams.get('mode');
@@ -182,10 +175,9 @@ export function CreatePollContent() {
   // Restored from URL on mount only — subsequent edits go through CategoryForLine.
   const categoryParam = searchParams.get('category');
 
-  // Track duplicate and fork relationships as part of form state
+  // Track relationship to source poll as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
-  const [forkOf, setForkOf] = useState<string | null>(null);
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
@@ -218,8 +210,6 @@ export function CreatePollContent() {
   const [shouldFocusNewOption, setShouldFocusNewOption] = useState(false);
   const isSubmittingRef = useRef(false);
   const [creatorName, setCreatorName] = useState<string>("");
-  const [originalPollData, setOriginalPollData] = useState<any>(null);
-  const [hasFormChanged, setHasFormChanged] = useState(false);
   const [isAutoTitle, setIsAutoTitle] = useState(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
@@ -551,9 +541,6 @@ export function CreatePollContent() {
       if (voteFromSuggestion) {
         localStorage.removeItem(`vote-from-suggestion-${voteFromSuggestion}`);
       }
-      if (forkOf) {
-        localStorage.removeItem(`fork-data-${forkOf}`);
-      }
       if (duplicateOf) {
         localStorage.removeItem(`duplicate-data-${duplicateOf}`);
       }
@@ -717,7 +704,7 @@ export function CreatePollContent() {
   // "+ Add another section" handler. Validates current sub-poll, pushes it
   // onto stagedSubPolls, and resets per-sub-poll state so the form is ready
   // for the next one. Shared multipoll fields (creator name, deadline,
-  // details, suggestion cutoff, follow_up_to/fork_of) are preserved.
+  // details, suggestion cutoff, follow_up_to) are preserved.
   const handleAddSection = () => {
     const subErr = getSubPollValidationError();
     if (subErr) { setError(subErr); return; }
@@ -780,18 +767,17 @@ export function CreatePollContent() {
 
   // Initialize state from URL params
   useEffect(() => {
-    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, forkOf: forkOfParam, duplicateOf: duplicateOfParam, voteFromSuggestion: voteFromSuggestionParam }, 'CreatePoll');
+    debugLog.logObject('Create poll page loaded with params', { followUpTo: followUpToParam, duplicateOf: duplicateOfParam, voteFromSuggestion: voteFromSuggestionParam }, 'CreatePoll');
     if (followUpToParam) setFollowUpTo(followUpToParam);
-    if (forkOfParam) setForkOf(forkOfParam);
     if (duplicateOfParam) setDuplicateOf(duplicateOfParam);
     if (voteFromSuggestionParam) setVoteFromSuggestion(voteFromSuggestionParam);
-  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
+  }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
   // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
 
-    // Only load form state if this is NOT a follow-up, fork, duplicate, or vote-from-suggestion
+    // Only load form state if this is NOT a follow-up, duplicate, or vote-from-suggestion
     // (these special cases load their own data from URL params)
     // Load saved user name
     const savedName = getUserName();
@@ -803,7 +789,7 @@ export function CreatePollContent() {
       setMinResponses(savedMinResponses);
     }
 
-    if (!followUpToParam && !forkOfParam && !duplicateOfParam && !voteFromSuggestionParam) {
+    if (!followUpToParam && !duplicateOfParam && !voteFromSuggestionParam) {
       const savedFormState = loadFormState();
 
       // Initialize dayTimeWindows with today if no saved form state has them
@@ -816,88 +802,7 @@ export function CreatePollContent() {
         setDayTimeWindows([{ day: todayStr, windows: [] }]);
       }
     }
-  }, [followUpToParam, forkOfParam, duplicateOfParam, voteFromSuggestionParam]);
-
-  // Load fork data if this is a fork
-  useEffect(() => {
-    debugLog.logObject('Fork useEffect running', { forkOfParam, windowExists: typeof window !== 'undefined' }, 'CreatePoll');
-
-    if (forkOfParam && typeof window !== 'undefined') {
-      // Set the fork relationship in state
-      setForkOf(forkOfParam);
-
-      const forkDataKey = `fork-data-${forkOfParam}`;
-      const savedForkData = localStorage.getItem(forkDataKey);
-
-      debugLog.logObject('Fork data lookup', { forkDataKey, found: !!savedForkData, data: savedForkData }, 'CreatePoll');
-
-      if (savedForkData) {
-        try {
-          const forkData = JSON.parse(savedForkData);
-          debugLog.logObject('Parsed fork data', forkData, 'CreatePoll');
-
-          // Store original data for change comparison
-          setOriginalPollData(forkData);
-
-          // Auto-fill form with fork data
-          setTitle(forkData.title || "");
-          if (!forkData.is_auto_title && forkData.title) {
-            setIsAutoTitle(false);
-            loadedTitleRef.current = forkData.title;
-          }
-          setDetails(forkData.details || "");
-          if (forkData.details) setDetailsOpen(true);
-
-          // Set poll type and options based on forked poll
-          if (forkData.poll_type === 'ranked_choice' && forkData.options) {
-            setPollType('poll');
-            setOptions(forkData.options);
-          } else if (forkData.poll_type === 'ranked_choice') {
-            // ranked_choice without options (e.g. suggestion phase poll)
-            setPollType('poll');
-            setOptions(['']);
-          } else if (forkData.poll_type === 'time') {
-            setPollType('time');
-            setOptions(['']);
-            if (forkData.min_availability_percent != null) setMinimumParticipation(forkData.min_availability_percent);
-          } else {
-            // yes_no poll
-            setPollType('poll');
-            setOptions(['']);
-          }
-
-          if (forkData.response_deadline) {
-            // Parse the deadline and set appropriate form values
-            const deadline = new Date(forkData.response_deadline);
-            const now = new Date();
-            const diffMs = deadline.getTime() - now.getTime();
-
-            if (diffMs > 0) {
-              const diffMinutes = Math.round(diffMs / (1000 * 60));
-              if (diffMinutes <= 10) setDeadlineOption("10min");
-              else if (diffMinutes <= 60) setDeadlineOption("1hr");
-              else if (diffMinutes <= 240) setDeadlineOption("4hr");
-              else if (diffMinutes <= 1440) setDeadlineOption("1day");
-              else setDeadlineOption("custom");
-            }
-          }
-          if (forkData.creator_name) {
-            setCreatorName(forkData.creator_name);
-          }
-          if (forkData.category) {
-            setCategory(forkData.category);
-          }
-          if (forkData.options_metadata) {
-            setOptionsMetadata(forkData.options_metadata);
-          }
-          if (forkData.min_responses != null) setMinResponses(forkData.min_responses);
-          if (forkData.show_preliminary_results != null) setShowPreliminaryResults(forkData.show_preliminary_results);
-        } catch (error) {
-          console.error('Error loading fork data:', error);
-        }
-      }
-    }
-  }, [forkOfParam]);
+  }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
   // Load duplicate data if this is a duplicate (for follow-up polls)
   useEffect(() => {
@@ -1036,20 +941,7 @@ export function CreatePollContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, forkOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
-
-  // Track form changes for fork validation
-  useEffect(() => {
-    if (originalPollData && forkOf) {
-      const hasChanged =
-        title !== originalPollData.title ||
-        JSON.stringify(options) !== JSON.stringify(originalPollData.options || []) ||
-        creatorName !== (originalPollData.creator_name || "") ||
-        category !== (originalPollData.category || 'custom');
-
-      setHasFormChanged(hasChanged);
-    }
-  }, [title, pollType, options, creatorName, originalPollData, forkOf]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedSubPolls]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -1257,11 +1149,6 @@ export function CreatePollContent() {
         pollData.follow_up_to = duplicateOf;
       }
 
-      // Add fork reference if this is a fork
-      if (forkOf) {
-        pollData.fork_of = forkOf;
-      }
-
       // Add category for ranked_choice polls
       if (dbPollType === 'ranked_choice' && category !== 'custom') {
         pollData.category = category;
@@ -1330,7 +1217,7 @@ export function CreatePollContent() {
           const existing = await apiFindDuplicatePoll(title, followUpTo);
           if (existing) {
             const shortId = existing.short_id || existing.id;
-            pollBackTarget.set(shortId, findThreadRootRouteId(existing, pollChainLookup()));
+            pollBackTarget.set(shortId, findThreadRootRouteId(existing, pollByMultipollLookup()));
             router.replace(`/p/${shortId}`);
             return;
           }
@@ -1399,7 +1286,7 @@ export function CreatePollContent() {
       // polls.follow_up_to set.
       const redirectId =
         createdMultipoll.short_id ?? createdPoll.short_id ?? createdPoll.id;
-      pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollChainLookup()));
+      pollBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollByMultipollLookup()));
       router.replace(`/p/${redirectId}`);
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1465,7 +1352,7 @@ export function CreatePollContent() {
   );
 
   const validationError = getValidationError();
-  const submitDisabled = isLoading || isSubmitted || !!validationError || (!!forkOf && !hasFormChanged);
+  const submitDisabled = isLoading || isSubmitted || !!validationError;
 
   return (
     <div className="poll-content">

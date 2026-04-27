@@ -18,7 +18,7 @@ import {
   getCachedPollById,
   getCachedPollByShortId,
 } from "@/lib/pollCache";
-import { findThreadRootRouteId } from "@/lib/threadUtils";
+import { findThreadRootRouteId, buildPollByMultipollMap } from "@/lib/threadUtils";
 import { isUuidLike } from "@/lib/pollId";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
@@ -45,12 +45,10 @@ function PollContent() {
     const poll = cachedMultipoll?.sub_polls[0]
       ?? byEither(getCachedPollById, getCachedPollByShortId);
     if (!poll) return null;
-    const accessible = getCachedAccessiblePolls();
-    const byId = new Map<string, Poll>();
-    accessible?.forEach((p) => byId.set(p.id, p));
-    byId.set(poll.id, poll);
-    const lookup = (id: string) => byId.get(id) ?? getCachedPollById(id) ?? null;
-    const rootRouteId = findThreadRootRouteId(poll, lookup);
+    // Prepend the current poll so it wins for its multipoll_id even if a
+    // stale entry sits in the accessible-polls cache.
+    const byMultipoll = buildPollByMultipollMap([poll, ...(getCachedAccessiblePolls() ?? [])]);
+    const rootRouteId = findThreadRootRouteId(poll, (mid) => byMultipoll.get(mid) ?? null);
     return { poll, rootRouteId };
   })();
 
@@ -94,15 +92,12 @@ function PollContent() {
           return;
         }
         addAccessiblePollId(poll.id);
-        // Run discovery + fetch the accessible polls so ancestor polls are available
-        // for the follow_up_to walk.
+        // Run discovery + fetch the accessible polls so ancestor polls are
+        // available for the multipoll-level follow_up walk.
         try { await discoverRelatedPolls(); } catch {}
         const accessible = (await getAccessiblePolls()) ?? [];
-        const byId = new Map<string, Poll>();
-        accessible.forEach((p) => byId.set(p.id, p));
-        byId.set(poll.id, poll);
-        const lookup = (id: string) => byId.get(id) ?? getCachedPollById(id) ?? null;
-        const rootRouteId = findThreadRootRouteId(poll, lookup);
+        const byMultipoll = buildPollByMultipollMap([poll, ...accessible]);
+        const rootRouteId = findThreadRootRouteId(poll, (mid) => byMultipoll.get(mid) ?? null);
         if (!cancelled) setResolved({ poll, rootRouteId });
       } catch {
         if (!cancelled) setError(true);

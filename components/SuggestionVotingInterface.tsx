@@ -10,7 +10,6 @@ import OptionLabel from "@/components/OptionLabel";
 import VoterList from "@/components/VoterList";
 
 const hasSuggestions = (v: ApiVote) => !!(v.suggestions && v.suggestions.length > 0);
-import ForkHeader from "@/components/ForkHeader";
 
 interface SuggestionVotingInterfaceProps {
   poll: any;
@@ -360,12 +359,6 @@ export default function SuggestionVotingInterface({
           </button>
         </>
       )}
-
-      {/* Show fork header after submit button.
-           (Follow-up-to info now lives in the long-press modal.) */}
-      <div className="mt-4">
-        {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-      </div>
     </>
   );
 }

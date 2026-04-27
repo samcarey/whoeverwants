@@ -77,7 +77,7 @@ export function cleanupOldPolls(): void {
   }
 }
 
-// Build a snapshot of poll fields used for fork/duplicate/follow-up forms.
+// Build a snapshot of poll fields used for duplicate/follow-up forms.
 // Centralized here to avoid drift when fields are added or renamed.
 export function buildPollSnapshot(poll: Poll) {
   return {
