@@ -524,12 +524,12 @@ function TemplateInner({ children }: AppTemplateProps) {
       {/* Floating "+" FAB — home page only. Navigates to /thread/new/ where
            the user picks a What/When/Where bubble for what they want to create.
            Rendered via portal outside the scaling container so it positions
-           against the viewport. `view-transition-name: floating-plus` keeps it
-           fixed (no slide) across home <-> thread navigation — see globals.css. */}
+           against the viewport. Slides with the rest of the page in view
+           transitions (no shared transition name with the thread bubble bar). */}
       {isMounted && pathname === '/' && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/thread/new', 'forward')}
-          className="fixed z-50 floating-plus-button w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
+          className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
@@ -550,11 +550,11 @@ function TemplateInner({ children }: AppTemplateProps) {
              - When  → ?mode=time
              - Where → ?category=restaurant (most common "where" type)
            Auto-sets followUpTo when the page exposes data-thread-latest-poll-id.
-           `view-transition-name: floating-plus` on the wrapper keeps the bar
-           pinned across home <-> thread navigation — see globals.css. */}
+           The bar is part of the root snapshot during view transitions so it
+           slides in/out with the page. */}
       {isMounted && isThreadLikePage && createPortal(
         <div
-          className="fixed z-50 floating-plus-button left-1/2 -translate-x-1/2 flex items-center gap-3"
+          className="fixed z-50 left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
