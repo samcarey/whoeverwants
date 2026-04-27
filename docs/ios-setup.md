@@ -171,7 +171,7 @@ bash scripts/ios/logs.sh --failed-only 12345678
 - `capacitor.config.ts` — Capacitor config; `server.url` from `CAP_SERVER_URL` or prod default.
 - `.github/workflows/ios-build.yml` — CI workflow (self-hosted Mac mini runner).
 - `scripts/ios/ExportOptions.plist` — `.ipa` export settings (app-store-connect, automatic signing).
-- `scripts/ios/build.sh` — dispatch + poll CI.
+- `scripts/ios/build.sh` — dispatch + question CI.
 - `scripts/ios/logs.sh` — fetch CI logs (full run or `--failed-only`).
 - `scripts/ios/mac-bootstrap.sh` — one-time Mac mini setup.
 - `ios/` — generated Xcode project (committed by CI on first run).

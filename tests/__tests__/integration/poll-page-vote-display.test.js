@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Test the actual vote display logic from SubPollBallot
-describe('SubPollBallot Vote Display Logic', () => {
+// Test the actual vote display logic from QuestionBallot
+describe('QuestionBallot Vote Display Logic', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -12,15 +12,15 @@ describe('SubPollBallot Vote Display Logic', () => {
 
   describe('Vote Data Processing', () => {
     it('should process vote data correctly when fetched from database', () => {
-      // This simulates the exact logic in SubPollBallot.tsx
-      const poll = { 
-        id: 'test-poll',
-        poll_type: 'yes_no'
+      // This simulates the exact logic in QuestionBallot.tsx
+      const question = { 
+        id: 'test-question',
+        question_type: 'yes_no'
       }
       
       // Simulate what's returned from database
       const voteDataFromDB = {
-        poll_id: 'test-poll',
+        question_id: 'test-question',
         vote_type: 'yes_no',
         yes_no_choice: 'yes'
       }
@@ -29,7 +29,7 @@ describe('SubPollBallot Vote Display Logic', () => {
       let yesNoChoice = null
       
       // The bug might be here - checking the wrong field?
-      if (poll.poll_type === 'yes_no' && voteDataFromDB.yes_no_choice) {
+      if (question.question_type === 'yes_no' && voteDataFromDB.yes_no_choice) {
         yesNoChoice = voteDataFromDB.yes_no_choice
       }
       
@@ -44,7 +44,7 @@ describe('SubPollBallot Vote Display Logic', () => {
       const supabaseResponse = {
         data: {
           vote_data: {
-            poll_id: 'test-poll',
+            question_id: 'test-question',
             vote_type: 'yes_no', 
             yes_no_choice: 'yes'
           }
@@ -103,27 +103,27 @@ describe('SubPollBallot Vote Display Logic', () => {
   
   describe('localStorage and State Sync', () => {
     it('should not use stale localStorage data when fetching from database', () => {
-      const pollId = 'test-poll'
+      const questionId = 'test-question'
       
       // Step 1: User votes YES, stored in localStorage (old behavior)
       const oldVoteData = { yesNoChoice: 'yes' }
-      localStorage.setItem('pollVotes', JSON.stringify({ [pollId]: oldVoteData }))
+      localStorage.setItem('questionVotes', JSON.stringify({ [questionId]: oldVoteData }))
       
       // Step 2: Vote ID is stored
       const voteId = 'vote-123'
-      localStorage.setItem('pollVoteIds', JSON.stringify({ [pollId]: voteId }))
+      localStorage.setItem('questionVoteIds', JSON.stringify({ [questionId]: voteId }))
       
       // Step 3: Component should fetch from database, not use localStorage
-      // The new behavior should ignore pollVotes and only use pollVoteIds
+      // The new behavior should ignore questionVotes and only use questionVoteIds
       
-      const pollVotes = JSON.parse(localStorage.getItem('pollVotes') || '{}')
-      const pollVoteIds = JSON.parse(localStorage.getItem('pollVoteIds') || '{}')
+      const questionVotes = JSON.parse(localStorage.getItem('questionVotes') || '{}')
+      const questionVoteIds = JSON.parse(localStorage.getItem('questionVoteIds') || '{}')
       
       // Should use vote ID to fetch from database, not local vote data
-      expect(pollVoteIds[pollId]).toBe(voteId)
+      expect(questionVoteIds[questionId]).toBe(voteId)
       
       // In the new implementation, we should NOT be using this:
-      console.log('Old localStorage vote data (should not be used):', pollVotes[pollId])
+      console.log('Old localStorage vote data (should not be used):', questionVotes[questionId])
     })
   })
 })

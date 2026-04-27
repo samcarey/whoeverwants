@@ -1,67 +1,67 @@
 "use client";
 
-import type { Multipoll, Poll } from "@/lib/types";
+import type { Poll, Question } from "@/lib/types";
 import {
-  apiGetMultipollById,
-  apiGetMultipollByShortId,
   apiGetPollById,
+  apiGetPollByShortId,
+  apiGetQuestionById,
   ApiError,
 } from "@/lib/api";
-import { addAccessiblePollId } from "@/lib/browserPollAccess";
-import { discoverRelatedPolls } from "@/lib/pollDiscovery";
-import { getAccessibleMultipolls } from "@/lib/simplePollQueries";
+import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
+import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
+import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import {
-  getCachedAccessibleMultipolls,
-  getCachedMultipollById,
-  getCachedMultipollByShortId,
+  getCachedAccessiblePolls,
   getCachedPollById,
-} from "@/lib/pollCache";
-import { findThreadRootRouteId, buildMultipollMap } from "@/lib/threadUtils";
-import { isUuidLike } from "@/lib/pollId";
+  getCachedPollByShortId,
+  getCachedQuestionById,
+} from "@/lib/questionCache";
+import { findThreadRootRouteId, buildPollMap } from "@/lib/threadUtils";
+import { isUuidLike } from "@/lib/questionId";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useParams } from "next/navigation";
 import { ThreadContent } from "@/app/thread/[threadId]/page";
 
-function PollContent() {
+function QuestionContent() {
   const router = useRouter();
   const params = useParams();
 
   // Resolve synchronously from cache when possible so the thread view renders on first paint.
-  // Phase 5b: short_id lives on the multipoll wrapper; the URL `/p/<id>/` may
-  // point at a multipoll short_id, multipoll uuid, or sub-poll uuid. Cache
+  // Phase 5b: short_id lives on the poll wrapper; the URL `/p/<id>/` may
+  // point at a poll short_id, poll uuid, or question uuid. Cache
   // lookup tries each in turn.
   const resolvedInitial = (() => {
     if (typeof window === "undefined") return null;
     const raw = params.shortId as string;
     if (!raw) return null;
-    let multipoll: Multipoll | null = null;
     let poll: Poll | null = null;
+    let question: Question | null = null;
     if (isUuidLike(raw)) {
-      multipoll = getCachedMultipollById(raw);
-      if (multipoll) {
-        poll = multipoll.sub_polls[0] ?? null;
+      poll = getCachedPollById(raw);
+      if (poll) {
+        question = poll.questions[0] ?? null;
       } else {
-        const cachedPoll = getCachedPollById(raw);
-        if (cachedPoll) {
-          poll = cachedPoll;
-          if (cachedPoll.multipoll_id) {
-            multipoll = getCachedMultipollById(cachedPoll.multipoll_id);
+        const cachedQuestion = getCachedQuestionById(raw);
+        if (cachedQuestion) {
+          question = cachedQuestion;
+          if (cachedQuestion.poll_id) {
+            poll = getCachedPollById(cachedQuestion.poll_id);
           }
         }
       }
     } else {
-      multipoll = getCachedMultipollByShortId(raw);
-      if (multipoll) poll = multipoll.sub_polls[0] ?? null;
+      poll = getCachedPollByShortId(raw);
+      if (poll) question = poll.questions[0] ?? null;
     }
-    if (!poll || !multipoll) return null;
-    // Prepend the current multipoll so it wins over any stale entry.
-    const byMultipoll = buildMultipollMap([multipoll, ...(getCachedAccessibleMultipolls() ?? [])]);
-    const rootRouteId = findThreadRootRouteId(multipoll, (mid) => byMultipoll.get(mid) ?? null);
-    return { poll, rootRouteId };
+    if (!question || !poll) return null;
+    // Prepend the current poll so it wins over any stale entry.
+    const byPoll = buildPollMap([poll, ...(getCachedAccessiblePolls() ?? [])]);
+    const rootRouteId = findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+    return { question, rootRouteId };
   })();
 
-  const [resolved, setResolved] = useState<{ poll: Poll; rootRouteId: string } | null>(resolvedInitial);
+  const [resolved, setResolved] = useState<{ question: Question; rootRouteId: string } | null>(resolvedInitial);
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -73,7 +73,7 @@ function PollContent() {
 
     // If we already resolved synchronously, just register access and skip the fetch.
     if (resolvedInitial) {
-      addAccessiblePollId(resolvedInitial.poll.id);
+      addAccessibleQuestionId(resolvedInitial.question.id);
       return;
     }
 
@@ -81,35 +81,35 @@ function PollContent() {
     (async () => {
       try {
         const isUuid = isUuidLike(shortId);
-        // Phase 5b: try the multipoll endpoint first. A 404 means the URL is
-        // a sub-poll uuid (the per-poll endpoint resolves it, and we then
-        // fetch the parent multipoll to find the root).
-        let multipoll: Multipoll | null = await (isUuid
-          ? apiGetMultipollById(shortId)
-          : apiGetMultipollByShortId(shortId)
+        // Phase 5b: try the poll endpoint first. A 404 means the URL is
+        // a question uuid (the per-question endpoint resolves it, and we then
+        // fetch the parent poll to find the root).
+        let poll: Poll | null = await (isUuid
+          ? apiGetPollById(shortId)
+          : apiGetPollByShortId(shortId)
         ).catch((err: unknown) => {
           if (err instanceof ApiError && err.status === 404) return null;
           throw err;
         });
-        let poll: Poll | null = multipoll?.sub_polls[0] ?? null;
-        if (!multipoll && isUuid) {
-          poll = await apiGetPollById(shortId).catch(() => null);
-          if (poll?.multipoll_id) {
-            multipoll = await apiGetMultipollById(poll.multipoll_id).catch(() => null);
+        let question: Question | null = poll?.questions[0] ?? null;
+        if (!poll && isUuid) {
+          question = await apiGetQuestionById(shortId).catch(() => null);
+          if (question?.poll_id) {
+            poll = await apiGetPollById(question.poll_id).catch(() => null);
           }
         }
-        if (!poll || !multipoll) {
+        if (!question || !poll) {
           if (!cancelled) setError(true);
           return;
         }
-        addAccessiblePollId(poll.id);
-        // Run discovery + fetch accessible multipolls so ancestor wrappers
+        addAccessibleQuestionId(question.id);
+        // Run discovery + fetch accessible polls so ancestor wrappers
         // are available for the chain walk.
-        try { await discoverRelatedPolls(); } catch {}
-        const accessible = (await getAccessibleMultipolls()) ?? [];
-        const byMultipoll = buildMultipollMap([multipoll, ...accessible]);
-        const rootRouteId = findThreadRootRouteId(multipoll, (mid) => byMultipoll.get(mid) ?? null);
-        if (!cancelled) setResolved({ poll, rootRouteId });
+        try { await discoverRelatedQuestions(); } catch {}
+        const accessible = (await getAccessiblePolls()) ?? [];
+        const byPoll = buildPollMap([poll, ...accessible]);
+        const rootRouteId = findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
+        if (!cancelled) setResolved({ question, rootRouteId });
       } catch {
         if (!cancelled) setError(true);
       }
@@ -142,7 +142,7 @@ function PollContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          <p className="text-gray-600 dark:text-gray-400">Loading poll...</p>
+          <p className="text-gray-600 dark:text-gray-400">Loading question...</p>
         </div>
       </div>
     );
@@ -151,12 +151,12 @@ function PollContent() {
   return (
     <ThreadContent
       threadId={resolved.rootRouteId}
-      initialExpandedPollId={resolved.poll.id}
+      initialExpandedQuestionId={resolved.question.id}
     />
   );
 }
 
-export default function PollPage() {
+export default function QuestionPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center">
@@ -169,11 +169,11 @@ export default function PollPage() {
               <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
             </div>
           </div>
-          <p className="text-gray-600 dark:text-gray-400 mt-4">Loading poll...</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-4">Loading question...</p>
         </div>
       </div>
     }>
-      <PollContent />
+      <QuestionContent />
     </Suspense>
   );
 }

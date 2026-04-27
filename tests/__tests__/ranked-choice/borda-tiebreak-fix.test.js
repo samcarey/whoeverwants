@@ -1,5 +1,5 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll } from '../../helpers/poll-builder.js'
+import { createQuestion } from '../../helpers/question-builder.js'
 import { isApiAvailable } from '../../helpers/database.js'
 
 let apiUp = false
@@ -11,7 +11,7 @@ beforeAll(async () => {
 describe('Borda Count Tie-Breaking Fix', () => {
   it('should eliminate A (lowest Borda) when A and C have same votes but B has higher Borda score', async ({ skip }) => {
     if (!apiUp) skip()
-    await createPoll(['A', 'B', 'C'])
+    await createQuestion(['A', 'B', 'C'])
       .withVotes([
         ['A', 'B', 'C'],
         ['C', 'B', 'A'],
@@ -37,7 +37,7 @@ describe('Borda Count Tie-Breaking Fix', () => {
 
   it('should handle multiple candidates tied for lowest Borda score', async ({ skip }) => {
     if (!apiUp) skip()
-    await createPoll(['A', 'B', 'C', 'D'])
+    await createQuestion(['A', 'B', 'C', 'D'])
       .withVotes([
         ['A', 'B', 'C', 'D'],
         ['D', 'C', 'B', 'A'],
@@ -71,7 +71,7 @@ describe('Borda Count Tie-Breaking Fix', () => {
 
   it('should only consider lowest Borda score candidates for alphabetical elimination', async ({ skip }) => {
     if (!apiUp) skip()
-    await createPoll(['A', 'B', 'C', 'D'])
+    await createQuestion(['A', 'B', 'C', 'D'])
       .withVotes([
         ['A', 'B', 'D', 'C'],
         ['B', 'A', 'D', 'C'],

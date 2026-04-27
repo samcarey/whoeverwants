@@ -1,7 +1,7 @@
-import { Poll, PollResults } from "@/lib/types";
+import { Question, QuestionResults } from "@/lib/types";
 import { getBuiltInType } from "@/components/TypeFieldInput";
 
-export const POLL_TYPE_SYMBOLS: Record<string, string> = {
+export const QUESTION_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '👍',
   ranked_choice: '🗳️',
   time: '📅',
@@ -9,21 +9,21 @@ export const POLL_TYPE_SYMBOLS: Record<string, string> = {
 
 const CLOSED_YES_NO_SYMBOL = '🏆';
 
-export function getPollSymbol(pollType: string, isClosed: boolean): string {
-  if (pollType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
-  return POLL_TYPE_SYMBOLS[pollType] || '☰';
+export function getQuestionSymbol(questionType: string, isClosed: boolean): string {
+  if (questionType === 'yes_no' && isClosed) return CLOSED_YES_NO_SYMBOL;
+  return QUESTION_TYPE_SYMBOLS[questionType] || '☰';
 }
 
 /** Phase 5b: takes `isClosed` as a separate arg since `is_closed` is a
- *  wrapper-level field. Callers source it from the parent multipoll. */
-export function getCategoryIcon(poll: Poll, isClosed: boolean = false): string {
-  const category = poll.category;
+ *  wrapper-level field. Callers source it from the parent poll. */
+export function getCategoryIcon(question: Question, isClosed: boolean = false): string {
+  const category = question.category;
   if (category && category !== 'custom') {
     const builtIn = getBuiltInType(category);
     if (builtIn?.icon) return builtIn.icon;
   }
-  // Custom or no category — use poll type symbol
-  return getPollSymbol(poll.poll_type, isClosed);
+  // Custom or no category — use question type symbol
+  return getQuestionSymbol(question.question_type, isClosed);
 }
 
 export function relativeTime(dateStr: string): string {
@@ -64,22 +64,22 @@ export function compactDurationSince(dateStr: string): string {
 }
 
 /** Phase 5b: takes the wrapper's `prephase_deadline` (legacy
- *  `suggestion_deadline`) as a separate arg — it lives on the multipoll, not
- *  the poll. Sub-poll-local `suggestion_deadline_minutes` (the duration
+ *  `suggestion_deadline`) as a separate arg — it lives on the poll, not
+ *  the question. Sub-question-local `suggestion_deadline_minutes` (the duration
  *  setting) still drives the "deferred timer not yet started" branch. */
 export function isInSuggestionPhase(
-  poll: Poll,
+  question: Question,
   suggestionDeadline?: string | null,
 ): boolean {
-  if (poll.poll_type !== 'ranked_choice') return false;
+  if (question.question_type !== 'ranked_choice') return false;
   if (suggestionDeadline && new Date(suggestionDeadline) > new Date()) return true;
-  if (!suggestionDeadline && poll.suggestion_deadline_minutes) return true;
+  if (!suggestionDeadline && question.suggestion_deadline_minutes) return true;
   return false;
 }
 
-export function isInTimeAvailabilityPhase(poll: Poll): boolean {
-  if (poll.poll_type !== 'time') return false;
-  return !poll.options || poll.options.length === 0;
+export function isInTimeAvailabilityPhase(question: Question): boolean {
+  if (question.question_type !== 'time') return false;
+  return !question.options || question.options.length === 0;
 }
 
 export interface ResultBadge {
@@ -95,13 +95,13 @@ export const BADGE_COLORS = {
   gray: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
 };
 
-/** Simplified result badge — no user-specific logic, just poll + results. */
-export function getResultBadge(poll: Poll): ResultBadge {
-  const results = poll.results;
+/** Simplified result badge — no user-specific logic, just question + results. */
+export function getResultBadge(question: Question): ResultBadge {
+  const results = question.results;
   if (!results) return { text: 'No results', emoji: '🔇', color: 'gray' };
   if (results.total_votes === 0) return { text: 'No voters', emoji: '🦗', color: 'gray' };
 
-  switch (poll.poll_type) {
+  switch (question.question_type) {
     case 'yes_no': {
       if (results.winner === 'yes') return { text: 'Yes', emoji: '👑', color: 'green' };
       if (results.winner === 'no') return { text: 'No', emoji: '👑', color: 'red' };

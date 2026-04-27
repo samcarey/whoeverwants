@@ -49,7 +49,7 @@ export function formatCreationTimestamp(iso: string): string {
   return `@ ${t} ${d}`;
 }
 
-/** Compact date-time for poll close/expire messages — e.g. "4/18/26, 12:30 AM". */
+/** Compact date-time for question close/expire messages — e.g. "4/18/26, 12:30 AM". */
 export function formatShortDateTime(date: Date): string {
   return date.toLocaleString("en-US", {
     month: "numeric",

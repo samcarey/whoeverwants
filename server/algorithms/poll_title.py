@@ -1,4 +1,4 @@
-"""Auto-title generator for multipolls. See docs/multipoll-phasing.md."""
+"""Auto-title generator for polls. See docs/poll-phasing.md."""
 
 from __future__ import annotations
 
@@ -35,31 +35,31 @@ def _join_categories(labels: list[str]) -> str:
     return ", ".join(labels[:-1]) + f", and {labels[-1]}"
 
 
-def _single_subpoll_default_title(category: str) -> str:
-    # Mirrors generateTitle() in app/create-poll/page.tsx for 1-sub-poll cases.
+def _single_question_default_title(category: str) -> str:
+    # Mirrors generateTitle() in app/create-question/page.tsx for 1-question cases.
     key = (category or "").strip().lower()
     if key in ("yes_no", "yes/no"):
         return "Yes/No?"
     if key == "time":
         return "Time?"
     label = _label_for(category)
-    return f"{label}?" if label else "Poll?"
+    return f"{label}?" if label else "Question?"
 
 
-def generate_multipoll_title(
-    sub_poll_categories: list[str],
-    multipoll_context: str | None,
+def generate_poll_title(
+    question_categories: list[str],
+    poll_context: str | None,
 ) -> str:
-    context = (multipoll_context or "").strip() or None
-    cats = [c for c in (sub_poll_categories or []) if c and c.strip()]
+    context = (poll_context or "").strip() or None
+    cats = [c for c in (question_categories or []) if c and c.strip()]
 
     if not cats:
-        return context or "Poll?"
+        return context or "Question?"
 
     if len(cats) == 1:
         if context:
             return f"{_label_for(cats[0])} for {context}"
-        return _single_subpoll_default_title(cats[0])
+        return _single_question_default_title(cats[0])
 
     joined = _join_categories([_label_for(c) for c in cats])
     if context:

@@ -2,29 +2,29 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Multipoll } from "@/lib/types";
+import { Poll } from "@/lib/types";
 import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
-import { relativeTime } from "@/lib/pollListUtils";
-import { loadVotedPolls } from "@/lib/votedPollsStorage";
+import { relativeTime } from "@/lib/questionListUtils";
+import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import ClientOnly from "@/components/ClientOnly";
 import RespondentCircles from "@/components/RespondentCircles";
 import SimpleCountdown from "@/components/SimpleCountdown";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
-import { apiGetVotes, apiGetPollResults } from "@/lib/api";
+import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
 
 interface ThreadListProps {
-  // Phase 5b: the home page passes the multipolls (wrapper-level units)
-  // returned by getAccessibleMultipolls(). buildThreads walks
-  // multipoll.follow_up_to to chain wrappers into threads.
-  multipolls: Multipoll[];
+  // Phase 5b: the home page passes the polls (wrapper-level units)
+  // returned by getAccessiblePolls(). buildThreads walks
+  // poll.follow_up_to to chain wrappers into threads.
+  polls: Poll[];
 }
 
-export default function ThreadList({ multipolls }: ThreadListProps) {
+export default function ThreadList({ polls }: ThreadListProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
-  const [votedPollIds, setVotedPollIds] = useState<Set<string>>(new Set());
-  const [abstainedPollIds, setAbstainedPollIds] = useState<Set<string>>(new Set());
+  const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(new Set());
+  const [abstainedQuestionIds, setAbstainedQuestionIds] = useState<Set<string>>(new Set());
   const [pressedThreadId, setPressedThreadId] = useState<string | null>(null);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
@@ -32,14 +32,14 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
   // Load voted/abstained from localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const { votedPollIds: voted, abstainedPollIds: abstained } = loadVotedPolls();
-    setVotedPollIds(voted);
-    setAbstainedPollIds(abstained);
+    const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+    setVotedQuestionIds(voted);
+    setAbstainedQuestionIds(abstained);
   }, []);
 
   const threads = useMemo(() => {
-    return buildThreads(multipolls, votedPollIds, abstainedPollIds);
-  }, [multipolls, votedPollIds, abstainedPollIds]);
+    return buildThreads(polls, votedQuestionIds, abstainedQuestionIds);
+  }, [polls, votedQuestionIds, abstainedQuestionIds]);
 
   // Prefetch thread page routes for all visible threads on mount
   useEffect(() => {
@@ -48,11 +48,11 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
     prefetchBatch(hrefs, { priority: "low" });
   }, [threads, prefetchBatch]);
 
-  // Warm per-poll votes + results for visible threads so the destination
+  // Warm per-question votes + results for visible threads so the destination
   // renders from cache on first paint. apiGetVotes is coalesced; re-calls are cheap.
   const warmedThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByRootId = useMemo(
-    () => new Map(threads.map((t) => [t.rootPollId, t])),
+    () => new Map(threads.map((t) => [t.rootQuestionId, t])),
     [threads],
   );
   useEffect(() => {
@@ -63,14 +63,14 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
-        const rootPollId = entry.target.getAttribute('data-thread-root-id');
-        if (!rootPollId || warmedThreadIdsRef.current.has(rootPollId)) continue;
-        warmedThreadIdsRef.current.add(rootPollId);
-        const thread = threadsByRootId.get(rootPollId);
+        const rootQuestionId = entry.target.getAttribute('data-thread-root-id');
+        if (!rootQuestionId || warmedThreadIdsRef.current.has(rootQuestionId)) continue;
+        warmedThreadIdsRef.current.add(rootQuestionId);
+        const thread = threadsByRootId.get(rootQuestionId);
         if (!thread) continue;
-        for (const poll of thread.polls) {
-          void apiGetVotes(poll.id).catch(() => null);
-          if (!poll.results) void apiGetPollResults(poll.id).catch(() => null);
+        for (const question of thread.questions) {
+          void apiGetVotes(question.id).catch(() => null);
+          if (!question.results) void apiGetQuestionResults(question.id).catch(() => null);
         }
         observer.unobserve(entry.target);
       }
@@ -87,7 +87,7 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
     <div>
       {threads.map((thread, index) => {
         const routeId = getThreadRouteId(thread);
-        const latestPoll = thread.latestPoll;
+        const latestQuestion = thread.latestQuestion;
         const hasUnvoted = thread.unvotedCount > 0;
 
         const goToThread = () => {
@@ -96,7 +96,7 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
 
         const handleTouchStart = (e: React.TouchEvent) => {
           isScrolling.current = false;
-          setPressedThreadId(thread.rootPollId);
+          setPressedThreadId(thread.rootQuestionId);
           touchStartPos.current = {
             x: e.touches[0].clientX,
             y: e.touches[0].clientY,
@@ -126,8 +126,8 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
 
         return (
           <div
-            key={thread.rootPollId}
-            data-thread-root-id={thread.rootPollId}
+            key={thread.rootQuestionId}
+            data-thread-root-id={thread.rootQuestionId}
             className={`border-b ${index === 0 ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}
           >
             <div
@@ -135,7 +135,7 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
               onTouchMove={handleTouchMove}
-              className={`flex gap-3 pl-2 pr-3 py-3 ${pressedThreadId === thread.rootPollId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
+              className={`flex gap-3 pl-2 pr-3 py-3 ${pressedThreadId === thread.rootQuestionId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
             >
               {/* Respondent circles */}
               <RespondentCircles
@@ -159,9 +159,9 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
                   </div>
                 </div>
 
-                {/* Row 2: Latest poll title (preview) */}
+                {/* Row 2: Latest question title (preview) */}
                 <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
-                  {latestPoll.title}
+                  {latestQuestion.title}
                 </p>
 
                 {/* Row 3: Metadata row */}
@@ -169,8 +169,8 @@ export default function ThreadList({ multipolls }: ThreadListProps) {
                   <div className="text-xs text-gray-400 dark:text-gray-500">
                     <ClientOnly fallback={null}>
                       <>
-                        {thread.polls.length > 1 && <>{thread.polls.length} polls &middot; </>}
-                        {relativeTime(latestPoll.created_at)}
+                        {thread.questions.length > 1 && <>{thread.questions.length} questions &middot; </>}
+                        {relativeTime(latestQuestion.created_at)}
                       </>
                     </ClientOnly>
                   </div>

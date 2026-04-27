@@ -1,5 +1,5 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll } from '../../helpers/poll-builder.js'
+import { createQuestion } from '../../helpers/question-builder.js'
 import { isApiAvailable } from '../../helpers/database.js'
 
 let apiUp = false
@@ -12,7 +12,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
   describe('Borda Count vs Old Batch Elimination', () => {
     it('uses Borda count to eliminate single candidate instead of all tied candidates', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C'],
           ['B', 'A', 'C'],
@@ -35,7 +35,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
 
     it('eliminates candidate with lowest Borda score from tied group', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'C', 'D', 'B'],
           ['B', 'C', 'A', 'D'],
@@ -68,7 +68,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
 
     it('handles perfect Borda score ties with alphabetical elimination', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B'])
+      await createQuestion(['A', 'B'])
         .withVotes([
           ['A', 'B'],
           ['B', 'A']
@@ -90,7 +90,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
   describe('Complex Multi-Round Borda Scenarios', () => {
     it('applies Borda count in each round separately', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D', 'E'])
+      await createQuestion(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
           ['A', 'B', 'C', 'D', 'E'],
           ['A', 'C', 'B', 'D', 'E'],
@@ -124,7 +124,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
 
     it('continues eliminating until clear winner emerges', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'C', 'D', 'B'],
           ['B', 'D', 'A', 'C'],
@@ -159,7 +159,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
   describe('Zero Vote Candidate Scenarios', () => {
     it('uses Borda count even among zero-vote candidates', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B', 'C', 'D'],
           ['A', 'C', 'D', 'B']
@@ -178,7 +178,7 @@ describe('Borda Count Tie Breaking - Updated for New Algorithm', () => {
 
     it('eliminates zero-vote candidate with lowest Borda score', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B', 'C', 'D'],
           ['B', 'C', 'A', 'D'],

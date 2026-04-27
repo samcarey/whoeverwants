@@ -3,14 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import ModalPortal from "@/components/ModalPortal";
-import { apiCreateMultipoll } from "@/lib/api";
-import { generateCreatorSecret, recordPollCreation } from "@/lib/browserPollAccess";
+import { apiCreatePoll } from "@/lib/api";
+import { generateCreatorSecret, recordQuestionCreation } from "@/lib/browserQuestionAccess";
 import { getUserName } from "@/lib/userProfile";
 
 interface VoteOnItModalProps {
   isOpen: boolean;
-  pollId: string;
-  pollTitle: string;
+  questionId: string;
+  questionTitle: string;
   suggestions: string[];
   onClose: () => void;
 }
@@ -25,7 +25,7 @@ const DEADLINE_OPTIONS = [
   { value: "4hr", label: "4 hours", minutes: 240 },
 ];
 
-export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, onClose }: VoteOnItModalProps) {
+export default function VoteOnItModal({ isOpen, questionId, questionTitle, suggestions, onClose }: VoteOnItModalProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [deadlineOption, setDeadlineOption] = useState("10min");
@@ -53,29 +53,29 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, 
       const creatorSecret = generateCreatorSecret();
       const creatorName = getUserName() || undefined;
 
-      const multipoll = await apiCreateMultipoll({
+      const poll = await apiCreatePoll({
         creator_secret: creatorSecret,
         creator_name: creatorName,
         response_deadline: deadline.toISOString(),
-        follow_up_to: pollId,
-        sub_polls: [
+        follow_up_to: questionId,
+        questions: [
           {
-            poll_type: "ranked_choice",
+            question_type: "ranked_choice",
             options: suggestions,
             category: "custom",
           },
         ],
-        title: pollTitle,
+        title: questionTitle,
       });
 
-      const subPoll = multipoll.sub_polls[0];
-      recordPollCreation(subPoll.id, creatorSecret);
-      // Phase 5b: short_id lives on the multipoll wrapper.
-      const shortId = multipoll.short_id || subPoll.id;
+      const subQuestion = poll.questions[0];
+      recordQuestionCreation(subQuestion.id, creatorSecret);
+      // Phase 5b: short_id lives on the poll wrapper.
+      const shortId = poll.short_id || subQuestion.id;
       router.push(`/p/${shortId}`);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create poll");
+      setError(err instanceof Error ? err.message : "Failed to create question");
     } finally {
       setIsSubmitting(false);
     }
@@ -83,12 +83,12 @@ export default function VoteOnItModal({ isOpen, pollId, pollTitle, suggestions, 
 
   const handleEdit = () => {
     const voteData = {
-      title: pollTitle,
+      title: questionTitle,
       options: suggestions,
-      followUpTo: pollId,
+      followUpTo: questionId,
     };
-    localStorage.setItem(`vote-from-suggestion-${pollId}`, JSON.stringify(voteData));
-    router.push(`${pathname}?create=1&voteFromSuggestion=${pollId}`);
+    localStorage.setItem(`vote-from-suggestion-${questionId}`, JSON.stringify(voteData));
+    router.push(`${pathname}?create=1&voteFromSuggestion=${questionId}`);
     onClose();
   };
 

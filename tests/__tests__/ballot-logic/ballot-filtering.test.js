@@ -2,21 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
-import { isApiAvailable, apiCreateTestPoll, apiSubmitTestVote, apiGetVotes } from '../../helpers/database.js'
+import { isApiAvailable, apiCreateTestQuestion, apiSubmitTestVote, apiGetVotes } from '../../helpers/database.js'
 
 let apiUp = false
-let testPollId = null
+let testQuestionId = null
 
 beforeAll(async () => {
   apiUp = await isApiAvailable()
   if (apiUp) {
-    const poll = await apiCreateTestPoll({
-      title: 'Test Poll for Ballot Filtering',
-      poll_type: 'ranked_choice',
+    const question = await apiCreateTestQuestion({
+      title: 'Test Question for Ballot Filtering',
+      question_type: 'ranked_choice',
       options: ['Candidate A', 'Candidate B', 'Candidate C', 'Candidate D', 'Candidate E'],
       creator_secret: 'filtering-test-secret-' + Date.now(),
     })
-    testPollId = poll.id
+    testQuestionId = question.id
   }
 })
 
@@ -85,11 +85,11 @@ describe('Ballot Filtering Logic', () => {
 
     it('should validate ballot format matches expected schema', () => {
       const validBallot = {
-        poll_id: 'some-id',
+        question_id: 'some-id',
         vote_type: 'ranked_choice',
         ranked_choices: ['Candidate A', 'Candidate B']
       }
-      expect(validBallot).toHaveProperty('poll_id')
+      expect(validBallot).toHaveProperty('question_id')
       expect(validBallot).toHaveProperty('vote_type')
       expect(validBallot).toHaveProperty('ranked_choices')
       expect(Array.isArray(validBallot.ranked_choices)).toBe(true)
@@ -105,7 +105,7 @@ describe('Ballot Filtering Logic', () => {
   describe('3. API Integration Tests', () => {
     it('should successfully submit filtered ballot via API', async ({ skip }) => {
       if (!apiUp) skip()
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: ['Candidate A', 'Candidate C'],
       })
@@ -116,7 +116,7 @@ describe('Ballot Filtering Logic', () => {
     it('should verify ballot data integrity via API', async ({ skip }) => {
       if (!apiUp) skip()
       const originalBallot = ['Candidate B', 'Candidate D', 'Candidate A']
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: originalBallot,
       })
@@ -126,9 +126,9 @@ describe('Ballot Filtering Logic', () => {
     it('should handle concurrent ballot submissions', async ({ skip }) => {
       if (!apiUp) skip()
       const submissions = [
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate A'] }),
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate B'] }),
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate C'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate A'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate B'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Candidate C'] }),
       ]
       const results = await Promise.all(submissions)
       results.forEach((result, index) => {
@@ -141,7 +141,7 @@ describe('Ballot Filtering Logic', () => {
   describe('4. Edge Case Scenarios', () => {
     it('should handle exactly 1 candidate in main list', async ({ skip }) => {
       if (!apiUp) skip()
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: ['Candidate E'],
       })
@@ -152,7 +152,7 @@ describe('Ballot Filtering Logic', () => {
     it('should handle maximum allowed candidates', async ({ skip }) => {
       if (!apiUp) skip()
       const maxCandidates = ['Candidate A', 'Candidate B', 'Candidate C', 'Candidate D', 'Candidate E']
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: maxCandidates,
       })
@@ -189,13 +189,13 @@ describe('Ballot Filtering Logic', () => {
     })
 
     it('should display appropriate error for invalid candidates', () => {
-      const pollOptions = ['Candidate A', 'Candidate B', 'Candidate C']
+      const questionOptions = ['Candidate A', 'Candidate B', 'Candidate C']
       const userChoices = ['Candidate A', 'Invalid Candidate', 'Candidate B']
-      const invalidChoices = userChoices.filter(choice => !pollOptions.includes(choice))
+      const invalidChoices = userChoices.filter(choice => !questionOptions.includes(choice))
       expect(invalidChoices).toEqual(['Invalid Candidate'])
     })
 
-    it('should handle invalid poll ID gracefully', async ({ skip }) => {
+    it('should handle invalid question ID gracefully', async ({ skip }) => {
       if (!apiUp) skip()
       try {
         await apiSubmitTestVote('00000000-0000-0000-0000-000000000000', {

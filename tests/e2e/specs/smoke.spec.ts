@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { HomePage } from '../pages/HomePage';
-import { CreatePollPage } from '../pages/CreatePollPage';
+import { CreateQuestionPage } from '../pages/CreateQuestionPage';
 
 test.describe('Smoke Tests', () => {
   test('should load the home page', async ({ page }) => {
@@ -13,18 +13,18 @@ test.describe('Smoke Tests', () => {
     await homePage.takeScreenshot('home-page-smoke');
   });
 
-  test('should navigate to create poll page', async ({ page }) => {
+  test('should navigate to create question page', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
     
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
+    await homePage.navigateToCreateQuestion();
     
-    // Should be on create poll page
+    // Should be on create question page
     await expect(page).toHaveURL(/create/);
-    await createPollPage.verifyPageLoaded();
+    await createQuestionPage.verifyPageLoaded();
     
     // Take a screenshot for debugging
-    await createPollPage.takeScreenshot('create-poll-smoke');
+    await createQuestionPage.takeScreenshot('create-question-smoke');
   });
 });

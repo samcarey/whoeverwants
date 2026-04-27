@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiSearchLocations, apiSearchMovies, apiSearchVideoGames, apiSearchRestaurants, type SearchResult } from "@/lib/api";
-import type { PollCategory } from "@/lib/types";
+import type { QuestionCategory } from "@/lib/types";
 import { formatDistance, StarRating } from "./OptionLabel";
 
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (result: SearchResult) => void;
-  category: Exclude<PollCategory, 'custom'>;
+  category: Exclude<QuestionCategory, 'custom'>;
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;

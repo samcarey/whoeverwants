@@ -1,4 +1,4 @@
-"""Suggestion poll vote counting algorithm.
+"""Suggestion question vote counting algorithm.
 
 Counts how many votes each suggestion received across all non-abstaining voters.
 Each voter submits a list of suggestion strings; this aggregates across all voters
@@ -23,7 +23,7 @@ class SuggestionResult:
 
 def count_suggestion_votes(
     votes: list[dict],
-    poll_options: list[str] | None = None,
+    question_options: list[str] | None = None,
 ) -> SuggestionResult:
     """Count suggestion votes and return aggregated results.
 
@@ -31,7 +31,7 @@ def count_suggestion_votes(
         votes: List of vote dicts, each with:
             - suggestions: list[str] | None
             - is_abstain: bool (optional, defaults to False)
-        poll_options: Optional list of starting options from the poll.
+        question_options: Optional list of starting options from the question.
             These are included in results even if they received 0 votes.
 
     Returns:
@@ -41,9 +41,9 @@ def count_suggestion_votes(
     abstain_count = 0
     total_votes = 0
 
-    # Initialize poll options with 0 votes
-    if poll_options:
-        for option in poll_options:
+    # Initialize question options with 0 votes
+    if question_options:
+        for option in question_options:
             if option:
                 counts[option] = 0
 

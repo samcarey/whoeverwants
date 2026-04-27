@@ -2,21 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { isApiAvailable, apiCreateTestPoll, apiSubmitTestVote } from '../../helpers/database.js'
+import { isApiAvailable, apiCreateTestQuestion, apiSubmitTestVote } from '../../helpers/database.js'
 
 let apiUp = false
-let testPollId = null
+let testQuestionId = null
 
 beforeAll(async () => {
   apiUp = await isApiAvailable()
   if (apiUp) {
-    const poll = await apiCreateTestPoll({
-      title: 'Test Poll for Edge Cases',
-      poll_type: 'ranked_choice',
+    const question = await apiCreateTestQuestion({
+      title: 'Test Question for Edge Cases',
+      question_type: 'ranked_choice',
       options: ['Edge A', 'Edge B', 'Edge C', 'Edge D', 'Edge E'],
       creator_secret: 'edge-test-secret-' + Date.now(),
     })
-    testPollId = poll.id
+    testQuestionId = question.id
   }
 })
 
@@ -26,7 +26,7 @@ describe('Edge Cases and Performance Tests', () => {
       if (!apiUp) skip()
       const votes = []
       for (let i = 0; i < 10; i++) {
-        const vote = await apiSubmitTestVote(testPollId, {
+        const vote = await apiSubmitTestVote(testQuestionId, {
           vote_type: 'ranked_choice',
           ranked_choices: ['Edge A', 'Edge B'],
         })
@@ -51,7 +51,7 @@ describe('Edge Cases and Performance Tests', () => {
   describe('2. Error Recovery', () => {
     it('should recover from failed submission attempts', async ({ skip }) => {
       if (!apiUp) skip()
-      // First try with invalid poll ID — should fail
+      // First try with invalid question ID — should fail
       try {
         await apiSubmitTestVote('00000000-0000-0000-0000-000000000000', {
           vote_type: 'ranked_choice',
@@ -61,8 +61,8 @@ describe('Edge Cases and Performance Tests', () => {
         // Expected failure
       }
 
-      // Second try with valid poll — should succeed
-      const vote = await apiSubmitTestVote(testPollId, {
+      // Second try with valid question — should succeed
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: ['Edge A', 'Edge C'],
       })
@@ -124,7 +124,7 @@ describe('Edge Cases and Performance Tests', () => {
   describe('4. Integration Edge Cases', () => {
     it('should handle single candidate ballot via API', async ({ skip }) => {
       if (!apiUp) skip()
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: ['Edge E'],
       })
@@ -134,7 +134,7 @@ describe('Edge Cases and Performance Tests', () => {
     it('should handle full candidate list via API', async ({ skip }) => {
       if (!apiUp) skip()
       const allCandidates = ['Edge A', 'Edge B', 'Edge C', 'Edge D', 'Edge E']
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: allCandidates,
       })

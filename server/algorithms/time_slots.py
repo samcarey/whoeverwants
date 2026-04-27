@@ -1,8 +1,8 @@
-"""Shared time/slot helpers used by the time-poll algorithm.
+"""Shared time/slot helpers used by the time-question algorithm.
 
-The participation-poll-specific scheduler that previously lived here was
-removed in migration 094 (participation polls are gone). Only the small
-helpers consumed by `algorithms.time_poll` remain.
+The participation-question-specific scheduler that previously lived here was
+removed in migration 094 (participation questions are gone). Only the small
+helpers consumed by `algorithms.time_question` remain.
 """
 
 

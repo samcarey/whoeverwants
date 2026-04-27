@@ -57,7 +57,7 @@ interface RankableOptionsProps {
   newOptions?: string[]; // Options added since the user last ranked — highlighted at top of no-preference
   renderOption?: (option: string) => React.ReactNode;
   preserveOrder?: boolean; // Skip initial shuffle (use for time slots, which have a natural order)
-  /** Disable the equal-ranking link UI (e.g. for time slot polls) */
+  /** Disable the equal-ranking link UI (e.g. for time slot questions) */
   disableGrouping?: boolean;
 }
 
@@ -838,11 +838,11 @@ export default function RankableOptions({ options, onRankingChange, disabled = f
   // Expose reset function to window for testing
   useEffect(() => {
     if (typeof window !== 'undefined' && storageKey) {
-      (window as any).resetPollRanking = resetToRandomOrder;
+      (window as any).resetQuestionRanking = resetToRandomOrder;
     }
     return () => {
       if (typeof window !== 'undefined') {
-        delete (window as any).resetPollRanking;
+        delete (window as any).resetQuestionRanking;
       }
     };
   }, [resetToRandomOrder, storageKey]);

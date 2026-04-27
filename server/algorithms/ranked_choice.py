@@ -77,7 +77,7 @@ def calculate_ranked_choice_winner(
             - ranked_choice_tiers: list[list[str]] — tiered ballot (preferred)
             - ranked_choices: list[str] — flat ballot (legacy)
           plus optional ``is_abstain`` / ``is_ranking_abstain`` flags.
-        options: List of all candidate names from the poll.
+        options: List of all candidate names from the question.
 
     Returns:
         RankedChoiceResult with winner, round count, and per-round data.

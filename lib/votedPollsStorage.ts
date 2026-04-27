@@ -1,64 +1,64 @@
-/** Parse votedPolls from localStorage into voted and abstained sets. */
-export function loadVotedPolls(): { votedPollIds: Set<string>; abstainedPollIds: Set<string> } {
+/** Parse votedQuestions from localStorage into voted and abstained sets. */
+export function loadVotedQuestions(): { votedQuestionIds: Set<string>; abstainedQuestionIds: Set<string> } {
   const voted = new Set<string>();
   const abstained = new Set<string>();
   try {
-    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-    Object.keys(votedPolls).forEach(id => {
-      if (votedPolls[id] === 'abstained') abstained.add(id);
-      else if (votedPolls[id] === true) voted.add(id);
+    const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
+    Object.keys(votedQuestions).forEach(id => {
+      if (votedQuestions[id] === 'abstained') abstained.add(id);
+      else if (votedQuestions[id] === true) voted.add(id);
     });
   } catch (error) {
-    console.error('Error loading voted polls:', error);
+    console.error('Error loading voted questions:', error);
   }
-  return { votedPollIds: voted, abstainedPollIds: abstained };
+  return { votedQuestionIds: voted, abstainedQuestionIds: abstained };
 }
 
 /** Returns true if this browser's localStorage has any record of voting
- *  (yes/no/ranked) or abstaining on the given poll. */
-export function hasVotedOnPoll(pollId: string): boolean {
+ *  (yes/no/ranked) or abstaining on the given question. */
+export function hasVotedOnQuestion(questionId: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-    return votedPolls[pollId] === true || votedPolls[pollId] === 'abstained';
+    const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
+    return votedQuestions[questionId] === true || votedQuestions[questionId] === 'abstained';
   } catch (error) {
     console.error('Error checking vote status:', error);
     return false;
   }
 }
 
-/** Set the votedPolls flag for a single poll (true = voted, 'abstained',
+/** Set the votedQuestions flag for a single question (true = voted, 'abstained',
  *  or null to remove). Safe to call server-side — no-ops without window. */
-export function setVotedPollFlag(pollId: string, state: true | 'abstained' | null): void {
+export function setVotedQuestionFlag(questionId: string, state: true | 'abstained' | null): void {
   if (typeof window === 'undefined') return;
   try {
-    const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-    if (state === null) delete votedPolls[pollId];
-    else votedPolls[pollId] = state;
-    localStorage.setItem('votedPolls', JSON.stringify(votedPolls));
+    const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
+    if (state === null) delete votedQuestions[questionId];
+    else votedQuestions[questionId] = state;
+    localStorage.setItem('votedQuestions', JSON.stringify(votedQuestions));
   } catch (error) {
-    console.error('Error updating voted polls:', error);
+    console.error('Error updating voted questions:', error);
   }
 }
 
-/** Get the stored voteId for a poll from localStorage.pollVoteIds, or null. */
-export function getStoredVoteId(pollId: string): string | null {
+/** Get the stored voteId for a question from localStorage.questionVoteIds, or null. */
+export function getStoredVoteId(questionId: string): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    const ids = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-    return ids[pollId] || null;
+    const ids = JSON.parse(localStorage.getItem('questionVoteIds') || '{}');
+    return ids[questionId] || null;
   } catch {
     return null;
   }
 }
 
-/** Store the voteId for a poll in localStorage.pollVoteIds. */
-export function setStoredVoteId(pollId: string, voteId: string): void {
+/** Store the voteId for a question in localStorage.questionVoteIds. */
+export function setStoredVoteId(questionId: string, voteId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    const ids = JSON.parse(localStorage.getItem('pollVoteIds') || '{}');
-    ids[pollId] = voteId;
-    localStorage.setItem('pollVoteIds', JSON.stringify(ids));
+    const ids = JSON.parse(localStorage.getItem('questionVoteIds') || '{}');
+    ids[questionId] = voteId;
+    localStorage.setItem('questionVoteIds', JSON.stringify(ids));
   } catch (error) {
     console.error('Error storing vote id:', error);
   }

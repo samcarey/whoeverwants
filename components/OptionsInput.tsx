@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import type { PollCategory, OptionsMetadata } from "@/lib/types";
+import type { QuestionCategory, OptionsMetadata } from "@/lib/types";
 import type { SearchResult } from "@/lib/api";
 import AutocompleteInput from "@/components/AutocompleteInput";
 import { isAutocompleteCategory, isLocationLikeCategory } from "@/components/TypeFieldInput";
@@ -14,7 +14,7 @@ interface OptionsInputProps {
   isLoading?: boolean;
   label?: React.ReactNode;
   placeholder?: string;
-  category?: PollCategory;
+  category?: QuestionCategory;
   optionsMetadata?: OptionsMetadata;
   onMetadataChange?: (metadata: OptionsMetadata) => void;
   referenceLatitude?: number;
@@ -200,7 +200,7 @@ export default function OptionsInput({
                     value={option}
                     onChange={(value) => updateOption(index, value)}
                     onSelect={handleSelect}
-                    category={category as Exclude<PollCategory, 'custom'>}
+                    category={category as Exclude<QuestionCategory, 'custom'>}
                     disabled={isLoading}
                     maxLength={100}
                     placeholder={getPlaceholder(index)}

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 
-interface PollDetailsProps {
+interface QuestionDetailsProps {
   details: string;
 }
 
@@ -38,7 +38,7 @@ function renderWithLinks(text: string) {
   });
 }
 
-export default function PollDetails({ details }: PollDetailsProps) {
+export default function QuestionDetails({ details }: QuestionDetailsProps) {
   const [expanded, setExpanded] = useState(false);
   const [needsTruncation, setNeedsTruncation] = useState(false);
   const collapsedRef = useRef<HTMLDivElement>(null);

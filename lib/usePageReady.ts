@@ -3,7 +3,7 @@
 // Sets `data-page-ready=<path>` on <html> so `lib/viewTransitions.ts:waitForNavigation`
 // can detect when the destination has committed.
 import { useLayoutEffect } from "react";
-import { normalizePath } from "./pollId";
+import { normalizePath } from "./questionId";
 
 export function usePageReady(ready: boolean): void {
   useLayoutEffect(() => {

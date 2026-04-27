@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle,
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAppPrefetch } from "@/lib/prefetch";
 import CompactNameField from "@/components/CompactNameField";
-import PollResultsDisplay from "@/components/PollResults";
+import QuestionResultsDisplay from "@/components/QuestionResults";
 import SuggestionVotingInterface from "@/components/SuggestionVotingInterface";
 import RankingSection from "@/components/RankingSection";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -12,86 +12,86 @@ import ConfirmationModal from "@/components/ConfirmationModal";
 import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
-import { Poll, PollResults, OptionsMetadata, DayTimeWindow, Multipoll } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitMultipollVotes, apiCutoffMultipollSuggestions, apiGetPollById, apiGetMultipollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
-import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes } from "@/lib/pollCache";
+import { Question, QuestionResults, OptionsMetadata, DayTimeWindow, Poll } from "@/lib/types";
+import { apiGetQuestionResults, apiGetVotes, apiSubmitPollVotes, apiCutoffPollSuggestions, apiGetQuestionById, apiGetPollById, QUESTION_VOTES_CHANGED_EVENT, type PollVoteItem } from "@/lib/api";
+import { invalidateQuestion, getCachedQuestionById, getCachedQuestionResults, getCachedVotes } from "@/lib/questionCache";
 import RankableOptions from "@/components/RankableOptions";
 
-import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeenPollOptions, getSeenPollOptions } from "@/lib/browserPollAccess";
-import { hasPollData } from "@/lib/forgetPoll";
+import { isCreatedByThisBrowser, getCreatorSecret, recordQuestionCreation, storeSeenQuestionOptions, getSeenQuestionOptions } from "@/lib/browserQuestionAccess";
+import { hasQuestionData } from "@/lib/forgetQuestion";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
-import PollDetails from "@/components/PollDetails";
+import QuestionDetails from "@/components/QuestionDetails";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
-import { loadSubPollDraft, saveSubPollDraft, clearSubPollDraft, SubPollDraft } from "@/lib/ballotDraft";
+import { loadQuestionDraft, saveQuestionDraft, clearQuestionDraft, QuestionDraft } from "@/lib/ballotDraft";
 import { formatDurationLabel, isVoterAvailableForSlot } from "@/lib/timeUtils";
 import { isLocationLikeCategory } from "@/components/TypeFieldInput";
-import { hasVotedOnPoll, getStoredVoteId, setStoredVoteId, setVotedPollFlag } from "@/lib/votedPollsStorage";
-import { buildVoteData, buildMultipollVoteItem, type BallotInputs } from "./SubPollBallot/voteDataBuilders";
-import TimeBallotSection from "./SubPollBallot/TimeBallotSection";
+import { hasVotedOnQuestion, getStoredVoteId, setStoredVoteId, setVotedQuestionFlag } from "@/lib/votedQuestionsStorage";
+import { buildVoteData, buildPollVoteItem, type BallotInputs } from "./QuestionBallot/voteDataBuilders";
+import TimeBallotSection from "./QuestionBallot/TimeBallotSection";
 
-interface SubPollBallotProps {
-  poll: Poll;
+interface QuestionBallotProps {
+  question: Question;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
   // close_reason, prephase_deadline / legacy suggestion_deadline) live on the
-  // parent multipoll. Caller passes it so this component can source those
+  // parent poll. Caller passes it so this component can source those
   // fields directly per the addressability paradigm.
-  multipoll: Multipoll;
+  poll: Poll;
   createdDate: string;
-  pollId: string | null;
+  questionId: string | null;
   // When true, this component skips rendering YesNoResults itself — the
   // caller (thread view) is rendering them in a stable DOM position above
   // the expand clip to avoid winner-card flicker across expand/collapse.
   externalYesNoResults?: boolean;
-  // Thread-view cards pre-mount SubPollBallot in a collapsed grid clip.
+  // Thread-view cards pre-mount QuestionBallot in a collapsed grid clip.
   // When the card collapses while the ballot is being edited, we cancel
   // the edit so it doesn't persist for the next expansion.
   isExpanded?: boolean;
-  // Suppresses the inner <PollDetails> when the thread-page section label
-  // already shows poll.details.
-  partOfMultipollGroup?: boolean;
-  // Phase 3.4 follow-up B: parent multipoll wrapper owns Submit + voter
-  // name + confirmation copy. When set, SubPollBallot hides its inline
+  // Suppresses the inner <QuestionDetails> when the thread-page section label
+  // already shows question.details.
+  partOfPollGroup?: boolean;
+  // Phase 3.4 follow-up B: parent poll wrapper owns Submit + voter
+  // name + confirmation copy. When set, QuestionBallot hides its inline
   // Submit/voter-name and exposes triggerSubmit() via ref.
   wrapperHandlesSubmit?: boolean;
   externalVoterName?: string;
   setExternalVoterName?: (name: string) => void;
-  // Mirrors SubPollBallot's "would the inline Submit show + what does it
+  // Mirrors QuestionBallot's "would the inline Submit show + what does it
   // say" so the wrapper's Submit visibility/label match the original
   // gating across initial-vote / voted / edit-mode transitions.
-  onWrapperSubmitStateChange?: (pollId: string, state: { visible: boolean; label: string }) => void;
+  onWrapperSubmitStateChange?: (questionId: string, state: { visible: boolean; label: string }) => void;
 }
 
 export type PrepareBatchVoteItemResult =
   | {
       ok: true;
-      item: MultipollVoteItem;
+      item: PollVoteItem;
       commit: (vote: import("@/lib/api").ApiVote) => void;
       fail: (errorMessage: string) => void;
     }
   | { skip: true }
   | { ok: false; error: string };
 
-export interface SubPollBallotHandle {
+export interface QuestionBallotHandle {
   triggerSubmit: () => void;
   prepareBatchVoteItem: () => PrepareBatchVoteItemResult;
 }
 
-const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(function SubPollBallot({ poll, multipoll, createdDate, pollId, externalYesNoResults, isExpanded = true, partOfMultipollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: SubPollBallotProps, ref) {
+const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(function QuestionBallot({ question, poll, createdDate, questionId, externalYesNoResults, isExpanded = true, partOfPollGroup = false, wrapperHandlesSubmit = false, externalVoterName, setExternalVoterName, onWrapperSubmitStateChange }: QuestionBallotProps, ref) {
   // Set the page title in the template header
-  usePageTitle(poll.title);
+  usePageTitle(question.title);
 
   const router = useRouter();
   const { prefetch } = useAppPrefetch();
   const searchParams = useSearchParams();
-  const isNewPoll = searchParams.get("new") === "true";
-  const [pollUrl, setPollUrl] = useState("");
+  const isNewQuestion = searchParams.get("new") === "true";
+  const [questionUrl, setQuestionUrl] = useState("");
   const [rankedChoices, setRankedChoices] = useState<string[]>([]);
   // Tiered ballot (equal-ranking groups). Each inner array is a tier of
   // options tied for the same rank. When it has no ties, every inner array
   // is a singleton and this is equivalent to rankedChoices.
   const [rankedChoiceTiers, setRankedChoiceTiers] = useState<string[][]>([]);
-  // Time poll preferences: liked/disliked slot sets (null = not yet submitted)
+  // Time question preferences: liked/disliked slot sets (null = not yet submitted)
   const [likedSlots, setLikedSlots] = useState<string[] | null>(null);
   const [dislikedSlots, setDislikedSlots] = useState<string[] | null>(null);
   const [optionsInitialized, setOptionsInitialized] = useState(false);
@@ -100,30 +100,30 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const [suggestionChoices, setSuggestionChoices] = useState<string[]>([]);
   const [suggestionMetadata, setSuggestionMetadata] = useState<OptionsMetadata>({});
   const [searchRadius, setSearchRadius] = useState(25);
-  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(poll.options_metadata ?? null);
+  const [optionsMetadataLocal, setOptionsMetadataLocal] = useState<OptionsMetadata | null>(question.options_metadata ?? null);
 
-  // Sync local metadata when poll prop changes (e.g., navigating between polls)
+  // Sync local metadata when question prop changes (e.g., navigating between questions)
   useEffect(() => {
-    setOptionsMetadataLocal(poll.options_metadata ?? null);
-  }, [poll.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setOptionsMetadataLocal(question.options_metadata ?? null);
+  }, [question.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [existingSuggestions, setExistingSuggestions] = useState<string[]>([]);
   const [justCancelledAbstain, setJustCancelledAbstain] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
-  const [pollResults, setPollResults] = useState<PollResults | null>(() => {
+  const [questionResults, setQuestionResults] = useState<QuestionResults | null>(() => {
     // Initialize from cache so the first render shows results immediately
     // (no loading flicker during view transitions).
     if (typeof window === 'undefined') return null;
-    return getCachedPollResults(poll.id) ?? null;
+    return getCachedQuestionResults(question.id) ?? null;
   });
   const [loadingResults, setLoadingResults] = useState(false);
   const [isCuttingOffSuggestions, setIsCuttingOffSuggestions] = useState(false);
   const [showCutoffConfirmModal, setShowCutoffConfirmModal] = useState(false);
   const [suggestionDeadlineOverride, setSuggestionDeadlineOverride] = useState<string | null>(null);
   const [optionsOverride, setOptionsOverride] = useState<string[] | null>(null);
-  const [pollClosed, setPollClosed] = useState(multipoll.is_closed ?? false);
-  // Don't automatically assume poll was reopened just because deadline passed
+  const [questionClosed, setQuestionClosed] = useState(poll.is_closed ?? false);
+  // Don't automatically assume question was reopened just because deadline passed
   // Only set manuallyReopened when explicitly reopened by creator action
   const [manuallyReopened, setManuallyReopened] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
@@ -140,20 +140,20 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       setIsEditingRanking(false);
     }
   }, [isExpanded]);
-  const [hasPollDataState, setHasPollDataState] = useState(false);
+  const [hasQuestionDataState, setHasQuestionDataState] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   // Options the user saw when they last voted — used to detect newly added suggestions
-  const [seenPollOptions, setSeenPollOptions] = useState<string[]>([]);
+  const [seenQuestionOptions, setSeenQuestionOptions] = useState<string[]>([]);
 
-  // Suggestion phase helpers: a ranked_choice poll with suggestion_deadline or suggestion_deadline_minutes
+  // Suggestion phase helpers: a ranked_choice question with suggestion_deadline or suggestion_deadline_minutes
   // has an optional suggestion collection phase before ranking begins.
   // When suggestion_deadline_minutes is set but suggestion_deadline is null, the timer hasn't started yet
   // (waiting for first suggestion). This is still considered "in suggestion phase".
-  // Phase 5b: prephase_deadline lives on the multipoll wrapper (was
-  // polls.suggestion_deadline). Local naming sticks with "suggestion" since
+  // Phase 5b: prephase_deadline lives on the poll wrapper (was
+  // questions.suggestion_deadline). Local naming sticks with "suggestion" since
   // the rest of this component already uses that vocabulary.
-  const wrapperSuggestionDeadline = multipoll.prephase_deadline ?? null;
-  const hasSuggestionPhase = poll.poll_type === 'ranked_choice' && !!(wrapperSuggestionDeadline || poll.suggestion_deadline_minutes);
+  const wrapperSuggestionDeadline = poll.prephase_deadline ?? null;
+  const hasSuggestionPhase = question.question_type === 'ranked_choice' && !!(wrapperSuggestionDeadline || question.suggestion_deadline_minutes);
   const effectiveSuggestionDeadline = suggestionDeadlineOverride || wrapperSuggestionDeadline;
   const suggestionTimerStarted = !!effectiveSuggestionDeadline;
   const inSuggestionPhase = hasSuggestionPhase && (
@@ -161,23 +161,23 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     || (currentTime ? currentTime < new Date(effectiveSuggestionDeadline!) : true)
   );
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
-  const canSubmitRankings = poll.poll_type === 'ranked_choice' && (
-    !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
+  const canSubmitRankings = question.question_type === 'ranked_choice' && (
+    !hasSuggestionPhase || !inSuggestionPhase || question.allow_pre_ranking !== false
   );
 
-  // Time poll phase helpers: availability phase while options haven't been generated yet
-  const inAvailabilityPhase = poll.poll_type === 'time' && (!optionsOverride?.length) && (!poll.options || poll.options.length === 0);
+  // Time question phase helpers: availability phase while options haven't been generated yet
+  const inAvailabilityPhase = question.question_type === 'time' && (!optionsOverride?.length) && (!question.options || question.options.length === 0);
   const availabilityTimerStarted = !!(suggestionDeadlineOverride || wrapperSuggestionDeadline);
-  // Whether the user has completed ranking (or abstained) — for suggestion-phase polls,
+  // Whether the user has completed ranking (or abstained) — for suggestion-phase questions,
   // this distinguishes "voted with suggestions only" from "voted with rankings"
   const hasCompletedRanking = !hasSuggestionPhase || userVoteData?.ranked_choices?.length > 0 || userVoteData?.is_abstain || userVoteData?.is_ranking_abstain;
   const userAbstainedFromRanking = !!(userVoteData?.is_abstain || userVoteData?.is_ranking_abstain);
 
-  // Reference location is stored on every poll (auto-filled from the creator's profile),
+  // Reference location is stored on every question (auto-filled from the creator's profile),
   // so the "Near X" badge only makes sense for categories where proximity is part of the decision.
   const showReferenceLocation =
-    !!poll.reference_location_label &&
-    isLocationLikeCategory(poll.category ?? '');
+    !!question.reference_location_label &&
+    isLocationLikeCategory(question.category ?? '');
 
   const [internalVoterName, setInternalVoterName] = useState<string>("");
   // When the wrapper owns the voter name input (Phase 3.4 follow-up B),
@@ -192,24 +192,24 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const fetchResultsInFlight = useRef(false);
   const fetchResultsLastCall = useRef(0);
 
-  // Time-poll voter state — initialized with poll's constraints, draft restored in useEffect
-  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<any[]>(poll.day_time_windows || []);
-  const [durationMinValue, setDurationMinValue] = useState<number | null>(poll.duration_window?.minValue ?? 1);
-  const [durationMaxValue, setDurationMaxValue] = useState<number | null>(poll.duration_window?.maxValue ?? 2);
-  const [durationMinEnabled, setDurationMinEnabled] = useState(poll.duration_window?.minEnabled ?? false);
-  const [durationMaxEnabled, setDurationMaxEnabled] = useState(poll.duration_window?.maxEnabled ?? false);
+  // Time-question voter state — initialized with question's constraints, draft restored in useEffect
+  const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<any[]>(question.day_time_windows || []);
+  const [durationMinValue, setDurationMinValue] = useState<number | null>(question.duration_window?.minValue ?? 1);
+  const [durationMaxValue, setDurationMaxValue] = useState<number | null>(question.duration_window?.maxValue ?? 2);
+  const [durationMinEnabled, setDurationMinEnabled] = useState(question.duration_window?.minEnabled ?? false);
+  const [durationMaxEnabled, setDurationMaxEnabled] = useState(question.duration_window?.maxEnabled ?? false);
 
-  // Restore ballot draft from localStorage on mount (time polls only)
+  // Restore ballot draft from localStorage on mount (time questions only)
   const draftRestoredRef = useRef(false);
   useEffect(() => {
     if (draftRestoredRef.current) return;
     draftRestoredRef.current = true;
-    if (poll.poll_type !== 'time') return;
+    if (question.question_type !== 'time') return;
     try {
-      const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
-      if (votedPolls[poll.id]) return;
+      const votedQuestions = JSON.parse(localStorage.getItem('votedQuestions') || '{}');
+      if (votedQuestions[question.id]) return;
     } catch { /* ignore */ }
-    const draft = loadSubPollDraft(poll.multipoll_id ?? null, poll.id);
+    const draft = loadQuestionDraft(question.poll_id ?? null, question.id);
     if (!draft) return;
     if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
     if (draft.voterDayTimeWindows !== undefined) setVoterDayTimeWindows(draft.voterDayTimeWindows);
@@ -217,70 +217,70 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
     if (draft.durationMinEnabled !== undefined) setDurationMinEnabled(draft.durationMinEnabled);
     if (draft.durationMaxEnabled !== undefined) setDurationMaxEnabled(draft.durationMaxEnabled);
-  }, [poll.id, poll.multipoll_id, poll.poll_type]);
+  }, [question.id, question.poll_id, question.question_type]);
 
   // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (poll.poll_type !== 'time' || hasVoted) return;
+    if (question.question_type !== 'time' || hasVoted) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
-      saveSubPollDraft(poll.multipoll_id ?? null, poll.id, {
+      saveQuestionDraft(question.poll_id ?? null, question.id, {
         isAbstaining,
         voterDayTimeWindows,
         durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled,
       });
     }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [poll.id, poll.multipoll_id, poll.poll_type, hasVoted, isAbstaining,
+  }, [question.id, question.poll_id, question.question_type, hasVoted, isAbstaining,
       voterDayTimeWindows, durationMinValue, durationMaxValue,
       durationMinEnabled, durationMaxEnabled]);
 
-  const isPollExpired = useMemo(() => {
+  const isQuestionExpired = useMemo(() => {
     // Use server-safe check
     const now = currentTime || new Date();
-    return multipoll.response_deadline && new Date(multipoll.response_deadline) <= now;
-  }, [multipoll.response_deadline, currentTime]);
+    return poll.response_deadline && new Date(poll.response_deadline) <= now;
+  }, [poll.response_deadline, currentTime]);
 
-  const isPollClosed = useMemo(() => {
+  const isQuestionClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
-    if (manuallyReopened && !pollClosed) return false;
+    if (manuallyReopened && !questionClosed) return false;
 
     // Otherwise, use normal logic: manual close OR deadline expiration
-    return pollClosed || isPollExpired;
-  }, [pollClosed, isPollExpired, manuallyReopened]);
+    return questionClosed || isQuestionExpired;
+  }, [questionClosed, isQuestionExpired, manuallyReopened]);
 
   // Track response count for preliminary results
-  const [responseCount, setResponseCount] = useState<number>(poll.response_count ?? 0);
+  const [responseCount, setResponseCount] = useState<number>(question.response_count ?? 0);
 
-  // Whether preliminary results should be shown (open poll, threshold met)
+  // Whether preliminary results should be shown (open question, threshold met)
   const showPrelimResults = useMemo(() => {
-    if (isPollClosed) return false; // Closed polls show results via the normal path
-    if (!poll.show_preliminary_results) return false;
-    const minResp = poll.min_responses ?? 1;
+    if (isQuestionClosed) return false; // Closed questions show results via the normal path
+    if (!question.show_preliminary_results) return false;
+    const minResp = question.min_responses ?? 1;
     return responseCount >= minResp;
-  }, [isPollClosed, poll.show_preliminary_results, poll.min_responses, responseCount]);
+  }, [isQuestionClosed, question.show_preliminary_results, question.min_responses, responseCount]);
 
-  // Mark poll as voted: writes both the votedPolls flag and pollVoteIds in
-  // one call. Listeners that re-read localStorage on POLL_VOTES_CHANGED_EVENT
+  // Mark question as voted: writes both the votedQuestions flag and questionVoteIds in
+  // one call. Listeners that re-read localStorage on QUESTION_VOTES_CHANGED_EVENT
   // (e.g. the thread page's awaiting-response border) need both writes
   // visible before the dispatch.
-  const markPollAsVoted = useCallback((pollId: string, voteId?: string, abstained?: boolean) => {
-    setVotedPollFlag(pollId, abstained ? 'abstained' : true);
-    if (voteId) setStoredVoteId(pollId, voteId);
+  const markQuestionAsVoted = useCallback((questionId: string, voteId?: string, abstained?: boolean) => {
+    setVotedQuestionFlag(questionId, abstained ? 'abstained' : true);
+    if (voteId) setStoredVoteId(questionId, voteId);
   }, []);
 
   const fetchVoteData = useCallback(async (voteId: string) => {
     try {
-      const allVotes = await apiGetVotes(poll.id);
+      const allVotes = await apiGetVotes(question.id);
       const vote = allVotes.find(v => v.id === voteId);
       return vote || null;
     } catch {
       return null;
     }
-  }, [poll.id]);
+  }, [question.id]);
 
-  const fetchPollResults = useCallback(async () => {
+  const fetchQuestionResults = useCallback(async () => {
     // Prevent rapid-fire calls: skip if already in-flight or called within last 2s.
     // The 1-second timer and multiple effects can trigger this in quick succession
     // (especially after Fast Refresh), leading to 429 rate-limit errors.
@@ -292,43 +292,43 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     // Skip the loading state if we already have cached data — the fetch will
     // return the same cached value instantly, but the setLoadingResults(true)
     // → setLoadingResults(false) cycle causes a mid-transition flicker.
-    const hasCached = !!getCachedPollResults(poll.id);
+    const hasCached = !!getCachedQuestionResults(question.id);
     if (!hasCached) setLoadingResults(true);
     try {
-      const results = await apiGetPollResults(poll.id);
-      setPollResults(results);
+      const results = await apiGetQuestionResults(question.id);
+      setQuestionResults(results);
     } catch (error) {
-      console.error('Error fetching poll results:', error);
+      console.error('Error fetching question results:', error);
     } finally {
       if (!hasCached) setLoadingResults(false);
       fetchResultsInFlight.current = false;
     }
-  }, [poll.id, poll.poll_type]);
+  }, [question.id, question.question_type]);
 
   // Initialize currentTime on client side to avoid hydration issues
   useEffect(() => {
     setCurrentTime(new Date());
 
-    // Load existing suggestions for polls with suggestion phase
+    // Load existing suggestions for questions with suggestion phase
     if (hasSuggestionPhase) {
       loadExistingSuggestions();
-      // Also fetch results to show vote counts for suggestion polls
-      fetchPollResults();
+      // Also fetch results to show vote counts for suggestion questions
+      fetchQuestionResults();
     }
-  }, [poll.poll_type, fetchPollResults]);
+  }, [question.question_type, fetchQuestionResults]);
 
   // Fetch preliminary results when threshold is met
   useEffect(() => {
-    if (showPrelimResults && !pollResults) {
-      fetchPollResults();
+    if (showPrelimResults && !questionResults) {
+      fetchQuestionResults();
     }
-  }, [showPrelimResults, pollResults, fetchPollResults]);
+  }, [showPrelimResults, questionResults, fetchQuestionResults]);
 
   // Load existing suggestions from other votes
   const loadExistingSuggestions = async (excludeUserVote = false) => {
     try {
       // Fetch all votes and filter for suggestion votes with suggestions
-      const allVotes = await apiGetVotes(poll.id);
+      const allVotes = await apiGetVotes(question.id);
       const votes = allVotes
         .filter(v => v.suggestions && v.suggestions.length > 0 && !v.is_abstain)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -336,12 +336,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
       const allSuggestions = new Set<string>();
       
-      // Add starting options from poll creation
-      if (poll.options && Array.isArray(poll.options)) {
-        poll.options.forEach((option: string) => allSuggestions.add(option));
+      // Add starting options from question creation
+      if (question.options && Array.isArray(question.options)) {
+        question.options.forEach((option: string) => allSuggestions.add(option));
       }
       
-      // For suggestion polls, to handle edited votes properly, we use only the latest vote
+      // For suggestion questions, to handle edited votes properly, we use only the latest vote
       // If there are multiple voters in the future, this logic would need to be enhanced
       // to track the latest vote per unique voter
       
@@ -370,7 +370,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   // Initialize ranked choices with randomized options - runs only once
   useEffect(() => {
-    if (poll.poll_type === 'ranked_choice' && poll.options && !optionsInitialized) {
+    if (question.question_type === 'ranked_choice' && question.options && !optionsInitialized) {
       // Don't initialize if we already have choices from localStorage
       if (hasVoted && rankedChoices.length > 0) {
         setOptionsInitialized(true);
@@ -378,11 +378,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       }
 
       // Parse options if they're stored as JSON string
-      const parsedOptions = typeof poll.options === 'string'
-        ? JSON.parse(poll.options)
-        : poll.options;
+      const parsedOptions = typeof question.options === 'string'
+        ? JSON.parse(question.options)
+        : question.options;
 
-      // For 2-option polls, start with no selection (user must choose)
+      // For 2-option questions, start with no selection (user must choose)
       if (parsedOptions.length === 2) {
         setOptionsInitialized(true);
         return;
@@ -398,50 +398,50 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       setRankedChoices(shuffledOptions);
       setOptionsInitialized(true);
     }
-  }, [poll.poll_type, poll.options, optionsInitialized, hasVoted, rankedChoices.length]);
+  }, [question.question_type, question.options, optionsInitialized, hasVoted, rankedChoices.length]);
 
   // Load the options seen at last vote time from localStorage (for new-options detection)
   useEffect(() => {
     if (typeof window !== 'undefined' && hasSuggestionPhase) {
-      setSeenPollOptions(getSeenPollOptions(poll.id));
+      setSeenQuestionOptions(getSeenQuestionOptions(question.id));
     }
-  }, [poll.id, hasSuggestionPhase]);
+  }, [question.id, hasSuggestionPhase]);
 
-  // Clean up URL parameter when new poll is shown
+  // Clean up URL parameter when new question is shown
   useEffect(() => {
-    if (isNewPoll) {
+    if (isNewQuestion) {
       // Remove the ?new=true parameter from the URL without refreshing the page
       const newUrl = window.location.pathname + window.location.hash;
       router.replace(newUrl, { scroll: false });
     }
-  }, [isNewPoll, router]);
+  }, [isNewQuestion, router]);
 
-  // Effect to load vote data when poll loads or when hasVoted changes
+  // Effect to load vote data when question loads or when hasVoted changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Use the current page URL (always full UUID now)
-      setPollUrl(window.location.href.split('?')[0]);
+      setQuestionUrl(window.location.href.split('?')[0]);
     }
     
-    // Phase 5: auto-created follow-up polls inherited the parent's
-    // creator_secret via polls.follow_up_to; that column is gone. Sub-polls
-    // of a multipoll all share the wrapper's creator_secret, which is
-    // recorded per sub-poll id on the create-poll page when the multipoll
+    // Phase 5: auto-created follow-up questions inherited the parent's
+    // creator_secret via questions.follow_up_to; that column is gone. Sub-questions
+    // of a poll all share the wrapper's creator_secret, which is
+    // recorded per question id on the create-question page when the poll
     // is created. No fallback inheritance is needed.
-    setIsCreator(isCreatedByThisBrowser(poll.id));
+    setIsCreator(isCreatedByThisBrowser(question.id));
 
-    // Check if browser has any data for this poll
-    setHasPollDataState(hasPollData(poll.id));
+    // Check if browser has any data for this question
+    setHasQuestionDataState(hasQuestionData(question.id));
     
     // Load vote data if user has voted (either from localStorage check or hasVoted state)
     // Only load if this browser has actually voted - don't assume ownership of other users' votes
-    const shouldLoadVoteData = hasVoted || hasVotedOnPoll(poll.id);
+    const shouldLoadVoteData = hasVoted || hasVotedOnQuestion(question.id);
     
     if (shouldLoadVoteData) {
       setHasVoted(true);
       
       // Get the vote ID if available
-      const voteId = getStoredVoteId(poll.id);
+      const voteId = getStoredVoteId(question.id);
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID. Without one we
@@ -452,7 +452,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         // Skip the loading state if we already have cached votes — the fetch
         // will return instantly but the loading→loaded re-render cycle causes
         // a flicker during view transitions.
-        const hasCachedData = !!getCachedVotes(poll.id);
+        const hasCachedData = !!getCachedVotes(question.id);
         if (!hasCachedData) setIsLoadingVoteData(true);
 
         fetchVoteData(voteId).then(voteData => {
@@ -463,26 +463,26 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
             // This ensures that vote editing updates the existing record instead of creating new ones
             if (voteData && 'id' in voteData && voteData.id) {
               setUserVoteId(voteData.id);
-              // Backfill pollVoteIds localStorage so the poll list can show personalized badges
-              if (!getStoredVoteId(poll.id)) setStoredVoteId(poll.id, voteData.id);
+              // Backfill questionVoteIds localStorage so the question list can show personalized badges
+              if (!getStoredVoteId(question.id)) setStoredVoteId(question.id, voteData.id);
             }
 
-            // For polls with suggestion phase, fetch results to show vote counts even when poll is open
-            if (hasSuggestionPhase && !isPollClosed) {
-              fetchPollResults();
+            // For questions with suggestion phase, fetch results to show vote counts even when question is open
+            if (hasSuggestionPhase && !isQuestionClosed) {
+              fetchQuestionResults();
             }
 
             // Set UI state based on vote data from database columns
             // is_ranking_abstain always restores abstain state.
-            // is_abstain only restores for non-suggestion polls — in suggestion polls
+            // is_abstain only restores for non-suggestion questions — in suggestion questions
             // it means "abstained from suggestions", not "abstained from ranking".
             const shouldRestoreAbstain = voteData.is_ranking_abstain || (voteData.is_abstain && !hasSuggestionPhase);
             setIsAbstaining(shouldRestoreAbstain);
             if (voteData.is_abstain) {
               // Don't set choices for abstain votes
-            } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
+            } else if (question.question_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice as 'yes' | 'no');
-            } else if (poll.poll_type === 'ranked_choice') {
+            } else if (question.question_type === 'ranked_choice') {
               if (voteData.ranked_choices) setRankedChoices(voteData.ranked_choices);
               if (voteData.ranked_choice_tiers) {
                 setRankedChoiceTiers(voteData.ranked_choice_tiers);
@@ -492,8 +492,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                 setRankedChoiceTiers(voteData.ranked_choices.map((c: string) => [c]));
               }
               if (voteData.suggestions) setSuggestionChoices(voteData.suggestions);
-            } else if (poll.poll_type === 'time') {
-              // Restore time poll availability windows
+            } else if (question.question_type === 'time') {
+              // Restore time question availability windows
               if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
                 setVoterDayTimeWindows(voteData.voter_day_time_windows);
               }
@@ -513,17 +513,17 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         });
       }
     }
-  }, [poll.id, poll.poll_type, hasVoted, fetchVoteData, isNewPoll]);
+  }, [question.id, question.question_type, hasVoted, fetchVoteData, isNewQuestion]);
 
-  // Fetch results when poll closes or for time polls in preferences phase
+  // Fetch results when question closes or for time questions in preferences phase
   useEffect(() => {
-    const isClosed = pollClosed || (multipoll.response_deadline && new Date(multipoll.response_deadline) <= new Date());
-    const shouldFetchForTimePoll = poll.poll_type === 'time' && !inAvailabilityPhase;
+    const isClosed = questionClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
+    const shouldFetchForTimeQuestion = question.question_type === 'time' && !inAvailabilityPhase;
 
-    if (isClosed || shouldFetchForTimePoll) {
-      fetchPollResults();
+    if (isClosed || shouldFetchForTimeQuestion) {
+      fetchQuestionResults();
     }
-  }, [pollClosed, multipoll.response_deadline, poll.poll_type, fetchPollResults, inAvailabilityPhase]);
+  }, [questionClosed, poll.response_deadline, question.question_type, fetchQuestionResults, inAvailabilityPhase]);
 
   // Load saved user name. Skip when the wrapper owns the voter name input
   // (Phase 3.4 follow-up B) — the wrapper seeds its own state from
@@ -537,20 +537,20 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Real-time timer to check for poll expiration
+  // Real-time timer to check for question expiration
   useEffect(() => {
-    if (!multipoll.response_deadline || pollClosed) {
+    if (!poll.response_deadline || questionClosed) {
       return; // No deadline or already manually closed
     }
 
-    const deadline = new Date(multipoll.response_deadline);
+    const deadline = new Date(poll.response_deadline);
     const updateTimer = () => {
       const now = new Date();
       setCurrentTime(now);
 
-      // If poll just expired, automatically fetch results.
-      if (now >= deadline && !isPollClosed) {
-        fetchPollResults();
+      // If question just expired, automatically fetch results.
+      if (now >= deadline && !isQuestionClosed) {
+        fetchQuestionResults();
       }
     };
 
@@ -561,49 +561,49 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [multipoll.response_deadline, pollClosed, isPollClosed, fetchPollResults, poll.poll_type, poll.id]);
+  }, [poll.response_deadline, questionClosed, isQuestionClosed, fetchQuestionResults, question.question_type, question.id]);
 
-  // Real-time subscription to listen for poll status changes (with polling fallback)
+  // Real-time subscription to listen for question status changes (with questioning fallback)
   useEffect(() => {
     
-    let pollInterval: NodeJS.Timeout | null = null;
+    let questionInterval: NodeJS.Timeout | null = null;
     
-    // Polling fallback function — polls the Python API for status changes.
-    // Phase 5b: is_closed lives on the multipoll wrapper, so fetch it from
-    // there. Response count still lives on the per-sub-poll PollResponse, so
-    // grab it via apiGetPollById.
-    const pollForChanges = async () => {
+    // Questioning fallback function — questions the Python API for status changes.
+    // Phase 5b: is_closed lives on the poll wrapper, so fetch it from
+    // there. Response count still lives on the per-question QuestionResponse, so
+    // grab it via apiGetQuestionById.
+    const questionForChanges = async () => {
       try {
-        const [wrapper, pollData] = await Promise.all([
-          poll.multipoll_id ? apiGetMultipollById(poll.multipoll_id).catch(() => null) : Promise.resolve(null),
-          apiGetPollById(poll.id).catch(() => null),
+        const [wrapper, questionData] = await Promise.all([
+          question.poll_id ? apiGetPollById(question.poll_id).catch(() => null) : Promise.resolve(null),
+          apiGetQuestionById(question.id).catch(() => null),
         ]);
 
-        if (wrapper?.is_closed && !pollClosed) {
-          setPollClosed(true);
+        if (wrapper?.is_closed && !questionClosed) {
+          setQuestionClosed(true);
           setManuallyReopened(false);
-          fetchPollResults();
+          fetchQuestionResults();
         }
-        if (pollData?.response_count != null) {
-          setResponseCount(pollData.response_count);
+        if (questionData?.response_count != null) {
+          setResponseCount(questionData.response_count);
         }
       } catch (error) {
-        console.error('Polling error:', error);
+        console.error('Questioning error:', error);
       }
     };
 
-    // No real-time subscription — use polling to detect status changes
-    if (!pollClosed) {
-      pollInterval = setInterval(pollForChanges, 5000);
-      pollForChanges(); // Check immediately
+    // No real-time subscription — use questioning to detect status changes
+    if (!questionClosed) {
+      questionInterval = setInterval(questionForChanges, 5000);
+      questionForChanges(); // Check immediately
     }
 
     return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
+      if (questionInterval) {
+        clearInterval(questionInterval);
       }
     };
-  }, [poll.id, pollClosed, fetchPollResults]);
+  }, [question.id, questionClosed, fetchQuestionResults]);
 
   const handleRankingChange = useCallback((newRankedChoices: string[], newTiers: string[][]) => {
     setRankedChoices(newRankedChoices);
@@ -615,54 +615,54 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   }, [justCancelledAbstain]);
 
   // Memoize parsed options to prevent re-parsing on every render
-  // During suggestion phase (poll.options is null), derive options from suggestion_counts
-  const pollOptions = useMemo(() => {
+  // During suggestion phase (question.options is null), derive options from suggestion_counts
+  const questionOptions = useMemo(() => {
     if (optionsOverride) {
       return optionsOverride;
     }
-    if (poll.options) {
-      return typeof poll.options === 'string' ? JSON.parse(poll.options) : poll.options;
+    if (question.options) {
+      return typeof question.options === 'string' ? JSON.parse(question.options) : question.options;
     }
-    if (hasSuggestionPhase && pollResults?.suggestion_counts) {
-      return pollResults.suggestion_counts.map((sc: { option: string }) => sc.option);
+    if (hasSuggestionPhase && questionResults?.suggestion_counts) {
+      return questionResults.suggestion_counts.map((sc: { option: string }) => sc.option);
     }
     return [];
-  }, [optionsOverride, poll.options, hasSuggestionPhase, pollResults?.suggestion_counts]);
+  }, [optionsOverride, question.options, hasSuggestionPhase, questionResults?.suggestion_counts]);
 
-  // For the time-poll preferences phase, only present slots the voter said they're
+  // For the time-question preferences phase, only present slots the voter said they're
   // available for. A voter who hasn't submitted availability sees every slot.
   const voterAvailability = userVoteData?.voter_day_time_windows;
   const preferenceSlotsForVoter = useMemo(() => {
-    if (poll.poll_type !== 'time') return pollOptions as string[];
+    if (question.question_type !== 'time') return questionOptions as string[];
     if (!voterAvailability || !Array.isArray(voterAvailability) || voterAvailability.length === 0) {
-      return pollOptions as string[];
+      return questionOptions as string[];
     }
-    return (pollOptions as string[]).filter(slot =>
+    return (questionOptions as string[]).filter(slot =>
       isVoterAvailableForSlot(slot, voterAvailability)
     );
-  }, [poll.poll_type, pollOptions, voterAvailability]);
+  }, [question.question_type, questionOptions, voterAvailability]);
 
   // Options added since the user last voted — shown as a "new options available" alert.
   // Only meaningful for users who have already submitted rankings (no-op for suggestion-only voters).
   // Also excludes options the user themselves suggested so their own submissions don't trigger it.
   const newOptions = useMemo(() => {
-    if (!hasSuggestionPhase || !hasVoted || isPollClosed || seenPollOptions.length === 0) return [];
+    if (!hasSuggestionPhase || !hasVoted || isQuestionClosed || seenQuestionOptions.length === 0) return [];
     if (!userVoteData?.ranked_choices?.length) return []; // hasn't ranked yet — banner irrelevant
     const ownSuggestions: string[] = userVoteData?.suggestions ?? [];
-    return (pollOptions as string[]).filter(
-      o => !seenPollOptions.includes(o) && !ownSuggestions.includes(o)
+    return (questionOptions as string[]).filter(
+      o => !seenQuestionOptions.includes(o) && !ownSuggestions.includes(o)
     );
-  }, [hasSuggestionPhase, hasVoted, isPollClosed, seenPollOptions, pollOptions, userVoteData]);
+  }, [hasSuggestionPhase, hasVoted, isQuestionClosed, seenQuestionOptions, questionOptions, userVoteData]);
 
-  // Randomize display order for 2-option polls (client-only to avoid hydration mismatch)
+  // Randomize display order for 2-option questions (client-only to avoid hydration mismatch)
   const [twoOptionDisplayOrder, setTwoOptionDisplayOrder] = useState<string[]>([]);
   useEffect(() => {
-    if (pollOptions.length === 2) {
+    if (questionOptions.length === 2) {
       setTwoOptionDisplayOrder(
-        Math.random() < 0.5 ? [pollOptions[0], pollOptions[1]] : [pollOptions[1], pollOptions[0]]
+        Math.random() < 0.5 ? [questionOptions[0], questionOptions[1]] : [questionOptions[1], questionOptions[0]]
       );
     }
-  }, [pollOptions]);
+  }, [questionOptions]);
 
   const handleYesNoVote = (choice: 'yes' | 'no') => {
     setYesNoChoice(choice);
@@ -677,15 +677,15 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       // Starting to abstain
       setJustCancelledAbstain(false);
       // Clear previous choices when abstaining
-      if (poll.poll_type === 'ranked_choice') {
+      if (question.question_type === 'ranked_choice') {
         setRankedChoices([]);
         setSuggestionChoices([]);
-      } else if (poll.poll_type === 'yes_no') {
+      } else if (question.question_type === 'yes_no') {
         setYesNoChoice(null); // Clear yes/no choice to prevent both appearing selected
       }
     } else {
       // Cancelling abstain
-      if (poll.poll_type === 'ranked_choice') {
+      if (question.question_type === 'ranked_choice') {
         setJustCancelledAbstain(true);
       }
     }
@@ -693,7 +693,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   const handleCutoffSuggestionsClick = () => {
     if (isCuttingOffSuggestions || !isCreator) return;
-    const creatorSecret = getCreatorSecret(poll.id);
+    const creatorSecret = getCreatorSecret(question.id);
     if (!creatorSecret) {
       alert('You do not have permission to cutoff suggestions.');
       return;
@@ -704,29 +704,29 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const handleCutoffSuggestions = async () => {
     setShowCutoffConfirmModal(false);
     if (isCuttingOffSuggestions || !isCreator) return;
-    const creatorSecret = getCreatorSecret(poll.id);
+    const creatorSecret = getCreatorSecret(question.id);
     if (!creatorSecret) return;
-    const multipollId = poll.multipoll_id;
-    if (!multipollId) {
-      console.error('Cannot cutoff suggestions without multipoll_id');
+    const pollId = question.poll_id;
+    if (!pollId) {
+      console.error('Cannot cutoff suggestions without poll_id');
       return;
     }
 
     setIsCuttingOffSuggestions(true);
     try {
-      const wrapper = await apiCutoffMultipollSuggestions(multipollId, creatorSecret);
-      const updatedPoll = wrapper.sub_polls.find((sp) => sp.id === poll.id) ?? null;
-      invalidatePoll(poll.id);
-      // Phase 5b: prephase_deadline lives on the multipoll wrapper. Use the
+      const wrapper = await apiCutoffPollSuggestions(pollId, creatorSecret);
+      const updatedQuestion = wrapper.questions.find((sp) => sp.id === question.id) ?? null;
+      invalidateQuestion(question.id);
+      // Phase 5b: prephase_deadline lives on the poll wrapper. Use the
       // wrapper's value as the new override so the UI exits suggestion phase
       // immediately.
       setSuggestionDeadlineOverride(wrapper.prephase_deadline || new Date().toISOString());
-      if (updatedPoll) {
-        if (updatedPoll.options) {
-          const opts = typeof updatedPoll.options === 'string' ? JSON.parse(updatedPoll.options) : updatedPoll.options;
+      if (updatedQuestion) {
+        if (updatedQuestion.options) {
+          const opts = typeof updatedQuestion.options === 'string' ? JSON.parse(updatedQuestion.options) : updatedQuestion.options;
           setOptionsOverride(opts);
         }
-        await fetchPollResults();
+        await fetchQuestionResults();
       }
     } catch (error) {
       console.error('Error cutting off suggestions:', error);
@@ -736,12 +736,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
   };
 
-  // Snapshot the per-sub-poll state into the shape `buildVoteData` expects.
+  // Snapshot the per-question state into the shape `buildVoteData` expects.
   // Both `submitVote` and `prepareBatchVoteItem` call this so they read
   // exactly the same inputs.
   const getBallotInputs = (): BallotInputs => ({
-    pollId: poll.id,
-    pollType: poll.poll_type,
+    questionId: question.id,
+    questionType: question.question_type,
     isAbstaining,
     yesNoChoice,
     rankedChoices,
@@ -759,7 +759,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     likedSlots,
     dislikedSlots,
     voterName,
-    pollOptions,
+    questionOptions,
     userVoteData,
   });
 
@@ -772,8 +772,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     // Also applies after suggestion cutoff: user submitted suggestions but hasn't ranked yet.
     // Includes users who abstained from suggestions (is_abstain) — they should still be able to rank.
     const hasNotRankedYet = hasVoted && hasSuggestionPhase && !userVoteData?.ranked_choices?.length && !userVoteData?.is_ranking_abstain;
-    // For time polls in preferences phase: not yet reacted if liked_slots is still null
-    const hasNotReactedYet = poll.poll_type === 'time' && !inAvailabilityPhase && hasVoted
+    // For time questions in preferences phase: not yet reacted if liked_slots is still null
+    const hasNotReactedYet = question.question_type === 'time' && !inAvailabilityPhase && hasVoted
       && userVoteData?.liked_slots === null && userVoteData?.disliked_slots === null && !userVoteData?.is_abstain;
     const isImplicitEdit = hasVoted && !isAnyEditing && (
       (canSubmitSuggestions && canSubmitRankings) || hasNotRankedYet || hasNotReactedYet
@@ -782,17 +782,17 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       setIsEditingVote(true);
     }
 
-    if (isSubmitting || (hasVoted && !isAnyEditing && !isImplicitEdit) || isPollClosed) {
+    if (isSubmitting || (hasVoted && !isAnyEditing && !isImplicitEdit) || isQuestionClosed) {
       return;
     }
 
     // Validate vote choice first
-    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
+    if (question.question_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
       setVoteError("Please select Yes, No, or Abstain");
       return;
     }
 
-    if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
+    if (question.question_type === 'ranked_choice' && !isAbstaining) {
       const filteredRankedChoices = rankedChoices.filter(choice => choice && choice.trim().length > 0);
       const filteredSuggestions = suggestionChoices.filter(choice => choice && choice.trim().length > 0);
       if (filteredRankedChoices.length === 0 && (!canSubmitSuggestions || filteredSuggestions.length === 0)) {
@@ -816,7 +816,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     setShowVoteConfirmModal(false);
 
     const isAnyEditingForSubmit = isEditingVote || isEditingRanking;
-    if (isSubmitting || (hasVoted && !isAnyEditingForSubmit) || isPollClosed) {
+    if (isSubmitting || (hasVoted && !isAnyEditingForSubmit) || isQuestionClosed) {
       return;
     }
 
@@ -833,7 +833,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       const voteData = buildResult.voteData;
 
       const isEditing = (isEditingVote || isEditingRanking) && !!userVoteId;
-      const multipollId = poll.multipoll_id ?? null;
+      const pollId = question.poll_id ?? null;
       const trimmedVoterName = voterName.trim() || null;
       const submitErrorMessage = isEditing
         ? "Failed to update vote. Please try again."
@@ -841,23 +841,23 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
       let voteId: string | undefined;
 
-      if (multipollId) {
-        // Route through the unified multipoll endpoint per the architectural
-        // rule that vote submission is always atomic across the multipoll
-        // (see CLAUDE.md → Multipoll System). Single-item batch from this
-        // ballot — the multipoll has only one sub-poll being touched here.
-        const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
-          pollType: poll.poll_type,
+      if (pollId) {
+        // Route through the unified poll endpoint per the architectural
+        // rule that vote submission is always atomic across the poll
+        // (see CLAUDE.md → Poll System). Single-item batch from this
+        // ballot — the poll has only one question being touched here.
+        const item = buildPollVoteItem(voteData, question.id, userVoteId, {
+          questionType: question.question_type,
           canSubmitSuggestions,
           isEditing,
         });
         try {
-          const returned = await apiSubmitMultipollVotes(multipollId, {
+          const returned = await apiSubmitPollVotes(pollId, {
             voter_name: trimmedVoterName,
             items: [item],
           });
-          const v = returned.find(r => r.poll_id === poll.id);
-          if (!v) throw new Error('Vote response missing for sub-poll');
+          const v = returned.find(r => r.question_id === question.id);
+          if (!v) throw new Error('Vote response missing for question');
           voteId = v.id;
           if (isEditing) setUserVoteData(v);
         } catch (submitErr) {
@@ -867,14 +867,14 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           return;
         }
       } else {
-        // Phase 5: every poll has a multipoll wrapper, so this branch is
+        // Phase 5: every question has a poll wrapper, so this branch is
         // unreachable. Surface as an error if the wrapper is somehow missing.
-        console.error('Cannot submit vote without multipoll_id', { pollId: poll.id });
+        console.error('Cannot submit vote without poll_id', { questionId: question.id });
         setVoteError(submitErrorMessage);
         return;
       }
 
-      invalidatePoll(poll.id);
+      invalidateQuestion(question.id);
       setHasVoted(true);
       setUserVoteId(voteId ?? null);
 
@@ -889,28 +889,28 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       }
 
       // Sync voted/abstained status to localStorage. Must happen BEFORE the
-      // POLL_VOTES_CHANGED_EVENT dispatch below so listeners that re-read
+      // QUESTION_VOTES_CHANGED_EVENT dispatch below so listeners that re-read
       // localStorage (e.g. the thread page's awaiting-response border) see
       // the updated value. Also runs on edits so abstain-via-edit transitions
       // get recorded (the flag is a one-way set otherwise).
-      markPollAsVoted(poll.id, voteId, isAbstaining);
+      markQuestionAsVoted(question.id, voteId, isAbstaining);
       if (!isEditingVote) {
-        setHasPollDataState(true);
+        setHasQuestionDataState(true);
       }
 
-      window.dispatchEvent(new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: poll.id } }));
+      window.dispatchEvent(new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: question.id } }));
 
-      // Start deferred availability deadline on first time poll availability submission
-      if (poll.poll_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
-        const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+      // Start deferred availability deadline on first time question availability submission
+      if (question.question_type === 'time' && inAvailabilityPhase && !availabilityTimerStarted && question.suggestion_deadline_minutes && !isEditingVote) {
+        const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
         setSuggestionDeadlineOverride(newDeadline.toISOString());
       }
 
-      // Refresh suggestion list for polls with suggestion phase
+      // Refresh suggestion list for questions with suggestion phase
       if (hasSuggestionPhase) {
-        // If this is the first suggestion on a deferred-deadline poll, start the timer
-        if (!suggestionTimerStarted && poll.suggestion_deadline_minutes && !isEditingVote) {
-          const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+        // If this is the first suggestion on a deferred-deadline question, start the timer
+        if (!suggestionTimerStarted && question.suggestion_deadline_minutes && !isEditingVote) {
+          const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
           setSuggestionDeadlineOverride(newDeadline.toISOString());
         }
         // Reset abstain so the ranking ballot is usable after suggestion submission
@@ -920,18 +920,18 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         }
         setTimeout(async () => {
           await loadExistingSuggestions(false);
-          await fetchPollResults();
+          await fetchQuestionResults();
         }, 500);
       }
 
       // Record which options the user saw at vote/edit time so we can detect newly added
       // suggestions on future visits and show a "new options available" banner.
-      if (hasSuggestionPhase && pollOptions.length > 0) {
-        storeSeenPollOptions(poll.id, pollOptions);
-        setSeenPollOptions(pollOptions);
+      if (hasSuggestionPhase && questionOptions.length > 0) {
+        storeSeenQuestionOptions(question.id, questionOptions);
+        setSeenQuestionOptions(questionOptions);
       }
       // Clear ballot draft now that vote is saved to the database
-      clearSubPollDraft(poll.multipoll_id ?? null, poll.id);
+      clearQuestionDraft(question.poll_id ?? null, question.id);
       
       // Save the user's name if they provided one
       if (voterName.trim()) {
@@ -943,12 +943,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
       // Refresh results after editing votes with suggestions
       if (hasSuggestionPhase && (isEditingVote || isEditingRanking)) {
-        await fetchPollResults();
+        await fetchQuestionResults();
       }
 
       // If the poll is closed or preliminary results threshold met, fetch results
-      if (isPollClosed || showPrelimResults) {
-        await fetchPollResults();
+      if (isQuestionClosed || showPrelimResults) {
+        await fetchQuestionResults();
       }
     } catch (error) {
       console.error('Unexpected error:', error);
@@ -962,17 +962,17 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // closure lets the imperative handle stay stable while still calling
   // the latest version. Wrapper-level Submit calls triggerSubmit() which
   // routes through the same validation + ConfirmationModal flow the
-  // per-sub-poll button used to invoke.
+  // per-question button used to invoke.
   const handleVoteClickRef = useRef(handleVoteClick);
   handleVoteClickRef.current = handleVoteClick;
 
-  // Validation + voteData/MultipollVoteItem construction is shared with
+  // Validation + voteData/PollVoteItem construction is shared with
   // submitVote via voteDataBuilders. The two callers diverge only on the
   // POST-build side effects: submitVote calls the API itself; this returns
   // a deferred commit/fail pair the wrapper invokes after batching.
   const prepareBatchVoteItem = (): PrepareBatchVoteItemResult => {
     const isAnyEditing = isEditingVote || isEditingRanking;
-    if (isSubmitting || (hasVoted && !isAnyEditing) || isPollClosed) {
+    if (isSubmitting || (hasVoted && !isAnyEditing) || isQuestionClosed) {
       return { skip: true };
     }
 
@@ -985,28 +985,28 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     setVoteError(null);
 
     const isEditing = isAnyEditing && !!userVoteId;
-    const item = buildMultipollVoteItem(voteData, poll.id, userVoteId, {
-      pollType: poll.poll_type,
+    const item = buildPollVoteItem(voteData, question.id, userVoteId, {
+      questionType: question.question_type,
       canSubmitSuggestions,
       isEditing,
     });
 
-    // Snapshot per-sub-poll state at build time so the post-submit
+    // Snapshot per-question state at build time so the post-submit
     // side effects in commit() don't read whatever the user edited
     // between button-tap and API-resolution.
     const capturedSuggestionMetadata = suggestionMetadata;
     const capturedIsAbstaining = effectiveIsAbstaining;
     const capturedIsEditing = isEditing;
-    const capturedPollOptions = pollOptions;
+    const capturedQuestionOptions = questionOptions;
     const capturedSuggestionTimerStarted = suggestionTimerStarted;
     const capturedAvailabilityTimerStarted = availabilityTimerStarted;
 
-    // commit handles SubPollBallot-internal state only. The wrapper-level
-    // confirmMultipollSubmit owns shared cross-sub-poll work — votedPolls /
-    // pollVoteIds localStorage, POLL_VOTES_CHANGED_EVENT dispatch, and
+    // commit handles QuestionBallot-internal state only. The wrapper-level
+    // confirmPollSubmit owns shared cross-question work — votedQuestions /
+    // questionVoteIds localStorage, QUESTION_VOTES_CHANGED_EVENT dispatch, and
     // saveUserName — so commit doesn't duplicate them on the batch path.
     const commit = (vote: import("@/lib/api").ApiVote) => {
-      invalidatePoll(poll.id);
+      invalidateQuestion(question.id);
       setHasVoted(true);
       setUserVoteId(vote.id);
       if (capturedIsEditing) setUserVoteData(vote);
@@ -1017,15 +1017,15 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         setOptionsMetadataLocal(prev => ({ ...prev, ...capturedSuggestionMetadata }));
       }
       if (!capturedIsEditing) {
-        setHasPollDataState(true);
+        setHasQuestionDataState(true);
       }
-      if (poll.poll_type === 'time' && inAvailabilityPhase && !capturedAvailabilityTimerStarted && poll.suggestion_deadline_minutes && !capturedIsEditing) {
-        const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+      if (question.question_type === 'time' && inAvailabilityPhase && !capturedAvailabilityTimerStarted && question.suggestion_deadline_minutes && !capturedIsEditing) {
+        const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
         setSuggestionDeadlineOverride(newDeadline.toISOString());
       }
       if (hasSuggestionPhase) {
-        if (!capturedSuggestionTimerStarted && poll.suggestion_deadline_minutes && !capturedIsEditing) {
-          const newDeadline = new Date(Date.now() + poll.suggestion_deadline_minutes * 60 * 1000);
+        if (!capturedSuggestionTimerStarted && question.suggestion_deadline_minutes && !capturedIsEditing) {
+          const newDeadline = new Date(Date.now() + question.suggestion_deadline_minutes * 60 * 1000);
           setSuggestionDeadlineOverride(newDeadline.toISOString());
         }
         if (capturedIsAbstaining && canSubmitRankings) {
@@ -1033,21 +1033,21 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         }
         setTimeout(async () => {
           await loadExistingSuggestions(false);
-          await fetchPollResults();
+          await fetchQuestionResults();
         }, 500);
       }
-      if (hasSuggestionPhase && capturedPollOptions.length > 0) {
-        storeSeenPollOptions(poll.id, capturedPollOptions);
-        setSeenPollOptions(capturedPollOptions);
+      if (hasSuggestionPhase && capturedQuestionOptions.length > 0) {
+        storeSeenQuestionOptions(question.id, capturedQuestionOptions);
+        setSeenQuestionOptions(capturedQuestionOptions);
       }
-      clearSubPollDraft(poll.multipoll_id ?? null, poll.id);
+      clearQuestionDraft(question.poll_id ?? null, question.id);
       setIsEditingVote(false);
       setIsEditingRanking(false);
       if (hasSuggestionPhase && capturedIsEditing) {
-        void fetchPollResults();
+        void fetchQuestionResults();
       }
-      if (isPollClosed || showPrelimResults) {
-        void fetchPollResults();
+      if (isQuestionClosed || showPrelimResults) {
+        void fetchQuestionResults();
       }
     };
 
@@ -1067,25 +1067,25 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   const wrapperShouldShowSubmit = useMemo(() => {
     if (!wrapperHandlesSubmit) return false;
-    if (isPollClosed) return false;
-    if (poll.poll_type === 'yes_no') return false; // external rendering uses tap-to-change
+    if (isQuestionClosed) return false;
+    if (question.question_type === 'yes_no') return false; // external rendering uses tap-to-change
     if (hasVoted && !isEditingVote && !isEditingRanking) return false;
     return true;
-  }, [wrapperHandlesSubmit, isPollClosed, poll.poll_type, hasVoted, isEditingVote, isEditingRanking]);
+  }, [wrapperHandlesSubmit, isQuestionClosed, question.question_type, hasVoted, isEditingVote, isEditingRanking]);
 
   const wrapperSubmitLabel = useMemo(() => {
-    if (poll.poll_type === 'time') {
+    if (question.question_type === 'time') {
       return inAvailabilityPhase ? 'Submit Availability' : 'Submit Preferences';
     }
     return 'Submit Vote';
-  }, [poll.poll_type, inAvailabilityPhase]);
+  }, [question.question_type, inAvailabilityPhase]);
 
   useEffect(() => {
     if (!wrapperHandlesSubmit || !onWrapperSubmitStateChange) return;
-    onWrapperSubmitStateChange(poll.id, { visible: wrapperShouldShowSubmit, label: wrapperSubmitLabel });
-  }, [poll.id, wrapperShouldShowSubmit, wrapperSubmitLabel, wrapperHandlesSubmit, onWrapperSubmitStateChange]);
+    onWrapperSubmitStateChange(question.id, { visible: wrapperShouldShowSubmit, label: wrapperSubmitLabel });
+  }, [question.id, wrapperShouldShowSubmit, wrapperSubmitLabel, wrapperHandlesSubmit, onWrapperSubmitStateChange]);
 
-  const editVoteButton = !isPollClosed && !isLoadingVoteData ? (
+  const editVoteButton = !isQuestionClosed && !isLoadingVoteData ? (
     <button
       onClick={() => setIsEditingVote(true)}
       className="px-3 py-1 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-medium text-sm rounded-md transition-colors flex-shrink-0"
@@ -1096,12 +1096,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   // When the thread view renders yes/no results externally (to keep the
   // winner card DOM-stable across expand/collapse), the internal copies of
-  // PollResultsDisplay would duplicate them — so skip them entirely for
-  // yes_no polls in that context.
-  const suppressYesNoHere = !!externalYesNoResults && poll.poll_type === 'yes_no';
+  // QuestionResultsDisplay would duplicate them — so skip them entirely for
+  // yes_no questions in that context.
+  const suppressYesNoHere = !!externalYesNoResults && question.question_type === 'yes_no';
 
   const preliminaryResultsBlock = (className: string) => (
-    showPrelimResults && !isPollClosed && !suppressYesNoHere ? (
+    showPrelimResults && !isQuestionClosed && !suppressYesNoHere ? (
       <div className={className}>
         {loadingResults ? (
           <div className="flex justify-center items-center py-3">
@@ -1110,8 +1110,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           </div>
-        ) : pollResults ? (
-          <PollResultsDisplay results={pollResults} isPollClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
+        ) : questionResults ? (
+          <QuestionResultsDisplay results={questionResults} isQuestionClosed={false} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
         ) : null}
       </div>
     ) : null
@@ -1119,14 +1119,14 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
   return (
     <>
-      <div className="poll-content">
+      <div className="question-content">
         {/* Creation info lives on the compact card header (creator name + relative time);
              full timestamp is available via the tooltip on that time. */}
 
-        {/* Poll details (expandable). Suppressed in multi-sub-poll groups
+        {/* Question details (expandable). Suppressed in multi-question groups
              because the thread-page section label already renders
-             poll.details (used there as the disambiguating context). */}
-        {poll.details && !partOfMultipollGroup && <PollDetails details={poll.details} />}
+             question.details (used there as the disambiguating context). */}
+        {question.details && !partOfPollGroup && <QuestionDetails details={question.details} />}
 
         {showReferenceLocation && (
           <div className="mb-3 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -1135,34 +1135,34 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span>Near {poll.reference_location_label}</span>
+              <span>Near {question.reference_location_label}</span>
             </div>
-            {canSubmitSuggestions && isLocationLikeCategory(poll.category ?? '') && (
+            {canSubmitSuggestions && isLocationLikeCategory(question.category ?? '') && (
               <SearchRadiusBubble searchRadius={searchRadius} onSearchRadiusChange={setSearchRadius} />
             )}
           </div>
         )}
 
-        {/* Poll status card — only renders deferred-deadline notices. Closed
+        {/* Question status card — only renders deferred-deadline notices. Closed
              states (max-capacity, manual, expired) are surfaced in the
              long-press modal so the card body stays focused on results. */}
         {(() => {
-          const deadline = multipoll.response_deadline ? new Date(multipoll.response_deadline) : null;
+          const deadline = poll.response_deadline ? new Date(poll.response_deadline) : null;
           const now = currentTime || new Date();
           const isExpired = deadline && deadline <= now;
 
           // Case 1 (max_capacity), 2 (manual close), 3 (expired + closed) all
           // render nothing here — the modal owns those labels now.
 
-          // Case 4: Poll open, not expired. Live countdown is rendered
+          // Case 4: Question open, not expired. Live countdown is rendered
           // above the card in the thread view; only deferred-deadline
           // notices render here, since they convey run-duration info
           // ("X minutes after first submission") that the above-card
           // "Taking Suggestions" label doesn't surface.
-          if (!isPollClosed && !isExpired && deadline) {
-            const mins = poll.suggestion_deadline_minutes;
+          if (!isQuestionClosed && !isExpired && deadline) {
+            const mins = question.suggestion_deadline_minutes;
             const isDeferredAvailability =
-              poll.poll_type === 'time' &&
+              question.question_type === 'time' &&
               inAvailabilityPhase &&
               !suggestionDeadlineOverride &&
               !wrapperSuggestionDeadline &&
@@ -1179,8 +1179,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
             return null;
           }
 
-          // Case 5: Timer expired but poll is still open - don't show a card
-          if (!isPollClosed && isExpired) {
+          // Case 5: Timer expired but question is still open - don't show a card
+          if (!isQuestionClosed && isExpired) {
             return null;
           }
           
@@ -1189,11 +1189,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         })()}
         
         {/* Preliminary results shown ABOVE ballot when user has already voted (hidden during suggestion phase) */}
-        {/* For suggestion-phase polls, only show after user has submitted rankings, not just suggestions */}
+        {/* For suggestion-phase questions, only show after user has submitted rankings, not just suggestions */}
         {hasVoted && !isEditingVote && !inSuggestionPhase && hasCompletedRanking && preliminaryResultsBlock("")}
 
-        {/* For closed polls, show results first */}
-        {isPollClosed && !suppressYesNoHere && (
+        {/* For closed questions, show results first */}
+        {isQuestionClosed && !suppressYesNoHere && (
           <div>
             {loadingResults ? (
               <div className="flex justify-center items-center py-3">
@@ -1202,8 +1202,8 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
-            ) : pollResults ? (
-              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
+            ) : questionResults ? (
+              <QuestionResultsDisplay results={questionResults} isQuestionClosed={isQuestionClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
             ) : (
               <div className="text-center py-1.5">
                 <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -1212,15 +1212,15 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           </div>
         )}
 
-        {/* Poll Content Based on Type */}
-        {poll.poll_type === 'yes_no' ? (
+        {/* Question Content Based on Type */}
+        {question.question_type === 'yes_no' ? (
           <div>
               {suppressYesNoHere ? (
                 // All yes_no UI (voting, changing, results) is rendered by
                 // the thread view's external YesNoResults — nothing to show
                 // here for any state.
                 null
-              ) : isPollClosed ? (
+              ) : isQuestionClosed ? (
                 null
               ) : hasVoted && !isEditingVote ? (
                 null
@@ -1265,12 +1265,12 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                 </>
               )}
             </div>
-          ) : poll.poll_type === 'time' ? (
+          ) : question.question_type === 'time' ? (
             <TimeBallotSection
-              poll={poll}
-              isPollClosed={!!isPollClosed}
+              question={question}
+              isQuestionClosed={!!isQuestionClosed}
               loadingResults={loadingResults}
-              pollResults={pollResults}
+              questionResults={questionResults}
               userVoteData={userVoteData}
               isLoadingVoteData={isLoadingVoteData}
               hasVoted={hasVoted}
@@ -1303,7 +1303,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
             />
           ) : (
             <div>
-              {isPollClosed ? (
+              {isQuestionClosed ? (
                 <div>
                   {loadingResults ? (
                     <div className="flex justify-center items-center py-8">
@@ -1312,7 +1312,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                     </div>
-                  ) : pollResults ? (
+                  ) : questionResults ? (
                     <>
                       {/* Results are now shown at the top, only show abstained bubble and button here */}
                       {userAbstainedFromRanking && (
@@ -1345,10 +1345,10 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                 </div>
               ) : (
                 <>
-                  {/* Suggestion phase UI for polls with suggestion deadline */}
+                  {/* Suggestion phase UI for questions with suggestion deadline */}
                   {canSubmitSuggestions && (
                     <SuggestionVotingInterface
-                      poll={poll}
+                      question={question}
                       existingSuggestions={existingSuggestions}
                       suggestionChoices={suggestionChoices}
                       setSuggestionChoices={setSuggestionChoices}
@@ -1359,20 +1359,20 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                       setVoterName={setVoterName}
                       handleVoteClick={handleVoteClick}
                       isSubmitting={isSubmitting}
-                      isPollClosed={!!isPollClosed}
+                      isQuestionClosed={!!isQuestionClosed}
                       isCreator={isCreator}
                       hasVoted={hasVoted}
                       isEditingVote={isEditingVote}
                       setIsEditingVote={setIsEditingVote}
                       userVoteData={userVoteData}
                       isLoadingVoteData={isLoadingVoteData}
-                      pollResults={pollResults}
+                      questionResults={questionResults}
                       loadingResults={loadingResults}
                       loadExistingSuggestions={loadExistingSuggestions}
                       suggestionMetadata={suggestionMetadata}
                       onSuggestionMetadataChange={setSuggestionMetadata}
                       optionsMetadata={optionsMetadataLocal}
-                      showCutoffButton={!isPollClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
+                      showCutoffButton={!isQuestionClosed && isCreator && canSubmitSuggestions && existingSuggestions.length > 0}
                       onCutoffClick={handleCutoffSuggestionsClick}
                       isCuttingOff={isCuttingOffSuggestions}
                       searchRadius={searchRadius}
@@ -1382,18 +1382,18 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
                   {/* Ranking section — independent component with its own edit state */}
                   <RankingSection
-                    poll={poll}
+                    question={question}
                     suggestionDeadline={effectiveSuggestionDeadline ?? null}
-                    responseDeadline={multipoll.response_deadline ?? null}
-                    pollId={pollId || ''}
-                    pollOptions={pollOptions}
+                    responseDeadline={poll.response_deadline ?? null}
+                    questionId={questionId || ''}
+                    questionOptions={questionOptions}
                     rankedChoices={rankedChoices}
                     handleRankingChange={handleRankingChange}
                     isAbstaining={isAbstaining}
                     setIsAbstaining={setIsAbstaining}
                     handleAbstain={handleAbstain}
                     isSubmitting={isSubmitting}
-                    isPollClosed={!!isPollClosed}
+                    isQuestionClosed={!!isQuestionClosed}
                     hasVoted={hasVoted}
                     isEditingRanking={isEditingRanking}
                     setIsEditingRanking={setIsEditingRanking}
@@ -1421,9 +1421,9 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           )}
 
           {/* Preliminary results shown BELOW ballot when user hasn't voted yet (hidden during suggestion phase) */}
-          {/* For suggestion-phase polls, hide until user has submitted rankings */}
+          {/* For suggestion-phase questions, hide until user has submitted rankings */}
           {/* When editing an existing ranked_choice ballot, skip the below block — the user is focused on revising their ranks. */}
-          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && poll.poll_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
+          {(!hasVoted || isEditingVote) && !inSuggestionPhase && !hasSuggestionPhase && !(isEditingVote && question.question_type === 'ranked_choice') && preliminaryResultsBlock("mt-6")}
 
       </div>
 
@@ -1432,7 +1432,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         onConfirm={submitVote}
         onCancel={() => setShowVoteConfirmModal(false)}
         title="Submit Vote"
-        message={poll.poll_type === 'yes_no' 
+        message={question.question_type === 'yes_no' 
           ? (isAbstaining 
               ? `Are you sure you want to abstain from this vote?`
               : `Are you sure you want to vote "${yesNoChoice?.toUpperCase()}"?`)
@@ -1459,4 +1459,4 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   );
 });
 
-export default SubPollBallot;
+export default QuestionBallot;

@@ -118,25 +118,25 @@ class TestCountSuggestionVotes:
         assert result.abstain_count == 0
         assert result.suggestion_counts == [SuggestionCount("Alice", 1)]
 
-    def test_poll_options_included_with_zero_votes(self):
-        """Starting poll options appear in results even with 0 votes."""
+    def test_question_options_included_with_zero_votes(self):
+        """Starting question options appear in results even with 0 votes."""
         votes = [{"suggestions": ["Alice"]}]
-        result = count_suggestion_votes(votes, poll_options=["Alice", "Bob", "Charlie"])
+        result = count_suggestion_votes(votes, question_options=["Alice", "Bob", "Charlie"])
         assert result.suggestion_counts == [
             SuggestionCount("Alice", 1),
             SuggestionCount("Bob", 0),
             SuggestionCount("Charlie", 0),
         ]
 
-    def test_poll_options_no_votes(self):
-        """Poll options with no votes at all."""
-        result = count_suggestion_votes([], poll_options=["Option A", "Option B"])
+    def test_question_options_no_votes(self):
+        """Question options with no votes at all."""
+        result = count_suggestion_votes([], question_options=["Option A", "Option B"])
         assert result.suggestion_counts == [
             SuggestionCount("Option A", 0),
             SuggestionCount("Option B", 0),
         ]
 
-    def test_large_poll(self):
+    def test_large_question(self):
         votes = [
             {"suggestions": ["Alice", "Bob"]}
             for _ in range(50)

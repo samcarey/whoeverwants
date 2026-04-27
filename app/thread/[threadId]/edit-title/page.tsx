@@ -2,8 +2,8 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { apiUpdateMultipollThreadTitle } from "@/lib/api";
-import { invalidatePoll } from "@/lib/pollCache";
+import { apiUpdatePollThreadTitle } from "@/lib/api";
+import { invalidateQuestion } from "@/lib/questionCache";
 import { navigateWithTransition, navigateBackWithTransition, hasAppHistory } from "@/lib/viewTransitions";
 import { useThread } from "@/lib/useThread";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -13,10 +13,10 @@ import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
 function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
   const router = useRouter();
-  // Phase 5b: thread_title lives on the multipoll wrapper.
-  const latestMultipoll = thread.latestMultipoll;
+  // Phase 5b: thread_title lives on the poll wrapper.
   const latestPoll = thread.latestPoll;
-  const [value, setValue] = useState<string>(latestMultipoll.thread_title ?? '');
+  const latestQuestion = thread.latestQuestion;
+  const [value, setValue] = useState<string>(latestPoll.thread_title ?? '');
   const [saving, setSaving] = useState(false);
 
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
@@ -28,15 +28,15 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
 
   const save = async () => {
     if (saving) return;
-    if (!latestPoll.multipoll_id) {
-      console.error('Cannot edit thread title without multipoll_id');
+    if (!latestQuestion.poll_id) {
+      console.error('Cannot edit thread title without poll_id');
       setSaving(false);
       return;
     }
     setSaving(true);
     try {
-      await apiUpdateMultipollThreadTitle(latestPoll.multipoll_id, value.trim() || null);
-      invalidatePoll(latestPoll.id);
+      await apiUpdatePollThreadTitle(latestQuestion.poll_id, value.trim() || null);
+      invalidateQuestion(latestQuestion.id);
       goBack();
     } catch (err) {
       console.error('Failed to update thread title:', err);

@@ -1,17 +1,17 @@
 // Ballot draft persistence — saves in-progress vote state to localStorage
 // so it survives page navigation.
 //
-// Storage layout: keyed by multipoll_id. Each entry holds shared multipoll-level
-// fields (voter_name) plus a per-sub-poll map of in-progress vote state.
-// The legacy per-poll key path (multipollId === null) is retained for
-// pre-Phase-4 polls that haven't been wrapped.
+// Storage layout: keyed by poll_id. Each entry holds shared poll-level
+// fields (voter_name) plus a per-question map of in-progress vote state.
+// The legacy per-question key path (pollId === null) is retained for
+// pre-Phase-4 questions that haven't been wrapped.
 
 import type { DayTimeWindow } from "./types";
 
-const MULTIPOLL_PREFIX = 'ballotDraft:m:';
+const POLL_PREFIX = 'ballotDraft:m:';
 const LEGACY_PREFIX = 'ballotDraft:';
 
-export interface SubPollDraft {
+export interface QuestionDraft {
   yesNoChoice?: 'yes' | 'no' | null;
   isAbstaining?: boolean;
   voterDayTimeWindows?: DayTimeWindow[];
@@ -21,12 +21,12 @@ export interface SubPollDraft {
   durationMaxEnabled?: boolean;
 }
 
-export interface MultipollBallotDraft {
+export interface PollBallotDraft {
   voter_name?: string;
-  sub_polls: { [subPollId: string]: SubPollDraft };
+  questions: { [subQuestionId: string]: QuestionDraft };
 }
 
-export type BallotDraft = SubPollDraft;
+export type BallotDraft = QuestionDraft;
 
 function readJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
@@ -50,88 +50,88 @@ function removeKey(key: string): void {
   } catch { /* ignore */ }
 }
 
-export function loadMultipollBallotDraft(multipollId: string): MultipollBallotDraft | null {
-  return readJson<MultipollBallotDraft>(MULTIPOLL_PREFIX + multipollId);
+export function loadPollBallotDraft(pollId: string): PollBallotDraft | null {
+  return readJson<PollBallotDraft>(POLL_PREFIX + pollId);
 }
 
-export function saveMultipollBallotDraft(multipollId: string, draft: MultipollBallotDraft): void {
-  writeJson(MULTIPOLL_PREFIX + multipollId, draft);
+export function savePollBallotDraft(pollId: string, draft: PollBallotDraft): void {
+  writeJson(POLL_PREFIX + pollId, draft);
 }
 
-export function clearMultipollBallotDraft(multipollId: string): void {
-  removeKey(MULTIPOLL_PREFIX + multipollId);
+export function clearPollBallotDraft(pollId: string): void {
+  removeKey(POLL_PREFIX + pollId);
 }
 
-// When multipollId is null, falls back to the legacy per-sub-poll key (used
-// by any pre-Phase-4 polls that haven't been wrapped in a multipoll).
-export function loadSubPollDraft(
-  multipollId: string | null | undefined,
-  subPollId: string
-): SubPollDraft | null {
+// When pollId is null, falls back to the legacy per-question key (used
+// by any pre-Phase-4 questions that haven't been wrapped in a poll).
+export function loadQuestionDraft(
+  pollId: string | null | undefined,
+  subQuestionId: string
+): QuestionDraft | null {
   if (typeof window === 'undefined') return null;
-  if (!multipollId) {
-    return readJson<SubPollDraft>(LEGACY_PREFIX + subPollId);
+  if (!pollId) {
+    return readJson<QuestionDraft>(LEGACY_PREFIX + subQuestionId);
   }
-  const entry = loadMultipollBallotDraft(multipollId);
-  if (entry?.sub_polls?.[subPollId]) return entry.sub_polls[subPollId];
-  // One-shot migration: hoist a stray legacy per-sub-poll entry into the
-  // multipoll entry and drop the legacy key. Preserves any other slots
+  const entry = loadPollBallotDraft(pollId);
+  if (entry?.questions?.[subQuestionId]) return entry.questions[subQuestionId];
+  // One-shot migration: hoist a stray legacy per-question entry into the
+  // poll entry and drop the legacy key. Preserves any other slots
   // already in the entry.
-  const legacy = readJson<SubPollDraft>(LEGACY_PREFIX + subPollId);
+  const legacy = readJson<QuestionDraft>(LEGACY_PREFIX + subQuestionId);
   if (!legacy) return null;
-  const next = entry ?? { sub_polls: {} };
-  next.sub_polls[subPollId] = legacy;
-  saveMultipollBallotDraft(multipollId, next);
-  removeKey(LEGACY_PREFIX + subPollId);
+  const next = entry ?? { questions: {} };
+  next.questions[subQuestionId] = legacy;
+  savePollBallotDraft(pollId, next);
+  removeKey(LEGACY_PREFIX + subQuestionId);
   return legacy;
 }
 
-export function saveSubPollDraft(
-  multipollId: string | null | undefined,
-  subPollId: string,
-  draft: SubPollDraft
+export function saveQuestionDraft(
+  pollId: string | null | undefined,
+  subQuestionId: string,
+  draft: QuestionDraft
 ): void {
   if (typeof window === 'undefined') return;
-  if (!multipollId) {
-    writeJson(LEGACY_PREFIX + subPollId, draft);
+  if (!pollId) {
+    writeJson(LEGACY_PREFIX + subQuestionId, draft);
     return;
   }
-  const entry = loadMultipollBallotDraft(multipollId) ?? { sub_polls: {} };
-  entry.sub_polls[subPollId] = draft;
-  saveMultipollBallotDraft(multipollId, entry);
+  const entry = loadPollBallotDraft(pollId) ?? { questions: {} };
+  entry.questions[subQuestionId] = draft;
+  savePollBallotDraft(pollId, entry);
 }
 
-export function clearSubPollDraft(
-  multipollId: string | null | undefined,
-  subPollId: string
+export function clearQuestionDraft(
+  pollId: string | null | undefined,
+  subQuestionId: string
 ): void {
   if (typeof window === 'undefined') return;
-  if (!multipollId) {
-    removeKey(LEGACY_PREFIX + subPollId);
+  if (!pollId) {
+    removeKey(LEGACY_PREFIX + subQuestionId);
     return;
   }
   // Defensive: clear any stray legacy entry too, in case a save bypassed
-  // the migration path in loadSubPollDraft.
-  removeKey(LEGACY_PREFIX + subPollId);
-  const entry = loadMultipollBallotDraft(multipollId);
+  // the migration path in loadQuestionDraft.
+  removeKey(LEGACY_PREFIX + subQuestionId);
+  const entry = loadPollBallotDraft(pollId);
   if (!entry) return;
-  const { [subPollId]: _removed, ...rest } = entry.sub_polls ?? {};
+  const { [subQuestionId]: _removed, ...rest } = entry.questions ?? {};
   if (Object.keys(rest).length === 0 && !entry.voter_name) {
-    clearMultipollBallotDraft(multipollId);
+    clearPollBallotDraft(pollId);
     return;
   }
-  saveMultipollBallotDraft(multipollId, { ...entry, sub_polls: rest });
+  savePollBallotDraft(pollId, { ...entry, questions: rest });
 }
 
 // Legacy aliases — remove once all callers migrate.
-export function loadBallotDraft(pollId: string): SubPollDraft | null {
-  return loadSubPollDraft(null, pollId);
+export function loadBallotDraft(questionId: string): QuestionDraft | null {
+  return loadQuestionDraft(null, questionId);
 }
 
-export function saveBallotDraft(pollId: string, draft: SubPollDraft): void {
-  saveSubPollDraft(null, pollId, draft);
+export function saveBallotDraft(questionId: string, draft: QuestionDraft): void {
+  saveQuestionDraft(null, questionId, draft);
 }
 
-export function clearBallotDraft(pollId: string): void {
-  clearSubPollDraft(null, pollId);
+export function clearBallotDraft(questionId: string): void {
+  clearQuestionDraft(null, questionId);
 }

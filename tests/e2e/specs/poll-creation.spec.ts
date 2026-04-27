@@ -1,100 +1,100 @@
 import { test, expect } from '@playwright/test';
 import { HomePage } from '../pages/HomePage';
-import { CreatePollPage } from '../pages/CreatePollPage';
-import { PollPage } from '../pages/PollPage';
-import { testPolls, getTomorrowDate, getOneHourFromNow } from '../fixtures/test-data';
+import { CreateQuestionPage } from '../pages/CreateQuestionPage';
+import { QuestionPage } from '../pages/QuestionPage';
+import { testQuestions, getTomorrowDate, getOneHourFromNow } from '../fixtures/test-data';
 
-test.describe('Poll Creation', () => {
-  test('should create a yes/no poll', async ({ page }) => {
+test.describe('Question Creation', () => {
+  test('should create a yes/no question', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
-    const pollPage = new PollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
+    const questionPage = new QuestionPage(page);
     
-    // Navigate to create poll page
+    // Navigate to create question page
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
-    await createPollPage.verifyPageLoaded();
+    await homePage.navigateToCreateQuestion();
+    await createQuestionPage.verifyPageLoaded();
     
-    // Create a yes/no poll (no options = yes/no poll)
-    await createPollPage.createPoll({
-      title: testPolls.yesNo.title,
-      type: testPolls.yesNo.type,
-      deadline: testPolls.yesNo.deadline,
-      creatorName: testPolls.yesNo.creatorName
+    // Create a yes/no question (no options = yes/no question)
+    await createQuestionPage.createQuestion({
+      title: testQuestions.yesNo.title,
+      type: testQuestions.yesNo.type,
+      deadline: testQuestions.yesNo.deadline,
+      creatorName: testQuestions.yesNo.creatorName
     });
     
-    // Verify redirect to poll page
-    await createPollPage.verifyRedirectToPoll();
+    // Verify redirect to question page
+    await createQuestionPage.verifyRedirectToQuestion();
     
-    // Verify poll was created successfully
-    await pollPage.verifyPollLoaded(testPolls.yesNo.title);
-    await pollPage.verifyVotingInterfaceVisible();
+    // Verify question was created successfully
+    await questionPage.verifyQuestionLoaded(testQuestions.yesNo.title);
+    await questionPage.verifyVotingInterfaceVisible();
     
-    await page.screenshot({ path: 'test-results/yes-no-poll-created.png' });
+    await page.screenshot({ path: 'test-results/yes-no-question-created.png' });
   });
 
-  test('should create a ranked choice poll', async ({ page }) => {
+  test('should create a ranked choice question', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
-    const pollPage = new PollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
+    const questionPage = new QuestionPage(page);
     
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
+    await homePage.navigateToCreateQuestion();
     
-    // Create ranked choice poll with multiple options
-    await createPollPage.createPoll({
-      title: testPolls.rankedChoice.title,
-      type: testPolls.rankedChoice.type,
-      options: testPolls.rankedChoice.options,
-      deadline: testPolls.rankedChoice.deadline,
-      creatorName: testPolls.rankedChoice.creatorName
+    // Create ranked choice question with multiple options
+    await createQuestionPage.createQuestion({
+      title: testQuestions.rankedChoice.title,
+      type: testQuestions.rankedChoice.type,
+      options: testQuestions.rankedChoice.options,
+      deadline: testQuestions.rankedChoice.deadline,
+      creatorName: testQuestions.rankedChoice.creatorName
     });
     
-    await createPollPage.verifyRedirectToPoll();
-    await pollPage.verifyPollLoaded(testPolls.rankedChoice.title);
-    await pollPage.verifyVotingInterfaceVisible();
+    await createQuestionPage.verifyRedirectToQuestion();
+    await questionPage.verifyQuestionLoaded(testQuestions.rankedChoice.title);
+    await questionPage.verifyVotingInterfaceVisible();
     
-    await page.screenshot({ path: 'test-results/ranked-choice-poll-created.png' });
+    await page.screenshot({ path: 'test-results/ranked-choice-question-created.png' });
   });
 
-  test('should create poll with custom deadline', async ({ page }) => {
+  test('should create question with custom deadline', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
-    const pollPage = new PollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
+    const questionPage = new QuestionPage(page);
     
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
+    await homePage.navigateToCreateQuestion();
     
     // Use dynamic dates to avoid past deadline issues
     const customDate = getTomorrowDate();
     const customTime = getOneHourFromNow();
     
-    await createPollPage.createPoll({
-      title: testPolls.customDeadline.title,
-      type: testPolls.customDeadline.type,
-      options: testPolls.customDeadline.options,
+    await createQuestionPage.createQuestion({
+      title: testQuestions.customDeadline.title,
+      type: testQuestions.customDeadline.type,
+      options: testQuestions.customDeadline.options,
       deadline: 'custom',
       customDate: customDate,
       customTime: customTime,
-      creatorName: testPolls.customDeadline.creatorName
+      creatorName: testQuestions.customDeadline.creatorName
     });
     
-    await createPollPage.verifyRedirectToPoll();
-    await pollPage.verifyPollLoaded(testPolls.customDeadline.title);
-    await pollPage.verifyDeadlineShown();
+    await createQuestionPage.verifyRedirectToQuestion();
+    await questionPage.verifyQuestionLoaded(testQuestions.customDeadline.title);
+    await questionPage.verifyDeadlineShown();
     
-    await page.screenshot({ path: 'test-results/custom-deadline-poll-created.png' });
+    await page.screenshot({ path: 'test-results/custom-deadline-question-created.png' });
   });
 
   test('should validate required fields', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
     
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
+    await homePage.navigateToCreateQuestion();
     
     // Verify submit button is disabled without title
-    const submitButton = createPollPage.submitButton;
+    const submitButton = createQuestionPage.submitButton;
     await expect(submitButton).toBeDisabled();
     
     // Verify the validation message appears (match actual error text from UI)
@@ -106,24 +106,24 @@ test.describe('Poll Creation', () => {
 
   test('should prevent duplicate options', async ({ page }) => {
     const homePage = new HomePage(page);
-    const createPollPage = new CreatePollPage(page);
+    const createQuestionPage = new CreateQuestionPage(page);
     
     await homePage.goToHomePage();
-    await homePage.navigateToCreatePoll();
+    await homePage.navigateToCreateQuestion();
     
     // Fill form with duplicate options
-    await createPollPage.fillTitle('Test Poll with Duplicates');
-    await createPollPage.fillOptions(['Option A', 'Option B', 'Option A']); // Duplicate
+    await createQuestionPage.fillTitle('Test Question with Duplicates');
+    await createQuestionPage.fillOptions(['Option A', 'Option B', 'Option A']); // Duplicate
     
     // The duplicate option should be highlighted in red
-    const duplicateInput = createPollPage.optionInputs.nth(2);
+    const duplicateInput = createQuestionPage.optionInputs.nth(2);
     await expect(duplicateInput).toHaveClass(/border-red/);
     
     // Verify submit button is disabled with duplicates
-    await expect(createPollPage.submitButton).toBeDisabled();
+    await expect(createQuestionPage.submitButton).toBeDisabled();
     
     // Verify error message appears below form (match actual error text from UI)
-    const errorMsg = page.locator('text="All poll options must be unique (no duplicates)."');
+    const errorMsg = page.locator('text="All question options must be unique (no duplicates)."');
     await expect(errorMsg).toBeVisible();
     
     await page.screenshot({ path: 'test-results/duplicate-options-error.png' });

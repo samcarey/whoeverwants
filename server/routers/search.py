@@ -1,4 +1,4 @@
-"""Search/autocomplete endpoints for poll categories."""
+"""Search/autocomplete endpoints for question categories."""
 
 import json
 import logging

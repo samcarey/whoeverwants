@@ -1,116 +1,116 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  loadSubPollDraft,
-  saveSubPollDraft,
-  clearSubPollDraft,
-  loadMultipollBallotDraft,
-  saveMultipollBallotDraft,
-  clearMultipollBallotDraft,
+  loadQuestionDraft,
+  saveQuestionDraft,
+  clearQuestionDraft,
+  loadPollBallotDraft,
+  savePollBallotDraft,
+  clearPollBallotDraft,
   loadBallotDraft,
   saveBallotDraft,
   clearBallotDraft,
-  type SubPollDraft,
+  type QuestionDraft,
 } from '@/lib/ballotDraft';
 
-const MULTIPOLL_PREFIX = 'ballotDraft:m:';
+const POLL_PREFIX = 'ballotDraft:m:';
 const LEGACY_PREFIX = 'ballotDraft:';
 
-describe('ballotDraft per-multipoll storage', () => {
+describe('ballotDraft per-poll storage', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('saves a sub-poll draft inside the multipoll entry', () => {
-    saveSubPollDraft('m1', 's1', { yesNoChoice: 'yes' });
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry).toEqual({ sub_polls: { s1: { yesNoChoice: 'yes' } } });
+  it('saves a question draft inside the poll entry', () => {
+    saveQuestionDraft('m1', 's1', { yesNoChoice: 'yes' });
+    const entry = loadPollBallotDraft('m1');
+    expect(entry).toEqual({ questions: { s1: { yesNoChoice: 'yes' } } });
     expect(localStorage.getItem(LEGACY_PREFIX + 's1')).toBeNull();
   });
 
-  it('loads back what was saved (sub-poll round-trip)', () => {
-    const draft: SubPollDraft = { yesNoChoice: 'no', isAbstaining: true };
-    saveSubPollDraft('m1', 's1', draft);
-    expect(loadSubPollDraft('m1', 's1')).toEqual(draft);
+  it('loads back what was saved (question round-trip)', () => {
+    const draft: QuestionDraft = { yesNoChoice: 'no', isAbstaining: true };
+    saveQuestionDraft('m1', 's1', draft);
+    expect(loadQuestionDraft('m1', 's1')).toEqual(draft);
   });
 
-  it('keeps multiple sub-polls separate within the same multipoll', () => {
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'yes' });
-    saveSubPollDraft('m1', 'b', { yesNoChoice: 'no' });
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry?.sub_polls).toEqual({
+  it('keeps multiple questions separate within the same poll', () => {
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
+    saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });
+    const entry = loadPollBallotDraft('m1');
+    expect(entry?.questions).toEqual({
       a: { yesNoChoice: 'yes' },
       b: { yesNoChoice: 'no' },
     });
   });
 
-  it('overwrites an existing sub-poll draft without dropping siblings', () => {
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'yes' });
-    saveSubPollDraft('m1', 'b', { yesNoChoice: 'no' });
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'no' });
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry?.sub_polls).toEqual({
+  it('overwrites an existing question draft without dropping siblings', () => {
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
+    saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'no' });
+    const entry = loadPollBallotDraft('m1');
+    expect(entry?.questions).toEqual({
       a: { yesNoChoice: 'no' },
       b: { yesNoChoice: 'no' },
     });
   });
 
-  it('preserves voter_name on the multipoll entry across sub-poll saves', () => {
-    saveMultipollBallotDraft('m1', { voter_name: 'Alice', sub_polls: {} });
-    saveSubPollDraft('m1', 's1', { yesNoChoice: 'yes' });
-    expect(loadMultipollBallotDraft('m1')?.voter_name).toBe('Alice');
+  it('preserves voter_name on the poll entry across question saves', () => {
+    savePollBallotDraft('m1', { voter_name: 'Alice', questions: {} });
+    saveQuestionDraft('m1', 's1', { yesNoChoice: 'yes' });
+    expect(loadPollBallotDraft('m1')?.voter_name).toBe('Alice');
   });
 
-  it('clearSubPollDraft removes only the targeted slot', () => {
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'yes' });
-    saveSubPollDraft('m1', 'b', { yesNoChoice: 'no' });
-    clearSubPollDraft('m1', 'a');
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry?.sub_polls).toEqual({ b: { yesNoChoice: 'no' } });
+  it('clearQuestionDraft removes only the targeted slot', () => {
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
+    saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });
+    clearQuestionDraft('m1', 'a');
+    const entry = loadPollBallotDraft('m1');
+    expect(entry?.questions).toEqual({ b: { yesNoChoice: 'no' } });
   });
 
-  it('clearSubPollDraft drops the whole multipoll entry when empty and no voter_name', () => {
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'yes' });
-    clearSubPollDraft('m1', 'a');
-    expect(loadMultipollBallotDraft('m1')).toBeNull();
-    expect(localStorage.getItem(MULTIPOLL_PREFIX + 'm1')).toBeNull();
+  it('clearQuestionDraft drops the whole poll entry when empty and no voter_name', () => {
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
+    clearQuestionDraft('m1', 'a');
+    expect(loadPollBallotDraft('m1')).toBeNull();
+    expect(localStorage.getItem(POLL_PREFIX + 'm1')).toBeNull();
   });
 
-  it('clearSubPollDraft preserves the entry when voter_name is set', () => {
-    saveMultipollBallotDraft('m1', { voter_name: 'Alice', sub_polls: { a: { yesNoChoice: 'yes' } } });
-    clearSubPollDraft('m1', 'a');
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry).toEqual({ voter_name: 'Alice', sub_polls: {} });
+  it('clearQuestionDraft preserves the entry when voter_name is set', () => {
+    savePollBallotDraft('m1', { voter_name: 'Alice', questions: { a: { yesNoChoice: 'yes' } } });
+    clearQuestionDraft('m1', 'a');
+    const entry = loadPollBallotDraft('m1');
+    expect(entry).toEqual({ voter_name: 'Alice', questions: {} });
   });
 
   it('returns null when no draft exists', () => {
-    expect(loadSubPollDraft('m1', 'missing')).toBeNull();
-    expect(loadMultipollBallotDraft('missing')).toBeNull();
+    expect(loadQuestionDraft('m1', 'missing')).toBeNull();
+    expect(loadPollBallotDraft('missing')).toBeNull();
   });
 });
 
-describe('ballotDraft legacy fallback (multipollId === null)', () => {
+describe('ballotDraft legacy fallback (pollId === null)', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('writes legacy per-poll key when no multipoll id is provided', () => {
-    saveSubPollDraft(null, 'p1', { yesNoChoice: 'yes' });
+  it('writes legacy per-question key when no poll id is provided', () => {
+    saveQuestionDraft(null, 'p1', { yesNoChoice: 'yes' });
     expect(JSON.parse(localStorage.getItem(LEGACY_PREFIX + 'p1') || 'null')).toEqual({ yesNoChoice: 'yes' });
-    expect(localStorage.getItem(MULTIPOLL_PREFIX + 'p1')).toBeNull();
+    expect(localStorage.getItem(POLL_PREFIX + 'p1')).toBeNull();
   });
 
-  it('reads legacy per-poll key when no multipoll id is provided', () => {
+  it('reads legacy per-question key when no poll id is provided', () => {
     localStorage.setItem(LEGACY_PREFIX + 'p1', JSON.stringify({ yesNoChoice: 'no' }));
-    expect(loadSubPollDraft(null, 'p1')).toEqual({ yesNoChoice: 'no' });
+    expect(loadQuestionDraft(null, 'p1')).toEqual({ yesNoChoice: 'no' });
   });
 
-  it('clears legacy per-poll key when no multipoll id is provided', () => {
+  it('clears legacy per-question key when no poll id is provided', () => {
     localStorage.setItem(LEGACY_PREFIX + 'p1', JSON.stringify({ yesNoChoice: 'yes' }));
-    clearSubPollDraft(null, 'p1');
+    clearQuestionDraft(null, 'p1');
     expect(localStorage.getItem(LEGACY_PREFIX + 'p1')).toBeNull();
   });
 
-  it('legacy aliases (loadBallotDraft/saveBallotDraft/clearBallotDraft) match the null-multipollId path', () => {
+  it('legacy aliases (loadBallotDraft/saveBallotDraft/clearBallotDraft) match the null-pollId path', () => {
     saveBallotDraft('p1', { yesNoChoice: 'yes' });
     expect(loadBallotDraft('p1')).toEqual({ yesNoChoice: 'yes' });
     clearBallotDraft('p1');
@@ -118,57 +118,57 @@ describe('ballotDraft legacy fallback (multipollId === null)', () => {
   });
 });
 
-describe('ballotDraft legacy → multipoll migration', () => {
+describe('ballotDraft legacy → poll migration', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('hoists a legacy per-sub-poll entry into the multipoll entry on read', () => {
+  it('hoists a legacy per-question entry into the poll entry on read', () => {
     localStorage.setItem(LEGACY_PREFIX + 's1', JSON.stringify({ yesNoChoice: 'yes' }));
-    const draft = loadSubPollDraft('m1', 's1');
+    const draft = loadQuestionDraft('m1', 's1');
     expect(draft).toEqual({ yesNoChoice: 'yes' });
     expect(localStorage.getItem(LEGACY_PREFIX + 's1')).toBeNull();
-    expect(loadMultipollBallotDraft('m1')?.sub_polls).toEqual({ s1: { yesNoChoice: 'yes' } });
+    expect(loadPollBallotDraft('m1')?.questions).toEqual({ s1: { yesNoChoice: 'yes' } });
   });
 
-  it('migration does not overwrite an existing multipoll-keyed slot', () => {
-    saveSubPollDraft('m1', 's1', { yesNoChoice: 'no' });
+  it('migration does not overwrite an existing poll-keyed slot', () => {
+    saveQuestionDraft('m1', 's1', { yesNoChoice: 'no' });
     localStorage.setItem(LEGACY_PREFIX + 's1', JSON.stringify({ yesNoChoice: 'yes' }));
-    const draft = loadSubPollDraft('m1', 's1');
-    // Multipoll entry wins; legacy entry left untouched (no migration triggered).
+    const draft = loadQuestionDraft('m1', 's1');
+    // Poll entry wins; legacy entry left untouched (no migration triggered).
     expect(draft).toEqual({ yesNoChoice: 'no' });
     expect(localStorage.getItem(LEGACY_PREFIX + 's1')).not.toBeNull();
   });
 
-  it('migration merges with existing multipoll entry (other sub-polls preserved)', () => {
-    saveSubPollDraft('m1', 'other', { yesNoChoice: 'no' });
+  it('migration merges with existing poll entry (other questions preserved)', () => {
+    saveQuestionDraft('m1', 'other', { yesNoChoice: 'no' });
     localStorage.setItem(LEGACY_PREFIX + 's1', JSON.stringify({ yesNoChoice: 'yes' }));
-    loadSubPollDraft('m1', 's1');
-    const entry = loadMultipollBallotDraft('m1');
-    expect(entry?.sub_polls).toEqual({
+    loadQuestionDraft('m1', 's1');
+    const entry = loadPollBallotDraft('m1');
+    expect(entry?.questions).toEqual({
       other: { yesNoChoice: 'no' },
       s1: { yesNoChoice: 'yes' },
     });
   });
 
-  it('clearSubPollDraft also clears any stray legacy entry under the same id', () => {
+  it('clearQuestionDraft also clears any stray legacy entry under the same id', () => {
     localStorage.setItem(LEGACY_PREFIX + 's1', JSON.stringify({ yesNoChoice: 'yes' }));
-    saveSubPollDraft('m1', 's1', { yesNoChoice: 'no' });
-    clearSubPollDraft('m1', 's1');
+    saveQuestionDraft('m1', 's1', { yesNoChoice: 'no' });
+    clearQuestionDraft('m1', 's1');
     expect(localStorage.getItem(LEGACY_PREFIX + 's1')).toBeNull();
-    expect(loadMultipollBallotDraft('m1')).toBeNull();
+    expect(loadPollBallotDraft('m1')).toBeNull();
   });
 });
 
-describe('clearMultipollBallotDraft', () => {
+describe('clearPollBallotDraft', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('removes the entire multipoll entry', () => {
-    saveSubPollDraft('m1', 'a', { yesNoChoice: 'yes' });
-    saveSubPollDraft('m1', 'b', { yesNoChoice: 'no' });
-    clearMultipollBallotDraft('m1');
-    expect(loadMultipollBallotDraft('m1')).toBeNull();
+  it('removes the entire poll entry', () => {
+    saveQuestionDraft('m1', 'a', { yesNoChoice: 'yes' });
+    saveQuestionDraft('m1', 'b', { yesNoChoice: 'no' });
+    clearPollBallotDraft('m1');
+    expect(loadPollBallotDraft('m1')).toBeNull();
   });
 });

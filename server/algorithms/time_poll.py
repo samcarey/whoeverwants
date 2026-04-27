@@ -1,10 +1,10 @@
-"""Time poll algorithm.
+"""Time question algorithm.
 
-Two-phase scheduling poll:
+Two-phase scheduling question:
 1. Availability phase: voters enter day/time windows (stored in voter_day_time_windows)
 2. Preferences phase: voters react to generated slots with liked_slots / disliked_slots
 
-Slots are generated from the poll creator's day_time_windows + duration_window.
+Slots are generated from the question creator's day_time_windows + duration_window.
 Resolution: fewest-dislikes → most-likes → earliest chronologically.
 
 Slot key format: "YYYY-MM-DD HH:MM-HH:MM"
@@ -37,8 +37,8 @@ def parse_slot_key(slot_str: str) -> tuple[str, int, int]:
     return date, _time_to_minutes(start_str), _time_to_minutes(end_str)
 
 
-def generate_time_poll_slots(poll: dict, votes: list[dict]) -> list[str]:
-    """Generate all candidate time slot strings for a time poll.
+def generate_time_question_slots(question: dict, votes: list[dict]) -> list[str]:
+    """Generate all candidate time slot strings for a time question.
 
     Generates slots from the creator's day_time_windows + duration_window at
     15-minute increments. Only includes slots where at least one availability
@@ -49,13 +49,13 @@ def generate_time_poll_slots(poll: dict, votes: list[dict]) -> list[str]:
       1. Largest duration (desc)
       2. Earliest date + start time (asc)
     """
-    day_time_windows = poll.get("day_time_windows") or []
+    day_time_windows = question.get("day_time_windows") or []
     if isinstance(day_time_windows, str):
         day_time_windows = json.loads(day_time_windows)
     if not day_time_windows:
         return []
 
-    duration_window = poll.get("duration_window")
+    duration_window = question.get("duration_window")
     if isinstance(duration_window, str):
         duration_window = json.loads(duration_window)
 
@@ -124,7 +124,7 @@ def generate_time_poll_slots(poll: dict, votes: list[dict]) -> list[str]:
 def _keep_longest_per_start_time(slots: list[str]) -> list[str]:
     """For each (date, start_time), keep only the slot with the longest duration.
 
-    When the poll allows a duration range (e.g. 30 min – 2 h), multiple slots
+    When the question allows a duration range (e.g. 30 min – 2 h), multiple slots
     share the same start time but differ in end time.  Voters only need to react
     to one representative per start time: the longest available option.
 
@@ -156,7 +156,7 @@ def filter_slots_by_min_availability(
     most-available slot's count.
 
     Basing the filter on the most-available slot (not total respondents) keeps
-    the poll robust when many voters say they're unavailable.
+    the question robust when many voters say they're unavailable.
     """
     max_avail = max(availability_counts.values(), default=0)
     min_acceptable = max_avail * (min_availability_percent / 100.0)
@@ -229,10 +229,10 @@ def _pick_winner_from_reactions(options: list[str], votes: list[dict]) -> tuple[
     return winner, like_counts, dislike_counts
 
 
-def calculate_time_poll_results(poll: dict, votes: list[dict]) -> dict:
-    """Calculate results for a time poll.
+def calculate_time_question_results(question: dict, votes: list[dict]) -> dict:
+    """Calculate results for a time question.
 
-    poll.options already contains only the filtered, deduped slots (set at finalization).
+    question.options already contains only the filtered, deduped slots (set at finalization).
 
     Returns dict with:
         availability_counts: {slot_key: count}
@@ -241,7 +241,7 @@ def calculate_time_poll_results(poll: dict, votes: list[dict]) -> dict:
         like_counts: {slot_key: count}
         dislike_counts: {slot_key: count}
     """
-    raw_options = poll.get("options")
+    raw_options = question.get("options")
     if raw_options is None:
         return {
             "availability_counts": {},

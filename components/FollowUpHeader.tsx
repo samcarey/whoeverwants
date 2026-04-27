@@ -2,18 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiGetMultipollById } from "@/lib/api";
+import { apiGetPollById } from "@/lib/api";
 import { usePrefetch } from "@/lib/prefetch";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useLongPress } from "@/lib/useLongPress";
 
 interface FollowUpHeaderProps {
-  // Phase 5: chain pointers are at the multipoll level (a multipoll_id).
-  followUpToMultipollId: string;
+  // Phase 5: chain pointers are at the poll level (a poll_id).
+  followUpToPollId: string;
   onRemove?: () => void;
 }
 
-export default function FollowUpHeader({ followUpToMultipollId, onRemove }: FollowUpHeaderProps) {
+export default function FollowUpHeader({ followUpToPollId, onRemove }: FollowUpHeaderProps) {
   const router = useRouter();
   const { prefetch } = usePrefetch();
   const [originalTitle, setOriginalTitle] = useState<string | null>(null);
@@ -27,20 +27,20 @@ export default function FollowUpHeader({ followUpToMultipollId, onRemove }: Foll
 
   useEffect(() => {
     async function fetchOriginal() {
-      if (!followUpToMultipollId) {
+      if (!followUpToPollId) {
         setLoading(false);
         return;
       }
 
       try {
-        const data = await apiGetMultipollById(followUpToMultipollId);
+        const data = await apiGetPollById(followUpToPollId);
         setOriginalTitle(data.title);
         if (data.short_id) {
           setOriginalShortId(data.short_id);
           prefetch(`/p/${data.short_id}`, { priority: "low" });
         }
       } catch (err) {
-        console.error('Error fetching parent multipoll:', err);
+        console.error('Error fetching parent poll:', err);
         setError(true);
       } finally {
         setLoading(false);
@@ -48,7 +48,7 @@ export default function FollowUpHeader({ followUpToMultipollId, onRemove }: Foll
     }
 
     fetchOriginal();
-  }, [followUpToMultipollId]);
+  }, [followUpToPollId]);
 
   const handleRemoveConfirm = () => {
     setShowRemoveModal(false);
@@ -88,8 +88,8 @@ export default function FollowUpHeader({ followUpToMultipollId, onRemove }: Foll
             </svg>
           </div>
           <div>
-            <h3 className="font-semibold text-yellow-900 dark:text-yellow-100">Follow-up Poll</h3>
-            <p className="text-sm text-yellow-700 dark:text-yellow-300">Unable to load original poll details</p>
+            <h3 className="font-semibold text-yellow-900 dark:text-yellow-100">Follow-up Question</h3>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">Unable to load original question details</p>
           </div>
         </div>
       </div>
@@ -124,7 +124,7 @@ export default function FollowUpHeader({ followUpToMultipollId, onRemove }: Foll
         onConfirm={handleRemoveConfirm}
         onCancel={() => setShowRemoveModal(false)}
         title="Remove Follow-Up Association"
-        message="Are you sure you want to remove the connection to the parent poll? This will create a fresh, independent poll."
+        message="Are you sure you want to remove the connection to the parent question? This will create a fresh, independent question."
         confirmText="Remove"
         cancelText="Cancel"
       />

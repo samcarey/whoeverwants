@@ -8,8 +8,8 @@ import { useLongPress } from '@/lib/useLongPress';
 import { installClientLogForwarder } from '@/lib/clientLogForwarder';
 import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
-import { getCachedPollById, getCachedPollByShortId } from '@/lib/pollCache';
-import { isUuidLike, isThreadRootView } from '@/lib/pollId';
+import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
+import { isUuidLike, isThreadRootView } from '@/lib/questionId';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -21,7 +21,7 @@ const importCreatePollRaw = () => import('@/app/create-poll/page');
 // Reload-on-chunk-error wrapper — used only for the actual lazy mount,
 // where a chunk miss means the user's cached build is stale after a
 // deploy and a full reload is the correct recovery.
-const importCreatePoll = () =>
+const importCreateQuestion = () =>
   importCreatePollRaw().catch((err) => {
     if (err?.name === 'ChunkLoadError' || err?.message?.includes('Failed to load chunk') || err?.message?.includes('Failed to fetch dynamically imported module')) {
       // Guard against reload loops: only reload once per session.
@@ -33,8 +33,8 @@ const importCreatePoll = () =>
     throw err;
   });
 
-const LazyCreatePollContent = React.lazy(() =>
-  importCreatePoll().then(m => ({ default: m.CreatePollContent }))
+const LazyCreateQuestionContent = React.lazy(() =>
+  importCreateQuestion().then(m => ({ default: m.CreateQuestionContent }))
 );
 
 interface AppTemplateProps {
@@ -90,7 +90,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     return () => window.removeEventListener('unhandledrejection', handleChunkError);
   }, []);
 
-  // Preload the create-poll chunk during idle time so it's instant when the user taps "+".
+  // Preload the create-question chunk during idle time so it's instant when the user taps "+".
   // Uses the raw import + swallows errors — a failed speculative preload must NOT
   // trigger a page reload (that was the cause of the dev-server refresh loop).
   useEffect(() => {
@@ -104,16 +104,16 @@ function TemplateInner({ children }: AppTemplateProps) {
     }
   }, []);
   
-  // Initialize pollPageTitle synchronously from the poll cache on poll pages,
+  // Initialize questionPageTitle synchronously from the question cache on question pages,
   // so the header shows the title on the very first paint after navigation
   // (avoids the h1 being empty during a view transition slide).
-  const [pollPageTitle, setPollPageTitle] = useState(() => {
+  const [questionPageTitle, setQuestionPageTitle] = useState(() => {
     if (typeof window === 'undefined') return '';
     const match = pathname.match(/^\/p\/([^/]+)\/?$/);
     if (!match) return '';
     const id = match[1];
-    const poll = isUuidLike(id) ? getCachedPollById(id) : getCachedPollByShortId(id);
-    return poll?.title ?? '';
+    const question = isUuidLike(id) ? getCachedQuestionById(id) : getCachedQuestionByShortId(id);
+    return question?.title ?? '';
   });
 
   const { props: longPressProps } = useLongPress(() =>
@@ -122,13 +122,13 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   const pageTitle =
     pathname === '/create-poll' || pathname === '/create-poll/' ? 'Create Poll' :
-    pathname.startsWith('/p/') ? pollPageTitle :
+    pathname.startsWith('/p/') ? questionPageTitle :
     '';
 
-  // Listen for title changes from poll pages
+  // Listen for title changes from question pages
   useEffect(() => {
     const handleTitleChange = (event: CustomEvent) => {
-      setPollPageTitle(event.detail.title);
+      setQuestionPageTitle(event.detail.title);
     };
 
     window.addEventListener('pageTitleChange', handleTitleChange as EventListener);
@@ -138,7 +138,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
-  const isPollPage = pathname.startsWith('/p/');
+  const isQuestionPage = pathname.startsWith('/p/');
   const isThreadPage = pathname.startsWith('/thread/');
   // /p/<id> now renders the thread view with a card expanded; both routes share the
   // thread-page layout (fixed header + scroll list) and the thread's own back button.
@@ -188,23 +188,23 @@ function TemplateInner({ children }: AppTemplateProps) {
     }, 300);
   }, []);
 
-  // Open the create-poll modal from the floating What/When/Where bubble bar.
+  // Open the create-question modal from the floating What/When/Where bubble bar.
   // The bubble bar is only shown on thread-like pages, so we always open the
   // modal in place (with auto-set followUpTo when the page exposes a
-  // thread-latest-poll-id on <body>). The home page uses the single "+" FAB
+  // thread-latest-question-id on <body>). The home page uses the single "+" FAB
   // below, which navigates to /thread/new/ as before.
   const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('create', '1');
     for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
-    const threadLatestPollId = document.body.getAttribute('data-thread-latest-poll-id');
-    if (threadLatestPollId) {
-      params.set('followUpTo', threadLatestPollId);
+    const threadLatestQuestionId = document.body.getAttribute('data-thread-latest-question-id');
+    if (threadLatestQuestionId) {
+      params.set('followUpTo', threadLatestQuestionId);
     }
     router.push(`${pathname}?${params.toString()}`);
   }, [pathname, router, searchParams]);
 
-  // Drag-to-dismiss touch handling for the create poll modal sheet.
+  // Drag-to-dismiss touch handling for the create question modal sheet.
   useEffect(() => {
     if (!isCreateModalOpen || !isMounted) return;
     const sheet = modalSheetRef.current;
@@ -353,7 +353,7 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, [isCreateModalOpen, isMounted]);
 
-  // Lock body scroll when create-poll modal is open to prevent browser pull-to-refresh.
+  // Lock body scroll when create-question modal is open to prevent browser pull-to-refresh.
   // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
   useEffect(() => {
     if (!isCreateModalOpen) return;
@@ -383,8 +383,8 @@ function TemplateInner({ children }: AppTemplateProps) {
 
   return (
     <>
-      {/* Fallback header for pages without a page-specific header (not poll, thread, settings, home, or create-modal). */}
-      {!isPollPage && !isThreadPage && !isSettingsPage && pathname !== '/' && (
+      {/* Fallback header for pages without a page-specific header (not question, thread, settings, home, or create-modal). */}
+      {!isQuestionPage && !isThreadPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -465,7 +465,7 @@ function TemplateInner({ children }: AppTemplateProps) {
         </div>
       </div>
 
-      {/* Create poll modal - iOS-style sheet rendered via portal.
+      {/* Create question modal - iOS-style sheet rendered via portal.
            Triggered by ?create query param so the underlying page stays mounted. */}
       {isCreateModalOpen && isMounted && createPortal(
         <div className="fixed inset-0 z-[60]">
@@ -499,11 +499,11 @@ function TemplateInner({ children }: AppTemplateProps) {
                   <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
-              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Poll</h2>
-              <div id="create-poll-submit-portal" className="flex-shrink-0 z-10" />
+              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Question</h2>
+              <div id="create-question-submit-portal" className="flex-shrink-0 z-10" />
             </div>
             {/* Generated title line */}
-            <div id="create-poll-title-portal" className="flex-shrink-0 px-4" />
+            <div id="create-question-title-portal" className="flex-shrink-0 px-4" />
             {/* Scrollable content */}
             <div ref={modalScrollRef} className="flex-1 overflow-auto overscroll-contain">
               <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
@@ -515,7 +515,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                     </svg>
                   </div>
                 }>
-                  <LazyCreatePollContent />
+                  <LazyCreateQuestionContent />
                 </Suspense>
               </div>
             </div>
@@ -537,7 +537,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
             bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
-          aria-label="Create new poll"
+          aria-label="Create new question"
         >
           <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -546,13 +546,13 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
-      {/* Floating What/When/Where create-poll bubbles — thread-like pages only
+      {/* Floating What/When/Where create-question bubbles — thread-like pages only
            (`/thread/<id>/`, `/p/<id>/`, `/thread/new/`). Each opens the create
            modal in place with a different preselection:
              - What  → no preselection
              - When  → ?mode=time
              - Where → ?category=restaurant (most common "where" type)
-           Auto-sets followUpTo when the page exposes data-thread-latest-poll-id.
+           Auto-sets followUpTo when the page exposes data-thread-latest-question-id.
            The bar is part of the root snapshot during view transitions so it
            slides in/out with the page. */}
       {isMounted && isThreadLikePage && createPortal(
@@ -566,7 +566,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             type="button"
             onClick={() => openCreateFromBubble({})}
             className={BUBBLE_BUTTON_CLASS}
-            aria-label="Create new poll"
+            aria-label="Create new question"
           >
             <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
             <span className="text-[1.12rem]">what</span>
@@ -575,7 +575,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             type="button"
             onClick={() => openCreateFromBubble({ mode: 'time' })}
             className={BUBBLE_BUTTON_CLASS}
-            aria-label="Create new time poll"
+            aria-label="Create new time question"
           >
             <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
             <span className="text-[1.12rem]">when</span>
@@ -584,7 +584,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             type="button"
             onClick={() => openCreateFromBubble({ category: 'restaurant' })}
             className={BUBBLE_BUTTON_CLASS}
-            aria-label="Create new place poll"
+            aria-label="Create new place question"
           >
             <span className="text-[1.4rem] leading-none" aria-hidden="true">+</span>
             <span className="text-[1.12rem]">where</span>

@@ -1,22 +1,22 @@
 /**
  * Shared infrastructure for the lib/api/* modules: endpoint resolution,
- * fetch wrappers, response→Poll/Multipoll/PollResults mappers, and the
+ * fetch wrappers, response→Question/Poll/QuestionResults mappers, and the
  * coalesced-fetch helper. Underscore-prefixed because consumers should
  * import from lib/api/<domain>.ts (or the index) instead of reaching in
  * here directly.
  */
 
-import type { Multipoll, Poll, PollResults } from "@/lib/types";
+import type { Poll, Question, QuestionResults } from "@/lib/types";
 import { branchToSlug } from "@/lib/slug";
 
 // API URL resolution:
 // - NEXT_PUBLIC_API_URL overrides everything
 // - Server-side: absolute URLs (no browser privacy concerns in SSR)
-// - Client-side: relative /api/polls path, proxied by Next.js rewrites
+// - Client-side: relative /api/questions path, proxied by Next.js rewrites
 //   (keeps requests same-origin, avoiding Safari ITP warnings)
 export function getApiEndpoint(endpoint: string): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/polls\/?$/, `/api/${endpoint}`);
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/questions\/?$/, `/api/${endpoint}`);
   }
   if (typeof window === 'undefined') {
     if (process.env.NODE_ENV !== 'production') {
@@ -32,8 +32,8 @@ export function getApiEndpoint(endpoint: string): string {
   return `/api/${endpoint}`;
 }
 
-export const API_BASE = getApiEndpoint('polls');
-export const MULTIPOLL_BASE = getApiEndpoint('multipolls');
+export const API_BASE = getApiEndpoint('questions');
+export const POLL_BASE = getApiEndpoint('polls');
 export const SEARCH_BASE = getApiEndpoint('search');
 
 export class ApiError extends Error {
@@ -71,8 +71,8 @@ export function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return fetchWithBase<T>(API_BASE, path, options);
 }
 
-export function multipollFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  return fetchWithBase<T>(MULTIPOLL_BASE, path, options);
+export function pollFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return fetchWithBase<T>(POLL_BASE, path, options);
 }
 
 /**
@@ -112,21 +112,21 @@ export interface ApiRankedChoiceRound {
   tie_broken_by_borda: boolean;
 }
 
-export type Results = PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
+export type Results = QuestionResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
 
-export function toPoll(data: any): Poll {
+export function toQuestion(data: any): Question {
   // Phase 5b: wrapper-level fields (response_deadline, creator_secret,
   // creator_name, is_closed, close_reason, short_id, thread_title,
-  // suggestion_deadline) are sourced from the parent Multipoll. The FE
-  // consumes them via getMultipollForPoll() / Multipoll-typed props.
+  // suggestion_deadline) are sourced from the parent Poll. The FE
+  // consumes them via getPollForQuestion() / Poll-typed props.
   return {
     id: data.id,
     title: data.title,
-    poll_type: data.poll_type,
+    question_type: data.question_type,
     options: data.options ?? undefined,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    multipoll_follow_up_to: data.multipoll_follow_up_to ?? null,
+    poll_follow_up_to: data.poll_follow_up_to ?? null,
     suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
     allow_pre_ranking: data.allow_pre_ranking ?? true,
     details: data.details ?? undefined,
@@ -141,17 +141,17 @@ export function toPoll(data: any): Poll {
     show_preliminary_results: data.show_preliminary_results ?? true,
     response_count: data.response_count ?? undefined,
     min_availability_percent: data.min_availability_percent ?? undefined,
-    multipoll_id: data.multipoll_id ?? null,
-    sub_poll_index: data.sub_poll_index ?? null,
+    poll_id: data.poll_id ?? null,
+    question_index: data.question_index ?? null,
     voter_names: data.voter_names ?? undefined,
   };
 }
 
-export function toPollResults(data: any): Results {
+export function toQuestionResults(data: any): Results {
   return {
-    poll_id: data.poll_id,
+    question_id: data.question_id,
     title: data.title,
-    poll_type: data.poll_type,
+    question_type: data.question_type,
     created_at: data.created_at,
     response_deadline: data.response_deadline ?? undefined,
     options: data.options ?? undefined,
@@ -173,7 +173,7 @@ export function toPollResults(data: any): Results {
   };
 }
 
-export function toMultipoll(data: any): Multipoll {
+export function toPoll(data: any): Poll {
   return {
     id: data.id,
     short_id: data.short_id ?? null,
@@ -190,7 +190,7 @@ export function toMultipoll(data: any): Multipoll {
     title: data.title,
     created_at: data.created_at,
     updated_at: data.updated_at,
-    sub_polls: Array.isArray(data.sub_polls) ? data.sub_polls.map(toPoll) : [],
+    questions: Array.isArray(data.questions) ? data.questions.map(toQuestion) : [],
     voter_names: Array.isArray(data.voter_names) ? data.voter_names : [],
     anonymous_count: typeof data.anonymous_count === 'number' ? data.anonymous_count : 0,
   };

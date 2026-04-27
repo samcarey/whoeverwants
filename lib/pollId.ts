@@ -1,7 +1,7 @@
 /**
- * Poll identifier helpers.
+ * Question identifier helpers.
  *
- * Poll IDs appear in two formats in this app:
+ * Question IDs appear in two formats in this app:
  *  - UUIDs (e.g. "ce359851-3281-485b-8696-9ed7ccc1ccbe") — the database primary key
  *  - Short IDs (e.g. "2m") — a short base62 handle, used in share URLs
  *
@@ -22,14 +22,14 @@ export function normalizePath(path: string): string {
   return path.replace(/\/$/, '') || '/';
 }
 
-/** If `pathname` is a poll page (`/p/<id>` with optional trailing slash),
- *  return the poll route ID (short_id or UUID). Otherwise null. */
-export function extractPollRouteId(pathname: string): string | null {
+/** If `pathname` is a question page (`/p/<id>` with optional trailing slash),
+ *  return the question route ID (short_id or UUID). Otherwise null. */
+export function extractQuestionRouteId(pathname: string): string | null {
   const match = pathname.match(/^\/p\/([^/]+)\/?$/);
   return match ? match[1] : null;
 }
 
-/** True when `pathname` is the top-level thread or poll view (`/thread/<id>`
+/** True when `pathname` is the top-level thread or question view (`/thread/<id>`
  *  or `/p/<id>`). False for sub-routes like `/thread/<id>/info`. Template uses
  *  this to decide which pages get the thread-like layout + floating-plus FAB. */
 export function isThreadRootView(pathname: string): boolean {

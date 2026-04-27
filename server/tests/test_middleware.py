@@ -9,7 +9,7 @@ from middleware import RateLimitMiddleware
 
 
 class FakeRequest:
-    def __init__(self, method="GET", path="/api/polls", client_ip="1.2.3.4"):
+    def __init__(self, method="GET", path="/api/questions", client_ip="1.2.3.4"):
         self.method = method
         self.url = MagicMock()
         self.url.path = path

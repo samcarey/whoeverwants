@@ -2,21 +2,21 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { isApiAvailable, apiCreateTestPoll, apiSubmitTestVote, apiGetVotes } from '../../helpers/database.js'
+import { isApiAvailable, apiCreateTestQuestion, apiSubmitTestVote, apiGetVotes } from '../../helpers/database.js'
 
 let apiUp = false
-let testPollId = null
+let testQuestionId = null
 
 beforeAll(async () => {
   apiUp = await isApiAvailable()
   if (apiUp) {
-    const poll = await apiCreateTestPoll({
-      title: 'Test Poll for Data Integrity',
-      poll_type: 'ranked_choice',
+    const question = await apiCreateTestQuestion({
+      title: 'Test Question for Data Integrity',
+      question_type: 'ranked_choice',
       options: ['Secure Option A', 'Secure Option B', 'Secure Option C', 'Secure Option D'],
       creator_secret: 'integrity-test-secret-' + Date.now(),
     })
-    testPollId = poll.id
+    testQuestionId = question.id
   }
 })
 
@@ -26,7 +26,7 @@ describe('Data Integrity Tests', () => {
       if (!apiUp) skip()
       const mainList = ['Secure Option A', 'Secure Option B']
       // "no preference" items should never be sent to the API
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: mainList,
       })
@@ -38,7 +38,7 @@ describe('Data Integrity Tests', () => {
     it('should preserve ballot order in stored vote', async ({ skip }) => {
       if (!apiUp) skip()
       const orderedBallot = ['Secure Option D', 'Secure Option A', 'Secure Option C']
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: orderedBallot,
       })
@@ -51,7 +51,7 @@ describe('Data Integrity Tests', () => {
     it('should handle SQL injection safely in candidate names', async ({ skip }) => {
       if (!apiUp) skip()
       const maliciousInput = "'; DROP TABLE votes; --"
-      const vote = await apiSubmitTestVote(testPollId, {
+      const vote = await apiSubmitTestVote(testQuestionId, {
         vote_type: 'ranked_choice',
         ranked_choices: [maliciousInput, 'Secure Option A'],
       })
@@ -89,9 +89,9 @@ describe('Data Integrity Tests', () => {
     it('should handle multiple rapid submissions without data loss', async ({ skip }) => {
       if (!apiUp) skip()
       const votes = await Promise.all([
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option A'] }),
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option B'] }),
-        apiSubmitTestVote(testPollId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option C'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option A'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option B'] }),
+        apiSubmitTestVote(testQuestionId, { vote_type: 'ranked_choice', ranked_choices: ['Secure Option C'] }),
       ])
       expect(votes.length).toBe(3)
       votes.forEach(vote => {

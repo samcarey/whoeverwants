@@ -1,5 +1,5 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll } from '../../helpers/poll-builder.js'
+import { createQuestion } from '../../helpers/question-builder.js'
 import { isApiAvailable } from '../../helpers/database.js'
 
 let apiUp = false
@@ -10,9 +10,9 @@ beforeAll(async () => {
 
 describe('Edge Cases and Boundary Conditions', () => {
   describe('Empty and Minimal Votes', () => {
-    it('handles poll with no votes', async ({ skip }) => {
+    it('handles question with no votes', async ({ skip }) => {
       if (!apiUp) skip()
-      const result = await createPoll(['A', 'B', 'C'])
+      const result = await createQuestion(['A', 'B', 'C'])
         .withVotes([])
         .expectWinner(null)
         .run()
@@ -21,7 +21,7 @@ describe('Edge Cases and Boundary Conditions', () => {
 
     it('handles single vote scenario', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([['A', 'B', 'C']])
         .expectRounds([
           { round: 1, results: [
@@ -36,7 +36,7 @@ describe('Edge Cases and Boundary Conditions', () => {
 
     it('handles two candidates with one vote each', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B'])
+      await createQuestion(['A', 'B'])
         .withVotes([['A', 'B'], ['B', 'A']])
         .expectRounds([
           { round: 1, results: [
@@ -55,7 +55,7 @@ describe('Edge Cases and Boundary Conditions', () => {
   describe('Incomplete and Invalid Ballots', () => {
     it('handles ballots with only one candidate ranked', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A'],
           ['B', 'A'],
@@ -78,7 +78,7 @@ describe('Edge Cases and Boundary Conditions', () => {
 
     it('handles mixed complete and incomplete ballots', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B'],
           ['A', 'C', 'D'],
@@ -110,7 +110,7 @@ describe('Edge Cases and Boundary Conditions', () => {
   describe('Large Number of Candidates', () => {
     it('handles many candidates with systematic elimination', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
+      await createQuestion(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
         .withVotes([
           ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
           ['A', 'C', 'B', 'D', 'E', 'F', 'G'],
@@ -125,7 +125,7 @@ describe('Edge Cases and Boundary Conditions', () => {
   describe('Unusual Voting Patterns', () => {
     it('handles reverse-order voting patterns', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C'],
           ['C', 'B', 'A'],
@@ -137,7 +137,7 @@ describe('Edge Cases and Boundary Conditions', () => {
 
     it('handles strategic voting attempts', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'D', 'C', 'B'],
           ['A', 'D', 'C', 'B'],
@@ -152,7 +152,7 @@ describe('Edge Cases and Boundary Conditions', () => {
   describe('Boundary Conditions', () => {
     it('handles exactly 50-50 split requiring runoff', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'C', 'B'],
           ['A', 'B', 'C'],

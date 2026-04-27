@@ -2,22 +2,22 @@
 
 import { useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { Poll } from "@/lib/types";
+import type { Question } from "@/lib/types";
 import {
-  apiSubmitMultipollVotes,
-  POLL_VOTES_CHANGED_EVENT,
+  apiSubmitPollVotes,
+  QUESTION_VOTES_CHANGED_EVENT,
   type ApiVote,
-  type MultipollVoteItem,
+  type PollVoteItem,
 } from "@/lib/api";
-import { buildMultipollVoteItem } from "@/components/SubPollBallot/voteDataBuilders";
+import { buildPollVoteItem } from "@/components/QuestionBallot/voteDataBuilders";
 import { getUserName, saveUserName } from "@/lib/userProfile";
-import { invalidatePoll } from "@/lib/pollCache";
+import { invalidateQuestion } from "@/lib/questionCache";
 import {
-  loadVotedPolls,
+  loadVotedQuestions,
   parseYesNoChoice,
   setStoredVoteId,
-  setVotedPollFlag,
-} from "@/lib/votedPollsStorage";
+  setVotedQuestionFlag,
+} from "@/lib/votedQuestionsStorage";
 import type { Thread } from "@/lib/threadUtils";
 
 export type YesNoChoice = "yes" | "no" | "abstain";
@@ -31,23 +31,23 @@ export type UserYesNoVote = {
 export type WrapperSubmitState = { visible: boolean; label: string };
 
 export type PreparedNonYesNoEntry = {
-  pollId: string;
-  item: MultipollVoteItem;
+  questionId: string;
+  item: PollVoteItem;
   commit: (vote: ApiVote) => void;
   fail: (errorMessage: string) => void;
 };
 
-export type PendingMultipollSubmit = {
-  multipollId: string;
-  subPolls: Poll[];
+export type PendingPollSubmit = {
+  pollId: string;
+  subQuestions: Question[];
   stagedCount: number;
   preparedNonYesNo: PreparedNonYesNoEntry[];
 };
 
 interface UseThreadVotingArgs {
   thread: Thread | null;
-  setVotedPollIds: Dispatch<SetStateAction<Set<string>>>;
-  setAbstainedPollIds: Dispatch<SetStateAction<Set<string>>>;
+  setVotedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
+  setAbstainedQuestionIds: Dispatch<SetStateAction<Set<string>>>;
 }
 
 /**
@@ -56,46 +56,46 @@ interface UseThreadVotingArgs {
  * page.tsx` so the page only deals with thread layout/expand/scroll concerns
  * while voting flows live in one place.
  *
- * Why setVotedPollIds / setAbstainedPollIds are passed in: the page owns those
+ * Why setVotedQuestionIds / setAbstainedQuestionIds are passed in: the page owns those
  * sets because they're also seeded synchronously alongside the cached thread
  * (and consumed by the awaiting-response sort + golden-border predicate
- * outside the voting flow). The hook calls `loadVotedPolls()` post-write and
+ * outside the voting flow). The hook calls `loadVotedQuestions()` post-write and
  * pushes the fresh sets back through these setters.
  */
 export function useThreadVoting({
   thread,
-  setVotedPollIds,
-  setAbstainedPollIds,
+  setVotedQuestionIds,
+  setAbstainedQuestionIds,
 }: UseThreadVotingArgs) {
   const [userVoteMap, setUserVoteMap] = useState<Map<string, UserYesNoVote>>(
     () => new Map(),
   );
 
   const [pendingVoteChange, setPendingVoteChange] = useState<
-    { pollId: string; newChoice: YesNoChoice } | null
+    { questionId: string; newChoice: YesNoChoice } | null
   >(null);
   const [voteChangeSubmitting, setVoteChangeSubmitting] = useState(false);
 
-  const [pendingMultipollChoices, setPendingMultipollChoices] = useState<
+  const [pendingPollChoices, setPendingPollChoices] = useState<
     Map<string, YesNoChoice>
   >(() => new Map());
-  const [multipollVoterNames, setMultipollVoterNames] = useState<Map<string, string>>(
+  const [pollVoterNames, setPollVoterNames] = useState<Map<string, string>>(
     () => new Map(),
   );
   // Same-value guard avoids no-op re-renders when both the all-yes_no Submit
   // row and the wrapper Submit row write the identical name on each keystroke.
-  const setMultipollVoterName = useRef((id: string, name: string) => {
-    setMultipollVoterNames((prev) =>
+  const setPollVoterName = useRef((id: string, name: string) => {
+    setPollVoterNames((prev) =>
       prev.get(id) === name ? prev : new Map(prev).set(id, name),
     );
   }).current;
 
-  const [pendingMultipollSubmit, setPendingMultipollSubmit] =
-    useState<PendingMultipollSubmit | null>(null);
-  const [multipollSubmitting, setMultipollSubmitting] = useState<Set<string>>(
+  const [pendingPollSubmit, setPendingPollSubmit] =
+    useState<PendingPollSubmit | null>(null);
+  const [pollSubmitting, setPollSubmitting] = useState<Set<string>>(
     () => new Set(),
   );
-  const [multipollSubmitError, setMultipollSubmitError] = useState<Map<string, string>>(
+  const [pollSubmitError, setPollSubmitError] = useState<Map<string, string>>(
     () => new Map(),
   );
 
@@ -103,22 +103,22 @@ export function useThreadVoting({
     Map<string, WrapperSubmitState>
   >(() => new Map());
   const handleWrapperSubmitStateChange = useRef(
-    (pollId: string, state: WrapperSubmitState) => {
+    (questionId: string, state: WrapperSubmitState) => {
       setWrapperSubmitState((prev) => {
-        const cur = prev.get(pollId);
+        const cur = prev.get(questionId);
         if (cur && cur.visible === state.visible && cur.label === state.label) return prev;
         const next = new Map(prev);
-        next.set(pollId, state);
+        next.set(questionId, state);
         return next;
       });
     },
   ).current;
 
-  const buildYesNoMultipollItems = (subPolls: Poll[]): MultipollVoteItem[] => {
-    const items: MultipollVoteItem[] = [];
-    for (const sp of subPolls) {
-      if (sp.poll_type !== "yes_no") continue;
-      const staged = pendingMultipollChoices.get(sp.id);
+  const buildYesNoPollItems = (subQuestions: Question[]): PollVoteItem[] => {
+    const items: PollVoteItem[] = [];
+    for (const sp of subQuestions) {
+      if (sp.question_type !== "yes_no") continue;
+      const staged = pendingPollChoices.get(sp.id);
       if (!staged) continue;
       const existing = userVoteMap.get(sp.id);
       const voteData = {
@@ -127,8 +127,8 @@ export function useThreadVoting({
         is_abstain: staged === "abstain",
       };
       items.push(
-        buildMultipollVoteItem(voteData, sp.id, existing?.voteId ?? null, {
-          pollType: "yes_no",
+        buildPollVoteItem(voteData, sp.id, existing?.voteId ?? null, {
+          questionType: "yes_no",
           canSubmitSuggestions: false,
           isEditing: !!existing?.voteId,
         }),
@@ -138,44 +138,44 @@ export function useThreadVoting({
   };
 
   // Atomic on the server: any item failure rolls back the whole batch.
-  const confirmMultipollSubmit = async (
-    multipollId: string,
-    subPolls: Poll[],
+  const confirmPollSubmit = async (
+    pollId: string,
+    subQuestions: Question[],
     preparedNonYesNo: PreparedNonYesNoEntry[],
   ) => {
-    setMultipollSubmitting((prev) => {
-      if (prev.has(multipollId)) return prev;
+    setPollSubmitting((prev) => {
+      if (prev.has(pollId)) return prev;
       const next = new Set(prev);
-      next.add(multipollId);
+      next.add(pollId);
       return next;
     });
-    setMultipollSubmitError((prev) => {
-      if (!prev.has(multipollId)) return prev;
+    setPollSubmitError((prev) => {
+      if (!prev.has(pollId)) return prev;
       const next = new Map(prev);
-      next.delete(multipollId);
+      next.delete(pollId);
       return next;
     });
     try {
-      const yesNoItems = buildYesNoMultipollItems(subPolls);
+      const yesNoItems = buildYesNoPollItems(subQuestions);
       const nonYesNoItems = preparedNonYesNo.map((p) => p.item);
-      const items: MultipollVoteItem[] = [...yesNoItems, ...nonYesNoItems];
+      const items: PollVoteItem[] = [...yesNoItems, ...nonYesNoItems];
       if (items.length === 0) {
-        setPendingMultipollSubmit(null);
+        setPendingPollSubmit(null);
         return;
       }
-      const voterNameRaw = multipollVoterNames.get(multipollId) ?? getUserName() ?? "";
+      const voterNameRaw = pollVoterNames.get(pollId) ?? getUserName() ?? "";
       const voter_name = voterNameRaw.trim() || null;
-      const returnedVotes = await apiSubmitMultipollVotes(multipollId, {
+      const returnedVotes = await apiSubmitPollVotes(pollId, {
         voter_name,
         items,
       });
 
-      const subPollById = new Map(subPolls.map((sp) => [sp.id, sp]));
+      const subQuestionById = new Map(subQuestions.map((sp) => [sp.id, sp]));
       setUserVoteMap((prev) => {
         const next = new Map(prev);
         for (const v of returnedVotes) {
-          const sp = subPollById.get(v.poll_id);
-          if (!sp || sp.poll_type !== "yes_no") continue;
+          const sp = subQuestionById.get(v.question_id);
+          if (!sp || sp.question_type !== "yes_no") continue;
           next.set(sp.id, {
             choice: parseYesNoChoice(v),
             voteId: v.id,
@@ -185,23 +185,23 @@ export function useThreadVoting({
         return next;
       });
 
-      const returnedByPollId = new Map(returnedVotes.map((v) => [v.poll_id, v]));
+      const returnedByQuestionId = new Map(returnedVotes.map((v) => [v.question_id, v]));
       for (const prepared of preparedNonYesNo) {
-        const v = returnedByPollId.get(prepared.pollId);
+        const v = returnedByQuestionId.get(prepared.questionId);
         if (v) prepared.commit(v);
       }
 
       for (const v of returnedVotes) {
-        setStoredVoteId(v.poll_id, v.id);
-        setVotedPollFlag(v.poll_id, v.is_abstain ? "abstained" : true);
+        setStoredVoteId(v.question_id, v.id);
+        setVotedQuestionFlag(v.question_id, v.is_abstain ? "abstained" : true);
       }
-      const fresh = loadVotedPolls();
-      setVotedPollIds(fresh.votedPollIds);
-      setAbstainedPollIds(fresh.abstainedPollIds);
+      const fresh = loadVotedQuestions();
+      setVotedQuestionIds(fresh.votedQuestionIds);
+      setAbstainedQuestionIds(fresh.abstainedQuestionIds);
 
-      setPendingMultipollChoices((prev) => {
+      setPendingPollChoices((prev) => {
         let mutated = false;
-        for (const sp of subPolls) {
+        for (const sp of subQuestions) {
           if (prev.has(sp.id)) {
             mutated = true;
             break;
@@ -209,7 +209,7 @@ export function useThreadVoting({
         }
         if (!mutated) return prev;
         const next = new Map(prev);
-        for (const sp of subPolls) next.delete(sp.id);
+        for (const sp of subQuestions) next.delete(sp.id);
         return next;
       });
 
@@ -217,25 +217,25 @@ export function useThreadVoting({
 
       for (const v of returnedVotes) {
         window.dispatchEvent(
-          new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId: v.poll_id } }),
+          new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: v.question_id } }),
         );
       }
 
-      setPendingMultipollSubmit(null);
+      setPendingPollSubmit(null);
     } catch (err: unknown) {
-      console.error("Multipoll vote submit failed:", err);
+      console.error("Poll vote submit failed:", err);
       const message = err instanceof Error ? err.message : "Submit failed.";
       for (const prepared of preparedNonYesNo) prepared.fail(message);
-      setMultipollSubmitError((prev) => {
+      setPollSubmitError((prev) => {
         const next = new Map(prev);
-        next.set(multipollId, message);
+        next.set(pollId, message);
         return next;
       });
     } finally {
-      setMultipollSubmitting((prev) => {
-        if (!prev.has(multipollId)) return prev;
+      setPollSubmitting((prev) => {
+        if (!prev.has(pollId)) return prev;
         const next = new Set(prev);
-        next.delete(multipollId);
+        next.delete(pollId);
         return next;
       });
     }
@@ -243,22 +243,22 @@ export function useThreadVoting({
 
   const confirmVoteChange = async () => {
     if (!pendingVoteChange) return;
-    const { pollId, newChoice } = pendingVoteChange;
-    const current = userVoteMap.get(pollId);
-    const subPoll = thread?.polls.find((p) => p.id === pollId);
-    const multipollId = subPoll?.multipoll_id ?? null;
-    if (!multipollId) {
-      // Phase 5: every poll has a multipoll wrapper, so this branch is dead.
+    const { questionId, newChoice } = pendingVoteChange;
+    const current = userVoteMap.get(questionId);
+    const subQuestion = thread?.questions.find((p) => p.id === questionId);
+    const pollId = subQuestion?.poll_id ?? null;
+    if (!pollId) {
+      // Phase 5: every question has a poll wrapper, so this branch is dead.
       // Surface as a runtime error rather than silently dropping the vote.
-      console.error("confirmVoteChange called for poll without multipoll_id");
+      console.error("confirmVoteChange called for question without poll_id");
       return;
     }
     setVoteChangeSubmitting(true);
     try {
-      // Route every yes_no tap-to-change through the unified multipoll endpoint
+      // Route every yes_no tap-to-change through the unified poll endpoint
       // as a single-item batch. Matches the architectural "vote submission is
-      // always atomic across the multipoll" rule (see CLAUDE.md → Multipoll
-      // System), even when the multipoll has only one sub-poll.
+      // always atomic across the poll" rule (see CLAUDE.md → Poll
+      // System), even when the poll has only one question.
       const voter_name = current
         ? current.voterName
         : (getUserName()?.trim() || null);
@@ -267,37 +267,37 @@ export function useThreadVoting({
         yes_no_choice: newChoice === "abstain" ? null : newChoice,
         is_abstain: newChoice === "abstain",
       };
-      const item = buildMultipollVoteItem(voteData, pollId, current?.voteId ?? null, {
-        pollType: "yes_no",
+      const item = buildPollVoteItem(voteData, questionId, current?.voteId ?? null, {
+        questionType: "yes_no",
         canSubmitSuggestions: false,
         isEditing: !!current?.voteId,
       });
-      const returned = await apiSubmitMultipollVotes(multipollId, {
+      const returned = await apiSubmitPollVotes(pollId, {
         voter_name,
         items: [item],
       });
-      const v = returned.find((r) => r.poll_id === pollId);
-      if (!v) throw new Error("Vote response missing for sub-poll");
+      const v = returned.find((r) => r.question_id === questionId);
+      if (!v) throw new Error("Vote response missing for question");
       const resultVoteId = v.id;
       const resultVoterName = v.voter_name ?? null;
-      if (!current) setStoredVoteId(pollId, resultVoteId);
+      if (!current) setStoredVoteId(questionId, resultVoteId);
       if (voter_name) saveUserName(voter_name);
-      invalidatePoll(pollId);
+      invalidateQuestion(questionId);
       setUserVoteMap((prev) => {
         const next = new Map(prev);
-        next.set(pollId, {
+        next.set(questionId, {
           choice: newChoice,
           voteId: resultVoteId,
           voterName: resultVoterName,
         });
         return next;
       });
-      setVotedPollFlag(pollId, newChoice === "abstain" ? "abstained" : true);
-      const fresh = loadVotedPolls();
-      setVotedPollIds(fresh.votedPollIds);
-      setAbstainedPollIds(fresh.abstainedPollIds);
+      setVotedQuestionFlag(questionId, newChoice === "abstain" ? "abstained" : true);
+      const fresh = loadVotedQuestions();
+      setVotedQuestionIds(fresh.votedQuestionIds);
+      setAbstainedQuestionIds(fresh.abstainedQuestionIds);
       window.dispatchEvent(
-        new CustomEvent(POLL_VOTES_CHANGED_EVENT, { detail: { pollId } }),
+        new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId } }),
       );
       setPendingVoteChange(null);
     } catch (err) {
@@ -313,17 +313,17 @@ export function useThreadVoting({
     pendingVoteChange,
     setPendingVoteChange,
     voteChangeSubmitting,
-    pendingMultipollChoices,
-    setPendingMultipollChoices,
-    multipollVoterNames,
-    setMultipollVoterName,
-    pendingMultipollSubmit,
-    setPendingMultipollSubmit,
-    multipollSubmitting,
-    multipollSubmitError,
+    pendingPollChoices,
+    setPendingPollChoices,
+    pollVoterNames,
+    setPollVoterName,
+    pendingPollSubmit,
+    setPendingPollSubmit,
+    pollSubmitting,
+    pollSubmitError,
     wrapperSubmitState,
     handleWrapperSubmitStateChange,
-    confirmMultipollSubmit,
+    confirmPollSubmit,
     confirmVoteChange,
   };
 }

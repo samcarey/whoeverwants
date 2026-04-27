@@ -1,11 +1,11 @@
-"""Yes/No poll vote counting algorithm.
+"""Yes/No question vote counting algorithm.
 
-Counts yes, no, and abstain votes for a poll. Calculates percentages
+Counts yes, no, and abstain votes for a question. Calculates percentages
 and determines the winner. Abstain votes count toward total_votes but
 not toward yes/no counts or winner determination.
 
-Reference: database/migrations/005_create_poll_results_view_up.sql
-           database/migrations/009_update_poll_results_view_up.sql
+Reference: database/migrations/005_create_question_results_view_up.sql
+           database/migrations/009_update_question_results_view_up.sql
 """
 
 from dataclasses import dataclass

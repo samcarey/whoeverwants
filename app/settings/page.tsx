@@ -114,7 +114,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="poll-content">
+    <div className="question-content">
       {/* Name Input Section */}
       <div className="mb-6">
         <label htmlFor="name" className="block text-sm font-medium mb-1">
@@ -187,7 +187,7 @@ export default function SettingsPage() {
           </button>
         </div>
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Used as the reference point for calculating distance in location-based polls
+          Used as the reference point for calculating distance in location-based questions
         </p>
       </div>
 
@@ -228,7 +228,7 @@ export default function SettingsPage() {
           About
         </h3>
         <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
-          WhoeverWants is an open-source polling application
+          WhoeverWants is an open-source questioning application
         </p>
         <a
           href="https://github.com/samcarey/whoeverwants"

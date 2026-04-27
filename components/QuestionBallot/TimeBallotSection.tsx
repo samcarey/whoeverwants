@@ -1,18 +1,18 @@
 "use client";
 
 import type { Dispatch, SetStateAction, ReactNode } from "react";
-import type { Poll, PollResults } from "@/lib/types";
+import type { Question, QuestionResults } from "@/lib/types";
 import AbstainButton from "@/components/AbstainButton";
 import CompactNameField from "@/components/CompactNameField";
-import TimePollFields from "@/components/TimePollFields";
+import TimeQuestionFields from "@/components/TimeQuestionFields";
 import TimeSlotBubbles from "@/components/TimeSlotBubbles";
 import { formatTimeSlot } from "@/lib/timeUtils";
 
 export interface TimeBallotSectionProps {
-  poll: Poll;
-  isPollClosed: boolean;
+  question: Question;
+  isQuestionClosed: boolean;
   loadingResults: boolean;
-  pollResults: PollResults | null;
+  questionResults: QuestionResults | null;
   userVoteData: any;
   isLoadingVoteData: boolean;
   hasVoted: boolean;
@@ -45,16 +45,16 @@ export interface TimeBallotSectionProps {
 }
 
 /**
- * Time-poll ballot UI: closed-results badge / "Your availability/preferences"
+ * Time-question ballot UI: closed-results badge / "Your availability/preferences"
  * summary / availability-phase form / preferences-phase form. Extracted from
- * SubPollBallot.tsx so the parent component stays focused on cross-type ballot
+ * QuestionBallot.tsx so the parent component stays focused on cross-type ballot
  * orchestration.
  */
 export default function TimeBallotSection({
-  poll,
-  isPollClosed,
+  question,
+  isQuestionClosed,
   loadingResults,
-  pollResults,
+  questionResults,
   userVoteData,
   isLoadingVoteData,
   hasVoted,
@@ -85,7 +85,7 @@ export default function TimeBallotSection({
   wrapperHandlesSubmit,
   handleVoteClick,
 }: TimeBallotSectionProps) {
-  if (isPollClosed) {
+  if (isQuestionClosed) {
     return (
       <div>
         <div className="py-6">
@@ -96,7 +96,7 @@ export default function TimeBallotSection({
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-          ) : pollResults ? (
+          ) : questionResults ? (
             <>
               {userVoteData?.is_abstain && (
                 <div className="mt-4 flex justify-center">
@@ -165,7 +165,7 @@ export default function TimeBallotSection({
             {/* Availability phase: show time window picker */}
             <div className="mb-4">
               <h3 className="text-lg font-semibold mb-3 text-center">Your Availability</h3>
-              <TimePollFields
+              <TimeQuestionFields
                 disabled={isSubmitting}
                 durationMinValue={durationMinValue}
                 durationMaxValue={durationMaxValue}
@@ -177,8 +177,8 @@ export default function TimeBallotSection({
                 onDurationMaxEnabledChange={setDurationMaxEnabled}
                 dayTimeWindows={voterDayTimeWindows}
                 onDayTimeWindowsChange={setVoterDayTimeWindows}
-                pollDayTimeWindows={poll.day_time_windows || undefined}
-                pollDurationWindow={poll.duration_window || undefined}
+                questionDayTimeWindows={question.day_time_windows || undefined}
+                questionDurationWindow={question.duration_window || undefined}
               />
             </div>
 
@@ -233,8 +233,8 @@ export default function TimeBallotSection({
                     return Array.from(s);
                   });
                 }}
-                availabilityCounts={pollResults?.availability_counts}
-                maxAvailability={pollResults?.max_availability}
+                availabilityCounts={questionResults?.availability_counts}
+                maxAvailability={questionResults?.max_availability}
                 disabled={isSubmitting}
               />
             </div>

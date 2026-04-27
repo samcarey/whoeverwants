@@ -1,7 +1,7 @@
 // Core type definitions for WhoeverWants
 // Extracted from lib/supabase.ts during Phase 3 cleanup
 
-export type PollCategory = string;
+export type QuestionCategory = string;
 
 export type OptionMetadataEntry = {
   imageUrl?: string;
@@ -19,28 +19,28 @@ export type OptionMetadataEntry = {
 
 export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 
-export interface Poll {
+export interface Question {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'time';
+  question_type: 'yes_no' | 'ranked_choice' | 'time';
   options?: string[];
   created_at: string;
   updated_at: string;
-  // Phase 3.5: the wrapper's follow_up_to (a multipoll_id) is the source of
-  // truth for thread chains. The legacy per-poll `follow_up_to` column was
+  // Phase 3.5: the wrapper's follow_up_to (a poll_id) is the source of
+  // truth for thread chains. The legacy per-question `follow_up_to` column was
   // dropped in Phase 5.
-  multipoll_follow_up_to?: string | null;
+  poll_follow_up_to?: string | null;
   // Phase 5b: wrapper-level fields (response_deadline, is_closed,
   // close_reason, creator_secret, creator_name, short_id, thread_title,
-  // suggestion_deadline) live on the parent Multipoll. Resolve via
-  // pollCache.getMultipollForPoll() or accept a Multipoll prop.
+  // suggestion_deadline) live on the parent Poll. Resolve via
+  // questionCache.getPollForQuestion() or accept a Poll prop.
   suggestion_deadline_minutes?: number | null;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
-  category?: PollCategory | null;
+  category?: QuestionCategory | null;
   options_metadata?: OptionsMetadata | null;
   reference_latitude?: number | null;
   reference_longitude?: number | null;
@@ -50,11 +50,11 @@ export interface Poll {
   show_preliminary_results?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
-  // Phase 2.5: multipoll wrapper this sub-poll belongs to. Phase 4 backfilled
-  // every existing poll, so this is effectively NOT NULL on every row.
-  multipoll_id?: string | null;
-  sub_poll_index?: number | null;
-  results?: PollResults | null;
+  // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
+  // every existing question, so this is effectively NOT NULL on every row.
+  poll_id?: string | null;
+  question_index?: number | null;
+  results?: QuestionResults | null;
   voter_names?: string[] | null;
 }
 
@@ -78,7 +78,7 @@ export interface DurationWindow {
 
 export interface Vote {
   id: string;
-  poll_id: string;
+  question_id: string;
   vote_data: any;
   created_at: string;
 }
@@ -88,10 +88,10 @@ export interface SuggestionCount {
   count: number;
 }
 
-export interface PollResults {
-  poll_id: string;
+export interface QuestionResults {
+  question_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'time';
+  question_type: 'yes_no' | 'ranked_choice' | 'time';
   created_at: string;
   response_deadline?: string;
   options?: string[];
@@ -104,7 +104,7 @@ export interface PollResults {
   winner?: string;
   total_rounds?: number;
   suggestion_counts?: SuggestionCount[];
-  // Time poll fields
+  // Time question fields
   availability_counts?: Record<string, number>;
   max_availability?: number;
   included_slots?: string[];
@@ -116,7 +116,7 @@ export interface PollResults {
 
 export interface RankedChoiceRound {
   id: string;
-  poll_id: string;
+  question_id: string;
   round_number: number;
   option_name: string;
   vote_count: number;
@@ -126,9 +126,9 @@ export interface RankedChoiceRound {
   tie_broken_by_borda?: boolean;
 }
 
-// Multipoll wrapper. Mirrors MultipollResponse in server/models.py.
-// See docs/multipoll-phasing.md.
-export interface Multipoll {
+// Poll wrapper. Mirrors PollResponse in server/models.py.
+// See docs/poll-phasing.md.
+export interface Poll {
   id: string;
   short_id?: string | null;
   creator_secret?: string | null;
@@ -144,9 +144,9 @@ export interface Multipoll {
   title: string;
   created_at: string;
   updated_at: string;
-  sub_polls: Poll[];
-  // Multipoll-level voter aggregates (Phase 3.2). Use these instead of
-  // iterating sub_polls — see CLAUDE.md → "Addressability paradigm".
+  questions: Question[];
+  // Poll-level voter aggregates (Phase 3.2). Use these instead of
+  // iterating questions — see CLAUDE.md → "Addressability paradigm".
   voter_names: string[];
   anonymous_count: number;
 }

@@ -1,5 +1,5 @@
 import { describe, it, beforeAll } from 'vitest'
-import { createPoll } from '../../helpers/poll-builder.js'
+import { createQuestion } from '../../helpers/question-builder.js'
 import { isApiAvailable } from '../../helpers/database.js'
 
 let apiUp = false
@@ -12,7 +12,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
   describe('Original Production Bug Scenario', () => {
     it('eliminates candidates with 0 votes before those with 1 vote', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D', 'E'])
+      await createQuestion(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
           ['A', 'D', 'B', 'C', 'E'],
           ['E', 'A', 'B', 'C', 'D'],
@@ -48,7 +48,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
 
     it('eliminates single candidate with 0 votes when others are tied', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'C', 'B'],
           ['C', 'A', 'B']
@@ -75,7 +75,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
   describe('Multiple Zero Vote Scenarios', () => {
     it('declares winner immediately when one candidate has all votes', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B', 'C', 'D'],
           ['A', 'C', 'D', 'B'],
@@ -95,7 +95,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
 
     it('eliminates zero-vote candidates in correct order over multiple rounds', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D', 'E'])
+      await createQuestion(['A', 'B', 'C', 'D', 'E'])
         .withVotes([
           ['A', 'B', 'C', 'D', 'E'],
           ['C', 'A', 'B', 'D', 'E'],
@@ -137,7 +137,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
   describe('Edge Cases', () => {
     it('handles single voter with some candidates getting 0 votes', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C'])
+      await createQuestion(['A', 'B', 'C'])
         .withVotes([
           ['A', 'B', 'C']
         ])
@@ -154,7 +154,7 @@ describe('Zero Vote Elimination Bug Fix', () => {
 
     it('handles partial rankings with zero first-place votes', async ({ skip }) => {
       if (!apiUp) skip()
-      await createPoll(['A', 'B', 'C', 'D'])
+      await createQuestion(['A', 'B', 'C', 'D'])
         .withVotes([
           ['A', 'B'],
           ['C', 'D', 'A'],

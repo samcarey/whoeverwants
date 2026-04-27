@@ -1,189 +1,189 @@
-"""Tests for related polls discovery algorithm.
+"""Tests for related questions discovery algorithm.
 
-Phase 3.5: discovery walks multipoll-level chains. A `PollRelation` carries the
-poll's `multipoll_id` and `multipoll_follow_up_to` (its wrapper's follow_up
-chain pointer). `_p()` wraps each test poll in its own 1-sub-poll multipoll by
+Phase 3.5: discovery walks poll-level chains. A `QuestionRelation` carries the
+question's `poll_id` and `poll_follow_up_to` (its wrapper's follow_up
+chain pointer). `_p()` wraps each test question in its own 1-question poll by
 default so the chain semantics mirror production after the Phase 4 backfill.
 """
 
 import pytest
 
-from algorithms.related_polls import PollRelation, get_all_related_poll_ids
+from algorithms.related_questions import QuestionRelation, get_all_related_question_ids
 
 
 def _p(
     id: str,
     *,
-    multipoll_id: str | None = None,
+    poll_id: str | None = None,
     follow_up_to: str | None = None,
-) -> PollRelation:
-    """Build a PollRelation. By default each poll lives in its own 1-sub-poll
-    multipoll whose id mirrors the poll id (so single-poll thread semantics are
-    expressed without test scaffolding noise). Pass `multipoll_id=...` to put
-    multiple polls in one wrapper. `follow_up_to` is a multipoll_id (the
-    wrapper's parent multipoll), matching `multipolls.follow_up_to` semantics.
+) -> QuestionRelation:
+    """Build a QuestionRelation. By default each question lives in its own 1-question
+    poll whose id mirrors the question id (so single-question thread semantics are
+    expressed without test scaffolding noise). Pass `poll_id=...` to put
+    multiple questions in one wrapper. `follow_up_to` is a poll_id (the
+    wrapper's parent poll), matching `polls.follow_up_to` semantics.
     """
-    return PollRelation(
+    return QuestionRelation(
         id=id,
-        multipoll_id=multipoll_id or id,
-        multipoll_follow_up_to=follow_up_to,
+        poll_id=poll_id or id,
+        poll_follow_up_to=follow_up_to,
     )
 
 
-class TestGetAllRelatedPollIds:
-    """Tests for bidirectional poll relationship traversal at the multipoll level."""
+class TestGetAllRelatedQuestionIds:
+    """Tests for bidirectional question relationship traversal at the poll level."""
 
     def test_empty_input(self):
-        assert get_all_related_poll_ids([], []) == []
+        assert get_all_related_question_ids([], []) == []
 
-    def test_single_poll_no_relations(self):
-        polls = [_p("a")]
-        result = get_all_related_poll_ids(["a"], polls)
+    def test_single_question_no_relations(self):
+        questions = [_p("a")]
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a"}
 
     def test_single_follow_up_descendant(self):
-        polls = [_p("a"), _p("b", follow_up_to="a")]
-        result = get_all_related_poll_ids(["a"], polls)
+        questions = [_p("a"), _p("b", follow_up_to="a")]
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b"}
 
     def test_single_follow_up_ancestor(self):
         """Starting from a follow-up should discover parent."""
-        polls = [_p("a"), _p("b", follow_up_to="a")]
-        result = get_all_related_poll_ids(["b"], polls)
+        questions = [_p("a"), _p("b", follow_up_to="a")]
+        result = get_all_related_question_ids(["b"], questions)
         assert set(result) == {"a", "b"}
 
     def test_chain_of_follow_ups(self):
         """a -> b -> c -> d: starting from any should find all."""
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("c", follow_up_to="b"),
             _p("d", follow_up_to="c"),
         ]
-        result = get_all_related_poll_ids(["a"], polls)
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b", "c", "d"}
 
     def test_chain_from_middle(self):
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("c", follow_up_to="b"),
         ]
-        result = get_all_related_poll_ids(["b"], polls)
+        result = get_all_related_question_ids(["b"], questions)
         assert set(result) == {"a", "b", "c"}
 
     def test_branching_tree(self):
         """a -> b, a -> c, b -> d"""
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("c", follow_up_to="a"),
             _p("d", follow_up_to="b"),
         ]
-        result = get_all_related_poll_ids(["a"], polls)
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b", "c", "d"}
 
     def test_branching_tree_from_leaf(self):
         """Starting from d should find entire tree."""
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("c", follow_up_to="a"),
             _p("d", follow_up_to="b"),
         ]
-        result = get_all_related_poll_ids(["d"], polls)
+        result = get_all_related_question_ids(["d"], questions)
         assert set(result) == {"a", "b", "c", "d"}
 
-    def test_multiple_input_polls(self):
+    def test_multiple_input_questions(self):
         """Two unrelated trees, querying from both roots."""
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("x"),
             _p("y", follow_up_to="x"),
         ]
-        result = get_all_related_poll_ids(["a", "x"], polls)
+        result = get_all_related_question_ids(["a", "x"], questions)
         assert set(result) == {"a", "b", "x", "y"}
 
-    def test_input_poll_not_in_all_polls(self):
-        """Input poll ID not in the all_polls list — still returned."""
-        polls = [_p("a")]
-        result = get_all_related_poll_ids(["z"], polls)
+    def test_input_question_not_in_all_questions(self):
+        """Input question ID not in the all_questions list — still returned."""
+        questions = [_p("a")]
+        result = get_all_related_question_ids(["z"], questions)
         assert set(result) == {"z"}
 
-    def test_disconnected_polls_not_included(self):
-        """Polls not related to input should not appear."""
-        polls = [
+    def test_disconnected_questions_not_included(self):
+        """Questions not related to input should not appear."""
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("unrelated"),
         ]
-        result = get_all_related_poll_ids(["a"], polls)
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b"}
         assert "unrelated" not in result
 
     def test_max_depth_limits_traversal(self):
         """With max_depth=2, should only traverse 2 levels."""
-        polls = [
+        questions = [
             _p("a"),
             _p("b", follow_up_to="a"),
             _p("c", follow_up_to="b"),
             _p("d", follow_up_to="c"),  # depth 3 from a
         ]
-        result = get_all_related_poll_ids(["a"], polls, max_depth=2)
+        result = get_all_related_question_ids(["a"], questions, max_depth=2)
         assert set(result) == {"a", "b", "c"}
         assert "d" not in result
 
     def test_duplicate_input_ids(self):
-        polls = [_p("a"), _p("b", follow_up_to="a")]
-        result = get_all_related_poll_ids(["a", "a"], polls)
+        questions = [_p("a"), _p("b", follow_up_to="a")]
+        result = get_all_related_question_ids(["a", "a"], questions)
         assert set(result) == {"a", "b"}
         # No duplicates in output
         assert len(result) == len(set(result))
 
-    def test_empty_all_polls(self):
-        result = get_all_related_poll_ids(["a"], [])
+    def test_empty_all_questions(self):
+        result = get_all_related_question_ids(["a"], [])
         assert set(result) == {"a"}
 
-    # --- Multipoll-level semantics ---
+    # --- Poll-level semantics ---
 
-    def test_multipoll_siblings_grouped(self):
-        """Two sub-polls in one wrapper are always discovered together."""
-        polls = [
-            _p("a", multipoll_id="m1"),
-            _p("b", multipoll_id="m1"),
+    def test_poll_siblings_grouped(self):
+        """Two questions in one wrapper are always discovered together."""
+        questions = [
+            _p("a", poll_id="m1"),
+            _p("b", poll_id="m1"),
         ]
-        result = get_all_related_poll_ids(["a"], polls)
+        result = get_all_related_question_ids(["a"], questions)
         assert set(result) == {"a", "b"}
 
     def test_followup_pulls_all_siblings_of_parent(self):
-        """A follow-up multipoll discovers every sibling sub-poll of its parent."""
-        polls = [
-            _p("a1", multipoll_id="m1"),
-            _p("a2", multipoll_id="m1"),
-            _p("b1", multipoll_id="m2", follow_up_to="m1"),
+        """A follow-up poll discovers every sibling question of its parent."""
+        questions = [
+            _p("a1", poll_id="m1"),
+            _p("a2", poll_id="m1"),
+            _p("b1", poll_id="m2", follow_up_to="m1"),
         ]
-        result = get_all_related_poll_ids(["b1"], polls)
+        result = get_all_related_question_ids(["b1"], questions)
         assert set(result) == {"a1", "a2", "b1"}
 
     def test_followup_pulls_all_siblings_of_child(self):
-        """Starting from a parent sub-poll discovers every sibling of the child."""
-        polls = [
-            _p("a1", multipoll_id="m1"),
-            _p("b1", multipoll_id="m2", follow_up_to="m1"),
-            _p("b2", multipoll_id="m2"),
+        """Starting from a parent question discovers every sibling of the child."""
+        questions = [
+            _p("a1", poll_id="m1"),
+            _p("b1", poll_id="m2", follow_up_to="m1"),
+            _p("b2", poll_id="m2"),
         ]
-        result = get_all_related_poll_ids(["a1"], polls)
+        result = get_all_related_question_ids(["a1"], questions)
         assert set(result) == {"a1", "b1", "b2"}
 
-    def test_chain_of_multi_subpoll_wrappers(self):
-        """m1 -> m2 -> m3 with multiple sub-polls in each: all discovered from any input."""
-        polls = [
-            _p("a1", multipoll_id="m1"),
-            _p("a2", multipoll_id="m1"),
-            _p("b1", multipoll_id="m2", follow_up_to="m1"),
-            _p("b2", multipoll_id="m2"),
-            _p("c1", multipoll_id="m3", follow_up_to="m2"),
+    def test_chain_of_multi_question_wrappers(self):
+        """m1 -> m2 -> m3 with multiple questions in each: all discovered from any input."""
+        questions = [
+            _p("a1", poll_id="m1"),
+            _p("a2", poll_id="m1"),
+            _p("b1", poll_id="m2", follow_up_to="m1"),
+            _p("b2", poll_id="m2"),
+            _p("c1", poll_id="m3", follow_up_to="m2"),
         ]
-        result = get_all_related_poll_ids(["b2"], polls)
+        result = get_all_related_question_ids(["b2"], questions)
         assert set(result) == {"a1", "a2", "b1", "b2", "c1"}

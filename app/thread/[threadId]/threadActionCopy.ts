@@ -1,5 +1,5 @@
 /**
- * Copy + button styling for the per-poll long-press confirmation modal.
+ * Copy + button styling for the per-question long-press confirmation modal.
  * Forget / Reopen / Close / End-Availability share one ConfirmationModal
  * driven by the `kind` selector — keeping the messages here makes the
  * thread page render leaner and the strings easier to find.

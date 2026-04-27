@@ -1,36 +1,36 @@
-// Enhanced poll access management with database-level security
-// Replaces and extends lib/pollCreator.ts functionality
+// Enhanced question access management with database-level security
+// Replaces and extends lib/questionCreator.ts functionality
 
-const POLL_ACCESS_STORAGE_KEY = 'poll_access_data';
-const LEGACY_CREATOR_STORAGE_KEY = 'poll_creator_data';
+const QUESTION_ACCESS_STORAGE_KEY = 'question_access_data';
+const LEGACY_CREATOR_STORAGE_KEY = 'question_creator_data';
 const CLEANUP_INTERVAL_DAYS = 30;
 
-interface PollAccessData {
-  pollId: string;
+interface QuestionAccessData {
+  questionId: string;
   accessType: 'creator' | 'viewer';
   creatorSecret?: string; // Only for creator type
   createdAt: string;
   lastAccessed: string;
 }
 
-interface LegacyPollCreatorData {
-  pollId: string;
+interface LegacyQuestionCreatorData {
+  questionId: string;
   creatorSecret: string;
   createdAt: string;
 }
 
-// Add poll access for current user
-export function addPollAccess(
-  pollId: string, 
+// Add question access for current user
+export function addQuestionAccess(
+  questionId: string, 
   accessType: 'creator' | 'viewer', 
   creatorSecret?: string
 ): void {
   if (typeof window === 'undefined') return; // SSR safety
 
-  const existingData = getStoredPollAccessData();
+  const existingData = getStoredQuestionAccessData();
   
   // Check if access already exists
-  const existingIndex = existingData.findIndex(data => data.pollId === pollId);
+  const existingIndex = existingData.findIndex(data => data.questionId === questionId);
   
   if (existingIndex >= 0) {
     // Update existing record
@@ -43,8 +43,8 @@ export function addPollAccess(
     };
   } else {
     // Add new record
-    const newData: PollAccessData = {
-      pollId,
+    const newData: QuestionAccessData = {
+      questionId,
       accessType,
       creatorSecret,
       createdAt: new Date().toISOString(),
@@ -53,41 +53,41 @@ export function addPollAccess(
     existingData.push(newData);
   }
 
-  localStorage.setItem(POLL_ACCESS_STORAGE_KEY, JSON.stringify(existingData));
+  localStorage.setItem(QUESTION_ACCESS_STORAGE_KEY, JSON.stringify(existingData));
 }
 
-// Get list of all accessible poll IDs
-export function getPollAccessList(): string[] {
-  const pollData = getStoredPollAccessData();
-  return pollData.map(data => data.pollId);
+// Get list of all accessible question IDs
+export function getQuestionAccessList(): string[] {
+  const questionData = getStoredQuestionAccessData();
+  return questionData.map(data => data.questionId);
 }
 
-// Check if user has access to specific poll
-export function hasPollAccess(pollId: string): boolean {
-  const pollData = getStoredPollAccessData();
-  return pollData.some(data => data.pollId === pollId);
+// Check if user has access to specific question
+export function hasQuestionAccess(questionId: string): boolean {
+  const questionData = getStoredQuestionAccessData();
+  return questionData.some(data => data.questionId === questionId);
 }
 
-// Backward compatibility: Check if poll was created by this device
-export function isCreatedByThisDevice(pollId: string): boolean {
-  const pollData = getStoredPollAccessData();
-  return pollData.some(data => data.pollId === pollId && data.accessType === 'creator');
+// Backward compatibility: Check if question was created by this device
+export function isCreatedByThisDevice(questionId: string): boolean {
+  const questionData = getStoredQuestionAccessData();
+  return questionData.some(data => data.questionId === questionId && data.accessType === 'creator');
 }
 
-// Backward compatibility: Get creator secret for poll
-export function getPollCreatorSecret(pollId: string): string | null {
-  const pollData = getStoredPollAccessData();
-  const found = pollData.find(data => data.pollId === pollId && data.accessType === 'creator');
+// Backward compatibility: Get creator secret for question
+export function getQuestionCreatorSecret(questionId: string): string | null {
+  const questionData = getStoredQuestionAccessData();
+  const found = questionData.find(data => data.questionId === questionId && data.accessType === 'creator');
   return found?.creatorSecret || null;
 }
 
-// Get stored poll access data with automatic migration
-function getStoredPollAccessData(): PollAccessData[] {
+// Get stored question access data with automatic migration
+function getStoredQuestionAccessData(): QuestionAccessData[] {
   if (typeof window === 'undefined') return []; // SSR safety
 
   try {
     // Try to get new format data
-    const stored = localStorage.getItem(POLL_ACCESS_STORAGE_KEY);
+    const stored = localStorage.getItem(QUESTION_ACCESS_STORAGE_KEY);
     if (stored) {
       return JSON.parse(stored);
     }
@@ -95,13 +95,13 @@ function getStoredPollAccessData(): PollAccessData[] {
     // If new format doesn't exist, try to migrate from legacy format
     return migrateLegacyCreatorData();
   } catch (error) {
-    console.error('Error parsing stored poll access data:', error);
+    console.error('Error parsing stored question access data:', error);
     return [];
   }
 }
 
-// Migrate from legacy poll_creator_data format
-export function migrateLegacyCreatorData(): PollAccessData[] {
+// Migrate from legacy question_creator_data format
+export function migrateLegacyCreatorData(): QuestionAccessData[] {
   if (typeof window === 'undefined') return []; // SSR safety
 
   try {
@@ -110,9 +110,9 @@ export function migrateLegacyCreatorData(): PollAccessData[] {
       return [];
     }
 
-    const legacyRecords: LegacyPollCreatorData[] = JSON.parse(legacyData);
-    const migratedData: PollAccessData[] = legacyRecords.map(legacy => ({
-      pollId: legacy.pollId,
+    const legacyRecords: LegacyQuestionCreatorData[] = JSON.parse(legacyData);
+    const migratedData: QuestionAccessData[] = legacyRecords.map(legacy => ({
+      questionId: legacy.questionId,
       accessType: 'creator' as const,
       creatorSecret: legacy.creatorSecret,
       createdAt: legacy.createdAt,
@@ -120,57 +120,57 @@ export function migrateLegacyCreatorData(): PollAccessData[] {
     }));
 
     // Save migrated data in new format
-    localStorage.setItem(POLL_ACCESS_STORAGE_KEY, JSON.stringify(migratedData));
+    localStorage.setItem(QUESTION_ACCESS_STORAGE_KEY, JSON.stringify(migratedData));
 
-    console.log(`Migrated ${legacyRecords.length} legacy poll creator records`);
+    console.log(`Migrated ${legacyRecords.length} legacy question creator records`);
     return migratedData;
   } catch (error) {
-    console.error('Error migrating legacy poll creator data:', error);
+    console.error('Error migrating legacy question creator data:', error);
     return [];
   }
 }
 
-// Clean up old poll access data to prevent localStorage from growing indefinitely
-export function cleanupOldPollAccess(): void {
+// Clean up old question access data to prevent localStorage from growing indefinitely
+export function cleanupOldQuestionAccess(): void {
   if (typeof window === 'undefined') return; // SSR safety
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - CLEANUP_INTERVAL_DAYS);
 
-  const pollData = getStoredPollAccessData();
-  const filteredData = pollData.filter(data => {
+  const questionData = getStoredQuestionAccessData();
+  const filteredData = questionData.filter(data => {
     const lastAccessDate = new Date(data.lastAccessed);
     return lastAccessDate >= cutoffDate;
   });
 
   // Only update localStorage if we actually removed something
-  if (filteredData.length !== pollData.length) {
-    localStorage.setItem(POLL_ACCESS_STORAGE_KEY, JSON.stringify(filteredData));
-    console.log(`Cleaned up ${pollData.length - filteredData.length} old poll access records`);
+  if (filteredData.length !== questionData.length) {
+    localStorage.setItem(QUESTION_ACCESS_STORAGE_KEY, JSON.stringify(filteredData));
+    console.log(`Cleaned up ${questionData.length - filteredData.length} old question access records`);
   }
 }
 
 // Get access statistics for monitoring
-export function getPollAccessStats(): {
-  totalPolls: number;
-  createdPolls: number;
-  viewedPolls: number;
+export function getQuestionAccessStats(): {
+  totalQuestions: number;
+  createdQuestions: number;
+  viewedQuestions: number;
   oldestAccess: string | null;
   newestAccess: string | null;
 } {
-  const pollData = getStoredPollAccessData();
+  const questionData = getStoredQuestionAccessData();
   
-  const createdPolls = pollData.filter(data => data.accessType === 'creator').length;
-  const viewedPolls = pollData.filter(data => data.accessType === 'viewer').length;
+  const createdQuestions = questionData.filter(data => data.accessType === 'creator').length;
+  const viewedQuestions = questionData.filter(data => data.accessType === 'viewer').length;
   
-  const sortedByAccess = pollData.sort((a, b) => 
+  const sortedByAccess = questionData.sort((a, b) => 
     new Date(a.lastAccessed).getTime() - new Date(b.lastAccessed).getTime()
   );
 
   return {
-    totalPolls: pollData.length,
-    createdPolls,
-    viewedPolls,
+    totalQuestions: questionData.length,
+    createdQuestions,
+    viewedQuestions,
     oldestAccess: sortedByAccess[0]?.lastAccessed || null,
     newestAccess: sortedByAccess[sortedByAccess.length - 1]?.lastAccessed || null
   };
@@ -182,14 +182,14 @@ if (typeof window !== 'undefined') {
   migrateLegacyCreatorData();
   
   // Run cleanup immediately
-  cleanupOldPollAccess();
+  cleanupOldQuestionAccess();
   
   // Set up periodic cleanup (run once per day when the module is loaded)
-  const lastCleanup = localStorage.getItem('last_poll_access_cleanup');
+  const lastCleanup = localStorage.getItem('last_question_access_cleanup');
   const today = new Date().toDateString();
   
   if (lastCleanup !== today) {
-    cleanupOldPollAccess();
-    localStorage.setItem('last_poll_access_cleanup', today);
+    cleanupOldQuestionAccess();
+    localStorage.setItem('last_question_access_cleanup', today);
   }
 }

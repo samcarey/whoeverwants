@@ -10,15 +10,15 @@
  */
 
 import { useEffect, useState } from "react";
-import type { Poll } from "./types";
-import { buildThreadFromMultipollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
-import { getAccessibleMultipolls } from "./simplePollQueries";
-import { discoverRelatedPolls } from "./pollDiscovery";
-import { apiGetPollById, apiGetPollByShortId } from "./api";
-import { addAccessiblePollId } from "./browserPollAccess";
-import { getCachedPollById, getCachedPollByShortId } from "./pollCache";
-import { isUuidLike } from "./pollId";
-import { loadVotedPolls } from "./votedPollsStorage";
+import type { Question } from "./types";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, type Thread } from "./threadUtils";
+import { getAccessiblePolls } from "./simpleQuestionQueries";
+import { discoverRelatedQuestions } from "./questionDiscovery";
+import { apiGetQuestionById, apiGetQuestionByShortId } from "./api";
+import { addAccessibleQuestionId } from "./browserQuestionAccess";
+import { getCachedQuestionById, getCachedQuestionByShortId } from "./questionCache";
+import { isUuidLike } from "./questionId";
+import { loadVotedQuestions } from "./votedQuestionsStorage";
 import { usePageReady } from "./usePageReady";
 
 export interface UseThreadResult {
@@ -30,8 +30,8 @@ export interface UseThreadResult {
 export function useThread(threadId: string): UseThreadResult {
   const [initialThread] = useState<Thread | null>(() => {
     if (typeof window === "undefined") return null;
-    const voted = loadVotedPolls();
-    return buildThreadSyncFromCache(threadId, voted.votedPollIds, voted.abstainedPollIds);
+    const voted = loadVotedQuestions();
+    return buildThreadSyncFromCache(threadId, voted.votedQuestionIds, voted.abstainedQuestionIds);
   });
   const [thread, setThread] = useState<Thread | null>(initialThread);
   const [loading, setLoading] = useState(!initialThread);
@@ -43,7 +43,7 @@ export function useThread(threadId: string): UseThreadResult {
 
   useEffect(() => {
     // Cache hit: synchronous init already populated `thread`; skip the async
-    // refetch/discovery path entirely. Mutations invalidate via pollCache so
+    // refetch/discovery path entirely. Mutations invalidate via questionCache so
     // a stale read here is bounded by the cache TTL.
     if (initialThread) return;
 
@@ -53,32 +53,32 @@ export function useThread(threadId: string): UseThreadResult {
         setLoading(true);
         setError(false);
 
-        let anchorPoll: Poll;
+        let anchorQuestion: Question;
         try {
           const cached = isUuidLike(threadId)
-            ? getCachedPollById(threadId)
-            : getCachedPollByShortId(threadId);
+            ? getCachedQuestionById(threadId)
+            : getCachedQuestionByShortId(threadId);
           if (cached) {
-            anchorPoll = cached;
+            anchorQuestion = cached;
           } else if (isUuidLike(threadId)) {
-            anchorPoll = await apiGetPollById(threadId);
+            anchorQuestion = await apiGetQuestionById(threadId);
           } else {
-            anchorPoll = await apiGetPollByShortId(threadId);
+            anchorQuestion = await apiGetQuestionByShortId(threadId);
           }
-          addAccessiblePollId(anchorPoll.id);
+          addAccessibleQuestionId(anchorQuestion.id);
         } catch {
           if (!cancelled) setError(true);
           return;
         }
 
-        try { await discoverRelatedPolls(); } catch {}
-        const multipolls = await getAccessibleMultipolls();
-        if (!multipolls) { if (!cancelled) setError(true); return; }
+        try { await discoverRelatedQuestions(); } catch {}
+        const polls = await getAccessiblePolls();
+        if (!polls) { if (!cancelled) setError(true); return; }
 
-        const { votedPollIds, abstainedPollIds } = loadVotedPolls();
-        const anchorMultipollId = anchorPoll.multipoll_id;
-        if (!anchorMultipollId) { if (!cancelled) setError(true); return; }
-        const found = buildThreadFromMultipollDown(anchorMultipollId, multipolls, votedPollIds, abstainedPollIds);
+        const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
+        const anchorPollId = anchorQuestion.poll_id;
+        if (!anchorPollId) { if (!cancelled) setError(true); return; }
+        const found = buildThreadFromPollDown(anchorPollId, polls, votedQuestionIds, abstainedQuestionIds);
         if (cancelled) return;
         if (!found) { setError(true); return; }
         setThread(found);
