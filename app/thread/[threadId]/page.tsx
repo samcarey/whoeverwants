@@ -1580,14 +1580,21 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                       const preparedNonYesNo: PreparedNonYesNoEntry[] = [];
                                       let stagedCount = 0;
                                       let hadValidationError = false;
+                                      const debug: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
                                       for (const sp of group.subPolls) {
                                         if (sp.poll_type === 'yes_no') {
-                                          if (pendingMultipollChoices.has(sp.id)) stagedCount++;
+                                          const has = pendingMultipollChoices.has(sp.id);
+                                          if (has) stagedCount++;
+                                          debug.push({ id: sp.id.substring(0, 8), type: 'yes_no', staged: has });
                                           continue;
                                         }
                                         const handle = subPollBallotRefs.current.get(sp.id);
-                                        if (!handle) continue;
+                                        if (!handle) {
+                                          debug.push({ id: sp.id.substring(0, 8), type: sp.poll_type, handle: 'missing' });
+                                          continue;
+                                        }
                                         const result = handle.prepareBatchVoteItem();
+                                        debug.push({ id: sp.id.substring(0, 8), type: sp.poll_type, result: 'skip' in result ? 'skip' : (result.ok ? 'ok' : `err: ${result.error}`) });
                                         if ('skip' in result) continue;
                                         if (!result.ok) {
                                           hadValidationError = true;
@@ -1601,6 +1608,7 @@ export function ThreadContent({ threadId, initialExpandedPollId = null }: Thread
                                         });
                                         stagedCount++;
                                       }
+                                      console.log('[wrapperSubmit] debug:', JSON.stringify(debug), 'stagedCount:', stagedCount, 'hadError:', hadValidationError);
                                       // Validation errors surface inline in
                                       // each affected SubPollBallot's voteError
                                       // — abort the modal flow so the user can
