@@ -4,7 +4,7 @@ import { expect } from '@playwright/test';
 interface PollData {
   title: string;
   description?: string;
-  type: 'poll' | 'suggestion';
+  type: 'poll';
   options?: readonly string[];
   deadline?: string;
   customDate?: string;

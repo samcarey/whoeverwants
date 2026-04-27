@@ -179,11 +179,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     !!poll.reference_location_label &&
     isLocationLikeCategory(poll.category ?? '');
 
-  // Debug logging utility (output captured by CommitInfo Logs tab)
-  const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
-    const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    fn(`[${_logType}] ${message}`, data);
-  };
   const [internalVoterName, setInternalVoterName] = useState<string>("");
   // When the wrapper owns the voter name input (Phase 3.4 follow-up B),
   // mirror its value/setter so submitVote keeps reading `voterName` and
@@ -339,10 +334,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 100);
 
-      // Debug logging to understand what votes we're getting
-      console.log('[DEBUG] loadExistingSuggestions - fetched votes:', votes);
-      console.log('[DEBUG] loadExistingSuggestions - excludeUserVote:', excludeUserVote, 'userVoteId:', userVoteId);
-
       const allSuggestions = new Set<string>();
       
       // Add starting options from poll creation
@@ -366,13 +357,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       // So we should aggregate all current suggestions from all voters
       validVotes.forEach(vote => {
         if (vote.suggestions && Array.isArray(vote.suggestions)) {
-          console.log('[DEBUG] Adding suggestions from vote:', vote.id, 'suggestions:', vote.suggestions);
           vote.suggestions.forEach((sug: string) => allSuggestions.add(sug));
         }
       });
 
       const suggestionsArray = Array.from(allSuggestions);
-      console.log('[DEBUG] Final aggregated suggestions:', suggestionsArray);
       setExistingSuggestions(suggestionsArray);
     } catch (error) {
       console.error('Error loading suggestions:', error);
@@ -775,17 +764,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   });
 
   const handleVoteClick = async () => {
-    await logToServer('suggestion-vote', 'info', 'handleVoteClick started', {
-      isSubmitting,
-      hasVoted,
-      isEditingVote,
-      isPollClosed,
-      pollType: poll.poll_type,
-      isAbstaining,
-      suggestionChoices: suggestionChoices.length,
-      suggestionChoicesData: suggestionChoices
-    });
-
     // Either suggestion editing or ranking editing counts as "editing"
     const isAnyEditing = isEditingVote || isEditingRanking;
 
@@ -805,15 +783,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
 
     if (isSubmitting || (hasVoted && !isAnyEditing && !isImplicitEdit) || isPollClosed) {
-      await logToServer('suggestion-vote', 'warn', 'handleVoteClick early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditing) ? 'hasVoted and not editing' : 'isPollClosed'
-      });
       return;
     }
 
     // Validate vote choice first
     if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
-      await logToServer('suggestion-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
     }
@@ -826,18 +800,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           // During suggestion phase, submitting with nothing selected is an implicit abstain
           setIsAbstaining(true);
         } else {
-          await logToServer('suggestion-vote', 'error', 'Ranked choice validation failed', { rankedChoices, suggestionChoices, isAbstaining, canSubmitSuggestions });
           setVoteError("Please rank at least one option or select Abstain");
           return;
         }
       }
     }
-
-    await logToServer('vote', 'info', 'handleVoteClick validation passed, showing confirmation modal', {
-      pollType: poll.poll_type,
-      isAbstaining,
-      hasSuggestionPhase,
-    });
 
     setVoteError(null);
     setShowVoteConfirmModal(true);
@@ -846,36 +813,15 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
 
 
   const submitVote = async () => {
-    await logToServer('suggestion-vote', 'info', 'submitVote started', {
-      isSubmitting,
-      hasVoted,
-      isEditingVote,
-      isPollClosed,
-      pollType: poll.poll_type,
-      userVoteId
-    });
-
     setShowVoteConfirmModal(false);
 
     const isAnyEditingForSubmit = isEditingVote || isEditingRanking;
     if (isSubmitting || (hasVoted && !isAnyEditingForSubmit) || isPollClosed) {
-      await logToServer('suggestion-vote', 'warn', 'submitVote early return', {
-        reason: isSubmitting ? 'isSubmitting' : (hasVoted && !isAnyEditingForSubmit) ? 'hasVoted and not editing' : 'isPollClosed'
-      });
       return;
     }
 
     setIsSubmitting(true);
     setVoteError(null);
-
-    let voteData: any = {}; // Initialize voteData outside try block for error logging
-
-    await logToServer('suggestion-vote', 'info', 'submitVote setup complete', {
-      pollId: poll.id,
-      pollType: poll.poll_type,
-      isAbstaining,
-      voterName: voterName.trim()
-    });
 
     try {
       const buildResult = buildVoteData(getBallotInputs());
@@ -884,14 +830,16 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         setIsSubmitting(false);
         return;
       }
-      voteData = buildResult.voteData;
-
-      let voteId: string | undefined;
-      let error: any; // eslint-disable-line
+      const voteData = buildResult.voteData;
 
       const isEditing = (isEditingVote || isEditingRanking) && !!userVoteId;
       const multipollId = poll.multipoll_id ?? null;
       const trimmedVoterName = voterName.trim() || null;
+      const submitErrorMessage = isEditing
+        ? "Failed to update vote. Please try again."
+        : "Failed to submit vote. Please try again.";
+
+      let voteId: string | undefined;
 
       if (multipollId) {
         // Route through the unified multipoll endpoint per the architectural
@@ -912,43 +860,19 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           if (!v) throw new Error('Vote response missing for sub-poll');
           voteId = v.id;
           if (isEditing) setUserVoteData(v);
-          await logToServer('suggestion-vote', 'info', 'Multipoll vote response', { vote: v });
-        } catch (submitErr: any) {
-          error = submitErr;
-          console.error('Multipoll vote submit error:', submitErr);
-          await logToServer('suggestion-vote', 'error', 'Multipoll vote submit error', {
-            message: submitErr.message
-          });
-          if (isEditing) voteId = userVoteId;
-          setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
+        } catch (submitErr) {
+          console.error('Vote submission error:', submitErr);
+          console.error('Vote data that failed:', voteData);
+          setVoteError(submitErrorMessage);
+          return;
         }
       } else {
-        // Phase 5: every poll has a multipoll wrapper, so the legacy per-poll
-        // submit/edit fallbacks are unreachable. Surface as an error if the
-        // wrapper is somehow missing.
-        error = new Error('Cannot submit vote without multipoll_id');
+        // Phase 5: every poll has a multipoll wrapper, so this branch is
+        // unreachable. Surface as an error if the wrapper is somehow missing.
         console.error('Cannot submit vote without multipoll_id', { pollId: poll.id });
-        if (isEditing) voteId = userVoteId;
-        setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
-      }
-
-      if (error) {
-        await logToServer('suggestion-vote', 'error', 'Vote submission error', {
-          error,
-          voteData,
-          message: error.message
-        });
-        console.error('Error submitting vote:', error);
-        console.error('Vote data that failed:', voteData);
-        setVoteError("Failed to submit vote. Please try again.");
+        setVoteError(submitErrorMessage);
         return;
       }
-
-      await logToServer('suggestion-vote', 'info', 'Vote submission successful', {
-        voteId,
-        isEditingVote,
-        pollType: poll.poll_type
-      });
 
       invalidatePoll(poll.id);
       setHasVoted(true);
@@ -1027,16 +951,9 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         await fetchPollResults();
       }
     } catch (error) {
-      await logToServer('suggestion-vote', 'error', 'Unexpected error in submitVote', {
-        error,
-        stack: error instanceof Error ? error.stack : 'No stack trace',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        voteData
-      });
       console.error('Unexpected error:', error);
       setVoteError("An unexpected error occurred. Please try again.");
     } finally {
-      await logToServer('suggestion-vote', 'info', 'submitVote finally block', { isSubmitting: false });
       setIsSubmitting(false);
     }
   };
