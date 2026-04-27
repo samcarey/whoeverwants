@@ -11,9 +11,6 @@ from fastapi import APIRouter, HTTPException
 from database import get_db
 from models import (
     AccessiblePollsRequest,
-    ClosePollRequest,
-    CreatePollRequest,
-    CutoffSuggestionsRequest,
     EditVoteRequest,
     PollResponse,
     PollResultsResponse,
@@ -21,9 +18,7 @@ from models import (
     RankedChoiceRoundResponse,
     RelatedPollsRequest,
     RelatedPollsResponse,
-    ReopenPollRequest,
     SubmitVoteRequest,
-    UpdateThreadTitleRequest,
     VoteResponse,
 )
 from algorithms.suggestion import count_suggestion_votes
@@ -35,46 +30,101 @@ from algorithms.yes_no import count_yes_no_votes
 router = APIRouter(prefix="/api/polls", tags=["polls"])
 
 
-# SELECTs feeding `_row_to_poll` use this prefix so the row carries the
-# wrapper's `follow_up_to` (the source of truth for thread chains). Pair it
-# with a WHERE clause that references the `p` alias.
-_SELECT_POLL_WITH_MULTIPOLL_PREFIX = """
-    SELECT p.*, mp.follow_up_to AS multipoll_follow_up_to
+# Phase 5: wrapper-level columns (creator_secret, response_deadline, is_closed,
+# close_reason, follow_up_to, short_id, thread_title, suggestion_deadline,
+# creator_name) live on `multipolls`. SELECT statements that need them on a
+# poll row append the WHERE clause to this prefix. Multipoll fields are
+# aliased to the legacy polls column names so internal logic that reads
+# `row["is_closed"]`, `row["response_deadline"]`, etc. keeps working — and
+# `_row_to_poll` continues to return them in the API response.
+_SELECT_POLL_FULL = """
+    SELECT p.*,
+           mp.short_id AS short_id,
+           mp.creator_secret AS creator_secret,
+           mp.creator_name AS creator_name,
+           mp.response_deadline AS response_deadline,
+           mp.is_closed AS is_closed,
+           mp.close_reason AS close_reason,
+           mp.thread_title AS thread_title,
+           mp.prephase_deadline AS suggestion_deadline,
+           mp.follow_up_to AS multipoll_follow_up_to
       FROM polls p
       LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
 """
 
 
-def _attach_multipoll_chain_fields(conn, row) -> dict | None:
-    """Annotate a RETURNING * row with multipoll_follow_up_to via a separate
-    lookup. Use this for UPDATE/INSERT paths; SELECT paths should use
-    `_SELECT_POLL_WITH_MULTIPOLL_PREFIX` instead."""
+def _fetch_poll_full(conn, poll_id: str) -> dict | None:
+    """Fetch a poll plus its wrapper-level fields (joined from multipolls).
+    Returns a dict keyed by the legacy polls column names so existing logic
+    that read `SELECT * FROM polls` keeps working."""
+    return conn.execute(
+        _SELECT_POLL_FULL + " WHERE p.id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()
+
+
+def _attach_wrapper_fields(conn, row) -> dict | None:
+    """Annotate a RETURNING * row from polls with wrapper-level fields fetched
+    from the parent multipoll. Use after UPDATE/INSERT on the polls table when
+    the response goes back through `_row_to_poll`."""
     if row is None:
         return None
     row = dict(row)
     multipoll_id = row.get("multipoll_id")
     if not multipoll_id:
-        row["multipoll_follow_up_to"] = None
+        for key in (
+            "short_id",
+            "creator_secret",
+            "creator_name",
+            "response_deadline",
+            "is_closed",
+            "close_reason",
+            "thread_title",
+            "suggestion_deadline",
+            "multipoll_follow_up_to",
+        ):
+            row.setdefault(key, None)
         return row
     mp_row = conn.execute(
-        "SELECT follow_up_to FROM multipolls WHERE id = %(id)s",
+        """
+        SELECT short_id, creator_secret, creator_name, response_deadline,
+               is_closed, close_reason, thread_title, prephase_deadline,
+               follow_up_to
+          FROM multipolls WHERE id = %(id)s
+        """,
         {"id": str(multipoll_id)},
     ).fetchone()
-    row["multipoll_follow_up_to"] = (
-        str(mp_row["follow_up_to"])
-        if mp_row and mp_row.get("follow_up_to")
-        else None
-    )
+    if mp_row:
+        row["short_id"] = mp_row["short_id"]
+        row["creator_secret"] = mp_row["creator_secret"]
+        row["creator_name"] = mp_row["creator_name"]
+        row["response_deadline"] = mp_row["response_deadline"]
+        row["is_closed"] = mp_row["is_closed"]
+        row["close_reason"] = mp_row["close_reason"]
+        row["thread_title"] = mp_row["thread_title"]
+        row["suggestion_deadline"] = mp_row["prephase_deadline"]
+        row["multipoll_follow_up_to"] = (
+            str(mp_row["follow_up_to"]) if mp_row.get("follow_up_to") else None
+        )
     return row
 
 
 def _check_auto_close(conn, poll_id: str) -> None:
-    """Auto-close a poll based on auto_close_after (respondent count)."""
+    """Auto-close the parent multipoll when this sub-poll's respondent count
+    reaches its auto_close_after threshold. Closes ALL sub-polls of the
+    multipoll via the wrapper's is_closed. Auto-close is per-sub-poll today
+    only because the threshold lives on polls; the wrapper-level close is the
+    natural unit after Phase 5."""
     poll = conn.execute(
-        "SELECT is_closed, auto_close_after FROM polls WHERE id = %(poll_id)s",
+        """SELECT p.auto_close_after, p.multipoll_id, mp.is_closed
+             FROM polls p
+             LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
+            WHERE p.id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()
-    if not poll or poll["is_closed"] or poll["auto_close_after"] is None:
+    if not poll or poll["auto_close_after"] is None:
+        return
+    if poll.get("is_closed") or not poll.get("multipoll_id"):
         return
 
     respondent_count = conn.execute(
@@ -83,8 +133,8 @@ def _check_auto_close(conn, poll_id: str) -> None:
     ).fetchone()["cnt"]
     if respondent_count >= poll["auto_close_after"]:
         conn.execute(
-            "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
-            {"poll_id": poll_id},
+            "UPDATE multipolls SET is_closed = true, close_reason = 'max_capacity', updated_at = NOW() WHERE id = %(mp_id)s",
+            {"mp_id": str(poll["multipoll_id"])},
         )
 
 
@@ -136,10 +186,7 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
         _keep_longest_per_start_time,
     )
 
-    poll = conn.execute(
-        "SELECT * FROM polls WHERE id = %(poll_id)s",
-        {"poll_id": poll_id},
-    ).fetchone()
+    poll = _fetch_poll_full(conn, poll_id)
     if not poll or poll.get("options"):
         return  # Already finalized or missing
 
@@ -174,7 +221,13 @@ def _finalize_time_slots(conn, poll_id: str, now: datetime) -> None:
 
 
 def _row_to_poll(row: dict) -> PollResponse:
-    """Convert a database row to a PollResponse."""
+    """Convert a database row to a PollResponse.
+
+    Wrapper-level fields (response_deadline, creator_secret, creator_name,
+    is_closed, close_reason, short_id, thread_title, suggestion_deadline,
+    multipoll_follow_up_to) are sourced from the parent multipoll via JOIN —
+    use `_SELECT_POLL_FULL` for SELECTs or `_attach_wrapper_fields` after
+    UPDATE/INSERT to populate them onto the row dict before calling here."""
     return PollResponse(
         id=str(row["id"]),
         title=row["title"],
@@ -187,7 +240,6 @@ def _row_to_poll(row: dict) -> PollResponse:
         creator_name=row.get("creator_name"),
         is_closed=row.get("is_closed", False),
         close_reason=row.get("close_reason"),
-        follow_up_to=str(row["follow_up_to"]) if row.get("follow_up_to") else None,
         short_id=row.get("short_id"),
         suggestion_deadline=row["suggestion_deadline"].isoformat() if row.get("suggestion_deadline") else None,
         suggestion_deadline_minutes=row.get("suggestion_deadline_minutes"),
@@ -208,8 +260,6 @@ def _row_to_poll(row: dict) -> PollResponse:
         thread_title=row.get("thread_title"),
         multipoll_id=str(row["multipoll_id"]) if row.get("multipoll_id") else None,
         sub_poll_index=row.get("sub_poll_index"),
-        # Populated by _SELECT_POLL_WITH_MULTIPOLL_PREFIX (or the post-mutation
-        # _attach_multipoll_chain_fields). Other callers get None.
         multipoll_follow_up_to=(
             str(row["multipoll_follow_up_to"])
             if row.get("multipoll_follow_up_to")
@@ -243,107 +293,9 @@ def _row_to_vote(row: dict) -> VoteResponse:
 
 
 # --- Poll CRUD ---
-
-
-@router.post("", response_model=PollResponse, status_code=201)
-def create_poll(req: CreatePollRequest):
-    """Create a new poll.
-
-    Legacy single-poll endpoint. Phase 2.2 routes most creates through
-    `POST /api/multipolls`; this remains for direct API consumers and the
-    pre-Phase-4 fallback path.
-    """
-    import json
-    now = datetime.now(timezone.utc)
-
-    # Validate deadlines are in the future and suggestion cutoff < voting cutoff
-    response_dt = (
-        datetime.fromisoformat(req.response_deadline.replace("Z", "+00:00"))
-        if req.response_deadline else None
-    )
-    if response_dt and response_dt <= now:
-        raise HTTPException(status_code=400, detail="Voting deadline must be in the future")
-
-    if req.suggestion_deadline:
-        suggestion_dt = datetime.fromisoformat(req.suggestion_deadline.replace("Z", "+00:00"))
-        if suggestion_dt <= now:
-            raise HTTPException(status_code=400, detail="Suggestion deadline must be in the future")
-        if response_dt and suggestion_dt >= response_dt:
-            raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
-
-    if req.suggestion_deadline_minutes and response_dt:
-        max_suggestion_dt = now + timedelta(minutes=req.suggestion_deadline_minutes)
-        if max_suggestion_dt >= response_dt:
-            raise HTTPException(status_code=400, detail="Suggestion deadline must be before the voting deadline")
-
-    with get_db() as conn:
-        # thread_title: explicit request wins; otherwise inherit from the
-        # follow_up_to parent via a COALESCE subquery in the INSERT (below)
-        # so we avoid a round-trip.
-
-        row = conn.execute(
-            """
-            INSERT INTO polls (title, poll_type, options, response_deadline,
-                               creator_secret, creator_name, follow_up_to,
-                               suggestion_deadline, suggestion_deadline_minutes,
-                               allow_pre_ranking,
-                               auto_close_after, details,
-                               day_time_windows, duration_window,
-                               category, options_metadata,
-                               reference_latitude, reference_longitude,
-                               reference_location_label,
-                               is_auto_title,
-                               min_responses, show_preliminary_results,
-                               min_availability_percent,
-                               thread_title,
-                               created_at, updated_at)
-            VALUES (%(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
-                    %(creator_secret)s, %(creator_name)s, %(follow_up_to)s,
-                    %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
-                    %(allow_pre_ranking)s,
-                    %(auto_close_after)s, %(details)s,
-                    %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
-                    %(category)s, %(options_metadata)s::jsonb,
-                    %(reference_latitude)s, %(reference_longitude)s,
-                    %(reference_location_label)s,
-                    %(is_auto_title)s,
-                    %(min_responses)s, %(show_preliminary_results)s,
-                    %(min_availability_percent)s,
-                    COALESCE(%(thread_title)s, (SELECT thread_title FROM polls WHERE id = %(follow_up_to)s)),
-                    %(now)s, %(now)s)
-            RETURNING *
-            """,
-            {
-                "title": req.title,
-                "poll_type": req.poll_type.value,
-                "options": _json_or_none(req.options),
-                "response_deadline": req.response_deadline,
-                "creator_secret": req.creator_secret,
-                "creator_name": req.creator_name,
-                "follow_up_to": req.follow_up_to,
-                # If suggestion_deadline_minutes is set, defer the deadline until first suggestion
-                "suggestion_deadline": None if req.suggestion_deadline_minutes else req.suggestion_deadline,
-                "suggestion_deadline_minutes": req.suggestion_deadline_minutes,
-                "allow_pre_ranking": req.allow_pre_ranking,
-                "auto_close_after": req.auto_close_after,
-                "details": req.details,
-                "day_time_windows": json.dumps(req.day_time_windows) if req.day_time_windows else None,
-                "duration_window": json.dumps(req.duration_window) if req.duration_window else None,
-                "category": req.category or "custom",
-                "options_metadata": json.dumps(req.options_metadata) if req.options_metadata else None,
-                "reference_latitude": req.reference_latitude,
-                "reference_longitude": req.reference_longitude,
-                "reference_location_label": req.reference_location_label,
-                "is_auto_title": req.is_auto_title,
-                "min_responses": req.min_responses,
-                "show_preliminary_results": req.show_preliminary_results,
-                "min_availability_percent": req.min_availability_percent if req.poll_type == PollType.time else None,
-                "thread_title": req.thread_title,
-                "now": now,
-            },
-        ).fetchone()
-
-    return _row_to_poll(row)
+# Phase 5: the legacy `POST /api/polls` create endpoint is gone — every poll is
+# now created through `POST /api/multipolls` (one sub-poll wrapped in a 1-sub-
+# poll multipoll for the simple case).
 
 
 @router.get("/dev/all-ids")
@@ -360,13 +312,22 @@ def get_all_poll_ids():
 
 @router.get("/find-duplicate", response_model=PollResponse)
 def find_duplicate_poll(title: str, follow_up_to: str):
-    """Find an existing poll that is a follow-up to the same parent with the same title (case-insensitive)."""
+    """Find an existing sub-poll under the same multipoll-level chain as
+    `follow_up_to` (a poll id) with the same title (case-insensitive).
+
+    Phase 5: walks multipoll-level chains. The candidate sub-poll's wrapper
+    must have `follow_up_to` equal to the input poll's wrapper id. (The
+    legacy implementation queried `polls.follow_up_to` directly; that column
+    no longer exists.)
+    """
     with get_db() as conn:
         row = conn.execute(
-            _SELECT_POLL_WITH_MULTIPOLL_PREFIX
+            _SELECT_POLL_FULL
             + """
             WHERE LOWER(p.title) = LOWER(%(title)s)
-              AND p.follow_up_to = %(follow_up_to)s
+              AND mp.follow_up_to = (
+                SELECT multipoll_id FROM polls WHERE id = %(follow_up_to)s
+              )
             ORDER BY p.created_at ASC
             LIMIT 1
             """,
@@ -379,10 +340,10 @@ def find_duplicate_poll(title: str, follow_up_to: str):
 
 @router.get("/by-short-id/{short_id}", response_model=PollResponse)
 def get_poll_by_short_id(short_id: str):
-    """Get a poll by its short ID."""
+    """Get a poll by its (wrapper's) short ID."""
     with get_db() as conn:
         row = conn.execute(
-            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.short_id = %(short_id)s",
+            _SELECT_POLL_FULL + " WHERE mp.short_id = %(short_id)s ORDER BY p.sub_poll_index NULLS LAST LIMIT 1",
             {"short_id": short_id},
         ).fetchone()
     if not row:
@@ -394,10 +355,7 @@ def get_poll_by_short_id(short_id: str):
 def get_poll(poll_id: str):
     """Get a poll by UUID."""
     with get_db() as conn:
-        row = conn.execute(
-            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
-            {"poll_id": poll_id},
-        ).fetchone()
+        row = _fetch_poll_full(conn, poll_id)
         if not row:
             raise HTTPException(status_code=404, detail="Poll not found")
 
@@ -410,10 +368,7 @@ def get_poll(poll_id: str):
         ):
             _finalize_suggestion_options(conn, poll_id, datetime.now(timezone.utc))
             # Re-fetch to get updated options
-            row = conn.execute(
-                _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
-                {"poll_id": poll_id},
-            ).fetchone()
+            row = _fetch_poll_full(conn, poll_id)
 
         poll_resp = _row_to_poll(row)
         # Include response count for open polls (used for min_responses threshold)
@@ -462,7 +417,12 @@ def _submit_vote_to_poll(conn, poll_id: str, req: SubmitVoteRequest, now: dateti
     `submit_vote` endpoint and the multipoll batch-vote endpoint. Returns the
     inserted row. Raises HTTPException on validation failures."""
     poll = conn.execute(
-        "SELECT id, is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking, response_deadline FROM polls WHERE id = %(poll_id)s",
+        """SELECT p.id, p.poll_type, p.multipoll_id, p.suggestion_deadline_minutes, p.allow_pre_ranking,
+                  mp.is_closed, mp.prephase_deadline AS suggestion_deadline,
+                  mp.response_deadline
+             FROM polls p
+             LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
+            WHERE p.id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()
     if not poll:
@@ -486,10 +446,13 @@ def _submit_vote_to_poll(conn, poll_id: str, req: SubmitVoteRequest, now: dateti
                 response_dt = response_dt.replace(tzinfo=timezone.utc)
             if new_deadline >= response_dt:
                 new_deadline = response_dt - timedelta(minutes=1)
-        conn.execute(
-            "UPDATE polls SET suggestion_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(poll_id)s",
-            {"deadline": new_deadline, "now": now, "poll_id": poll_id},
-        )
+        # Phase 5: write to the multipoll wrapper's prephase_deadline
+        # (formerly `polls.suggestion_deadline`).
+        if poll.get("multipoll_id"):
+            conn.execute(
+                "UPDATE multipolls SET prephase_deadline = %(deadline)s, updated_at = %(now)s WHERE id = %(mp_id)s",
+                {"deadline": new_deadline, "now": now, "mp_id": str(poll["multipoll_id"])},
+            )
         poll = dict(poll)
         poll["suggestion_deadline"] = new_deadline
 
@@ -576,7 +539,11 @@ def _edit_vote_on_poll(conn, poll_id: str, vote_id: str, req: EditVoteRequest, n
         raise HTTPException(status_code=404, detail="Vote not found")
 
     poll = conn.execute(
-        "SELECT is_closed, poll_type, suggestion_deadline, suggestion_deadline_minutes, allow_pre_ranking FROM polls WHERE id = %(poll_id)s",
+        """SELECT p.poll_type, p.suggestion_deadline_minutes, p.allow_pre_ranking,
+                  mp.is_closed, mp.prephase_deadline AS suggestion_deadline
+             FROM polls p
+             LEFT JOIN multipolls mp ON p.multipoll_id = mp.id
+            WHERE p.id = %(poll_id)s""",
         {"poll_id": poll_id},
     ).fetchone()
     if poll and poll["is_closed"]:
@@ -652,13 +619,9 @@ def _edit_vote_on_poll(conn, poll_id: str, vote_id: str, req: EditVoteRequest, n
     return row
 
 
-@router.post("/{poll_id}/votes", response_model=VoteResponse, status_code=201)
-def submit_vote(poll_id: str, req: SubmitVoteRequest):
-    """Submit a vote on a poll."""
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        row = _submit_vote_to_poll(conn, poll_id, req, now)
-    return _row_to_vote(row)
+# Phase 5: per-poll vote submit/edit endpoints removed. All vote writes go
+# through `POST /api/multipolls/{id}/votes`, which uses the same
+# `_submit_vote_to_poll` / `_edit_vote_on_poll` helpers internally.
 
 
 @router.get("/{poll_id}/votes", response_model=list[VoteResponse])
@@ -680,15 +643,6 @@ def get_votes(poll_id: str):
     return [_row_to_vote(r) for r in rows]
 
 
-@router.put("/{poll_id}/votes/{vote_id}", response_model=VoteResponse)
-def edit_vote(poll_id: str, vote_id: str, req: EditVoteRequest):
-    """Edit an existing vote."""
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        row = _edit_vote_on_poll(conn, poll_id, vote_id, req, now)
-    return _row_to_vote(row)
-
-
 # --- Results ---
 
 
@@ -697,10 +651,7 @@ def get_results(poll_id: str):
     """Compute and return poll results."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        poll = conn.execute(
-            "SELECT * FROM polls WHERE id = %(poll_id)s",
-            {"poll_id": poll_id},
-        ).fetchone()
+        poll = _fetch_poll_full(conn, poll_id)
         if not poll:
             raise HTTPException(status_code=404, detail="Poll not found")
 
@@ -714,11 +665,7 @@ def get_results(poll_id: str):
             and not poll.get("options")  # Not yet finalized
         ):
             _finalize_suggestion_options(conn, poll_id, now)
-            # Re-read poll to get updated options
-            poll = conn.execute(
-                "SELECT * FROM polls WHERE id = %(poll_id)s",
-                {"poll_id": poll_id},
-            ).fetchone()
+            poll = _fetch_poll_full(conn, poll_id)
 
         # For time polls: finalize time slot options when availability deadline passes
         if (
@@ -728,10 +675,7 @@ def get_results(poll_id: str):
             and not poll.get("options")  # Not yet finalized
         ):
             _finalize_time_slots(conn, poll_id, now)
-            poll = conn.execute(
-                "SELECT * FROM polls WHERE id = %(poll_id)s",
-                {"poll_id": poll_id},
-            ).fetchone()
+            poll = _fetch_poll_full(conn, poll_id)
 
         votes = conn.execute(
             "SELECT * FROM votes WHERE poll_id = %(poll_id)s",
@@ -885,182 +829,9 @@ def _compute_results(poll, votes) -> PollResultsResponse:
 
 
 # --- Poll management ---
-
-
-@router.post("/{poll_id}/close", response_model=PollResponse)
-def close_poll(poll_id: str, req: ClosePollRequest):
-    """Close a poll. Requires creator_secret."""
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET is_closed = true,
-                close_reason = %(close_reason)s,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s AND creator_secret = %(creator_secret)s
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "creator_secret": req.creator_secret,
-                "close_reason": req.close_reason.value,
-                "now": now,
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
-
-        # If closing a ranked_choice poll with suggestion phase, finalize options
-        if row["poll_type"] == "ranked_choice" and row.get("suggestion_deadline"):
-            _finalize_suggestion_options(conn, poll_id, now)
-
-        row = _attach_multipoll_chain_fields(conn, row)
-
-    return _row_to_poll(row)
-
-
-@router.post("/{poll_id}/reopen", response_model=PollResponse)
-def reopen_poll(poll_id: str, req: ReopenPollRequest):
-    """Reopen a closed poll. Requires creator_secret."""
-    with get_db() as conn:
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET is_closed = false,
-                close_reason = NULL,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s AND creator_secret = %(creator_secret)s
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "creator_secret": req.creator_secret,
-                "now": datetime.now(timezone.utc),
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=403, detail="Invalid creator secret or poll not found")
-        row = _attach_multipoll_chain_fields(conn, row)
-    return _row_to_poll(row)
-
-
-@router.post("/{poll_id}/thread-title", response_model=PollResponse)
-def update_thread_title(poll_id: str, req: UpdateThreadTitleRequest):
-    """Update (or clear) a poll's thread_title override. No auth required —
-    anyone with the poll's link can rename the thread. An empty or
-    whitespace-only value clears the override (stored as NULL), causing the
-    thread UI to fall back to the participant-names default title."""
-    normalized = (req.thread_title or "").strip()
-    value: str | None = normalized if normalized else None
-    with get_db() as conn:
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET thread_title = %(thread_title)s,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "thread_title": value,
-                "now": datetime.now(timezone.utc),
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Poll not found")
-        row = _attach_multipoll_chain_fields(conn, row)
-    return _row_to_poll(row)
-
-
-@router.post("/{poll_id}/cutoff-suggestions", response_model=PollResponse)
-def cutoff_suggestions(poll_id: str, req: CutoffSuggestionsRequest):
-    """End the suggestion phase immediately. Requires creator_secret."""
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        # Single query: update only if suggestions exist and deadline hasn't passed
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET suggestion_deadline = %(now)s,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s
-              AND creator_secret = %(creator_secret)s
-              AND (
-                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
-                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
-              )
-              AND EXISTS (
-                SELECT 1 FROM votes
-                WHERE poll_id = %(poll_id)s
-                  AND suggestions IS NOT NULL
-                  AND array_length(suggestions, 1) > 0
-              )
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "creator_secret": req.creator_secret,
-                "now": now,
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=400, detail="No suggestions to cutoff, invalid creator secret, or suggestion phase already ended")
-
-        _finalize_suggestion_options(conn, poll_id, now)
-
-        row = _attach_multipoll_chain_fields(conn, row)
-
-    return _row_to_poll(row)
-
-
-@router.post("/{poll_id}/cutoff-availability", response_model=PollResponse)
-def cutoff_availability(poll_id: str, req: CutoffSuggestionsRequest):
-    """End the availability phase of a time poll immediately. Requires creator_secret."""
-    now = datetime.now(timezone.utc)
-    with get_db() as conn:
-        # Verify it's a time poll and availability phase hasn't ended
-        row = conn.execute(
-            """
-            UPDATE polls
-            SET suggestion_deadline = %(now)s,
-                updated_at = %(now)s
-            WHERE id = %(poll_id)s
-              AND poll_type = 'time'
-              AND creator_secret = %(creator_secret)s
-              AND (
-                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
-                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
-              )
-              AND EXISTS (
-                SELECT 1 FROM votes
-                WHERE poll_id = %(poll_id)s
-                  AND voter_day_time_windows IS NOT NULL
-              )
-            RETURNING *
-            """,
-            {
-                "poll_id": poll_id,
-                "creator_secret": req.creator_secret,
-                "now": now,
-            },
-        ).fetchone()
-        if not row:
-            raise HTTPException(
-                status_code=400,
-                detail="No availability entries to cutoff, invalid creator secret, or availability phase already ended"
-            )
-
-        _finalize_time_slots(conn, poll_id, now)
-
-    # Re-read to get updated options
-    with get_db() as conn:
-        row = conn.execute(
-            _SELECT_POLL_WITH_MULTIPOLL_PREFIX + " WHERE p.id = %(poll_id)s",
-            {"poll_id": poll_id},
-        ).fetchone()
-    return _row_to_poll(row)
+# Phase 5: per-poll close/reopen/cutoff-suggestions/cutoff-availability and
+# thread-title endpoints all removed — these are multipoll-level concerns and
+# now live exclusively under `/api/multipolls/{id}/...`.
 
 
 # --- Accessible polls ---
@@ -1074,7 +845,7 @@ def get_accessible_polls(req: AccessiblePollsRequest):
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         rows = conn.execute(
-            _SELECT_POLL_WITH_MULTIPOLL_PREFIX
+            _SELECT_POLL_FULL
             + """ WHERE p.id = ANY(%(poll_ids)s)
                 ORDER BY p.created_at DESC""",
             {"poll_ids": req.poll_ids},

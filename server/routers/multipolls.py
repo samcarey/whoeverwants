@@ -20,6 +20,7 @@ from models import (
     ReopenPollRequest,
     SubmitMultipollVotesRequest,
     SubmitVoteRequest,
+    UpdateThreadTitleRequest,
     VoteResponse,
 )
 from routers.polls import (
@@ -167,19 +168,15 @@ def _insert_sub_poll(
     title: str,
     now: datetime,
 ) -> dict:
-    # Wrapper-level fields are duplicated onto the polls row so the existing
-    # per-sub-poll endpoints (vote/results/close) keep working without
-    # modification. Phase 5 retires the duplicated columns.
-    suggestion_deadline_value = (
-        None if sub.suggestion_deadline_minutes else req.prephase_deadline
-    )
+    # Phase 5: wrapper-level columns (creator_secret, creator_name,
+    # response_deadline, follow_up_to, thread_title, is_closed, close_reason,
+    # short_id, suggestion_deadline) live exclusively on the multipoll wrapper.
+    # Sub-poll rows carry only per-sub-poll fields.
     return conn.execute(
         """
         INSERT INTO polls (
-            title, poll_type, options, response_deadline,
-            creator_secret, creator_name,
-            follow_up_to,
-            suggestion_deadline, suggestion_deadline_minutes,
+            title, poll_type, options,
+            suggestion_deadline_minutes,
             allow_pre_ranking,
             details,
             day_time_windows, duration_window,
@@ -193,10 +190,8 @@ def _insert_sub_poll(
             created_at, updated_at
         )
         VALUES (
-            %(title)s, %(poll_type)s, %(options)s::jsonb, %(response_deadline)s,
-            %(creator_secret)s, %(creator_name)s,
-            %(follow_up_to)s,
-            %(suggestion_deadline)s, %(suggestion_deadline_minutes)s,
+            %(title)s, %(poll_type)s, %(options)s::jsonb,
+            %(suggestion_deadline_minutes)s,
             %(allow_pre_ranking)s,
             %(details)s,
             %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
@@ -215,14 +210,6 @@ def _insert_sub_poll(
             "title": title,
             "poll_type": sub.poll_type.value,
             "options": _json_or_none(sub.options),
-            "response_deadline": req.response_deadline,
-            "creator_secret": req.creator_secret,
-            "creator_name": req.creator_name,
-            # Mirror the request's poll-id ref onto the polls row so legacy
-            # thread aggregation keeps walking until Phase 5 (see
-            # CreateMultipollRequest docstring for the full semantics).
-            "follow_up_to": req.follow_up_to,
-            "suggestion_deadline": suggestion_deadline_value,
             "suggestion_deadline_minutes": sub.suggestion_deadline_minutes,
             "allow_pre_ranking": sub.allow_pre_ranking,
             "details": sub.context,
@@ -260,9 +247,12 @@ def _row_to_multipoll(
     voter_names: list[str] | None = None,
     anonymous_count: int = 0,
 ) -> MultipollResponse:
-    # Phase 3.5: every sub-poll inherits the wrapper's follow_up_to as
-    # `multipoll_follow_up_to`. Sub-poll rows fetched from the polls table
-    # don't carry that field directly, so attach it here before mapping.
+    # Phase 3.5 + Phase 5: sub-poll rows come from `_fetch_sub_polls` which
+    # selects only polls.*. Wrapper-level fields (response_deadline,
+    # creator_secret, is_closed, close_reason, short_id, thread_title,
+    # creator_name, suggestion_deadline) live on the multipoll wrapper —
+    # enrich each sub-poll row here so `_row_to_poll` returns them in the
+    # standard PollResponse shape.
     multipoll_follow_up_to = (
         str(row["follow_up_to"]) if row.get("follow_up_to") else None
     )
@@ -270,6 +260,14 @@ def _row_to_multipoll(
     for sp in sub_poll_rows:
         enriched_sp = dict(sp)
         enriched_sp["multipoll_follow_up_to"] = multipoll_follow_up_to
+        enriched_sp["short_id"] = row.get("short_id")
+        enriched_sp["creator_secret"] = row.get("creator_secret")
+        enriched_sp["creator_name"] = row.get("creator_name")
+        enriched_sp["response_deadline"] = row.get("response_deadline")
+        enriched_sp["is_closed"] = row.get("is_closed", False)
+        enriched_sp["close_reason"] = row.get("close_reason")
+        enriched_sp["thread_title"] = row.get("thread_title")
+        enriched_sp["suggestion_deadline"] = row.get("prephase_deadline")
         enriched.append(enriched_sp)
     return MultipollResponse(
         id=str(row["id"]),
@@ -418,14 +416,15 @@ def _authorize_multipoll(conn, multipoll_id: str, creator_secret: str) -> dict:
 
 @router.post("/{multipoll_id}/close", response_model=MultipollResponse)
 def close_multipoll(multipoll_id: str, req: ClosePollRequest):
-    """Close a multipoll. Closes the wrapper + every sub-poll atomically.
+    """Close a multipoll. Phase 5: only the wrapper carries is_closed/close_reason —
+    closing the wrapper closes every sub-poll automatically.
 
     For each ranked_choice sub-poll mid-suggestion-phase, finalizes its options
-    so results are computable immediately (mirrors the per-poll close flow).
+    so results are computable immediately.
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        _authorize_multipoll(conn, multipoll_id, req.creator_secret)
+        wrapper = _authorize_multipoll(conn, multipoll_id, req.creator_secret)
         conn.execute(
             """
             UPDATE multipolls
@@ -440,28 +439,18 @@ def close_multipoll(multipoll_id: str, req: ClosePollRequest):
                 "now": now,
             },
         )
-        sub_poll_rows = conn.execute(
-            """
-            UPDATE polls
-            SET is_closed = true,
-                close_reason = %(close_reason)s,
-                updated_at = %(now)s
-            WHERE multipoll_id = %(multipoll_id)s
-            RETURNING *
-            """,
-            {
-                "multipoll_id": multipoll_id,
-                "close_reason": req.close_reason.value,
-                "now": now,
-            },
-        ).fetchall()
 
-        for sp in sub_poll_rows:
-            sp_dict = dict(sp)
-            if sp_dict["poll_type"] == "ranked_choice" and sp_dict.get("suggestion_deadline"):
-                _finalize_suggestion_options(conn, str(sp_dict["id"]), now)
+        # Finalize options for any ranked_choice sub-poll still mid-suggestion-phase.
+        # The wrapper's prephase_deadline (formerly polls.suggestion_deadline) is
+        # the source of truth for "is this sub-poll in a suggestion phase".
+        if wrapper.get("prephase_deadline"):
+            sub_poll_rows = conn.execute(
+                "SELECT id FROM polls WHERE multipoll_id = %(multipoll_id)s AND poll_type = 'ranked_choice'",
+                {"multipoll_id": multipoll_id},
+            ).fetchall()
+            for sp in sub_poll_rows:
+                _finalize_suggestion_options(conn, str(sp["id"]), now)
 
-        # Re-read to reflect any finalize_suggestion_options writes.
         multipoll_row = conn.execute(
             "SELECT * FROM multipolls WHERE id = %(id)s",
             {"id": multipoll_id},
@@ -474,7 +463,8 @@ def close_multipoll(multipoll_id: str, req: ClosePollRequest):
 
 @router.post("/{multipoll_id}/reopen", response_model=MultipollResponse)
 def reopen_multipoll(multipoll_id: str, req: ReopenPollRequest):
-    """Reopen a closed multipoll + every sub-poll atomically."""
+    """Reopen a closed multipoll. Phase 5: only the wrapper's is_closed
+    matters; sub-polls inherit it via JOIN."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
         _authorize_multipoll(conn, multipoll_id, req.creator_secret)
@@ -485,16 +475,6 @@ def reopen_multipoll(multipoll_id: str, req: ReopenPollRequest):
                 close_reason = NULL,
                 updated_at = %(now)s
             WHERE id = %(multipoll_id)s
-            """,
-            {"multipoll_id": multipoll_id, "now": now},
-        )
-        conn.execute(
-            """
-            UPDATE polls
-            SET is_closed = false,
-                close_reason = NULL,
-                updated_at = %(now)s
-            WHERE multipoll_id = %(multipoll_id)s
             """,
             {"multipoll_id": multipoll_id, "now": now},
         )
@@ -520,34 +500,38 @@ def cutoff_multipoll_suggestions(multipoll_id: str, req: CutoffSuggestionsReques
     """
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        _authorize_multipoll(conn, multipoll_id, req.creator_secret)
-        advanced = conn.execute(
-            """
-            UPDATE polls
-            SET suggestion_deadline = %(now)s,
-                updated_at = %(now)s
-            WHERE multipoll_id = %(multipoll_id)s
-              AND poll_type = 'ranked_choice'
-              AND (
-                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
-                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
-              )
-              AND EXISTS (
-                SELECT 1 FROM votes
-                WHERE votes.poll_id = polls.id
-                  AND suggestions IS NOT NULL
-                  AND array_length(suggestions, 1) > 0
-              )
-            RETURNING id
-            """,
-            {"multipoll_id": multipoll_id, "now": now},
+        wrapper = _authorize_multipoll(conn, multipoll_id, req.creator_secret)
+
+        # Phase 5: prephase_deadline is wrapper-level. Validate that there's a
+        # phase to cut off (deadline in the future or minutes-deferred), and
+        # that at least one ranked_choice sub-poll has a suggestion submitted.
+        deadline = wrapper.get("prephase_deadline")
+        minutes = wrapper.get("prephase_deadline_minutes")
+        in_phase = (deadline is not None and deadline > now) or (
+            deadline is None and minutes is not None
+        )
+        rc_sub_polls = conn.execute(
+            """SELECT p.id
+                 FROM polls p
+                 JOIN votes v ON v.poll_id = p.id
+                WHERE p.multipoll_id = %(mid)s
+                  AND p.poll_type = 'ranked_choice'
+                  AND v.suggestions IS NOT NULL
+                  AND array_length(v.suggestions, 1) > 0
+                GROUP BY p.id""",
+            {"mid": multipoll_id},
         ).fetchall()
-        if not advanced:
+        if not in_phase or not rc_sub_polls:
             raise HTTPException(
                 status_code=400,
                 detail="No sub-poll suggestion phase to cut off",
             )
-        for row in advanced:
+
+        conn.execute(
+            "UPDATE multipolls SET prephase_deadline = %(now)s, updated_at = %(now)s WHERE id = %(mid)s",
+            {"mid": multipoll_id, "now": now},
+        )
+        for row in rc_sub_polls:
             _finalize_suggestion_options(conn, str(row["id"]), now)
 
         multipoll_row = conn.execute(
@@ -671,36 +655,36 @@ def submit_multipoll_votes(multipoll_id: str, req: SubmitMultipollVotesRequest):
 @router.post("/{multipoll_id}/cutoff-availability", response_model=MultipollResponse)
 def cutoff_multipoll_availability(multipoll_id: str, req: CutoffSuggestionsRequest):
     """End the availability phase of the multipoll's time sub-poll (≤1 enforced
-    on create). Mirrors the per-poll endpoint's preconditions."""
+    on create). Phase 5: prephase_deadline is wrapper-level."""
     now = datetime.now(timezone.utc)
     with get_db() as conn:
-        _authorize_multipoll(conn, multipoll_id, req.creator_secret)
-        advanced = conn.execute(
-            """
-            UPDATE polls
-            SET suggestion_deadline = %(now)s,
-                updated_at = %(now)s
-            WHERE multipoll_id = %(multipoll_id)s
-              AND poll_type = 'time'
-              AND (
-                (suggestion_deadline IS NOT NULL AND suggestion_deadline > %(now)s)
-                OR (suggestion_deadline IS NULL AND suggestion_deadline_minutes IS NOT NULL)
-              )
-              AND EXISTS (
-                SELECT 1 FROM votes
-                WHERE votes.poll_id = polls.id
-                  AND voter_day_time_windows IS NOT NULL
-              )
-            RETURNING id
-            """,
-            {"multipoll_id": multipoll_id, "now": now},
+        wrapper = _authorize_multipoll(conn, multipoll_id, req.creator_secret)
+        deadline = wrapper.get("prephase_deadline")
+        minutes = wrapper.get("prephase_deadline_minutes")
+        in_phase = (deadline is not None and deadline > now) or (
+            deadline is None and minutes is not None
+        )
+        time_sub_polls = conn.execute(
+            """SELECT p.id
+                 FROM polls p
+                 JOIN votes v ON v.poll_id = p.id
+                WHERE p.multipoll_id = %(mid)s
+                  AND p.poll_type = 'time'
+                  AND v.voter_day_time_windows IS NOT NULL
+                GROUP BY p.id""",
+            {"mid": multipoll_id},
         ).fetchall()
-        if not advanced:
+        if not in_phase or not time_sub_polls:
             raise HTTPException(
                 status_code=400,
                 detail="No availability phase to cut off",
             )
-        for row in advanced:
+
+        conn.execute(
+            "UPDATE multipolls SET prephase_deadline = %(now)s, updated_at = %(now)s WHERE id = %(mid)s",
+            {"mid": multipoll_id, "now": now},
+        )
+        for row in time_sub_polls:
             _finalize_time_slots(conn, str(row["id"]), now)
 
         multipoll_row = conn.execute(
@@ -711,3 +695,33 @@ def cutoff_multipoll_availability(multipoll_id: str, req: CutoffSuggestionsReque
         voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
 
     return _row_to_multipoll(multipoll_row, sub_poll_rows, voter_names, anonymous_count)
+
+
+@router.post("/{multipoll_id}/thread-title", response_model=MultipollResponse)
+def update_multipoll_thread_title(multipoll_id: str, req: UpdateThreadTitleRequest):
+    """Update (or clear) a multipoll's thread_title override. No auth required —
+    anyone with the multipoll's link can rename the thread. An empty or
+    whitespace-only value clears the override (stored as NULL)."""
+    normalized = (req.thread_title or "").strip()
+    value: str | None = normalized if normalized else None
+    now = datetime.now(timezone.utc)
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            UPDATE multipolls
+            SET thread_title = %(thread_title)s,
+                updated_at = %(now)s
+            WHERE id = %(multipoll_id)s
+            RETURNING *
+            """,
+            {
+                "multipoll_id": multipoll_id,
+                "thread_title": value,
+                "now": now,
+            },
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Multipoll not found")
+        sub_poll_rows = _fetch_sub_polls(conn, multipoll_id)
+        voter_names, anonymous_count = _compute_multipoll_voter_data(conn, multipoll_id)
+    return _row_to_multipoll(row, sub_poll_rows, voter_names, anonymous_count)

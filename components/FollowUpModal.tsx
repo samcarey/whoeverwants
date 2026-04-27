@@ -191,10 +191,11 @@ export default function FollowUpModal({ isOpen, poll, onClose, totalVotes, onDel
 
           {/* Follow-up link — shown at the bottom of the modal when this poll
                follows up on another. Tapping the parent name navigates to that
-               poll (which opens the containing thread with that card expanded). */}
-          {poll.follow_up_to && (
+               multipoll (which opens the containing thread with that card
+               expanded). Phase 5: chain pointers are multipoll-level. */}
+          {poll.multipoll_follow_up_to && (
             <div className="mt-4">
-              <FollowUpHeader followUpToPollId={poll.follow_up_to} />
+              <FollowUpHeader followUpToMultipollId={poll.multipoll_follow_up_to} />
             </div>
           )}
         </div>

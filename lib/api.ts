@@ -109,6 +109,10 @@ function multipollFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // --- Poll response → Poll type mapping ---
 
 function toPoll(data: any): Poll {
+  // Wrapper-level fields (response_deadline, creator_secret, is_closed, etc.)
+  // are sourced from the parent multipoll server-side via JOIN. Phase 5 dropped
+  // these as polls columns; the API still surfaces them on PollResponse so FE
+  // callsites that read poll.is_closed etc. continue to work.
   return {
     id: data.id,
     title: data.title,
@@ -121,7 +125,6 @@ function toPoll(data: any): Poll {
     creator_name: data.creator_name ?? undefined,
     is_closed: data.is_closed ?? false,
     close_reason: data.close_reason ?? undefined,
-    follow_up_to: data.follow_up_to ?? undefined,
     multipoll_follow_up_to: data.multipoll_follow_up_to ?? null,
     short_id: data.short_id ?? undefined,
     suggestion_deadline: data.suggestion_deadline ?? undefined,
@@ -184,39 +187,10 @@ export interface ApiRankedChoiceRound {
 }
 
 // --- Poll CRUD ---
-
-export async function apiCreatePoll(params: {
-  title: string;
-  poll_type?: string;
-  options?: string[];
-  response_deadline?: string;
-  creator_secret: string;
-  creator_name?: string;
-  follow_up_to?: string;
-  suggestion_deadline?: string;
-  allow_pre_ranking?: boolean;
-  auto_close_after?: number;
-  details?: string;
-  day_time_windows?: any[];
-  duration_window?: any;
-  category?: string;
-  options_metadata?: OptionsMetadata;
-  reference_latitude?: number;
-  reference_longitude?: number;
-  reference_location_label?: string;
-  min_responses?: number;
-  show_preliminary_results?: boolean;
-  min_availability_percent?: number;
-  suggestion_deadline_minutes?: number;
-  is_auto_title?: boolean;
-  thread_title?: string | null;
-}): Promise<Poll> {
-  const data = await apiFetch('', {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-  return toPoll(data);
-}
+// Phase 5: legacy `apiCreatePoll` (POST /api/polls) is gone — everything goes
+// through `apiCreateMultipoll`. Same for the per-poll close/reopen/cutoff/
+// thread-title/vote helpers — see the corresponding multipoll-level helpers
+// below.
 
 /**
  * Deduplicate concurrent identical fetches using an in-flight Map.
@@ -433,27 +407,8 @@ export async function apiFindDuplicatePoll(title: string, followUpTo: string): P
 }
 
 // --- Voting ---
-
-export async function apiSubmitVote(pollId: string, params: {
-  vote_type: string;
-  yes_no_choice?: string | null;
-  ranked_choices?: string[] | null;
-  ranked_choice_tiers?: string[][] | null;
-  suggestions?: string[] | null;
-  is_abstain?: boolean;
-  is_ranking_abstain?: boolean;
-  voter_name?: string | null;
-  voter_day_time_windows?: any[] | null;
-  voter_duration?: any | null;
-  options_metadata?: OptionsMetadata | null;
-  liked_slots?: string[] | null;
-  disliked_slots?: string[] | null;
-}): Promise<ApiVote> {
-  return apiFetch(`/${encodeURIComponent(pollId)}/votes`, {
-    method: 'POST',
-    body: JSON.stringify(params),
-  });
-}
+// Phase 5: per-poll `apiSubmitVote`/`apiEditVote` are gone. Every vote goes
+// through `apiSubmitMultipollVotes` defined further down.
 
 const votesInFlight = new Map<string, Promise<ApiVote[]>>();
 
@@ -502,25 +457,6 @@ export async function apiSubmitMultipollVotes(
   return data;
 }
 
-export async function apiEditVote(pollId: string, voteId: string, params: {
-  yes_no_choice?: string | null;
-  ranked_choices?: string[] | null;
-  ranked_choice_tiers?: string[][] | null;
-  suggestions?: string[] | null;
-  is_abstain?: boolean;
-  is_ranking_abstain?: boolean;
-  voter_name?: string | null;
-  voter_day_time_windows?: any[] | null;
-  voter_duration?: any | null;
-  liked_slots?: string[] | null;
-  disliked_slots?: string[] | null;
-}): Promise<ApiVote> {
-  return apiFetch(`/${encodeURIComponent(pollId)}/votes/${encodeURIComponent(voteId)}`, {
-    method: 'PUT',
-    body: JSON.stringify(params),
-  });
-}
-
 // --- Results ---
 
 type Results = PollResults & { ranked_choice_rounds?: ApiRankedChoiceRound[]; ranked_choice_winner?: string };
@@ -536,46 +472,21 @@ export async function apiGetPollResults(pollId: string): Promise<Results> {
 }
 
 // --- Poll management ---
+// Phase 5: per-poll close/reopen/cutoff/thread-title are gone. Use the
+// multipoll-level helpers (apiCloseMultipoll, apiReopenMultipoll,
+// apiCutoffMultipollSuggestions, apiCutoffMultipollAvailability,
+// apiUpdateMultipollThreadTitle) instead.
 
-export async function apiClosePoll(pollId: string, creatorSecret: string, closeReason: string = 'manual'): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/close`, {
-    method: 'POST',
-    body: JSON.stringify({ creator_secret: creatorSecret, close_reason: closeReason }),
-  });
-  return toPoll(data);
-}
-
-export async function apiCutoffSuggestions(pollId: string, creatorSecret: string): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-suggestions`, {
-    method: 'POST',
-    body: JSON.stringify({ creator_secret: creatorSecret }),
-  });
-  return toPoll(data);
-}
-
-export async function apiCutoffAvailability(pollId: string, creatorSecret: string): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/cutoff-availability`, {
-    method: 'POST',
-    body: JSON.stringify({ creator_secret: creatorSecret }),
-  });
-  return toPoll(data);
-}
-
-export async function apiReopenPoll(pollId: string, creatorSecret: string): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/reopen`, {
-    method: 'POST',
-    body: JSON.stringify({ creator_secret: creatorSecret }),
-  });
-  return toPoll(data);
-}
-
-/** Update (or clear) a poll's thread_title override. Empty string clears it. */
-export async function apiUpdateThreadTitle(pollId: string, threadTitle: string | null): Promise<Poll> {
-  const data = await apiFetch(`/${encodeURIComponent(pollId)}/thread-title`, {
+/** Update (or clear) a multipoll's thread_title override. Empty string clears it. */
+export async function apiUpdateMultipollThreadTitle(multipollId: string, threadTitle: string | null): Promise<Multipoll> {
+  const data = await multipollFetch<any>(`/${encodeURIComponent(multipollId)}/thread-title`, {
     method: 'POST',
     body: JSON.stringify({ thread_title: threadTitle }),
   });
-  return toPoll(data);
+  const multipoll = toMultipoll(data);
+  invalidateMultipoll(multipollId);
+  cacheMultipoll(multipoll);
+  return multipoll;
 }
 
 // --- Related polls ---

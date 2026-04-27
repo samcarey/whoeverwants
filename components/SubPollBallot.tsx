@@ -13,7 +13,7 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiSubmitMultipollVotes, apiCutoffSuggestions, apiGetPollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
+import { apiGetPollResults, apiGetVotes, apiSubmitMultipollVotes, apiCutoffMultipollSuggestions, apiGetPollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
 import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
@@ -530,12 +530,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       setPollUrl(window.location.href.split('?')[0]);
     }
     
-    // Auto-created follow-up polls share the parent's creator_secret.
-    // Propagate so close/reopen work on the child too.
-    if (!getCreatorSecret(poll.id) && poll.follow_up_to) {
-      const parentSecret = getCreatorSecret(poll.follow_up_to);
-      if (parentSecret) recordPollCreation(poll.id, parentSecret);
-    }
+    // Phase 5: auto-created follow-up polls inherited the parent's
+    // creator_secret via polls.follow_up_to; that column is gone. Sub-polls
+    // of a multipoll all share the wrapper's creator_secret, which is
+    // recorded per sub-poll id on the create-poll page when the multipoll
+    // is created. No fallback inheritance is needed.
     setIsCreator(isCreatedByThisBrowser(poll.id));
 
     // Check if browser has any data for this poll
@@ -816,10 +815,16 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     if (isCuttingOffSuggestions || !isCreator) return;
     const creatorSecret = getCreatorSecret(poll.id);
     if (!creatorSecret) return;
+    const multipollId = poll.multipoll_id;
+    if (!multipollId) {
+      console.error('Cannot cutoff suggestions without multipoll_id');
+      return;
+    }
 
     setIsCuttingOffSuggestions(true);
     try {
-      const updatedPoll = await apiCutoffSuggestions(poll.id, creatorSecret);
+      const wrapper = await apiCutoffMultipollSuggestions(multipollId, creatorSecret);
+      const updatedPoll = wrapper.sub_polls.find((sp) => sp.id === poll.id) ?? null;
       invalidatePoll(poll.id);
       if (updatedPoll) {
         // Update the suggestion deadline so the UI exits suggestion phase
@@ -1097,40 +1102,14 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           if (isEditing) voteId = userVoteId;
           setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
         }
-      } else if (isEditing) {
-        // Legacy per-poll edit path — only reachable when poll.multipoll_id is
-        // null. After Phase 4's backfill every poll has a multipoll wrapper,
-        // so this branch is effectively dead. Kept as a safety net.
-        const updateData = poll.poll_type === 'yes_no'
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: trimmedVoterName }
-          : poll.poll_type === 'time'
-          ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: trimmedVoterName }
-          : { ranked_choices: voteData.ranked_choices, ranked_choice_tiers: voteData.ranked_choice_tiers, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: trimmedVoterName };
-
-        try {
-          const returnedVote = await apiEditVote(poll.id, userVoteId!, updateData);
-          voteId = userVoteId!;
-          await logToServer('suggestion-vote', 'info', 'Vote update response', { returnedVote });
-          setUserVoteData(returnedVote);
-        } catch (updateErr: any) {
-          error = updateErr;
-          voteId = userVoteId!;
-          setVoteError("Failed to update vote. Please try again.");
-        }
       } else {
-        // Legacy per-poll insert path. Same scope as the edit fallback above.
-        await logToServer('suggestion-vote', 'info', 'Attempting to insert new vote', { voteData });
-        try {
-          const insertedVote = await apiSubmitVote(poll.id, voteData);
-          voteId = insertedVote.id;
-          await logToServer('suggestion-vote', 'info', 'Vote insert successful', { voteId });
-        } catch (insertErr: any) {
-          error = insertErr;
-          console.error('Vote insert error:', insertErr);
-          await logToServer('suggestion-vote', 'error', 'Database insert error', {
-            message: insertErr.message
-          });
-        }
+        // Phase 5: every poll has a multipoll wrapper, so the legacy per-poll
+        // submit/edit fallbacks are unreachable. Surface as an error if the
+        // wrapper is somehow missing.
+        error = new Error('Cannot submit vote without multipoll_id');
+        console.error('Cannot submit vote without multipoll_id', { pollId: poll.id });
+        if (isEditing) voteId = userVoteId;
+        setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
       }
 
       if (error) {

@@ -6,10 +6,9 @@
  * Single-multipoll threads (one wrapper, no parent or children) render as one
  * card group.
  *
- * Phase 3.5: chain walking uses `Poll.multipoll_follow_up_to` (the wrapper's
- * follow_up_to, a multipoll_id). The legacy per-poll `follow_up_to` column is
- * still populated by the server but the FE no longer reads it for chain
- * traversal — Phase 5 retires it.
+ * Phase 3.5 + Phase 5: chain walking uses `Poll.multipoll_follow_up_to` (the
+ * wrapper's follow_up_to, a multipoll_id). The legacy per-poll `follow_up_to`
+ * column was dropped in Phase 5.
  */
 
 import type { Poll } from './types';
@@ -59,11 +58,10 @@ export interface Thread {
  * Build index maps and collect descendants via BFS from a set of start IDs.
  * Shared by buildThreads (multiple roots) and buildThreadFromPollDown (single anchor).
  *
- * Phase 3.5: chain edges are multipoll-to-multipoll. Visiting any sub-poll
- * pulls the whole multipoll group (siblings) AND every multipoll that lists
- * the current multipoll in its `follow_up_to` (children). The map keys are
- * multipoll_ids — matching `Poll.multipoll_id` and `Poll.multipoll_follow_up_to`
- * — so legacy per-poll `follow_up_to` is no longer consulted for traversal.
+ * Chain edges are multipoll-to-multipoll. Visiting any sub-poll pulls the
+ * whole multipoll group (siblings) AND every multipoll that lists the current
+ * multipoll in its `follow_up_to` (children). The map keys are multipoll_ids
+ * — matching `Poll.multipoll_id` and `Poll.multipoll_follow_up_to`.
  */
 function collectDescendants(
   startIds: string[],

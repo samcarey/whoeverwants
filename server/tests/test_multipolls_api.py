@@ -219,31 +219,6 @@ class TestReadMultipoll:
 
 
 class TestSubPollLinkage:
-    def test_existing_polls_keep_null_multipoll_id(self, client, creator_secret):
-        """Legacy single-poll create path should not link to any multipoll."""
-        resp = client.post(
-            "/api/polls",
-            json={
-                "title": "Legacy poll",
-                "poll_type": "yes_no",
-                "creator_secret": creator_secret,
-            },
-        )
-        assert resp.status_code == 201
-        # The PollResponse doesn't currently expose multipoll_id; verify by
-        # querying the DB directly via psycopg.
-        import psycopg
-
-        poll_id = resp.json()["id"]
-        with psycopg.connect(TEST_DB_URL) as conn:
-            row = conn.execute(
-                "SELECT multipoll_id, sub_poll_index FROM polls WHERE id = %s",
-                (poll_id,),
-            ).fetchone()
-            assert row is not None
-            assert row[0] is None
-            assert row[1] is None
-
     def test_multipoll_subpoll_has_index(self, client, creator_secret):
         create = client.post(
             "/api/multipolls",
@@ -274,10 +249,11 @@ class TestSubPollLinkage:
 
 class TestChainPropagation:
     """Phase 2.2 + 3.5: follow_up_to is a POLL id in the request. The server
-    resolves it to the parent's multipoll_id (or NULL for legacy parents) for
-    the multipolls row, and copies the poll_id onto each sub-poll's
-    polls.follow_up_to so the legacy thread-walking aggregation keeps working
-    until Phase 5."""
+    resolves it to the parent's multipoll_id for the multipolls row.
+
+    Phase 5: the per-sub-poll polls.follow_up_to column was dropped — chain
+    walking is multipoll-level only. Legacy single-poll parents no longer
+    exist (every poll has a multipoll wrapper)."""
 
     def _create_multipoll_parent(self, client, creator_secret):
         resp = client.post(
@@ -285,18 +261,6 @@ class TestChainPropagation:
             json={
                 "creator_secret": creator_secret,
                 "sub_polls": [_yes_no_sub_poll()],
-            },
-        )
-        assert resp.status_code == 201, resp.text
-        return resp.json()
-
-    def _create_legacy_parent(self, client, creator_secret):
-        resp = client.post(
-            "/api/polls",
-            json={
-                "title": "Legacy parent",
-                "poll_type": "yes_no",
-                "creator_secret": creator_secret,
             },
         )
         assert resp.status_code == 201, resp.text
@@ -320,46 +284,10 @@ class TestChainPropagation:
         # multipolls.follow_up_to resolved to the parent's multipoll_id
         assert child_data["follow_up_to"] == parent_multipoll_id
 
-        # polls.follow_up_to on the new sub-poll points at the parent poll_id
-        # so legacy thread-walking still finds the chain.
-        import psycopg
-
-        child_sub_poll_id = child_data["sub_polls"][0]["id"]
-        with psycopg.connect(TEST_DB_URL) as conn:
-            row = conn.execute(
-                "SELECT follow_up_to FROM polls WHERE id = %s",
-                (child_sub_poll_id,),
-            ).fetchone()
-            assert row is not None
-            assert str(row[0]) == parent_sub_poll_id
-
-    def test_followup_to_legacy_parent(self, client, creator_secret):
-        legacy_parent = self._create_legacy_parent(client, creator_secret)
-        legacy_parent_id = legacy_parent["id"]
-
-        child = client.post(
-            "/api/multipolls",
-            json={
-                "creator_secret": creator_secret,
-                "follow_up_to": legacy_parent_id,
-                "sub_polls": [_yes_no_sub_poll()],
-            },
-        )
-        assert child.status_code == 201, child.text
-        child_data = child.json()
-        # Legacy parent has no multipoll wrapper, so multipolls.follow_up_to
-        # stays NULL — but the polls row still chains to the legacy parent.
-        assert child_data["follow_up_to"] is None
-
-        import psycopg
-
-        child_sub_poll_id = child_data["sub_polls"][0]["id"]
-        with psycopg.connect(TEST_DB_URL) as conn:
-            row = conn.execute(
-                "SELECT follow_up_to FROM polls WHERE id = %s",
-                (child_sub_poll_id,),
-            ).fetchone()
-            assert str(row[0]) == legacy_parent_id
+        # The child sub-poll's PollResponse exposes the wrapper's chain via
+        # multipoll_follow_up_to.
+        child_sub_poll = child_data["sub_polls"][0]
+        assert child_sub_poll["multipoll_follow_up_to"] == parent_multipoll_id
 
     def test_thread_title_inherits_from_multipoll_parent(self, client, creator_secret):
         parent = client.post(
@@ -384,33 +312,6 @@ class TestChainPropagation:
         assert child.status_code == 201
         # No explicit title on the child; should inherit from the parent.
         assert child.json()["thread_title"] == "Friday Night"
-
-    def test_thread_title_inherits_from_legacy_parent(self, client, creator_secret):
-        # Set thread_title on a legacy poll directly (the API exposes it via
-        # the existing /thread-title endpoint, but for a brittleness-free
-        # test we just write to the row).
-        legacy_parent = self._create_legacy_parent(client, creator_secret)
-        legacy_parent_id = legacy_parent["id"]
-
-        import psycopg
-
-        with psycopg.connect(TEST_DB_URL) as conn:
-            conn.execute(
-                "UPDATE polls SET thread_title = %s WHERE id = %s",
-                ("Saturday Plans", legacy_parent_id),
-            )
-            conn.commit()
-
-        child = client.post(
-            "/api/multipolls",
-            json={
-                "creator_secret": creator_secret,
-                "follow_up_to": legacy_parent_id,
-                "sub_polls": [_yes_no_sub_poll()],
-            },
-        )
-        assert child.status_code == 201
-        assert child.json()["thread_title"] == "Saturday Plans"
 
     def test_explicit_title_wins_over_parent_inheritance(self, client, creator_secret):
         parent = client.post(
@@ -545,13 +446,22 @@ class TestMultipollVoterAggregation:
     never iterates sub-poll vote rows to compute multipoll-level state."""
 
     @staticmethod
-    def _vote(client, poll_id: str, voter_name: str | None, choice: str = "yes"):
-        body = {
-            "vote_type": "yes_no",
-            "yes_no_choice": choice,
-            "voter_name": voter_name,
-        }
-        resp = client.post(f"/api/polls/{poll_id}/votes", json=body)
+    def _vote(client, poll_id: str, voter_name: str | None, choice: str = "yes", *, multipoll_id: str):
+        # Phase 5: per-poll vote endpoints removed; route through the
+        # multipoll batch endpoint as a single-item submission.
+        resp = client.post(
+            f"/api/multipolls/{multipoll_id}/votes",
+            json={
+                "voter_name": voter_name,
+                "items": [
+                    {
+                        "sub_poll_id": poll_id,
+                        "vote_type": "yes_no",
+                        "yes_no_choice": choice,
+                    }
+                ],
+            },
+        )
         assert resp.status_code in (200, 201), resp.text
 
     def _make_two_yes_no_multi(self, client, creator_secret):
@@ -580,9 +490,9 @@ class TestMultipollVoterAggregation:
         sp_a, sp_b = multi["sub_polls"]
         # Alice + Bob vote on both; Carol only on A.
         for poll_id in (sp_a["id"], sp_b["id"]):
-            self._vote(client, poll_id, "Alice")
-            self._vote(client, poll_id, "Bob")
-        self._vote(client, sp_a["id"], "Carol", choice="no")
+            self._vote(client, poll_id, "Alice", multipoll_id=multi["id"])
+            self._vote(client, poll_id, "Bob", multipoll_id=multi["id"])
+        self._vote(client, sp_a["id"], "Carol", choice="no", multipoll_id=multi["id"])
 
         data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
         # Alice + Bob should each appear once (deduped); Carol once.
@@ -594,9 +504,9 @@ class TestMultipollVoterAggregation:
         sp_a, sp_b = multi["sub_polls"]
         # 3 anon on A, 2 anon on B → expect MAX = 3.
         for _ in range(3):
-            self._vote(client, sp_a["id"], None)
+            self._vote(client, sp_a["id"], None, multipoll_id=multi["id"])
         for _ in range(2):
-            self._vote(client, sp_b["id"], None)
+            self._vote(client, sp_b["id"], None, multipoll_id=multi["id"])
         data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
         assert data["voter_names"] == []
         assert data["anonymous_count"] == 3
@@ -604,11 +514,11 @@ class TestMultipollVoterAggregation:
     def test_mixed_named_and_anonymous(self, client, creator_secret):
         multi = self._make_two_yes_no_multi(client, creator_secret)
         sp_a, sp_b = multi["sub_polls"]
-        self._vote(client, sp_a["id"], "Alice")
-        self._vote(client, sp_b["id"], "Alice")
-        self._vote(client, sp_a["id"], None)
-        self._vote(client, sp_a["id"], None)
-        self._vote(client, sp_b["id"], None)
+        self._vote(client, sp_a["id"], "Alice", multipoll_id=multi["id"])
+        self._vote(client, sp_b["id"], "Alice", multipoll_id=multi["id"])
+        self._vote(client, sp_a["id"], None, multipoll_id=multi["id"])
+        self._vote(client, sp_a["id"], None, multipoll_id=multi["id"])
+        self._vote(client, sp_b["id"], None, multipoll_id=multi["id"])
         data = client.get(f"/api/multipolls/by-id/{multi['id']}").json()
         assert data["voter_names"] == ["Alice"]
         # max(2 anon on A, 1 anon on B) = 2
@@ -617,7 +527,7 @@ class TestMultipollVoterAggregation:
     def test_aggregation_returned_by_short_id_endpoint_too(self, client, creator_secret):
         multi = self._make_two_yes_no_multi(client, creator_secret)
         sp_a = multi["sub_polls"][0]
-        self._vote(client, sp_a["id"], "Alice")
+        self._vote(client, sp_a["id"], "Alice", multipoll_id=multi["id"])
         short_id = multi["short_id"]
         data = client.get(f"/api/multipolls/{short_id}").json()
         assert data["voter_names"] == ["Alice"]
@@ -625,7 +535,7 @@ class TestMultipollVoterAggregation:
     def test_aggregation_returned_after_close(self, client, creator_secret):
         multi = self._make_two_yes_no_multi(client, creator_secret)
         sp_a = multi["sub_polls"][0]
-        self._vote(client, sp_a["id"], "Alice")
+        self._vote(client, sp_a["id"], "Alice", multipoll_id=multi["id"])
         closed = client.post(
             f"/api/multipolls/{multi['id']}/close",
             json={"creator_secret": creator_secret, "close_reason": "manual"},
@@ -746,11 +656,21 @@ class TestMultipollUnifiedVoting:
     def test_mixed_insert_and_update_in_one_request(self, client, creator_secret):
         multi = self._make_multi(client, creator_secret)
         sp_a, sp_b = multi["sub_polls"]
-        # Existing vote on A.
-        existing_a = client.post(
-            f"/api/polls/{sp_a['id']}/votes",
-            json={"vote_type": "yes_no", "yes_no_choice": "yes", "voter_name": "Bob"},
+        # Existing vote on A — seed via the multipoll batch endpoint.
+        seed = client.post(
+            f"/api/multipolls/{multi['id']}/votes",
+            json={
+                "voter_name": "Bob",
+                "items": [
+                    {
+                        "sub_poll_id": sp_a["id"],
+                        "vote_type": "yes_no",
+                        "yes_no_choice": "yes",
+                    }
+                ],
+            },
         ).json()
+        existing_a = next(v for v in seed if v["poll_id"] == sp_a["id"])
         # Now batch: edit A + insert B.
         resp = client.post(
             f"/api/multipolls/{multi['id']}/votes",
