@@ -39,30 +39,6 @@ class TestYesNoValidation:
             validate_vote("yes_no", "ranked_choice", yes_no_choice="yes")
 
 
-class TestParticipationValidation:
-    def test_valid_yes_with_yes_no_vote_type(self):
-        validate_vote("participation", "yes_no", yes_no_choice="yes")
-
-    def test_valid_yes_with_participation_vote_type(self):
-        validate_vote("participation", "participation", yes_no_choice="yes")
-
-    def test_valid_no_with_participation_vote_type(self):
-        validate_vote("participation", "participation", yes_no_choice="no")
-
-    def test_valid_no(self):
-        validate_vote("participation", "yes_no", yes_no_choice="no")
-
-    def test_valid_abstain(self):
-        validate_vote("participation", "yes_no", is_abstain=True)
-
-    def test_valid_abstain_with_participation_vote_type(self):
-        validate_vote("participation", "participation", is_abstain=True)
-
-    def test_wrong_vote_type(self):
-        with pytest.raises(VoteValidationError, match="does not match"):
-            validate_vote("participation", "ranked_choice")
-
-
 class TestRankedChoiceValidation:
     def test_valid_rankings(self):
         validate_vote("ranked_choice", "ranked_choice", ranked_choices=["a", "b", "c"])

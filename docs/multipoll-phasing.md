@@ -4,6 +4,11 @@ This document breaks the multipoll redesign (see CLAUDE.md → "Multipoll System
 
 The guiding principle: **every phase leaves `main` shippable**. Existing polls keep working through every step. The destructive cutover (migrating existing polls into multipoll wrappers) happens late, only after the new code paths have been exercised on freshly-created multipolls in production.
 
+> **Note (2026-04-27):** the participation poll type was removed entirely in
+> migration 094. Older entries below that mention participation as a separate
+> codepath, "no wrapper", or "kept as legacy fallback" are stale — every poll
+> now has a multipoll wrapper.
+
 ## Status snapshot
 
 | Phase | Status | Notes |

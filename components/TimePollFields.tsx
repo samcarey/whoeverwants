@@ -14,17 +14,8 @@ export interface DayTimeWindow {
   windows: TimeWindow[];
 }
 
-interface ParticipationConditionsProps {
-  minValue?: number | null;
-  maxValue?: number | null;
-  maxEnabled?: boolean;
-  onMinChange?: (value: number | null) => void;
-  onMaxChange?: (value: number | null) => void;
-  onMaxEnabledChange?: (enabled: boolean) => void;
-  hideParticipantCounters?: boolean;
+interface TimePollFieldsProps {
   disabled?: boolean;
-  pollMinParticipants?: number | null;
-  pollMaxParticipants?: number | null;
   // Duration props
   durationMinValue?: number | null;
   durationMaxValue?: number | null;
@@ -45,21 +36,14 @@ interface ParticipationConditionsProps {
     minEnabled: boolean;
     maxEnabled: boolean;
   };
-  isCreationForm?: boolean;
   highlightDaysButton?: boolean;
 }
 
-export default function ParticipationConditions({
-  minValue = null,
-  maxValue = null,
-  maxEnabled = false,
-  onMinChange,
-  onMaxChange,
-  onMaxEnabledChange,
-  hideParticipantCounters = false,
+// Time-poll creation/voting form section: duration + per-day time windows.
+// Replaces the broader ParticipationConditions component that died with the
+// participation poll type (migration 094).
+export default function TimePollFields({
   disabled = false,
-  pollMinParticipants = null,
-  pollMaxParticipants = null,
   durationMinValue = null,
   durationMaxValue = null,
   durationMinEnabled = false,
@@ -72,16 +56,11 @@ export default function ParticipationConditions({
   onDayTimeWindowsChange,
   pollDayTimeWindows,
   pollDurationWindow,
-  isCreationForm = false,
   highlightDaysButton = false,
-}: ParticipationConditionsProps) {
+}: TimePollFieldsProps) {
   const [isDaysPickerOpen, setIsDaysPickerOpen] = useState(false);
   // Cache windows for removed days so they can be restored on re-add
   const removedDaysCache = useRef<Record<string, TimeWindow[]>>({});
-
-  const enforcedMinLimit = pollMinParticipants ?? 1;
-  const enforcedMaxLimit = pollMaxParticipants ?? undefined;
-  const maxRequired = pollMaxParticipants !== null && pollMaxParticipants !== undefined;
 
   const formatDurationValue = (value: number) => {
     return parseFloat(value.toFixed(2)).toString();
@@ -139,32 +118,7 @@ export default function ParticipationConditions({
     : null;
 
   return (
-    <div className="space-y-3" data-testid="participation-conditions">
-      {/* Participants */}
-      {!hideParticipantCounters && (
-      <div className="-mt-2 mb-1">
-        <label className="block text-sm font-medium mb-1">
-          Participants
-        </label>
-        <div className="-my-1">
-          <MinMaxCounter
-            minValue={minValue}
-            maxValue={maxValue}
-            maxEnabled={maxEnabled}
-            onMinChange={onMinChange!}
-            onMaxChange={onMaxChange!}
-            onMaxEnabledChange={onMaxEnabledChange!}
-            increment={1}
-            minLimit={enforcedMinLimit}
-            maxLimit={enforcedMaxLimit}
-            maxRequired={maxRequired}
-            disabled={disabled}
-
-          />
-        </div>
-      </div>
-      )}
-
+    <div className="space-y-3" data-testid="time-poll-fields">
       {/* Duration */}
       {onDurationMinChange && onDurationMaxChange && onDurationMinEnabledChange && onDurationMaxEnabledChange && (
         <div>
@@ -187,7 +141,6 @@ export default function ParticipationConditions({
             formatValue={formatDurationValue}
             minCheckboxEnabled={durationMinEnabled}
             onMinCheckboxChange={onDurationMinEnabledChange}
-
           />
         </div>
       )}

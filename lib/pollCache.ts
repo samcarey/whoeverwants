@@ -23,8 +23,6 @@ const CACHE_TTL_MS = 60_000;
 const RESULTS_TTL_MS = 15_000; // Results change more often — shorter TTL.
 const MAX_ENTRIES = 100;
 
-type Participant = { vote_id: string; voter_name: string | null };
-
 interface CacheEntry<T> {
   value: T;
   storedAt: number;
@@ -40,10 +38,9 @@ const cacheByShortId = new Map<string, PollCache>();
 // Cached result of getAccessiblePolls
 let accessiblePollsCache: CacheEntry<Poll[]> | null = null;
 
-// Per-poll results, votes, participants caches
+// Per-poll results and votes caches
 const resultsCache = new Map<string, CacheEntry<ResultsValue>>();
 const votesCache = new Map<string, CacheEntry<ApiVote[]>>();
-const participantsCache = new Map<string, CacheEntry<Participant[]>>();
 
 // Multipoll wrapper cache. Sub-polls inside a Multipoll are also written to
 // the per-poll cache via cachePolls(), so apiGetPollById hits warm cache after
@@ -124,17 +121,6 @@ export function getCachedVotes(pollId: string): ApiVote[] | null {
   return entry && isValid(entry, RESULTS_TTL_MS) ? entry.value : null;
 }
 
-/** Cache participants for a poll. */
-export function cacheParticipants(pollId: string, participants: Participant[]): void {
-  setLru(participantsCache, pollId, participants);
-}
-
-/** Get cached participants if fresh. */
-export function getCachedParticipants(pollId: string): Participant[] | null {
-  const entry = participantsCache.get(pollId);
-  return entry && isValid(entry, RESULTS_TTL_MS) ? entry.value : null;
-}
-
 /** Invalidate a single poll (call after mutations). */
 export function invalidatePoll(id: string): void {
   const entry = cacheById.get(id);
@@ -144,7 +130,6 @@ export function invalidatePoll(id: string): void {
   }
   resultsCache.delete(id);
   votesCache.delete(id);
-  participantsCache.delete(id);
   accessiblePollsCache = null;
 }
 

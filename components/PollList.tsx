@@ -96,28 +96,6 @@ function getResultBadge(poll: Poll, results: PollResults | null | undefined, use
       }
       return { text: 'No winner', emoji: '🤷', color: 'gray' };
     }
-    case 'participation': {
-      const participatingCount = results.yes_count || 0;
-      let isHappening = participatingCount > 0;
-      if (results.min_participants != null && participatingCount < results.min_participants) {
-        isHappening = false;
-      }
-      if (results.max_participants != null && participatingCount > results.max_participants) {
-        isHappening = false;
-      }
-      const userIsParticipating = !!(
-        (userVoteId && results.participating_vote_ids?.includes(userVoteId)) ||
-        (userName && results.participating_voter_names?.includes(userName))
-      );
-      if (isHappening && userIsParticipating) {
-        if (participatingCount === 1) return { text: "You're going alone", emoji: '😢', color: 'yellow' };
-        const others = participatingCount - 1;
-        return { text: `You're going with ${others} other${others > 1 ? 's' : ''}`, emoji: '🎉', color: 'green' };
-      }
-      if (isHappening && !userVoted) return { text: "It's happening without you", emoji: '🎉', color: 'yellow' };
-      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
-      return { text: 'Not happening', emoji: '✗', color: 'red' };
-    }
     default:
       return { text: 'Closed', emoji: '🔒', color: 'gray' };
   }

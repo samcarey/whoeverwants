@@ -4,7 +4,6 @@ import { getBuiltInType } from "@/components/TypeFieldInput";
 export const POLL_TYPE_SYMBOLS: Record<string, string> = {
   yes_no: '👍',
   ranked_choice: '🗳️',
-  participation: '🙋',
   time: '📅',
 };
 
@@ -103,14 +102,6 @@ export function getResultBadge(poll: Poll): ResultBadge {
     case 'ranked_choice': {
       if (results.winner) return { text: results.winner, emoji: '👑', color: 'green' };
       return { text: 'No winner', emoji: '🤷', color: 'gray' };
-    }
-    case 'participation': {
-      const participatingCount = results.yes_count || 0;
-      let isHappening = participatingCount > 0;
-      if (results.min_participants != null && participatingCount < results.min_participants) isHappening = false;
-      if (results.max_participants != null && participatingCount > results.max_participants) isHappening = false;
-      if (isHappening) return { text: 'Happening', emoji: '🎉', color: 'green' };
-      return { text: 'Not happening', emoji: '✗', color: 'red' };
     }
     default:
       return { text: 'Closed', emoji: '🔒', color: 'gray' };

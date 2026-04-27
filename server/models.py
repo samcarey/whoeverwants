@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 class PollType(str, Enum):
     yes_no = "yes_no"
     ranked_choice = "ranked_choice"
-    participation = "participation"
     time = "time"
 
 
@@ -31,25 +30,12 @@ class CreatePollRequest(BaseModel):
     creator_name: str | None = None
     follow_up_to: str | None = None
     fork_of: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
-    # Location/time fields for participation polls
-    location_mode: str | None = None
-    location_value: str | None = None
-    location_options: list[str] | None = None
-    time_mode: str | None = None
-    time_value: str | None = None
-    time_options: list[str] | None = None
-    location_suggestions_deadline_minutes: int | None = None
-    location_preferences_deadline_minutes: int | None = None
-    time_suggestions_deadline_minutes: int | None = None
-    time_preferences_deadline_minutes: int | None = None
-    # Time windows for participation polls
+    # Time poll fields
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     # Category for autocomplete (suggestion/ranked_choice polls)
@@ -86,8 +72,6 @@ class SubmitVoteRequest(BaseModel):
     is_abstain: bool = False
     is_ranking_abstain: bool = False
     voter_name: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
     # Metadata for suggested options (merged into poll's options_metadata)
@@ -105,8 +89,6 @@ class EditVoteRequest(BaseModel):
     is_abstain: bool = False
     is_ranking_abstain: bool = False
     voter_name: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
     # Time poll preference reactions
@@ -133,8 +115,6 @@ class MultipollVoteItem(BaseModel):
     suggestions: list[str] | None = None
     is_abstain: bool = False
     is_ranking_abstain: bool = False
-    min_participants: int | None = None
-    max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
     options_metadata: dict | None = None
@@ -200,30 +180,12 @@ class PollResponse(BaseModel):
     close_reason: str | None = None
     follow_up_to: str | None = None
     fork_of: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     short_id: str | None = None
     suggestion_deadline: str | None = None
     suggestion_deadline_minutes: int | None = None
     allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
-    # Location/time fields
-    location_mode: str | None = None
-    location_value: str | None = None
-    location_options: list[str] | None = None
-    resolved_location: str | None = None
-    time_mode: str | None = None
-    time_value: str | None = None
-    time_options: list[str] | None = None
-    resolved_time: str | None = None
-    is_sub_poll: bool = False
-    sub_poll_role: str | None = None
-    parent_participation_poll_id: str | None = None
-    location_suggestions_deadline_minutes: int | None = None
-    location_preferences_deadline_minutes: int | None = None
-    time_suggestions_deadline_minutes: int | None = None
-    time_preferences_deadline_minutes: int | None = None
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
     category: str | None = None
@@ -237,8 +199,8 @@ class PollResponse(BaseModel):
     response_count: int | None = None
     min_availability_percent: int | None = None
     thread_title: str | None = None
-    # Phase 2.5: multipoll wrapper this poll belongs to (NULL for participation
-    # polls and pre-Phase-4 legacy polls). Used by the FE to group sibling
+    # Phase 2.5: multipoll wrapper this poll belongs to (NULL for pre-Phase-4
+    # legacy polls that haven't been wrapped). Used by the FE to group sibling
     # sub-polls when rendering threads.
     multipoll_id: str | None = None
     sub_poll_index: int | None = None
@@ -257,8 +219,6 @@ class VoteResponse(BaseModel):
     is_abstain: bool = False
     is_ranking_abstain: bool = False
     voter_name: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     voter_day_time_windows: list[dict] | None = None
     voter_duration: dict | None = None
     liked_slots: list[str] | None = None
@@ -272,18 +232,6 @@ class SuggestionCountResponse(BaseModel):
     count: int
 
 
-class TimeSlotResponse(BaseModel):
-    round_number: int
-    slot_date: str
-    slot_start_time: str
-    slot_end_time: str
-    duration_hours: float
-    participant_count: int
-    participant_vote_ids: list[str]
-    participant_names: list[str]
-    is_winner: bool
-
-
 class PollResultsResponse(BaseModel):
     poll_id: str
     title: str
@@ -294,30 +242,19 @@ class PollResultsResponse(BaseModel):
     yes_count: int | None = None
     no_count: int | None = None
     abstain_count: int | None = None
-    total_yes_votes: int | None = None
     total_votes: int = 0
     yes_percentage: int | None = None
     no_percentage: int | None = None
     winner: str | None = None
-    min_participants: int | None = None
-    max_participants: int | None = None
     suggestion_counts: list[SuggestionCountResponse] | None = None
     ranked_choice_rounds: list["RankedChoiceRoundResponse"] | None = None
     ranked_choice_winner: str | None = None
-    time_slot_rounds: list[TimeSlotResponse] | None = None
-    participating_vote_ids: list[str] | None = None
-    participating_voter_names: list[str] | None = None
     # Time poll fields
     availability_counts: dict | None = None  # {slot_key: voter_count}
     max_availability: int | None = None
     included_slots: list[str] | None = None  # slots passing availability threshold (kept for compat)
     like_counts: dict | None = None   # {slot_key: like_count}
     dislike_counts: dict | None = None  # {slot_key: dislike_count}
-
-
-class ParticipantResponse(BaseModel):
-    vote_id: str
-    voter_name: str | None = None
 
 
 class RankedChoiceRoundResponse(BaseModel):
@@ -397,7 +334,7 @@ class MultipollResponse(BaseModel):
     created_at: str
     updated_at: str
     sub_polls: list[PollResponse]
-    # Multipoll-level participation aggregates (Phase 3.2).
+    # Multipoll-level voter aggregates (Phase 3.2).
     # Per CLAUDE.md → "Addressability paradigm", multipoll-scoped data lives
     # at the multipoll level so the FE never aggregates sub-poll vote rows.
     # `voter_names`: distinct named voters across all sub-polls (sorted).

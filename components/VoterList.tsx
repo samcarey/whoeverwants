@@ -24,11 +24,11 @@ interface VoterListProps {
   emptyText?: string;
   /** Static / pre-resolved mode (Phase 3.2 multipoll-level rendering). When
    *  set, VoterList skips `apiGetVotes` entirely and renders from these
-   *  props. Use for multipoll-level participation displays — the parent
-   *  has already fetched the multipoll wrapper (which carries
-   *  `voter_names` + `anonymous_count`) and just needs the bubble row. The
-   *  current viewer is excluded by `getUserName()` from localStorage,
-   *  since there's no per-poll voteId to disambiguate by here. */
+   *  props. Use for multipoll-level voter displays — the parent has
+   *  already fetched the multipoll wrapper (which carries `voter_names` +
+   *  `anonymous_count`) and just needs the bubble row. The current viewer
+   *  is excluded by `getUserName()` from localStorage, since there's no
+   *  per-poll voteId to disambiguate by here. */
   staticVoterNames?: string[];
   staticAnonymousCount?: number;
 }

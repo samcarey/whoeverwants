@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { useAppPrefetch } from "@/lib/prefetch";
 import CompactNameField from "@/components/CompactNameField";
 import PollResultsDisplay from "@/components/PollResults";
@@ -15,8 +14,8 @@ import OptionLabel from "@/components/OptionLabel";
 import YesNoAbstainButtons from "@/components/YesNoAbstainButtons";
 import AbstainButton from "@/components/AbstainButton";
 import { Poll, PollResults, OptionsMetadata, DayTimeWindow } from "@/lib/types";
-import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiSubmitMultipollVotes, apiCutoffSuggestions, apiGetPollById, apiGetParticipants, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
-import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes, getCachedParticipants } from "@/lib/pollCache";
+import { apiGetPollResults, apiGetVotes, apiSubmitVote, apiEditVote, apiSubmitMultipollVotes, apiCutoffSuggestions, apiGetPollById, POLL_VOTES_CHANGED_EVENT, type MultipollVoteItem } from "@/lib/api";
+import { invalidatePoll, getCachedPollById, getCachedPollResults, getCachedVotes } from "@/lib/pollCache";
 import RankableOptions from "@/components/RankableOptions";
 import TimeSlotBubbles, { SlotState } from "@/components/TimeSlotBubbles";
 
@@ -24,10 +23,8 @@ import { isCreatedByThisBrowser, getCreatorSecret, recordPollCreation, storeSeen
 import { hasPollData } from "@/lib/forgetPoll";
 import { getUserName, saveUserName } from "@/lib/userProfile";
 import { usePageTitle } from "@/lib/usePageTitle";
-import ParticipationConditions from "@/components/ParticipationConditions";
-import TimeSlotRoundsDisplay from "@/components/TimeSlotRoundsDisplay";
 import PollDetails from "@/components/PollDetails";
-import SubPollField from "@/components/SubPollField";
+import TimePollFields from "@/components/TimePollFields";
 import SearchRadiusBubble from "@/components/SearchRadiusBubble";
 import { loadSubPollDraft, saveSubPollDraft, clearSubPollDraft, SubPollDraft } from "@/lib/ballotDraft";
 import { windowDurationMinutes, formatDurationLabel, formatTimeSlot, isVoterAvailableForSlot } from "@/lib/timeUtils";
@@ -171,8 +168,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // so the "Near X" badge only makes sense for categories where proximity is part of the decision.
   const showReferenceLocation =
     !!poll.reference_location_label &&
-    (isLocationLikeCategory(poll.category ?? '') ||
-      (poll.poll_type === 'participation' && !!poll.location_mode));
+    isLocationLikeCategory(poll.category ?? '');
 
   // Debug logging utility (output captured by CommitInfo Logs tab)
   const logToServer = (_logType: string, level: string, message: string, data: unknown = {}) => {
@@ -192,33 +188,26 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   const fetchResultsInFlight = useRef(false);
   const fetchResultsLastCall = useRef(0);
 
-  // Participation poll voter conditions - initialized with poll's constraints, draft restored in useEffect
-  const [voterMinParticipants, setVoterMinParticipants] = useState<number | null>(poll.min_participants ?? 1);
-  const [voterMaxParticipants, setVoterMaxParticipants] = useState<number | null>(poll.max_participants ?? null);
-  const [voterMaxEnabled, setVoterMaxEnabled] = useState(poll.max_participants !== null && poll.max_participants !== undefined);
+  // Time-poll voter state — initialized with poll's constraints, draft restored in useEffect
   const [voterDayTimeWindows, setVoterDayTimeWindows] = useState<any[]>(poll.day_time_windows || []);
   const [durationMinValue, setDurationMinValue] = useState<number | null>(poll.duration_window?.minValue ?? 1);
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(poll.duration_window?.maxValue ?? 2);
   const [durationMinEnabled, setDurationMinEnabled] = useState(poll.duration_window?.minEnabled ?? false);
   const [durationMaxEnabled, setDurationMaxEnabled] = useState(poll.duration_window?.maxEnabled ?? false);
 
-  // Restore ballot draft from localStorage on mount (participation and time polls)
+  // Restore ballot draft from localStorage on mount (time polls only)
   const draftRestoredRef = useRef(false);
   useEffect(() => {
     if (draftRestoredRef.current) return;
     draftRestoredRef.current = true;
-    if (poll.poll_type !== 'participation' && poll.poll_type !== 'time') return;
+    if (poll.poll_type !== 'time') return;
     try {
       const votedPolls = JSON.parse(localStorage.getItem('votedPolls') || '{}');
       if (votedPolls[poll.id]) return;
     } catch { /* ignore */ }
     const draft = loadSubPollDraft(poll.multipoll_id ?? null, poll.id);
     if (!draft) return;
-    if (draft.yesNoChoice !== undefined) setYesNoChoice(draft.yesNoChoice ?? null);
     if (draft.isAbstaining !== undefined) setIsAbstaining(draft.isAbstaining);
-    if (draft.voterMinParticipants !== undefined) setVoterMinParticipants(draft.voterMinParticipants);
-    if (draft.voterMaxParticipants !== undefined) setVoterMaxParticipants(draft.voterMaxParticipants);
-    if (draft.voterMaxEnabled !== undefined) setVoterMaxEnabled(draft.voterMaxEnabled);
     if (draft.voterDayTimeWindows !== undefined) setVoterDayTimeWindows(draft.voterDayTimeWindows);
     if (draft.durationMinValue !== undefined) setDurationMinValue(draft.durationMinValue);
     if (draft.durationMaxValue !== undefined) setDurationMaxValue(draft.durationMaxValue);
@@ -229,19 +218,17 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
   // Persist ballot draft to localStorage (debounced to avoid rapid writes during wheel/counter interactions)
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if ((poll.poll_type !== 'participation' && poll.poll_type !== 'time') || hasVoted) return;
+    if (poll.poll_type !== 'time' || hasVoted) return;
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       saveSubPollDraft(poll.multipoll_id ?? null, poll.id, {
-        yesNoChoice, isAbstaining,
-        voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
+        isAbstaining,
         voterDayTimeWindows,
         durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled,
       });
     }, 300);
     return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
-  }, [poll.id, poll.multipoll_id, poll.poll_type, hasVoted, yesNoChoice, isAbstaining,
-      voterMinParticipants, voterMaxParticipants, voterMaxEnabled,
+  }, [poll.id, poll.multipoll_id, poll.poll_type, hasVoted, isAbstaining,
       voterDayTimeWindows, durationMinValue, durationMaxValue,
       durationMinEnabled, durationMaxEnabled]);
 
@@ -250,41 +237,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     const now = currentTime || new Date();
     return poll.response_deadline && new Date(poll.response_deadline) <= now;
   }, [poll.response_deadline, currentTime]);
-
-  // Track which voters are participating (for participation polls)
-  const [participatingVoterIds, setParticipatingVoterIds] = useState<string[]>([]);
-
-  // Check if this voter is actually participating (based on priority algorithm)
-  const areVoterConditionsMet = useMemo(() => {
-    if (poll.poll_type !== 'participation' || !userVoteData) {
-      return null;
-    }
-
-    // Check if this voter's ID is in the list of participating voters
-    return participatingVoterIds.includes(userVoteData.id);
-  }, [poll.poll_type, userVoteData, participatingVoterIds]);
-  
-  // Check if poll has time windows but none are enabled (voter voted Yes with all days unchecked)
-  const hasNoEnabledTimeWindows = useMemo(() => {
-    if (poll.poll_type !== 'participation') return false;
-    if (!poll.day_time_windows?.some((dtw: DayTimeWindow) => dtw.windows.length > 0)) return false;
-    return !voterDayTimeWindows.some(
-      (dtw: DayTimeWindow) => dtw.windows.some(w => w.enabled !== false)
-    );
-  }, [poll.poll_type, poll.day_time_windows, voterDayTimeWindows]);
-
-  // Check if any enabled voter time window is shorter than the minimum duration
-  const hasTimeWindowTooShort = useMemo(() => {
-    if (poll.poll_type !== 'participation') return false;
-    const minDurMinutes = durationMinEnabled && durationMinValue != null
-      ? Math.round(durationMinValue * 60) : null;
-    if (minDurMinutes == null || minDurMinutes <= 0) return false;
-    return voterDayTimeWindows.some((dtw: DayTimeWindow) =>
-      dtw.windows.some(w =>
-        w.enabled !== false && windowDurationMinutes(w) < minDurMinutes
-      )
-    );
-  }, [poll.poll_type, voterDayTimeWindows, durationMinEnabled, durationMinValue]);
 
   const isPollClosed = useMemo(() => {
     // If manually reopened, stay open regardless of deadline
@@ -447,12 +399,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     try {
       const results = await apiGetPollResults(poll.id);
       setPollResults(results);
-
-      // For participation polls, also fetch the list of participating voters
-      if (poll.poll_type === 'participation') {
-        const participants = await apiGetParticipants(poll.id);
-        setParticipatingVoterIds(participants.map(p => p.vote_id));
-      }
     } catch (error) {
       console.error('Error fetching poll results:', error);
     } finally {
@@ -608,32 +554,16 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       setUserVoteId(voteId);
       
       // Fetch vote data from database if we have a vote ID or for specific poll types
-      if (voteId || hasSuggestionPhase || poll.poll_type === 'participation') {
-        // Skip the loading state if we already have cached votes/participants —
-        // the fetch will return instantly but the loading→loaded re-render
-        // cycle causes a flicker during view transitions.
-        const hasCachedData = !!getCachedVotes(poll.id)
-          || (poll.poll_type === 'participation' && !!getCachedParticipants(poll.id));
+      if (voteId || hasSuggestionPhase) {
+        // Skip the loading state if we already have cached votes — the fetch
+        // will return instantly but the loading→loaded re-render cycle causes
+        // a flicker during view transitions.
+        const hasCachedData = !!getCachedVotes(poll.id);
         if (!hasCachedData) setIsLoadingVoteData(true);
 
-        // For participation polls without a stored vote ID, find the vote via participant name match
-        const fetchParticipationVoteByName = async (pollId: string) => {
-          const savedName = getUserName();
-          if (!savedName) return null;
-          const participants = await apiGetParticipants(pollId);
-          const match = participants.find(p => p.voter_name === savedName);
-          if (!match) return null;
-          return fetchVoteData(match.vote_id);
-        };
-
-        let fetchPromise;
-        if (voteId) {
-          fetchPromise = fetchVoteData(voteId);
-        } else if (poll.poll_type === 'participation') {
-          fetchPromise = fetchParticipationVoteByName(poll.id);
-        } else {
-          fetchPromise = fetchLatestUserVote(poll.id);
-        }
+        const fetchPromise = voteId
+          ? fetchVoteData(voteId)
+          : fetchLatestUserVote(poll.id);
           
         fetchPromise.then(voteData => {
           if (voteData) {
@@ -668,29 +598,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
               // Don't set choices for abstain votes
             } else if (poll.poll_type === 'yes_no' && voteData.yes_no_choice) {
               setYesNoChoice(voteData.yes_no_choice as 'yes' | 'no');
-            } else if (poll.poll_type === 'participation' && voteData.yes_no_choice) {
-              setYesNoChoice(voteData.yes_no_choice as 'yes' | 'no');
-              // Load voter's participation conditions
-              if (voteData.min_participants !== null && voteData.min_participants !== undefined) {
-                setVoterMinParticipants(voteData.min_participants);
-              }
-              if (voteData.max_participants !== null && voteData.max_participants !== undefined) {
-                setVoterMaxParticipants(voteData.max_participants);
-                setVoterMaxEnabled(true);
-              } else {
-                setVoterMaxEnabled(false);
-              }
-              // Load voter's time window conditions
-              if (voteData.voter_day_time_windows && Array.isArray(voteData.voter_day_time_windows)) {
-                setVoterDayTimeWindows(voteData.voter_day_time_windows);
-              }
-              if (voteData.voter_duration) {
-                const { minValue, maxValue, minEnabled, maxEnabled } = voteData.voter_duration;
-                if (minValue !== undefined) setDurationMinValue(minValue);
-                if (maxValue !== undefined) setDurationMaxValue(maxValue);
-                if (minEnabled !== undefined) setDurationMinEnabled(minEnabled);
-                if (maxEnabled !== undefined) setDurationMaxEnabled(maxEnabled);
-              }
             } else if (poll.poll_type === 'ranked_choice') {
               if (voteData.ranked_choices) setRankedChoices(voteData.ranked_choices);
               if (voteData.ranked_choice_tiers) {
@@ -724,21 +631,15 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
   }, [poll.id, poll.poll_type, hasVoted, hasVotedOnPoll, getStoredVoteId, fetchVoteData, fetchAggregatedVoteData, fetchLatestUserVote, isNewPoll]);
 
-  // Separate effect to fetch results when poll closes or for participation/time polls
+  // Fetch results when poll closes or for time polls in preferences phase
   useEffect(() => {
-    // Fetch results if poll is closed (reactive to state changes)
     const isClosed = pollClosed || (poll.response_deadline && new Date(poll.response_deadline) <= new Date());
-
-    // Also fetch results for participation polls when voted (to show condition status)
-    const shouldFetchForParticipation = poll.poll_type === 'participation' && hasVoted && !isClosed;
-
-    // Fetch results for time polls in preferences phase (to get availability_counts for caution symbols)
     const shouldFetchForTimePoll = poll.poll_type === 'time' && !inAvailabilityPhase;
 
-    if (isClosed || shouldFetchForParticipation || shouldFetchForTimePoll) {
+    if (isClosed || shouldFetchForTimePoll) {
       fetchPollResults();
     }
-  }, [pollClosed, poll.response_deadline, poll.poll_type, hasVoted, fetchPollResults, inAvailabilityPhase]);
+  }, [pollClosed, poll.response_deadline, poll.poll_type, fetchPollResults, inAvailabilityPhase]);
 
   // Load saved user name. Skip when the wrapper owns the voter name input
   // (Phase 3.4 follow-up B) — the wrapper seeds its own state from
@@ -977,37 +878,10 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
     }
 
     // Validate vote choice first
-    if ((poll.poll_type === 'yes_no' || poll.poll_type === 'participation') && !yesNoChoice && !isAbstaining) {
+    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
       await logToServer('suggestion-vote', 'error', 'Yes/No validation failed', { yesNoChoice, isAbstaining });
       setVoteError("Please select Yes, No, or Abstain");
       return;
-    }
-
-    // Participation poll time window validation
-    if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
-      const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
-        (dtw: DayTimeWindow) => dtw.windows.length > 0
-      );
-      if (pollHasTimeWindows) {
-        const enabledWindows = voterDayTimeWindows.flatMap(
-          (dtw: DayTimeWindow) => dtw.windows.filter(w => w.enabled !== false)
-        );
-        if (enabledWindows.length === 0) {
-          setVoteError("Please enable at least one time window, or vote No.");
-          return;
-        }
-        const minDurMinutes = durationMinEnabled && durationMinValue != null
-          ? Math.round(durationMinValue * 60) : null;
-        if (minDurMinutes != null && minDurMinutes > 0) {
-          const tooShort = enabledWindows.some(w =>
-            windowDurationMinutes(w) < minDurMinutes
-          );
-          if (tooShort) {
-            setVoteError(`Each enabled time window must be at least ${formatDurationLabel(minDurMinutes)} long.`);
-            return;
-          }
-        }
-      }
     }
 
     if (poll.poll_type === 'ranked_choice' && !isAbstaining) {
@@ -1082,28 +956,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           yes_no_choice: isAbstaining ? null : yesNoChoice,
           is_abstain: isAbstaining,
           voter_name: voterName.trim() || null
-        };
-      } else if (poll.poll_type === 'participation') {
-        if (!yesNoChoice && !isAbstaining) {
-          setVoteError("Please select Yes, No, or Abstain");
-          setIsSubmitting(false);
-          return;
-        }
-        voteData = {
-          poll_id: poll.id,
-          vote_type: 'participation' as const,
-          yes_no_choice: isAbstaining ? null : yesNoChoice,
-          is_abstain: isAbstaining,
-          voter_name: voterName.trim() || null,
-          min_participants: voterMinParticipants,
-          max_participants: voterMaxEnabled ? voterMaxParticipants : null,
-          voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
-          voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
-            minValue: durationMinValue,
-            maxValue: durationMaxValue,
-            minEnabled: durationMinEnabled,
-            maxEnabled: durationMaxEnabled
-          } : null,
         };
       } else if (poll.poll_type === 'ranked_choice') {
         // Filter and validate ranked choices (No Preference items already filtered by RankableOptions)
@@ -1218,8 +1070,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           options_metadata: voteData.options_metadata ?? null,
           voter_day_time_windows: voteData.voter_day_time_windows ?? null,
           voter_duration: voteData.voter_duration ?? null,
-          min_participants: voteData.min_participants ?? null,
-          max_participants: voteData.max_participants ?? null,
           liked_slots: voteData.liked_slots ?? null,
           disliked_slots: voteData.disliked_slots ?? null,
         };
@@ -1249,15 +1099,11 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           setVoteError(isEditing ? "Failed to update vote. Please try again." : "Failed to submit vote. Please try again.");
         }
       } else if (isEditing) {
-        // Legacy per-poll edit path. Reachable only for participation polls
-        // (which keep multipoll_id IS NULL forever) and for any non-backfilled
-        // legacy polls. After Phase 4's backfill, every non-participation poll
-        // has a multipoll wrapper, so this branch is effectively
-        // participation-only.
+        // Legacy per-poll edit path — only reachable when poll.multipoll_id is
+        // null. After Phase 4's backfill every poll has a multipoll wrapper,
+        // so this branch is effectively dead. Kept as a safety net.
         const updateData = poll.poll_type === 'yes_no'
           ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: trimmedVoterName }
-          : poll.poll_type === 'participation'
-          ? { yes_no_choice: isAbstaining ? null : yesNoChoice, is_abstain: isAbstaining, voter_name: trimmedVoterName, min_participants: voterMinParticipants, max_participants: voterMaxEnabled ? voterMaxParticipants : null, voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null, voter_duration: (durationMinEnabled || durationMaxEnabled) ? { minValue: durationMinValue, maxValue: durationMaxValue, minEnabled: durationMinEnabled, maxEnabled: durationMaxEnabled } : null }
           : poll.poll_type === 'time'
           ? { voter_day_time_windows: voteData.voter_day_time_windows, voter_duration: voteData.voter_duration, liked_slots: voteData.liked_slots, disliked_slots: voteData.disliked_slots, is_abstain: voteData.is_abstain, voter_name: trimmedVoterName }
           : { ranked_choices: voteData.ranked_choices, ranked_choice_tiers: voteData.ranked_choice_tiers, suggestions: canSubmitSuggestions ? voteData.suggestions : undefined, is_abstain: voteData.is_abstain, is_ranking_abstain: voteData.is_ranking_abstain, voter_name: trimmedVoterName };
@@ -1415,36 +1261,10 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       return { skip: true };
     }
 
-    if ((poll.poll_type === 'yes_no' || poll.poll_type === 'participation') && !yesNoChoice && !isAbstaining) {
+    if (poll.poll_type === 'yes_no' && !yesNoChoice && !isAbstaining) {
       const error = "Please select Yes, No, or Abstain";
       setVoteError(error);
       return { ok: false, error };
-    }
-
-    if (poll.poll_type === 'participation' && yesNoChoice === 'yes' && !isAbstaining) {
-      const pollHasTimeWindows = poll.day_time_windows && poll.day_time_windows.some(
-        (dtw: DayTimeWindow) => dtw.windows.length > 0
-      );
-      if (pollHasTimeWindows) {
-        const enabledWindows = voterDayTimeWindows.flatMap(
-          (dtw: DayTimeWindow) => dtw.windows.filter(w => w.enabled !== false)
-        );
-        if (enabledWindows.length === 0) {
-          const error = "Please enable at least one time window, or vote No.";
-          setVoteError(error);
-          return { ok: false, error };
-        }
-        const minDurMinutes = durationMinEnabled && durationMinValue != null
-          ? Math.round(durationMinValue * 60) : null;
-        if (minDurMinutes != null && minDurMinutes > 0) {
-          const tooShort = enabledWindows.some(w => windowDurationMinutes(w) < minDurMinutes);
-          if (tooShort) {
-            const error = `Each enabled time window must be at least ${formatDurationLabel(minDurMinutes)} long.`;
-            setVoteError(error);
-            return { ok: false, error };
-          }
-        }
-      }
     }
 
     let effectiveIsAbstaining = isAbstaining;
@@ -1472,23 +1292,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
         yes_no_choice: effectiveIsAbstaining ? null : yesNoChoice,
         is_abstain: effectiveIsAbstaining,
         voter_name: voterName.trim() || null,
-      };
-    } else if (poll.poll_type === 'participation') {
-      voteData = {
-        poll_id: poll.id,
-        vote_type: 'participation' as const,
-        yes_no_choice: effectiveIsAbstaining ? null : yesNoChoice,
-        is_abstain: effectiveIsAbstaining,
-        voter_name: voterName.trim() || null,
-        min_participants: voterMinParticipants,
-        max_participants: voterMaxEnabled ? voterMaxParticipants : null,
-        voter_day_time_windows: voterDayTimeWindows.length > 0 ? voterDayTimeWindows : null,
-        voter_duration: (durationMinEnabled || durationMaxEnabled) ? {
-          minValue: durationMinValue,
-          maxValue: durationMaxValue,
-          minEnabled: durationMinEnabled,
-          maxEnabled: durationMaxEnabled,
-        } : null,
       };
     } else if (poll.poll_type === 'ranked_choice') {
       const filteredRankedChoices = rankedChoices.filter(c => c && c.trim().length > 0);
@@ -1564,8 +1367,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
       options_metadata: voteData.options_metadata ?? null,
       voter_day_time_windows: voteData.voter_day_time_windows ?? null,
       voter_duration: voteData.voter_duration ?? null,
-      min_participants: voteData.min_participants ?? null,
-      max_participants: voteData.max_participants ?? null,
       liked_slots: voteData.liked_slots ?? null,
       disliked_slots: voteData.disliked_slots ?? null,
     };
@@ -1725,15 +1526,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
           </div>
         )}
 
-        {/* Sub-poll back navigation */}
-        {poll.is_sub_poll && poll.parent_participation_poll_id && (
-          <div className="mb-3 text-center">
-            <Link href={`/p/${poll.parent_participation_poll_id}`} className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-              Back to main poll
-            </Link>
-          </div>
-        )}
-
         {/* Poll status card — only renders deferred-deadline notices. Closed
              states (max-capacity, manual, expired) are surfaced in the
              long-press modal so the card body stays focused on results. */}
@@ -1794,18 +1586,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                 </svg>
               </div>
             ) : pollResults ? (
-              <>
-                <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
-                {pollResults.time_slot_rounds && pollResults.time_slot_rounds.length > 0 && (
-                  <div className="mt-4">
-                    <TimeSlotRoundsDisplay
-                      allRounds={pollResults.time_slot_rounds}
-                      allVoters={[]}
-                      currentUserVoteId={userVoteData?.id || null}
-                    />
-                  </div>
-                )}
-              </>
+              <PollResultsDisplay results={pollResults} isPollClosed={isPollClosed} userVoteData={userVoteData} optionsMetadata={optionsMetadataLocal} />
             ) : (
               <div className="text-center py-1.5">
                 <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
@@ -1867,173 +1648,6 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                     onClick={handleVoteClick}
                     disabled={isSubmitting || (!yesNoChoice && !isAbstaining)}
                     className="w-full py-3 px-4 rounded-lg bg-foreground text-background hover:bg-[#383838] dark:hover:bg-[#ccc] active:bg-[#2a2a2a] dark:active:bg-[#e0e0e0] font-medium text-base transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-                  >
-                    {isSubmitting ? 'Submitting...' : 'Submit Vote'}
-                  </button>
-
-                  {/* Show follow-up/fork header after submit button */}
-                  <div className="mt-4">
-                            {poll.fork_of && <ForkHeader forkOfPollId={poll.fork_of} />}
-                  </div>
-                </>
-              )}
-            </div>
-          ) : poll.poll_type === 'participation' ? (
-            <div>
-              {(poll.location_mode || poll.time_mode) && (
-                <SubPollField poll={poll} />
-              )}
-              {isPollClosed ? (
-                <div className="py-6">
-                  {loadingResults ? (
-                    <div className="flex justify-center items-center py-8">
-                      <svg className="animate-spin h-8 w-8 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    </div>
-                  ) : pollResults ? (
-                    <>
-                      {userVoteData?.is_abstain && (
-                        <div className="mt-4 flex justify-center">
-                          <div className="inline-flex items-center px-3 py-2 bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-700 rounded-full">
-                            <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                              You Abstained
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-gray-600 dark:text-gray-400">Unable to load results.</p>
-                    </div>
-                  )}
-                </div>
-              ) : hasVoted && !isEditingVote ? (
-                <div className="text-center py-1.5">
-                  <div className="text-left">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium">Your response:</h4>
-                      {editVoteButton}
-                    </div>
-                    {isLoadingVoteData ? (
-                      <div className="flex items-center p-3 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                        <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center mr-3">
-                          <svg className="animate-spin h-4 w-4 text-gray-600 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 714 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        </div>
-                        <span className="font-medium text-gray-600 dark:text-gray-400">Loading your response...</span>
-                      </div>
-                    ) : (
-                      <>
-                        <div className={`flex items-center p-3 rounded-lg ${
-                          userVoteData?.is_abstain || isAbstaining
-                            ? 'bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700'
-                            : userVoteData?.yes_no_choice === 'yes'
-                              ? 'bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700'
-                              : 'bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700'
-                        }`}>
-                          <span className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold mr-3 ${
-                            userVoteData?.is_abstain || isAbstaining
-                              ? 'bg-yellow-600 text-white'
-                              : userVoteData?.yes_no_choice === 'yes'
-                                ? 'bg-green-600 text-white'
-                                : 'bg-red-600 text-white'
-                          }`}>
-                            {userVoteData?.is_abstain || isAbstaining ? '' : userVoteData?.yes_no_choice === 'yes' ? '✓' : '✗'}
-                          </span>
-                          <span className={`font-medium ${
-                            userVoteData?.is_abstain || isAbstaining
-                              ? 'text-yellow-800 dark:text-yellow-200'
-                              : userVoteData?.yes_no_choice === 'yes'
-                                ? 'text-green-800 dark:text-green-200'
-                                : 'text-red-800 dark:text-red-200'
-                          }`}>
-                            {userVoteData?.is_abstain || isAbstaining ? 'Abstained' : userVoteData?.yes_no_choice === 'yes' ? "I'm in!" : "Can't make it"}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-4 text-center">
-                    <YesNoAbstainButtons
-                      yesNoChoice={yesNoChoice}
-                      onYesClick={() => handleYesNoVote('yes')}
-                      onNoClick={() => handleYesNoVote('no')}
-                      disabled={isSubmitting}
-                    />
-                  </div>
-
-                  <div
-                    className="grid transition-[grid-template-rows,opacity] duration-300 ease-in-out"
-                    style={{
-                      gridTemplateRows: yesNoChoice === 'no' ? '0fr' : '1fr',
-                      opacity: yesNoChoice === 'no' ? 0 : 1,
-                    }}
-                  >
-                    <div className="overflow-hidden min-h-0">
-                      <div className="mb-4">
-                      <h3 className="text-lg font-semibold mb-4 text-center">Your Conditions</h3>
-                      <ParticipationConditions
-                        minValue={voterMinParticipants}
-                        maxValue={voterMaxParticipants}
-                        maxEnabled={voterMaxEnabled}
-                        onMinChange={setVoterMinParticipants}
-                        onMaxChange={setVoterMaxParticipants}
-                        onMaxEnabledChange={setVoterMaxEnabled}
-                        disabled={isSubmitting}
-                        pollMinParticipants={poll.min_participants}
-                        pollMaxParticipants={poll.max_participants}
-                        durationMinValue={durationMinValue}
-                        durationMaxValue={durationMaxValue}
-                        durationMinEnabled={durationMinEnabled}
-                        durationMaxEnabled={durationMaxEnabled}
-                        onDurationMinChange={setDurationMinValue}
-                        onDurationMaxChange={setDurationMaxValue}
-                        onDurationMinEnabledChange={setDurationMinEnabled}
-                        onDurationMaxEnabledChange={setDurationMaxEnabled}
-                        dayTimeWindows={voterDayTimeWindows}
-                        onDayTimeWindowsChange={setVoterDayTimeWindows}
-                        pollDayTimeWindows={poll.day_time_windows || undefined}
-                        pollDurationWindow={poll.duration_window || undefined}
-                      />
-                      </div>
-                    </div>
-                  </div>
-
-                  {voteError && (
-                    <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 rounded-md">
-                      <p className="text-sm text-red-800 dark:text-red-200">{voteError}</p>
-                    </div>
-                  )}
-
-                  <div className="mb-4">
-                    <CompactNameField name={voterName} setName={setVoterName} disabled={isSubmitting} maxLength={30} />
-                  </div>
-
-                  {hasTimeWindowTooShort && (
-                    <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded-md">
-                      <p className="text-sm text-red-700 dark:text-red-300">Time window cannot be shorter than minimum duration.</p>
-                    </div>
-                  )}
-
-                  {yesNoChoice === 'yes' && hasNoEnabledTimeWindows && (
-                    <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded-md">
-                      <p className="text-sm text-yellow-700 dark:text-yellow-300">Enable at least one time window, or vote No.</p>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleVoteClick}
-                    disabled={isSubmitting || (!yesNoChoice && !isAbstaining) || (yesNoChoice === 'yes' && hasNoEnabledTimeWindows)}
-                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-lg transition-all duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Vote'}
                   </button>
@@ -2115,8 +1729,7 @@ const SubPollBallot = forwardRef<SubPollBallotHandle, SubPollBallotProps>(functi
                       {/* Availability phase: show time window picker */}
                       <div className="mb-4">
                         <h3 className="text-lg font-semibold mb-3 text-center">Your Availability</h3>
-                        <ParticipationConditions
-                          hideParticipantCounters={true}
+                        <TimePollFields
                           disabled={isSubmitting}
                           durationMinValue={durationMinValue}
                           durationMaxValue={durationMaxValue}

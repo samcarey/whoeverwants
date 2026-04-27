@@ -9,7 +9,6 @@ import {
   cachePoll,
   cachePollResults, getCachedPollResults,
   cacheVotes, getCachedVotes,
-  cacheParticipants, getCachedParticipants,
   cacheMultipoll, getCachedMultipollById, getCachedMultipollByShortId,
   invalidateMultipoll,
 } from './pollCache';
@@ -58,8 +57,6 @@ export interface ApiVote {
   is_abstain: boolean;
   is_ranking_abstain: boolean;
   voter_name: string | null;
-  min_participants: number | null;
-  max_participants: number | null;
   voter_day_time_windows: any[] | null;
   voter_duration: any | null;
   liked_slots: string[] | null;
@@ -126,28 +123,11 @@ function toPoll(data: any): Poll {
     close_reason: data.close_reason ?? undefined,
     follow_up_to: data.follow_up_to ?? undefined,
     fork_of: data.fork_of ?? undefined,
-    min_participants: data.min_participants ?? undefined,
-    max_participants: data.max_participants ?? undefined,
     short_id: data.short_id ?? undefined,
     suggestion_deadline: data.suggestion_deadline ?? undefined,
     suggestion_deadline_minutes: data.suggestion_deadline_minutes ?? undefined,
     allow_pre_ranking: data.allow_pre_ranking ?? true,
     details: data.details ?? undefined,
-    location_mode: data.location_mode ?? undefined,
-    location_value: data.location_value ?? undefined,
-    location_options: data.location_options ?? undefined,
-    resolved_location: data.resolved_location ?? undefined,
-    time_mode: data.time_mode ?? undefined,
-    time_value: data.time_value ?? undefined,
-    time_options: data.time_options ?? undefined,
-    resolved_time: data.resolved_time ?? undefined,
-    is_sub_poll: data.is_sub_poll ?? undefined,
-    sub_poll_role: data.sub_poll_role ?? undefined,
-    parent_participation_poll_id: data.parent_participation_poll_id ?? undefined,
-    location_suggestions_deadline_minutes: data.location_suggestions_deadline_minutes ?? undefined,
-    location_preferences_deadline_minutes: data.location_preferences_deadline_minutes ?? undefined,
-    time_suggestions_deadline_minutes: data.time_suggestions_deadline_minutes ?? undefined,
-    time_preferences_deadline_minutes: data.time_preferences_deadline_minutes ?? undefined,
     day_time_windows: data.day_time_windows ?? undefined,
     duration_window: data.duration_window ?? undefined,
     category: data.category ?? undefined,
@@ -177,19 +157,13 @@ function toPollResults(data: any): PollResults & { ranked_choice_rounds?: ApiRan
     yes_count: data.yes_count ?? undefined,
     no_count: data.no_count ?? undefined,
     abstain_count: data.abstain_count ?? undefined,
-    total_yes_votes: data.total_yes_votes ?? undefined,
     total_votes: data.total_votes,
     yes_percentage: data.yes_percentage ?? undefined,
     no_percentage: data.no_percentage ?? undefined,
     winner: data.winner ?? undefined,
-    min_participants: data.min_participants ?? undefined,
-    max_participants: data.max_participants ?? undefined,
     suggestion_counts: data.suggestion_counts ?? undefined,
     ranked_choice_rounds: data.ranked_choice_rounds ?? undefined,
     ranked_choice_winner: data.ranked_choice_winner ?? undefined,
-    time_slot_rounds: data.time_slot_rounds ?? undefined,
-    participating_vote_ids: data.participating_vote_ids ?? undefined,
-    participating_voter_names: data.participating_voter_names ?? undefined,
     availability_counts: data.availability_counts ?? undefined,
     max_availability: data.max_availability ?? undefined,
     included_slots: data.included_slots ?? undefined,
@@ -220,22 +194,10 @@ export async function apiCreatePoll(params: {
   creator_name?: string;
   follow_up_to?: string;
   fork_of?: string;
-  min_participants?: number;
-  max_participants?: number;
   suggestion_deadline?: string;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;
-  location_mode?: string;
-  location_value?: string;
-  location_options?: string[];
-  time_mode?: string;
-  time_value?: string;
-  time_options?: string[];
-  location_suggestions_deadline_minutes?: number;
-  location_preferences_deadline_minutes?: number;
-  time_suggestions_deadline_minutes?: number;
-  time_preferences_deadline_minutes?: number;
   day_time_windows?: any[];
   duration_window?: any;
   category?: string;
@@ -255,11 +217,6 @@ export async function apiCreatePoll(params: {
     body: JSON.stringify(params),
   });
   return toPoll(data);
-}
-
-export async function apiGetSubPolls(pollId: string): Promise<Poll[]> {
-  const data: any[] = await apiFetch(`/${encodeURIComponent(pollId)}/sub-polls`);
-  return data.map(toPoll);
 }
 
 /**
@@ -314,9 +271,6 @@ export async function apiGetPollById(pollId: string): Promise<Poll> {
 // a 1-sub-poll multipoll renders identically to today's single poll. See
 // docs/multipoll-phasing.md.
 
-// Participation polls are excluded from the multipoll system — see
-// CLAUDE.md → "Participation Polls (Deprecated)" and the server validator
-// in server/routers/multipolls.py.
 export type SubPollType = 'yes_no' | 'ranked_choice' | 'time';
 
 export interface CreateSubPollParams {
@@ -492,8 +446,6 @@ export async function apiSubmitVote(pollId: string, params: {
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
   voter_name?: string | null;
-  min_participants?: number | null;
-  max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
   options_metadata?: OptionsMetadata | null;
@@ -531,8 +483,6 @@ export interface MultipollVoteItem {
   suggestions?: string[] | null;
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
-  min_participants?: number | null;
-  max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
   options_metadata?: OptionsMetadata | null;
@@ -563,8 +513,6 @@ export async function apiEditVote(pollId: string, voteId: string, params: {
   is_abstain?: boolean;
   is_ranking_abstain?: boolean;
   voter_name?: string | null;
-  min_participants?: number | null;
-  max_participants?: number | null;
   voter_day_time_windows?: any[] | null;
   voter_duration?: any | null;
   liked_slots?: string[] | null;
@@ -587,19 +535,6 @@ export async function apiGetPollResults(pollId: string): Promise<Results> {
     const results = toPollResults(data);
     cachePollResults(pollId, results);
     return results;
-  });
-}
-
-// --- Participants ---
-
-type Participant = { vote_id: string; voter_name: string | null };
-const participantsInFlight = new Map<string, Promise<Participant[]>>();
-
-export async function apiGetParticipants(pollId: string): Promise<Participant[]> {
-  return coalesced(participantsInFlight, pollId, getCachedParticipants(pollId), async () => {
-    const participants: Participant[] = await apiFetch(`/${encodeURIComponent(pollId)}/participants`);
-    cacheParticipants(pollId, participants);
-    return participants;
   });
 }
 

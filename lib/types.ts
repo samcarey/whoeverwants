@@ -22,7 +22,7 @@ export type OptionsMetadata = Record<string, OptionMetadataEntry>;
 export interface Poll {
   id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'participation' | 'time';
+  poll_type: 'yes_no' | 'ranked_choice' | 'time';
   options?: string[];
   response_deadline?: string;
   created_at: string;
@@ -33,30 +33,12 @@ export interface Poll {
   close_reason?: 'manual' | 'deadline' | 'max_capacity' | 'uncontested';
   follow_up_to?: string;
   fork_of?: string;
-  min_participants?: number;
-  max_participants?: number;
   short_id?: string;
   suggestion_deadline?: string | null;
   suggestion_deadline_minutes?: number | null;
   allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;
-  // Location/time fields for participation polls
-  location_mode?: 'set' | 'preferences' | 'suggestions' | null;
-  location_value?: string | null;
-  location_options?: string[] | null;
-  resolved_location?: string | null;
-  time_mode?: 'set' | 'preferences' | 'suggestions' | null;
-  time_value?: string | null;
-  time_options?: string[] | null;
-  resolved_time?: string | null;
-  is_sub_poll?: boolean;
-  sub_poll_role?: string | null;
-  parent_participation_poll_id?: string | null;
-  location_suggestions_deadline_minutes?: number | null;
-  location_preferences_deadline_minutes?: number | null;
-  time_suggestions_deadline_minutes?: number | null;
-  time_preferences_deadline_minutes?: number | null;
   day_time_windows?: DayTimeWindow[] | null;
   duration_window?: DurationWindow | null;
   category?: PollCategory | null;
@@ -71,8 +53,9 @@ export interface Poll {
   min_availability_percent?: number | null;
   thread_title?: string | null;
   // Phase 2.5: multipoll wrapper this sub-poll belongs to (NULL for
-  // participation polls and pre-Phase-4 legacy polls). Drives sibling-grouping
-  // in threadUtils so all sub-polls of a multipoll appear together in a thread.
+  // pre-Phase-4 legacy polls that haven't been wrapped). Drives
+  // sibling-grouping in threadUtils so all sub-polls of a multipoll appear
+  // together in a thread.
   multipoll_id?: string | null;
   sub_poll_index?: number | null;
   results?: PollResults | null;
@@ -112,27 +95,19 @@ export interface SuggestionCount {
 export interface PollResults {
   poll_id: string;
   title: string;
-  poll_type: 'yes_no' | 'ranked_choice' | 'participation' | 'time';
+  poll_type: 'yes_no' | 'ranked_choice' | 'time';
   created_at: string;
   response_deadline?: string;
   options?: string[];
   yes_count?: number;
   no_count?: number;
   abstain_count?: number;
-  total_yes_votes?: number;
   total_votes: number;
   yes_percentage?: number;
   no_percentage?: number;
   winner?: string;
   total_rounds?: number;
-  min_participants?: number;
-  max_participants?: number;
-  participants_in_count?: number;
-  is_happening?: boolean;
   suggestion_counts?: SuggestionCount[];
-  time_slot_rounds?: TimeSlotResult[];
-  participating_vote_ids?: string[];
-  participating_voter_names?: string[];
   // Time poll fields
   availability_counts?: Record<string, number>;
   max_availability?: number;
@@ -141,18 +116,6 @@ export interface PollResults {
   dislike_counts?: Record<string, number>;
   ranked_choice_rounds?: RankedChoiceRound[];
   ranked_choice_winner?: string;
-}
-
-export interface TimeSlotResult {
-  round_number: number;
-  slot_date: string;
-  slot_start_time: string;
-  slot_end_time: string;
-  duration_hours: number;
-  participant_count: number;
-  participant_vote_ids: string[];
-  participant_names: string[];
-  is_winner: boolean;
 }
 
 export interface RankedChoiceRound {
@@ -187,8 +150,8 @@ export interface Multipoll {
   created_at: string;
   updated_at: string;
   sub_polls: Poll[];
-  // Multipoll-level participation aggregates (Phase 3.2). Use these instead
-  // of iterating sub_polls — see CLAUDE.md → "Addressability paradigm".
+  // Multipoll-level voter aggregates (Phase 3.2). Use these instead of
+  // iterating sub_polls — see CLAUDE.md → "Addressability paradigm".
   voter_names: string[];
   anonymous_count: number;
 }
