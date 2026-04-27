@@ -38,24 +38,21 @@ router = APIRouter(prefix="/api/polls", tags=["polls"])
 def _check_auto_close(conn, poll_id: str) -> None:
     """Auto-close a poll based on auto_close_after (respondent count)."""
     poll = conn.execute(
-        """SELECT id, poll_type, is_closed, auto_close_after,
-                  suggestion_deadline, allow_pre_ranking, options
-           FROM polls WHERE id = %(poll_id)s""",
+        "SELECT is_closed, auto_close_after FROM polls WHERE id = %(poll_id)s",
         {"poll_id": poll_id},
     ).fetchone()
-    if not poll or poll["is_closed"]:
+    if not poll or poll["is_closed"] or poll["auto_close_after"] is None:
         return
 
-    if poll["auto_close_after"] is not None:
-        respondent_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
+    respondent_count = conn.execute(
+        "SELECT COUNT(*) as cnt FROM votes WHERE poll_id = %(poll_id)s",
+        {"poll_id": poll_id},
+    ).fetchone()["cnt"]
+    if respondent_count >= poll["auto_close_after"]:
+        conn.execute(
+            "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
             {"poll_id": poll_id},
-        ).fetchone()["cnt"]
-        if respondent_count >= poll["auto_close_after"]:
-            conn.execute(
-                "UPDATE polls SET is_closed = true, close_reason = 'max_capacity' WHERE id = %(poll_id)s",
-                {"poll_id": poll_id},
-            )
+        )
 
 
 def _finalize_suggestion_options(conn, poll_id: str, now: datetime) -> None:
