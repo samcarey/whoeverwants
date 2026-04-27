@@ -18,7 +18,7 @@ from models import (
     RelatedQuestionsResponse,
     VoteResponse,
 )
-from algorithms.related_questions import QuestionRelation, get_all_related_question_ids
+from algorithms.related_polls import QuestionRelation, get_all_related_question_ids
 from services.questions import (
     _SELECT_QUESTION_FULL,
     _compute_results,
