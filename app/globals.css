@@ -193,6 +193,19 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
+/* Make the old/new images resize WITH the group as it animates from the
+   draft's frame to the live card's frame. Default behavior keeps each
+   image at its captured intrinsic size (so the group resizes but the
+   visible card content does not). `width/height: 100%` + `object-fit:
+   fill` stretches the snapshot to fill the group at every frame, so the
+   visible card actually shrinks/grows in lockstep with the morph. */
+::view-transition-old(draft-poll-card),
+::view-transition-new(draft-poll-card) {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
 
 .responsive-scaling-container {
   transform-origin: top left;
