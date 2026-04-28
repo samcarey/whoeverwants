@@ -4,11 +4,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
 import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
-import { relativeTime } from "@/lib/questionListUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
-import ClientOnly from "@/components/ClientOnly";
-import RespondentCircles from "@/components/RespondentCircles";
-import SimpleCountdown from "@/components/SimpleCountdown";
+import ThreadListItem from "@/components/ThreadListItem";
 import { usePrefetch } from "@/lib/prefetch";
 import { navigateWithTransition } from "@/lib/viewTransitions";
 import { apiGetVotes, apiGetQuestionResults } from "@/lib/api";
@@ -125,66 +122,25 @@ export default function ThreadList({ polls }: ThreadListProps) {
         };
 
         return (
-          <div
+          <ThreadListItem
             key={thread.rootQuestionId}
-            data-thread-root-id={thread.rootQuestionId}
-            className={`border-b ${index === 0 ? 'border-t' : ''} border-gray-200 dark:border-gray-700 mx-1.5`}
-          >
-            <div
-              onClick={goToThread}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              onTouchMove={handleTouchMove}
-              className={`flex gap-3 pl-2 pr-3 py-3 ${pressedThreadId === thread.rootQuestionId ? 'bg-blue-50 dark:bg-blue-900/30' : ''} hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-blue-50 dark:active:bg-blue-900/30 transition-colors cursor-pointer select-none relative`}
-            >
-              {/* Respondent circles */}
-              <RespondentCircles
-                names={thread.participantNames}
-                anonymousCount={thread.anonymousRespondentCount}
-              />
-
-              {/* Text content */}
-              <div className="flex-1 min-w-0">
-                {/* Row 1: Thread title + unvoted badge */}
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className={`font-semibold text-base truncate flex-1 ${hasUnvoted ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
-                    {thread.title}
-                  </h3>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {hasUnvoted && (
-                      <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold">
-                        {thread.unvotedCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Row 2: Latest question title (preview) */}
-                <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-0.5">
-                  {latestQuestion.title}
-                </p>
-
-                {/* Row 3: Metadata row */}
-                <div className="flex items-center justify-between mt-1">
-                  <div className="text-xs text-gray-400 dark:text-gray-500">
-                    <ClientOnly fallback={null}>
-                      <>
-                        {thread.questions.length > 1 && <>{thread.questions.length} questions &middot; </>}
-                        {relativeTime(latestQuestion.created_at)}
-                      </>
-                    </ClientOnly>
-                  </div>
-                  {thread.soonestUnvotedDeadline && (
-                    <div className="text-xs">
-                      <ClientOnly fallback={null}>
-                        <SimpleCountdown deadline={thread.soonestUnvotedDeadline} colorClass="text-green-600 dark:text-green-400" hideSecondsInDays />
-                      </ClientOnly>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+            threadRootId={thread.rootQuestionId}
+            title={thread.title}
+            latestQuestionTitle={latestQuestion.title}
+            participantNames={thread.participantNames}
+            anonymousRespondentCount={thread.anonymousRespondentCount}
+            questionCount={thread.questions.length}
+            createdAt={latestQuestion.created_at}
+            soonestUnvotedDeadline={thread.soonestUnvotedDeadline}
+            unvotedCount={thread.unvotedCount}
+            hasUnvoted={hasUnvoted}
+            pressed={pressedThreadId === thread.rootQuestionId}
+            isFirst={index === 0}
+            onClick={goToThread}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onTouchMove={handleTouchMove}
+          />
         );
       })}
     </div>

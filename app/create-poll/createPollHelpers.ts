@@ -169,6 +169,98 @@ export function summarizeDraft(d: QuestionDraft): string {
   return `${filled[0]} or ${filled.length - 1} more`;
 }
 
+/** Category labels used by the auto-title generator. Mirrors
+ *  server/algorithms/poll_title.py so the FE preview matches whatever the
+ *  server will actually pick on submit (when the user hasn't typed an
+ *  explicit title). */
+const _CATEGORY_LABELS: Record<string, string> = {
+  yes_no: 'Yes/No',
+  restaurant: 'Restaurant',
+  location: 'Place',
+  time: 'Time',
+  movie: 'Movie',
+  video_game: 'Video Game',
+  videogame: 'Video Game',
+  petname: 'Pet Name',
+  custom: 'Custom',
+};
+
+function _labelForCategory(category: string): string {
+  if (!category) return '';
+  const key = category.trim().toLowerCase();
+  if (key in _CATEGORY_LABELS) return _CATEGORY_LABELS[key];
+  return category
+    .trim()
+    .split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function _joinCategories(labels: string[]): string {
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+}
+
+function _singleQuestionDefaultTitle(category: string): string {
+  const key = (category || '').trim().toLowerCase();
+  if (key === 'yes_no') return 'Yes/No?';
+  if (key === 'time') return 'Time?';
+  const label = _labelForCategory(category);
+  return label ? `${label}?` : 'Question?';
+}
+
+/** Pick the category string used in title generation for a draft. yes_no /
+ *  time questions ignore the user's category field. */
+function _draftCategory(d: QuestionDraft): string {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'yes_no') return 'yes_no';
+  if (dbType === 'time') return 'time';
+  return d.category || 'custom';
+}
+
+/**
+ * Preview values for the in-progress "Draft Poll" card in the create-poll
+ * panel. Drives a `ThreadListItem` rendered in draft mode so the card
+ * looks like the live poll will when submitted (just with a DRAFT pill +
+ * dashed border that morph away on submit).
+ */
+export function draftPollPreview(
+  drafts: QuestionDraft[],
+  pollContext: string,
+): { title: string; latestQuestionTitle: string; questionCount: number } {
+  const trimmedContext = pollContext.trim();
+  if (drafts.length === 0) {
+    return { title: trimmedContext || 'New Poll', latestQuestionTitle: '', questionCount: 0 };
+  }
+
+  // Wrapper title: when exactly 1 draft AND the user typed an explicit
+  // title (yes_no with !isAutoTitle), use it — that's what the server
+  // will use too. Otherwise mirror generate_poll_title().
+  let title: string;
+  if (drafts.length === 1 && !drafts[0].isAutoTitle && drafts[0].title.trim()) {
+    title = drafts[0].title.trim();
+  } else if (drafts.length === 1) {
+    if (trimmedContext) title = `${_labelForCategory(_draftCategory(drafts[0]))} for ${trimmedContext}`;
+    else title = _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
+  } else {
+    const joined = _joinCategories(drafts.map(d => _labelForCategory(_draftCategory(d))));
+    title = trimmedContext ? `${joined} for ${trimmedContext}` : joined;
+  }
+
+  // Preview line — same role as `latestQuestion.title` on a live thread
+  // card. Use the most recently committed draft's summary so the user sees
+  // their last edit reflected.
+  const latest = drafts[drafts.length - 1];
+  const summary = summarizeDraft(latest);
+  const { label } = draftCardLabels(latest);
+  const latestQuestionTitle = drafts.length === 1
+    ? summary
+    : `${label}: ${summary}`;
+
+  return { title, latestQuestionTitle, questionCount: drafts.length };
+}
+
 /** Icon + label for a draft card. Mirrors the BUILT_IN_TYPES table. */
 export function draftCardLabels(d: QuestionDraft): { icon: string; label: string } {
   const dbType = draftDbQuestionType(d);

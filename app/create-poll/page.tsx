@@ -46,7 +46,9 @@ import {
   anyDraftUsesPrephase,
   summarizeDraft,
   draftCardLabels,
+  draftPollPreview,
 } from "./createPollHelpers";
+import ThreadListItem from "@/components/ThreadListItem";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -465,6 +467,15 @@ export function CreateQuestionContent() {
   // (suggestion mode or time question). Drives whether the suggestion
   // cutoff field is rendered in the bottom modal.
   const pollHasPrephase = anyDraftUsesPrephase(drafts);
+
+  // Title/preview/count for the draft poll card. Re-runs as drafts or the
+  // poll-level details change so the user sees the preview update in real
+  // time. Mirrors generate_poll_title() so the morph lands on the same
+  // title the server will assign on submit.
+  const draftPreview = useMemo(
+    () => draftPollPreview(drafts, details),
+    [drafts, details],
+  );
 
   // Validates the whole poll at submit time: drafts exist + poll-level
   // cutoffs are sane. Per-question fields were already validated when
@@ -1488,41 +1499,43 @@ export function CreateQuestionContent() {
       )}
 
       {/* Draft poll card — portal-rendered into the page's poll list at the
-          bottom (`#draft-poll-portal`). The card sits inside the page's
-          scrollable area, NOT inside the bottom modal, so the user sees their
-          in-progress poll alongside their existing polls. */}
+          bottom (`#draft-poll-portal`). Uses the SAME ThreadListItem that
+          live polls use, with a draftMode flag for the dashed-blue chrome
+          + DRAFT pill. Below it, a collapsible "edit drafts" section lets
+          the user pencil-edit each committed question. On submit the
+          draftMode chrome releases (border morphs to solid, DRAFT pill
+          collapses out, edit rows fold up) so the card lands on its
+          final live appearance over a single CSS transition — no swap. */}
       {draftPollPortal && drafts.length > 0 && createPortal(
-        <div className="px-4 mt-3 mb-4">
+        <div data-draft-poll-card className="pt-2">
+          <ThreadListItem
+            title={draftPreview.title}
+            latestQuestionTitle={draftPreview.latestQuestionTitle}
+            participantNames={creatorName.trim() ? [creatorName.trim()] : []}
+            anonymousRespondentCount={creatorName.trim() ? 0 : 1}
+            questionCount={draftPreview.questionCount}
+            soonestUnvotedDeadline={isClient ? calculateDeadline() : null}
+            draftMode
+            finalizing={isFinalizing}
+            metadataExtra={isFinalizing ? 'just now' : 'ready to submit'}
+          />
+          {/* Collapsible edit-drafts section — the slight modification per spec
+              ("don't have suggestion text input but do have the same general
+              structure"). Folds up via opacity + max-height when finalizing. */}
           <div
-            className={`rounded-2xl border-2 p-3 transition-[background-color,border-color] duration-500 ease-out ${
+            className={`mx-1.5 px-3 overflow-hidden transition-[max-height,opacity,padding,margin] duration-500 ease-out ${
               isFinalizing
-                ? 'border-solid border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-md'
-                : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
+                ? 'max-h-0 opacity-0 py-0 mb-0'
+                : 'max-h-96 opacity-100 py-2 mb-3'
             }`}
           >
-            <div
-              className={`flex items-center gap-2 mb-2 transition-[opacity,max-height,margin] duration-300 ease-out overflow-hidden ${
-                isFinalizing ? 'opacity-0 max-h-0 mb-0' : 'opacity-100 max-h-8'
-              }`}
-            >
-              <span className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-                Draft Poll
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                ({drafts.length} {drafts.length === 1 ? 'question' : 'questions'})
-              </span>
-            </div>
             <ul className="space-y-1.5">
               {drafts.map((d, i) => {
                 const { icon, label } = draftCardLabels(d);
                 return (
                   <li
                     key={i}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md border transition-colors duration-500 ease-out ${
-                      isFinalizing
-                        ? 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'
-                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-                    }`}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
                   >
                     <span className="text-lg leading-none" aria-hidden>{icon}</span>
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
