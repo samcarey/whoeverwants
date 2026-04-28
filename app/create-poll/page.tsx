@@ -660,10 +660,45 @@ export function CreateQuestionContent() {
   // Portal targets in the modal header (rendered by template.tsx)
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
   const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
+  // Portal target for the in-progress draft poll card, rendered in the page
+  // body by the home / thread / empty-thread routes. Re-queried via
+  // MutationObserver: page navigations swap the portal target node, so a
+  // single one-shot useEffect would leave us pointing at a detached element.
+  const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setSubmitPortal(document.getElementById('create-question-submit-portal'));
     setTitlePortal(document.getElementById('create-question-title-portal'));
+    const updateDraftPollPortal = () => {
+      const el = document.getElementById('draft-poll-portal');
+      setDraftPollPortal(prev => (prev === el ? prev : el));
+    };
+    updateDraftPollPortal();
+    const observer = new MutationObserver(updateDraftPollPortal);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
+
+  // Broadcast top-modal open/closed state so template.tsx can hide the
+  // floating What/When/Where bubble bar while the question form is open
+  // (per spec: either the buttons or the form are visible, never both).
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('questionFormStateChange', { detail: { open: topModalOpen } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('questionFormStateChange', { detail: { open: false } }));
+    };
+  }, [topModalOpen]);
+
+  // Listen for the floating bubble bar's runtime "open form" requests when
+  // the panel is already open (so tapping a bubble pops a fresh top form
+  // without re-pushing URL state).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { mode?: 'question' | 'time'; category?: string } | undefined;
+      handleOpenNewQuestion(detail ?? {});
+    };
+    window.addEventListener('openQuestionForm', handler);
+    return () => window.removeEventListener('openQuestionForm', handler);
+  }, [handleOpenNewQuestion]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -1437,79 +1472,54 @@ export function CreateQuestionContent() {
         </div>
       )}
 
-      {/* Drafts list — every committed question. Pencil icon edits; X-during-
-          edit (in the top modal) discards. The list mounts even when empty so
-          the layout below stays stable. */}
-      {drafts.length > 0 && (
-        <ul className="mb-4 space-y-1.5">
-          {drafts.map((d, i) => {
-            const { icon, label } = draftCardLabels(d);
-            return (
-              <li
-                key={i}
-                className="flex items-center gap-2 px-3 py-2 rounded-md bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-              >
-                <span className="text-lg leading-none" aria-hidden>{icon}</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
-                <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
-                  {summarizeDraft(d)}
-                </span>
-                {!topModalOpen && (
-                  <button
-                    type="button"
-                    onClick={() => handleEditDraft(i)}
-                    disabled={isLoading}
-                    className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
-                    aria-label={`Edit ${label} section`}
+      {/* Draft poll card — portal-rendered into the page's poll list at the
+          bottom (`#draft-poll-portal`). The card sits inside the page's
+          scrollable area, NOT inside the bottom modal, so the user sees their
+          in-progress poll alongside their existing polls. */}
+      {draftPollPortal && drafts.length > 0 && createPortal(
+        <div className="px-4 mt-3 mb-4">
+          <div className="rounded-2xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                Draft Poll
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                ({drafts.length} {drafts.length === 1 ? 'question' : 'questions'})
+              </span>
+            </div>
+            <ul className="space-y-1.5">
+              {drafts.map((d, i) => {
+                const { icon, label } = draftCardLabels(d);
+                return (
+                  <li
+                    key={i}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
                   >
-                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
-                    </svg>
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {/* What/When/Where buttons — visible in the bottom modal whenever the
-          top modal is closed. Tapping any of them opens the top modal with
-          the appropriate preselection. Mirrors the floating bubble bar's
-          color theme so the connection is obvious. */}
-      {!topModalOpen && (
-        <div className="mb-4 flex items-center justify-center gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={() => handleOpenNewQuestion({})}
-            disabled={isLoading}
-            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-amber-200 dark:bg-amber-300 active:bg-amber-300 text-gray-800 font-medium disabled:opacity-50"
-            aria-label="Add new question"
-          >
-            <span className="text-[1.05rem]">+</span>
-            <span className="text-[0.95rem]">what</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenNewQuestion({ category: 'restaurant' })}
-            disabled={isLoading}
-            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-rose-200 dark:bg-rose-300 active:bg-rose-300 text-gray-800 font-medium disabled:opacity-50"
-            aria-label="Add new place question"
-          >
-            <span className="text-[1.05rem]">+</span>
-            <span className="text-[0.95rem]">where</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenNewQuestion({ mode: 'time' })}
-            disabled={isLoading}
-            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-sky-200 dark:bg-sky-300 active:bg-sky-300 text-gray-800 font-medium disabled:opacity-50"
-            aria-label="Add new time question"
-          >
-            <span className="text-[1.05rem]">+</span>
-            <span className="text-[0.95rem]">when</span>
-          </button>
-        </div>
+                    <span className="text-lg leading-none" aria-hidden>{icon}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
+                      {summarizeDraft(d)}
+                    </span>
+                    {!topModalOpen && (
+                      <button
+                        type="button"
+                        onClick={() => handleEditDraft(i)}
+                        disabled={isLoading}
+                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                        aria-label={`Edit ${label} section`}
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
+                        </svg>
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>,
+        draftPollPortal
       )}
 
       {/* Poll-level fields: voting cutoff, suggestion/availability cutoff

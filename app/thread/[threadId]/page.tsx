@@ -1414,6 +1414,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               </div>
             );
           })}
+
+        {/* Render target for the in-progress draft poll card while the
+            create-poll panel is open. Filled by CreateQuestionContent. */}
+        <div id="draft-poll-portal" />
       </div>
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when
@@ -1643,6 +1647,9 @@ function EmptyThreadView() {
         <p className="text-base text-gray-700 dark:text-gray-300">
           Create a question and then share the link!
         </p>
+        {/* Render target for the in-progress draft poll card while the
+            create-poll panel is open. Filled by CreateQuestionContent. */}
+        <div id="draft-poll-portal" className="mt-4" />
       </div>
     </>
   );
