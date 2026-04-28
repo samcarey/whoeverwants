@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "rea
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
-import Link from "next/link";
 import {
   apiCreatePoll,
   apiFindDuplicateQuestion,
@@ -32,7 +31,6 @@ import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import {
   pollLookup,
-  questionDataToPollRequest,
   shortenOption,
   shortenLocation,
   validateRankedChoiceOptions,
@@ -40,6 +38,14 @@ import {
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
+  type QuestionDraft,
+  emptyDraft,
+  draftDbQuestionType,
+  draftIsSuggestionMode,
+  draftToQuestionParams,
+  anyDraftUsesPrephase,
+  summarizeDraft,
+  draftCardLabels,
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
 
@@ -117,11 +123,17 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Phase 2.4: previously-committed questions awaiting submit. The current
-  // form represents the *last* question; on submit we prepend these to the
-  // poll request. MVP only stages yes_no/ranked_choice (server enforces
-  // ≤1 time question).
-  const [stagedQuestions, setStagedQuestions] = useState<CreateQuestionParams[]>([]);
+  // Drafts list — every question committed via the top-modal "check" button
+  // becomes a draft. The poll is built from this list at submit time.
+  // Draft 0 is the first section displayed in the bottom modal's compact list.
+  const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
+  // Top modal open + which draft index it's editing.
+  // editingDraftIndex === null when adding a new question.
+  const [topModalOpen, setTopModalOpen] = useState(false);
+  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
+  // Bookkeeping: the draft that was popped out for editing, so X-during-edit
+  // discards it (per spec). Restored on check.
+  const [originalEditingDraft, setOriginalEditingDraft] = useState<QuestionDraft | null>(null);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -333,7 +345,10 @@ export function CreateQuestionContent() {
     return `${m} month${m !== 1 ? 's' : ''}`;
   };
 
-  // Save form state to localStorage
+  // Save form state to localStorage. The per-question fields (title, options,
+  // category, etc.) double-duty as both the in-progress top-modal form and
+  // the source-of-truth for new draft creation; we still persist them so a
+  // mid-edit refresh is recoverable. `drafts` is the committed list.
   const saveFormState = useCallback(() => {
     if (typeof window !== 'undefined') {
       const formState = {
@@ -354,11 +369,11 @@ export function CreateQuestionContent() {
         dayTimeWindows,
         minResponses,
         showPreliminaryResults,
-        stagedQuestions,
+        drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, stagedQuestions]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -405,7 +420,7 @@ export function CreateQuestionContent() {
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
-          if (Array.isArray(formState.stagedQuestions)) setStagedQuestions(formState.stagedQuestions);
+          if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
         } catch (error) {
@@ -441,45 +456,76 @@ export function CreateQuestionContent() {
 
 
 
-  // Validation for question options with specific error messages
+  // Whether any committed draft uses the poll-level prephase cutoff
+  // (suggestion mode or time question). Drives whether the suggestion
+  // cutoff field is rendered in the bottom modal.
+  const pollHasPrephase = anyDraftUsesPrephase(drafts);
+
+  // Validates the whole poll at submit time: drafts exist + poll-level
+  // cutoffs are sane. Per-question fields were already validated when
+  // each draft was checked-in.
   const getValidationError = (): string | null => {
-    // Check title first
-    if (!title.trim()) {
-      return isAutoTitle ? 'Please input "Category", "For", or "Options".' : "Please enter a title.";
+    if (drafts.length === 0) {
+      return "Add at least one question.";
     }
-    
-    if (title.length > 100) {
-      return "Title must be 100 characters or less.";
-    }
-
-    if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
-      return "Links aren't allowed in the title. Use the Details field for links.";
-    }
-
-    // Check custom deadline if selected
     if (deadlineOption === "custom") {
       if (!customDate || !customTime) {
         return "Please select both a custom deadline date and time.";
       }
-      
       const customDateTime = new Date(`${customDate}T${customTime}`);
       if (customDateTime <= new Date()) {
         return "Custom deadline must be in the future.";
       }
     }
-
-    const dbQuestionType = getQuestionType();
-
-    if (dbQuestionType === 'ranked_choice') {
-      const optErr = validateRankedChoiceOptions(options, category);
-      if (optErr) return optErr;
-    }
-
-    // Time question: every selected day needs a time slot
-    if (dbQuestionType === 'time') {
-      if (dayTimeWindows.length === 0) {
-        return "Please select at least one day.";
+    if (pollHasPrephase) {
+      if (suggestionCutoff === 'custom') {
+        if (!customSuggestionDate || !customSuggestionTime) {
+          return "Please select both a suggestion cutoff date and time.";
+        }
+        const sugDt = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
+        if (sugDt <= new Date()) {
+          return "Suggestion cutoff must be in the future.";
+        }
+        const votingDeadline = calculateDeadline();
+        if (votingDeadline) {
+          const votingDt = new Date(votingDeadline);
+          if (sugDt >= votingDt) {
+            return "Suggestion cutoff must be before the voting cutoff.";
+          }
+        }
+      } else {
+        const cutoffMin = getSuggestionCutoffMinutes();
+        const votingMin = getVotingDeadlineMinutes();
+        if (cutoffMin != null && votingMin != null && cutoffMin >= votingMin) {
+          return "Suggestion cutoff must be before the voting cutoff.";
+        }
       }
+    }
+    return null;
+  };
+
+  const isFormValid = (): boolean => {
+    return getValidationError() === null;
+  };
+
+  // Validates only the per-question fields the top modal can edit.
+  // Used to gate the "check" button. Different from getValidationError
+  // (which validates poll-level fields too).
+  const getCurrentQuestionFormError = (): string | null => {
+    const dbQuestionType = getQuestionType();
+    if (dbQuestionType === 'yes_no') {
+      if (!title.trim()) return "Please enter a yes/no question.";
+      if (title.length > 100) return "Title must be 100 characters or less.";
+      if (/https?:\/\/\S+|www\.\S+/i.test(title)) {
+        return "Links aren't allowed in the title. Use the Notes field for links.";
+      }
+      return null;
+    }
+    if (dbQuestionType === 'ranked_choice') {
+      return validateRankedChoiceOptions(options, category);
+    }
+    if (dbQuestionType === 'time') {
+      if (dayTimeWindows.length === 0) return "Please select at least one day.";
       const emptyDays = dayTimeWindows.filter(dtw => dtw.windows.length === 0);
       if (emptyDays.length > 0) {
         return "Every selected day must have at least one time slot. Add time slots or remove empty days.";
@@ -496,129 +542,120 @@ export function CreateQuestionContent() {
         }
       }
     }
-
-    // Suggestion cutoff validation
-    if (isSuggestionMode) {
-      if (suggestionCutoff === 'custom') {
-        if (!customSuggestionDate || !customSuggestionTime) {
-          return "Please select both a suggestion cutoff date and time.";
-        }
-        const sugDt = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
-        if (sugDt <= new Date()) {
-          return "Suggestion cutoff must be in the future.";
-        }
-        // Check suggestion cutoff is before voting cutoff
-        const votingDeadline = calculateDeadline();
-        if (votingDeadline) {
-          const votingDt = new Date(votingDeadline);
-          if (sugDt >= votingDt) {
-            return "Suggestion cutoff must be before the voting cutoff.";
-          }
-        }
-      } else {
-        // For fractional/absolute: check computed minutes vs voting deadline
-        const cutoffMin = getSuggestionCutoffMinutes();
-        const votingMin = getVotingDeadlineMinutes();
-        if (cutoffMin != null && votingMin != null && cutoffMin >= votingMin) {
-          return "Suggestion cutoff must be before the voting cutoff.";
-        }
-      }
-    }
-
     return null;
   };
 
-  const isFormValid = (): boolean => {
-    return getValidationError() === null;
-  };
+  // Read the current per-question form state into a QuestionDraft snapshot.
+  const readCurrentDraft = useCallback((): QuestionDraft => ({
+    questionType,
+    title,
+    isAutoTitle,
+    category,
+    forField,
+    options: [...options],
+    optionsMetadata: { ...optionsMetadata },
+    refLatitude,
+    refLongitude,
+    refLocationLabel,
+    searchRadius,
+    minResponses,
+    showPreliminaryResults,
+    allowPreRanking,
+    durationMinValue,
+    durationMaxValue,
+    durationMinEnabled,
+    durationMaxEnabled,
+    dayTimeWindows: [...dayTimeWindows],
+    minimumParticipation,
+  }), [questionType, title, isAutoTitle, category, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, minResponses, showPreliminaryResults, allowPreRanking, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
 
-  // Subset of getValidationError that only checks per-question fields. Skips
-  // title (poll-level), deadline (poll-level), and time
-  // shapes (time can't be staged in MVP).
-  const getQuestionValidationError = (): string | null => {
-    const dbQuestionType = getQuestionType();
-    if (dbQuestionType !== 'yes_no' && dbQuestionType !== 'ranked_choice') {
-      return "Only yes/no and preference questions can be added as additional sections.";
+  // Push a draft into the per-question form state for editing.
+  const applyDraftToState = useCallback((d: QuestionDraft) => {
+    // questionType lives on the URL `mode` param; sync it through that.
+    if (d.questionType === 'time') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('mode', 'time');
+      router.replace(url.pathname + url.search);
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('mode');
+      router.replace(url.pathname + url.search);
     }
-    if (dbQuestionType === 'ranked_choice') {
-      return validateRankedChoiceOptions(options, category);
-    }
-    return null;
-  };
+    setTitle(d.title);
+    setIsAutoTitle(d.isAutoTitle);
+    setCategory(d.category);
+    setForField(d.forField);
+    setOptions(d.options.length ? [...d.options] : ['']);
+    setOptionsMetadata({ ...d.optionsMetadata });
+    setRefLatitude(d.refLatitude);
+    setRefLongitude(d.refLongitude);
+    setRefLocationLabel(d.refLocationLabel);
+    setSearchRadius(d.searchRadius);
+    setMinResponses(d.minResponses);
+    setShowPreliminaryResults(d.showPreliminaryResults);
+    setAllowPreRanking(d.allowPreRanking);
+    setDurationMinValue(d.durationMinValue);
+    setDurationMaxValue(d.durationMaxValue);
+    setDurationMinEnabled(d.durationMinEnabled);
+    setDurationMaxEnabled(d.durationMaxEnabled);
+    setDayTimeWindows([...d.dayTimeWindows]);
+    setMinimumParticipation(d.minimumParticipation);
+  }, [router]);
 
-  // Build a CreateQuestionParams from the current per-question form state.
-  // Mirrors the per-question branch of questionDataToPollRequest. Caller
-  // must run getQuestionValidationError() first.
-  const buildQuestionFromState = (): CreateQuestionParams => {
-    const dbQuestionType = getQuestionType() as 'yes_no' | 'ranked_choice';
-    const filledOptions = options.filter(opt => opt.trim() !== '');
-    const sub: CreateQuestionParams = {
-      question_type: dbQuestionType,
-      is_auto_title: isAutoTitle,
-    };
-    if (dbQuestionType === 'ranked_choice' && category !== 'custom') {
-      sub.category = category;
-    }
-    if (dbQuestionType === 'ranked_choice' && filledOptions.length > 0) {
-      sub.options = filledOptions;
-    }
-    if (Object.keys(optionsMetadata).length > 0) {
-      sub.options_metadata = optionsMetadata;
-    }
-    if (refLatitude !== undefined && refLongitude !== undefined) {
-      sub.reference_latitude = refLatitude;
-      sub.reference_longitude = refLongitude;
-      sub.reference_location_label = refLocationLabel;
-    }
-    if (dbQuestionType === 'ranked_choice') {
-      sub.min_responses = minResponses;
-      sub.show_preliminary_results = showPreliminaryResults;
-    }
-    // Suggestion mode (ranked_choice with no pre-filled options): defer the
-    // prephase deadline to the poll level; question-level minutes still
-    // travels along since the legacy question columns are duplicated server-side.
-    if (dbQuestionType === 'ranked_choice' && filledOptions.length === 0) {
-      const cutoffMinutes = getSuggestionCutoffMinutes();
-      sub.suggestion_deadline_minutes =
-        cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
-      sub.allow_pre_ranking = allowPreRanking;
-    }
-    return sub;
-  };
+  // What/When/Where: open a fresh top modal with optional preselection.
+  const handleOpenNewQuestion = useCallback((opts: { mode?: 'question' | 'time'; category?: string } = {}) => {
+    setError(null);
+    applyDraftToState(emptyDraft(opts));
+    setEditingDraftIndex(null);
+    setOriginalEditingDraft(null);
+    setTopModalOpen(true);
+  }, [applyDraftToState]);
 
-  // "+ Add another section" handler. Validates current question, pushes it
-  // onto stagedQuestions, and resets per-question state so the form is ready
-  // for the next one. Shared poll fields (creator name, deadline,
-  // details, suggestion cutoff, follow_up_to) are preserved.
-  const handleAddSection = () => {
-    const subErr = getQuestionValidationError();
+  // Pencil: edit a committed draft. Pop it from drafts list (so it lives
+  // exclusively in the top modal form), remember it for X-restore semantics.
+  const handleEditDraft = useCallback((index: number) => {
+    const target = drafts[index];
+    if (!target) return;
+    setError(null);
+    setOriginalEditingDraft(target);
+    setEditingDraftIndex(index);
+    setDrafts(prev => prev.filter((_, i) => i !== index));
+    applyDraftToState(target);
+    setTopModalOpen(true);
+  }, [drafts, applyDraftToState]);
+
+  // X on top modal: discard the form. If editing, the popped draft is NOT
+  // restored (per spec — "clear it from the form and it will not go back in
+  // the draft").
+  const handleTopModalCancel = useCallback(() => {
+    setTopModalOpen(false);
+    setEditingDraftIndex(null);
+    setOriginalEditingDraft(null);
+    setError(null);
+  }, []);
+
+  // Check on top modal: validate per-question fields, snapshot current form
+  // into a draft, insert/update in drafts list, close.
+  const handleCheckCommit = useCallback(() => {
+    const subErr = getCurrentQuestionFormError();
     if (subErr) { setError(subErr); return; }
     setError(null);
-    setStagedQuestions(prev => [...prev, buildQuestionFromState()]);
-    setTitle('');
-    setIsAutoTitle(true);
-    setOptions(['']);
-    setOptionsMetadata({});
-    setCategory('custom');
-    setForField('');
-    setRefLatitude(undefined);
-    setRefLongitude(undefined);
-    setRefLocationLabel('');
-    setMinResponses(1);
-    setShowPreliminaryResults(true);
-  };
-
-  const handleRemoveStagedQuestion = (index: number) => {
-    setStagedQuestions(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const summarizeStagedQuestion = (sub: CreateQuestionParams): string => {
-    if (sub.question_type === 'yes_no') return 'Yes / No';
-    const filled = (sub.options ?? []).filter(o => o.trim() !== '');
-    if (filled.length === 0) return 'Suggestions';
-    if (filled.length === 1) return filled[0];
-    return `${filled[0]} or ${filled.length - 1} more`;
-  };
+    const draft = readCurrentDraft();
+    if (editingDraftIndex !== null) {
+      // Re-insert at original index to preserve display order.
+      setDrafts(prev => {
+        const next = [...prev];
+        const at = Math.min(editingDraftIndex, next.length);
+        next.splice(at, 0, draft);
+        return next;
+      });
+    } else {
+      setDrafts(prev => [...prev, draft]);
+    }
+    setTopModalOpen(false);
+    setEditingDraftIndex(null);
+    setOriginalEditingDraft(null);
+  }, [editingDraftIndex, readCurrentDraft]);
 
   // Portal targets in the modal header (rendered by template.tsx)
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
@@ -688,6 +725,24 @@ export function CreateQuestionContent() {
       }
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
+
+  // Auto-open the top modal once on first mount when:
+  //  - the URL carries a What/When/Where preselection (category/mode), or
+  //  - this is a duplicate / follow-up / vote-from-suggestion flow, or
+  //  - there are no saved drafts (plain entry).
+  // When saved drafts exist (cold reopen with state), keep the top modal closed
+  // so the user sees the drafts list and the What/When/Where buttons.
+  const topModalAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!isClient) return;
+    if (topModalAutoOpenedRef.current) return;
+    const hasPreselect = !!(categoryParam || modeParam);
+    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
+    topModalAutoOpenedRef.current = true;
+    if (hasPreselect || hasSpecialFlow || drafts.length === 0) {
+      setTopModalOpen(true);
+    }
+  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, drafts.length]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
@@ -826,7 +881,7 @@ export function CreateQuestionContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, stagedQuestions]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -931,24 +986,20 @@ export function CreateQuestionContent() {
     e.preventDefault();
     e.stopPropagation();
 
-    // Check for validation errors
     const validationError = getValidationError();
     if (validationError) {
       setError(validationError);
       return;
     }
 
-    // Prevent duplicate submissions - check ref first for immediate blocking
     if (isSubmittingRef.current) {
       return;
     }
-    
-    // Set ref immediately to block subsequent clicks
+
     isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
-    
-    // Disable the entire form to prevent any interaction
+
     const form = document.querySelector('form');
     if (form) {
       const inputs = form.querySelectorAll('input, select, button');
@@ -958,151 +1009,38 @@ export function CreateQuestionContent() {
         }
       });
     }
-    
+
     try {
-      // Check for validation errors before submission
-      const validationError = getValidationError();
-      if (validationError) {
-        setError(validationError);
-        setIsLoading(false);
-        isSubmittingRef.current = false;
-        reEnableForm(form);
-        return;
-      }
-      
-      // Determine question type and get options
-      const questionType = getQuestionType();
-      const filledOptions = options.filter(opt => opt.trim() !== '');
-
       const responseDeadline = calculateDeadline();
-      
-      if (deadlineOption === "custom") {
-        if (!customDate || !customTime) {
-          setError("Please select both a custom deadline date and time.");
-          setIsLoading(false);
-          isSubmittingRef.current = false;
-          reEnableForm(form);
-          return;
-        }
-        
-        const customDateTime = new Date(`${customDate}T${customTime}`);
-        if (customDateTime <= new Date()) {
-          setError("Custom deadline must be in the future.");
-          setIsLoading(false);
-          isSubmittingRef.current = false;
-          reEnableForm(form);
-          return;
-        }
-      }
-      
-      // Generate creator secret
+
       const creatorSecret = generateCreatorSecret();
-      
-      // Prepare question data
-      const dbQuestionType = getQuestionType();
-      // Phase 2.4: when there are staged questions, the wrapper's title isn't
-      // a meaningful description of the current form alone. Drop it so the
-      // server's `generate_poll_title()` builds a title from all question
-      // categories (e.g. "Yes/No and Restaurant"). User-edited titles
-      // (isAutoTitle === false) still pass through as the explicit override.
-      const wrapperTitle =
-        stagedQuestions.length > 0 && isAutoTitle ? null : title;
-      const questionData: any = {
-        title: wrapperTitle,
-        question_type: dbQuestionType,
-        response_deadline: responseDeadline,
-        creator_secret: creatorSecret,
-        is_auto_title: isAutoTitle,
-      };
 
-      // Add creator_name if provided (may fail if column doesn't exist yet)
-      if (creatorName.trim()) {
-        questionData.creator_name = creatorName.trim();
+      // Resolve the poll-level prephase cutoff once. Used both for the wrapper
+      // field and for each draft that has a prephase (suggestion mode + time).
+      const prephaseMinutes = pollHasPrephase ? getSuggestionCutoffMinutes() : null;
+      // Custom prephase deadline (absolute, not deferred): bypass minutes.
+      let prephaseDeadlineIso: string | null = null;
+      if (pollHasPrephase && suggestionCutoff === 'custom' && customSuggestionDate && customSuggestionTime) {
+        prephaseDeadlineIso = new Date(`${customSuggestionDate}T${customSuggestionTime}`).toISOString();
       }
 
-      // Add details if provided
-      if (details.trim()) {
-        questionData.details = details.trim();
-      }
+      // Wrapper title rule:
+      //  - Exactly 1 draft and the user typed an explicit title: use it.
+      //    Preserves legacy single-question yes_no behavior.
+      //  - Otherwise: send null; the server auto-generates from question
+      //    categories + poll context.
+      const onlyDraft = drafts.length === 1 ? drafts[0] : null;
+      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
 
-      // Add follow-up reference if this is a follow-up question
-      if (followUpTo) {
-        questionData.follow_up_to = followUpTo;
-      }
-      // Add duplicate as follow-up reference if this is a duplicate
-      if (duplicateOf) {
-        questionData.follow_up_to = duplicateOf;
-      }
+      const questionsForRequest: CreateQuestionParams[] =
+        drafts.map(d => draftToQuestionParams(d, prephaseMinutes));
 
-      // Add category for ranked_choice questions
-      if (dbQuestionType === 'ranked_choice' && category !== 'custom') {
-        questionData.category = category;
-      }
-
-      // Add reference location if set
-      if (refLatitude !== undefined && refLongitude !== undefined) {
-        questionData.reference_latitude = refLatitude;
-        questionData.reference_longitude = refLongitude;
-        questionData.reference_location_label = refLocationLabel;
-      }
-
-      // Add options metadata (thumbnails & info links from autocomplete)
-      if (Object.keys(optionsMetadata).length > 0) {
-        questionData.options_metadata = optionsMetadata;
-      }
-
-      // Add options for ranked choice questions with pre-defined options
-      // (skip for suggestion mode — options will be populated from suggestions)
-      if (dbQuestionType === 'ranked_choice' && filledOptions.length > 0) {
-        questionData.options = filledOptions;
-      }
-
-      // Add suggestion deadline for questions with no options (suggestion phase)
-      if (isSuggestionMode) {
-        if (suggestionCutoff === 'custom' && customSuggestionDate && customSuggestionTime) {
-          // Custom: send absolute deadline (not deferred)
-          const cutoffDate = new Date(`${customSuggestionDate}T${customSuggestionTime}`);
-          questionData.suggestion_deadline = cutoffDate.toISOString();
-        } else {
-          // Fractional or absolute: compute minutes and defer until first suggestion
-          const cutoffMinutes = getSuggestionCutoffMinutes();
-          questionData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
-        }
-        questionData.allow_pre_ranking = allowPreRanking;
-      }
-
-      // Add time question specific fields
-      if (dbQuestionType === 'time') {
-        if (dayTimeWindows.length > 0) {
-          questionData.day_time_windows = dayTimeWindows;
-        }
-        if (durationMinEnabled || durationMaxEnabled) {
-          questionData.duration_window = {
-            minValue: durationMinValue,
-            maxValue: durationMaxValue,
-            minEnabled: durationMinEnabled,
-            maxEnabled: durationMaxEnabled
-          };
-        }
-        questionData.min_availability_percent = minimumParticipation;
-        // Availability phase uses suggestion_deadline_minutes (deferred until first submission)
-        const cutoffMinutes = getSuggestionCutoffMinutes();
-        questionData.suggestion_deadline_minutes = cutoffMinutes != null ? Math.round(cutoffMinutes) : 120;
-      }
-
-      // Add min_responses and show_preliminary_results for preference questions
-      if (dbQuestionType === 'ranked_choice') {
-        questionData.min_responses = minResponses;
-        questionData.show_preliminary_results = showPreliminaryResults;
-      }
-
-      // Check for duplicate follow-up question before creating
-      if (followUpTo) {
+      // Find duplicate when this is a follow-up to an existing question.
+      const dedupTitle = wrapperTitle || onlyDraft?.title || '';
+      if (followUpTo && dedupTitle.trim()) {
         try {
-          const existing = await apiFindDuplicateQuestion(title, followUpTo);
+          const existing = await apiFindDuplicateQuestion(dedupTitle, followUpTo);
           if (existing) {
-            // Phase 5b: short_id lives on the poll wrapper. Resolve via
-            // the parent poll so the redirect targets the friendly URL.
             const lookup = pollLookup();
             const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
             const shortId = wrapper?.short_id || existing.id;
@@ -1118,17 +1056,21 @@ export function CreateQuestionContent() {
         }
       }
 
-      // Every question routes through the poll API. The wrapper is invisible
-      // for 1-question polls; voting/results continue to use the per-question
-      // endpoints.
       let createdQuestion: Question;
       let createdPoll: Poll;
       try {
-        createdPoll = await apiCreatePoll(
-          questionDataToPollRequest(questionData, stagedQuestions),
-        );
-        // The current form's question is the LAST one (staged are prepended).
-        createdQuestion = createdPoll.questions[createdPoll.questions.length - 1];
+        createdPoll = await apiCreatePoll({
+          creator_secret: creatorSecret,
+          creator_name: creatorName.trim() || undefined,
+          response_deadline: responseDeadline,
+          prephase_deadline: prephaseDeadlineIso,
+          prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
+          follow_up_to: followUpTo || duplicateOf || null,
+          title: wrapperTitle,
+          context: details.trim() || null,
+          questions: questionsForRequest,
+        });
+        createdQuestion = createdPoll.questions[0];
       } catch (apiError: any) {
         console.error("Error creating question:", apiError);
         setError(apiError.message || "Failed to create question. Please try again.");
@@ -1242,7 +1184,229 @@ export function CreateQuestionContent() {
   );
 
   const validationError = getValidationError();
-  const submitDisabled = isLoading || isSubmitted || !!validationError;
+  const submitDisabled = isLoading || isSubmitted || topModalOpen || !!validationError;
+
+  // Compact suggestion/availability cutoff field — used in the BOTTOM modal
+  // when the poll has at least one prephase question, since the cutoff is
+  // poll-level. Mirrors the legacy per-question rendering.
+  const suggestionCutoffField = (
+    <div>
+      <div className="flex items-center justify-between">
+        <label className="block text-sm font-medium cursor-pointer">
+          <span>{drafts.some(d => draftDbQuestionType(d) === 'time') ? 'Availability Cutoff: ' : 'Suggestions Cutoff: '}</span>
+          <span className="relative inline-flex">
+            <span className="font-normal text-blue-600 dark:text-blue-400">
+              {(() => {
+                if (suggestionCutoff === 'custom') return 'Custom';
+                const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                if (frac) {
+                  const votingMin = getVotingDeadlineMinutes();
+                  if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
+                  return `${frac.fraction}x`;
+                }
+                const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
+                if (!absOpt) return suggestionCutoff;
+                return formatDeadlineLabel(absOpt.minutes, absOpt.label);
+              })()}
+            </span>
+            <select
+              value={suggestionCutoff}
+              onChange={(e) => setSuggestionCutoff(e.target.value)}
+              disabled={isLoading}
+              className="absolute inset-0 opacity-0 cursor-pointer"
+              aria-label="Prephase cutoff duration"
+            >
+              {getVotingDeadlineMinutes() != null && (
+                <optgroup label="Relative to Voting Cutoff">
+                  {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
+                    const votingMin = getVotingDeadlineMinutes()!;
+                    const mins = votingMin * opt.fraction;
+                    return (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.fraction}x ({formatMinutesLabel(mins)})
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+              <optgroup label="Fixed Duration">
+                {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {formatDeadlineLabel(opt.minutes, opt.label)}
+                  </option>
+                ))}
+              </optgroup>
+              <option value="custom">Custom</option>
+            </select>
+          </span>
+        </label>
+      </div>
+      {isClient && (() => {
+        const warnings: string[] = [];
+        const cutoffMin = getSuggestionCutoffMinutes();
+        if (cutoffMin != null && cutoffMin < 5) {
+          warnings.push("Cutoff is less than 5 minutes from now.");
+        }
+        const votingMin = getVotingDeadlineMinutes();
+        if (cutoffMin != null && votingMin != null && (votingMin - cutoffMin) < 5) {
+          warnings.push("Cutoff is less than 5 minutes before voting cutoff.");
+        }
+        if (warnings.length === 0) return null;
+        return (
+          <div className="mt-1.5">
+            {warnings.map((w, i) => (
+              <p key={i} className="text-xs text-amber-600 dark:text-amber-400">{w}</p>
+            ))}
+          </div>
+        );
+      })()}
+      {suggestionCutoff === 'custom' && (
+        <div className="mt-2 flex justify-between gap-2">
+          <div className="w-auto">
+            <label htmlFor="customSuggestionDate" className="block text-xs text-gray-500 mb-1">Date</label>
+            <input
+              type="date"
+              id="customSuggestionDate"
+              value={customSuggestionDate}
+              onChange={(e) => setCustomSuggestionDate(e.target.value)}
+              disabled={isLoading}
+              min={isClient ? getTodayDate() : ''}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+              style={{ fontSize: '14px' }}
+              required
+            />
+          </div>
+          <div className="w-auto">
+            <label htmlFor="customSuggestionTime" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
+            <input
+              type="time"
+              id="customSuggestionTime"
+              value={customSuggestionTime}
+              onChange={(e) => setCustomSuggestionTime(e.target.value)}
+              disabled={isLoading}
+              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
+              style={{ fontSize: '14px' }}
+              required
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // Question-specific JSX rendered into the TOP MODAL portal.
+  // Mirrors the legacy single-form rendering, minus voting / suggestion
+  // cutoff and Notes / Name (those moved to the bottom modal as poll fields).
+  const questionFormBody = (
+    <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
+      {questionType === 'time' && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setQuestionType('question')}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Switch to Preferences Question
+          </button>
+        </div>
+      )}
+
+      {isLocationLikeCategory(category) && (
+        <ReferenceLocationInput
+          latitude={refLatitude}
+          longitude={refLongitude}
+          label={refLocationLabel}
+          onLocationChange={(lat, lng, lbl) => {
+            setRefLatitude(lat);
+            setRefLongitude(lng);
+            setRefLocationLabel(lbl);
+          }}
+          searchRadius={searchRadius}
+          onSearchRadiusChange={setSearchRadius}
+          disabled={isLoading}
+        />
+      )}
+
+      {(questionType === 'time' || (questionType === 'question' && category === 'time')) && (
+        <>
+          <TimeQuestionFields
+            disabled={isLoading}
+            durationMinValue={durationMinValue}
+            durationMaxValue={durationMaxValue}
+            durationMinEnabled={durationMinEnabled}
+            durationMaxEnabled={durationMaxEnabled}
+            onDurationMinChange={setDurationMinValue}
+            onDurationMaxChange={setDurationMaxValue}
+            onDurationMinEnabledChange={setDurationMinEnabled}
+            onDurationMaxEnabledChange={setDurationMaxEnabled}
+            dayTimeWindows={dayTimeWindows}
+            onDayTimeWindowsChange={setDayTimeWindows}
+            highlightDaysButton={dayTimeWindows.length === 0}
+          />
+
+          <div className="text-sm font-medium">
+            Minimum Availability:{' '}
+            <button
+              type="button"
+              onClick={() => setShowMinParticipationModal(true)}
+              disabled={isLoading}
+              className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+              aria-label="Adjust minimum availability percentage"
+            >
+              {minimumParticipation}%
+            </button>{' '}
+            of the top slot
+          </div>
+        </>
+      )}
+
+      {questionType === 'question' && category !== 'yes_no' && category !== 'time' && (
+        <OptionsInput
+          options={options}
+          setOptions={setOptions}
+          isLoading={isLoading}
+          category={category}
+          optionsMetadata={optionsMetadata}
+          onMetadataChange={setOptionsMetadata}
+          referenceLatitude={refLatitude}
+          referenceLongitude={refLongitude}
+          searchRadius={searchRadius}
+          label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
+        />
+      )}
+
+      {category === 'yes_no' && titleField}
+
+      {questionType === 'question' && category !== 'time' && isPreferenceQuestion && (
+        <CompactMinResponsesField
+          value={minResponses}
+          setValue={(val) => {
+            setMinResponses(val);
+            saveUserMinResponses(val);
+          }}
+          showPreliminary={showPreliminaryResults}
+          setShowPreliminary={setShowPreliminaryResults}
+          disabled={isLoading}
+        />
+      )}
+
+      {/* Allow pre-ranking: per-section setting for ranked_choice in suggestion mode */}
+      {questionType === 'question' && category !== 'time' && isSuggestionMode && (
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={allowPreRanking}
+            onChange={(e) => setAllowPreRanking(e.target.checked)}
+            disabled={isLoading}
+            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            Allow voters to pre-rank during the suggestion phase
+          </span>
+        </label>
+      )}
+    </form>
+  );
 
   return (
     <div className="question-content">
@@ -1263,34 +1427,23 @@ export function CreateQuestionContent() {
         submitPortal
       )}
 
-      {titlePortal && createPortal(
-        questionType === 'question' ? (
-          <CategoryForLine
-            category={category}
-            onCategoryChange={handleCategoryChange}
-            forField={forField}
-            onForFieldChange={setForField}
-            generatedCategoryText={generatedCategoryFromOptions}
-            disabled={isLoading}
-          />
-        ) : (
-          <AnimatedTitle title={title} initialDelay={300} />
-        ),
-        titlePortal
-      )}
-
+      {/* Bottom modal title portal stays empty — title display is per-section
+          inside the top modal now. Leaving the portal mounted by template.tsx
+          intentionally empty avoids layout shift if a future feature wants
+          to inject a poll-level summary line. */}
       {error && (
         <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
           {error}
         </div>
       )}
 
-      {stagedQuestions.length > 0 && (
+      {/* Drafts list — every committed question. Pencil icon edits; X-during-
+          edit (in the top modal) discards. The list mounts even when empty so
+          the layout below stays stable. */}
+      {drafts.length > 0 && (
         <ul className="mb-4 space-y-1.5">
-          {stagedQuestions.map((sub, i) => {
-            const builtIn = sub.category ? getBuiltInType(sub.category) : undefined;
-            const icon = builtIn?.icon || (sub.question_type === 'yes_no' ? '👍' : '🗳️');
-            const label = builtIn?.label || (sub.category && sub.category !== 'custom' ? sub.category : 'Section');
+          {drafts.map((d, i) => {
+            const { icon, label } = draftCardLabels(d);
             return (
               <li
                 key={i}
@@ -1299,447 +1452,210 @@ export function CreateQuestionContent() {
                 <span className="text-lg leading-none" aria-hidden>{icon}</span>
                 <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
                 <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
-                  {summarizeStagedQuestion(sub)}
+                  {summarizeDraft(d)}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveStagedQuestion(i)}
-                  disabled={isLoading}
-                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 disabled:opacity-50"
-                  aria-label={`Remove ${label} section`}
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
-                </button>
+                {!topModalOpen && (
+                  <button
+                    type="button"
+                    onClick={() => handleEditDraft(i)}
+                    disabled={isLoading}
+                    className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                    aria-label={`Edit ${label} section`}
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
+                    </svg>
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
 
-      <form onSubmit={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          // Do nothing - all submission is handled by button onClick
-        }} className="space-y-4">
-          {/* Non-default modes: show link back to preferences form */}
-          {questionType === 'time' && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setQuestionType('question')}
-                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                Switch to Preferences Question
-              </button>
-            </div>
-          )}
+      {/* What/When/Where buttons — visible in the bottom modal whenever the
+          top modal is closed. Tapping any of them opens the top modal with
+          the appropriate preselection. Mirrors the floating bubble bar's
+          color theme so the connection is obvious. */}
+      {!topModalOpen && (
+        <div className="mb-4 flex items-center justify-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => handleOpenNewQuestion({})}
+            disabled={isLoading}
+            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-amber-200 dark:bg-amber-300 active:bg-amber-300 text-gray-800 font-medium disabled:opacity-50"
+            aria-label="Add new question"
+          >
+            <span className="text-[1.05rem]">+</span>
+            <span className="text-[0.95rem]">what</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenNewQuestion({ category: 'restaurant' })}
+            disabled={isLoading}
+            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-rose-200 dark:bg-rose-300 active:bg-rose-300 text-gray-800 font-medium disabled:opacity-50"
+            aria-label="Add new place question"
+          >
+            <span className="text-[1.05rem]">+</span>
+            <span className="text-[0.95rem]">where</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenNewQuestion({ mode: 'time' })}
+            disabled={isLoading}
+            className="h-9 px-3.5 rounded-full flex items-center gap-1.5 shadow-sm bg-sky-200 dark:bg-sky-300 active:bg-sky-300 text-gray-800 font-medium disabled:opacity-50"
+            aria-label="Add new time question"
+          >
+            <span className="text-[1.05rem]">+</span>
+            <span className="text-[0.95rem]">when</span>
+          </button>
+        </div>
+      )}
 
-          {/* Category and For fields are now in the header via CategoryForLine */}
-
-          {/* Reference location for location questions */}
-          {isLocationLikeCategory(category) && (
-            <ReferenceLocationInput
-              latitude={refLatitude}
-              longitude={refLongitude}
-              label={refLocationLabel}
-              onLocationChange={(lat, lng, lbl) => {
-                setRefLatitude(lat);
-                setRefLongitude(lng);
-                setRefLocationLabel(lbl);
-              }}
-              searchRadius={searchRadius}
-              onSearchRadiusChange={setSearchRadius}
-              disabled={isLoading}
-            />
-          )}
-
-          {/* Time question: Duration + DayTimeWindows + threshold + deadlines */}
-          {(questionType === 'time' || (questionType === 'question' && category === 'time')) && (
-            <>
-              <TimeQuestionFields
-                disabled={isLoading}
-                durationMinValue={durationMinValue}
-                durationMaxValue={durationMaxValue}
-                durationMinEnabled={durationMinEnabled}
-                durationMaxEnabled={durationMaxEnabled}
-                onDurationMinChange={setDurationMinValue}
-                onDurationMaxChange={setDurationMaxValue}
-                onDurationMinEnabledChange={setDurationMinEnabled}
-                onDurationMaxEnabledChange={setDurationMaxEnabled}
-                dayTimeWindows={dayTimeWindows}
-                onDayTimeWindowsChange={setDayTimeWindows}
-                highlightDaysButton={dayTimeWindows.length === 0}
-              />
-
-              {/* Minimum Availability: slots must have at least this % of the top slot's availability to pass */}
-              <div className="text-sm font-medium">
-                Minimum Availability:{' '}
-                <button
-                  type="button"
-                  onClick={() => setShowMinParticipationModal(true)}
-                  disabled={isLoading}
-                  className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                  aria-label="Adjust minimum availability percentage"
-                >
-                  {minimumParticipation}%
-                </button>{' '}
-                of the top slot
-              </div>
-
-              {/* Availability Phase Deadline */}
-              <div>
-                <label className="block text-sm font-medium cursor-pointer">
-                  <span>Availability Cutoff: </span>
-                  <span className="relative inline-flex">
-                    <span className="font-normal text-blue-600 dark:text-blue-400">
-                      {(() => {
-                        if (suggestionCutoff === 'custom') return 'Custom';
-                        const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                        if (frac) {
-                          const votingMin = getVotingDeadlineMinutes();
-                          if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
-                          return `${frac.fraction}x`;
-                        }
-                        const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                        if (!absOpt) return suggestionCutoff;
-                        return formatDeadlineLabel(absOpt.minutes, absOpt.label);
-                      })()}
-                    </span>
-                    <select
-                      value={suggestionCutoff}
-                      onChange={(e) => setSuggestionCutoff(e.target.value)}
-                      disabled={isLoading}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      aria-label="Availability cutoff duration"
-                    >
-                      {getVotingDeadlineMinutes() != null && (
-                        <optgroup label="Relative to Voting Cutoff">
-                          {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
-                            const votingMin = getVotingDeadlineMinutes()!;
-                            const mins = votingMin * opt.fraction;
-                            return (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.fraction}x ({formatMinutesLabel(mins)})
-                              </option>
-                            );
-                          })}
-                        </optgroup>
-                      )}
-                      <optgroup label="Fixed Duration">
-                        {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>
-                            {formatDeadlineLabel(opt.minutes, opt.label)}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </span>
-                </label>
-                {suggestionCutoff === 'custom' && (
-                  <div className="mt-2 flex justify-between gap-2">
-                    <div className="w-auto">
-                      <label htmlFor="customSuggestionDate2" className="block text-xs text-gray-500 mb-1">Date</label>
-                      <input
-                        type="date"
-                        id="customSuggestionDate2"
-                        value={customSuggestionDate}
-                        onChange={(e) => setCustomSuggestionDate(e.target.value)}
-                        disabled={isLoading}
-                        min={isClient ? getTodayDate() : ''}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                      />
-                    </div>
-                    <div className="w-auto">
-                      <label htmlFor="customSuggestionTime2" className="block text-xs text-gray-500 mb-1 text-right">Time</label>
-                      <input
-                        type="time"
-                        id="customSuggestionTime2"
-                        value={customSuggestionTime}
-                        onChange={(e) => setCustomSuggestionTime(e.target.value)}
-                        disabled={isLoading}
-                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                        style={{ fontSize: '14px' }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <VotingCutoffField
-                deadlineOption={deadlineOption}
-                setDeadlineOption={setDeadlineOption}
-                customDate={customDate}
-                setCustomDate={setCustomDate}
-                customTime={customTime}
-                setCustomTime={setCustomTime}
-                isLoading={isLoading}
-                isClient={isClient}
-              />
-            </>
-          )}
-
-          {/* Options field for question type (ranked choice / suggestions) */}
-          {questionType === 'question' && category !== 'yes_no' && category !== 'time' && (
-            <>
-              <OptionsInput
-                options={options}
-                setOptions={setOptions}
-                isLoading={isLoading}
-                category={category}
-                optionsMetadata={optionsMetadata}
-                onMetadataChange={setOptionsMetadata}
-                referenceLatitude={refLatitude}
-                referenceLongitude={refLongitude}
-                searchRadius={searchRadius}
-                label={<>Options <span className="font-normal">(leave blank to ask for suggestions)</span></>}
-              />
-            </>
-          )}
-
-
-          {/* Title for yes/no questions - rendered above voting cutoff */}
-          {category === 'yes_no' && titleField}
-
-          {/* Voting cutoff (yes/no and preference questions), min responses, suggestion cutoff */}
-          {questionType === 'question' && category !== 'time' && (
-            <>
-              <VotingCutoffField
-                deadlineOption={deadlineOption}
-                setDeadlineOption={setDeadlineOption}
-                customDate={customDate}
-                setCustomDate={setCustomDate}
-                customTime={customTime}
-                setCustomTime={setCustomTime}
-                isLoading={isLoading}
-                isClient={isClient}
-              />
-              {isPreferenceQuestion && (
-              <CompactMinResponsesField
-                value={minResponses}
-                setValue={(val) => {
-                  setMinResponses(val);
-                  saveUserMinResponses(val);
-                }}
-                showPreliminary={showPreliminaryResults}
-                setShowPreliminary={setShowPreliminaryResults}
-                disabled={isLoading}
-              />
-              )}
-              {/* Suggestions Cutoff - shown when no options provided (suggestion mode) */}
-              {isSuggestionMode && (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="block text-sm font-medium cursor-pointer">
-                      <span>Suggestions Cutoff: </span>
-                      <span className="relative inline-flex">
-                        <span className="font-normal text-blue-600 dark:text-blue-400">
-                          {(() => {
-                            if (suggestionCutoff === 'custom') return 'Custom';
-                            const frac = FRACTIONAL_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                            if (frac) {
-                              const votingMin = getVotingDeadlineMinutes();
-                              if (votingMin != null) return formatMinutesLabel(votingMin * frac.fraction);
-                              return `${frac.fraction}x`;
-                            }
-                            const absOpt = ABSOLUTE_CUTOFF_OPTIONS.find(o => o.value === suggestionCutoff);
-                            if (!absOpt) return suggestionCutoff;
-                            return formatDeadlineLabel(absOpt.minutes, absOpt.label);
-                          })()}
-                        </span>
-                        <select
-                          value={suggestionCutoff}
-                          onChange={(e) => setSuggestionCutoff(e.target.value)}
-                          disabled={isLoading}
-                          className="absolute inset-0 opacity-0 cursor-pointer"
-                          aria-label="Suggestions cutoff duration"
-                        >
-                          {/* Fractional options (only when voting deadline is set) */}
-                          {getVotingDeadlineMinutes() != null && (
-                            <optgroup label="Relative to Voting Cutoff">
-                              {FRACTIONAL_CUTOFF_OPTIONS.map(opt => {
-                                const votingMin = getVotingDeadlineMinutes()!;
-                                const mins = votingMin * opt.fraction;
-                                return (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.fraction}x ({formatMinutesLabel(mins)})
-                                  </option>
-                                );
-                              })}
-                            </optgroup>
-                          )}
-                          <optgroup label="Fixed Duration">
-                            {ABSOLUTE_CUTOFF_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value}>
-                                {formatDeadlineLabel(opt.minutes, opt.label)}
-                              </option>
-                            ))}
-                          </optgroup>
-                          <option value="custom">Custom</option>
-                        </select>
-                      </span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={allowPreRanking}
-                        onChange={(e) => setAllowPreRanking(e.target.checked)}
-                        disabled={isLoading}
-                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        allow pre-ranking
-                      </span>
-                    </label>
-                  </div>
-                  {/* Suggestion cutoff warnings */}
-                  {isClient && (() => {
-                    const warnings: string[] = [];
-                    const cutoffMin = getSuggestionCutoffMinutes();
-                    if (cutoffMin != null && cutoffMin < 5) {
-                      warnings.push("Suggestions cutoff is less than 5 minutes from now.");
-                    }
-                    const votingMin = getVotingDeadlineMinutes();
-                    if (cutoffMin != null && votingMin != null && (votingMin - cutoffMin) < 5) {
-                      warnings.push("Suggestions cutoff is less than 5 minutes before voting cutoff.");
-                    }
-                    if (warnings.length === 0) return null;
-                    return (
-                      <div className="mt-1.5">
-                        {warnings.map((w, i) => (
-                          <p key={i} className="text-xs text-amber-600 dark:text-amber-400">{w}</p>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  {/* Custom date/time fields */}
-                  {suggestionCutoff === 'custom' && (
-                    <div className="mt-2 flex justify-between gap-2">
-                      <div className="w-auto">
-                        <label htmlFor="customSuggestionDate" className="block text-xs text-gray-500 mb-1">
-                          Date
-                        </label>
-                        <input
-                          type="date"
-                          id="customSuggestionDate"
-                          value={customSuggestionDate}
-                          onChange={(e) => setCustomSuggestionDate(e.target.value)}
-                          disabled={isLoading}
-                          min={isClient ? getTodayDate() : ''}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                          style={{ fontSize: '14px' }}
-                          required
-                        />
-                      </div>
-                      <div className="w-auto">
-                        <label htmlFor="customSuggestionTime" className="block text-xs text-gray-500 mb-1 text-right">
-                          Time
-                        </label>
-                        <input
-                          type="time"
-                          id="customSuggestionTime"
-                          value={customSuggestionTime}
-                          onChange={(e) => setCustomSuggestionTime(e.target.value)}
-                          disabled={isLoading}
-                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-xs text-center"
-                          style={{ fontSize: '14px' }}
-                          required
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Title for time questions - rendered below close after */}
-          {questionType !== 'question' && titleField}
-
-          {/* Phase 2.4: stage the current section and start a new one. Hidden
-              when the current form is time (≤1 time question allowed; user
-              submits with just the current time form). */}
-          {questionType === 'question' && category !== 'time' && (
-            <div className="flex justify-center pt-1">
-              <button
-                type="button"
-                onClick={handleAddSection}
-                disabled={isLoading || !!getQuestionValidationError()}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
-              >
-                + Add another section
-              </button>
-            </div>
-          )}
-
-          {/* Optional details field */}
-          <div>
-            {detailsOpen ? (
-              <>
-                <label htmlFor="details" className="block text-sm font-medium mb-1">
-                  Notes
-                </label>
-                <textarea
-                  ref={detailsRef}
-                  id="details"
-                  value={details}
-                  onChange={(e) => {
-                    setDetails(e.target.value);
-                    const el = e.target;
-                    el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                    const maxH = 5 * 20 + 16; // 5 lines + padding
-                    el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                    el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                  }}
-                  onBlur={() => {
-                    const trimmed = details.trim();
-                    if (!trimmed) {
-                      setDetailsOpen(false);
-                      setDetails('');
-                    } else if (trimmed !== details) {
-                      setDetails(trimmed);
-                    }
-                  }}
-                  disabled={isLoading}
-                  style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-                  placeholder="Add more context or instructions..."
-                />
-              </>
-            ) : (
-              <div className="text-sm font-medium">
-                Notes:{' '}
-                <button
-                  type="button"
-                  onClick={() => setDetailsOpen(true)}
-                  className="font-normal text-blue-600 dark:text-blue-400"
-                >
-                  Add
-                </button>
-              </div>
-            )}
-          </div>
-
-          <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
-        </form>
-
-        {validationError && (
-          <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
-            {validationError}
-          </p>
-        )}
-
-        <MinimumParticipationModal
-          isOpen={showMinParticipationModal}
-          onClose={() => setShowMinParticipationModal(false)}
-          value={minimumParticipation}
-          onChange={setMinimumParticipation}
-          disabled={isLoading}
+      {/* Poll-level fields: voting cutoff, suggestion/availability cutoff
+          (when applicable), notes, creator name. All shared across every
+          draft. */}
+      <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
+        <VotingCutoffField
+          deadlineOption={deadlineOption}
+          setDeadlineOption={setDeadlineOption}
+          customDate={customDate}
+          setCustomDate={setCustomDate}
+          customTime={customTime}
+          setCustomTime={setCustomTime}
+          isLoading={isLoading}
+          isClient={isClient}
         />
 
+        {pollHasPrephase && suggestionCutoffField}
+
+        <div>
+          {detailsOpen ? (
+            <>
+              <label htmlFor="details" className="block text-sm font-medium mb-1">
+                Notes
+              </label>
+              <textarea
+                ref={detailsRef}
+                id="details"
+                value={details}
+                onChange={(e) => {
+                  setDetails(e.target.value);
+                  const el = e.target;
+                  el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                  const maxH = 5 * 20 + 16;
+                  el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                  el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                }}
+                onBlur={() => {
+                  const trimmed = details.trim();
+                  if (!trimmed) {
+                    setDetailsOpen(false);
+                    setDetails('');
+                  } else if (trimmed !== details) {
+                    setDetails(trimmed);
+                  }
+                }}
+                disabled={isLoading}
+                style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                placeholder="Add more context or instructions..."
+              />
+            </>
+          ) : (
+            <div className="text-sm font-medium">
+              Notes:{' '}
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                className="font-normal text-blue-600 dark:text-blue-400"
+              >
+                Add
+              </button>
+            </div>
+          )}
+        </div>
+
+        <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
+      </form>
+
+      {validationError && drafts.length > 0 && (
+        <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
+          {validationError}
+        </p>
+      )}
+
+      {/* TOP MODAL — question-specific form, opened by What/When/Where or
+          pencil-edit. Floats above the bottom modal with rounded corners.
+          X (left) discards; check (right) commits the form to the drafts list. */}
+      {topModalOpen && isClient && createPortal(
+        <div
+          className="fixed left-2 right-2 z-[70] rounded-3xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+            maxHeight: 'calc(60vh)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header — same X/check button style as the bottom modal. */}
+          <div className="flex-shrink-0 relative flex items-center justify-between px-4 pt-3 pb-2">
+            <button
+              type="button"
+              onClick={handleTopModalCancel}
+              className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
+              aria-label="Close question form"
+            >
+              <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
+                <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+            <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">
+              {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
+            </h2>
+            <button
+              type="button"
+              onClick={handleCheckCommit}
+              disabled={isLoading || !!getCurrentQuestionFormError()}
+              className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed z-10"
+              aria-label="Save question"
+            >
+              <svg className="w-[28px] h-[28px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+          </div>
+          {/* Title line — same CategoryForLine for question mode, or animated title for time. */}
+          <div className="flex-shrink-0 px-4">
+            {questionType === 'question' ? (
+              <CategoryForLine
+                category={category}
+                onCategoryChange={handleCategoryChange}
+                forField={forField}
+                onForFieldChange={setForField}
+                generatedCategoryText={generatedCategoryFromOptions}
+                disabled={isLoading}
+              />
+            ) : (
+              <AnimatedTitle title={title} initialDelay={0} />
+            )}
+          </div>
+          {/* Scrollable form body */}
+          <div className="overflow-auto overscroll-contain min-h-0">
+            <div className="px-4 pt-2 pb-5">
+              {questionFormBody}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      <MinimumParticipationModal
+        isOpen={showMinParticipationModal}
+        onClose={() => setShowMinParticipationModal(false)}
+        value={minimumParticipation}
+        onChange={setMinimumParticipation}
+        disabled={isLoading}
+      />
     </div>
   );
 }

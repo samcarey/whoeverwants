@@ -9,6 +9,175 @@
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/threadUtils";
+import { getBuiltInType } from "@/components/TypeFieldInput";
+import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
+
+/**
+ * Per-question form snapshot. The bottom modal holds a list of these as
+ * `drafts`; the top modal edits one at a time. Captures every field the
+ * top modal can edit so a draft round-trips losslessly through edit. Poll-
+ * level fields (voting cutoff, notes, creator name, suggestion cutoff)
+ * live on `CreateQuestionContent` itself, not on the draft.
+ */
+export interface QuestionDraft {
+  questionType: 'question' | 'time';
+  title: string;
+  isAutoTitle: boolean;
+  category: string;
+  forField: string;
+  options: string[];
+  optionsMetadata: OptionsMetadata;
+  refLatitude?: number;
+  refLongitude?: number;
+  refLocationLabel: string;
+  searchRadius: number;
+  minResponses: number;
+  showPreliminaryResults: boolean;
+  allowPreRanking: boolean;
+  durationMinValue: number | null;
+  durationMaxValue: number | null;
+  durationMinEnabled: boolean;
+  durationMaxEnabled: boolean;
+  dayTimeWindows: DayTimeWindow[];
+  minimumParticipation: number;
+}
+
+/** Default empty draft, optionally preselected by the What/When/Where bubble. */
+export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string } = {}): QuestionDraft {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return {
+    questionType: opts.mode === 'time' ? 'time' : 'question',
+    title: '',
+    isAutoTitle: true,
+    category: opts.category ?? 'custom',
+    forField: '',
+    options: [''],
+    optionsMetadata: {},
+    refLatitude: undefined,
+    refLongitude: undefined,
+    refLocationLabel: '',
+    searchRadius: 25,
+    minResponses: 1,
+    showPreliminaryResults: true,
+    allowPreRanking: true,
+    durationMinValue: 1,
+    durationMaxValue: 2,
+    durationMinEnabled: true,
+    durationMaxEnabled: true,
+    dayTimeWindows: opts.mode === 'time' ? [{ day: todayStr, windows: [] }] : [],
+    minimumParticipation: 95,
+  };
+}
+
+/**
+ * Resolve effective DB question_type for a draft. Mirrors the legacy
+ * getQuestionType() in page.tsx so server-side validation rules stay aligned.
+ */
+export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' {
+  if (d.questionType === 'time' || d.category === 'time') return 'time';
+  if (d.category === 'yes_no') return 'yes_no';
+  return 'ranked_choice';
+}
+
+/** True when a draft is in "suggestion mode" (ranked_choice with no options yet). */
+export function draftIsSuggestionMode(d: QuestionDraft): boolean {
+  if (draftDbQuestionType(d) !== 'ranked_choice') return false;
+  return d.options.filter(o => o.trim()).length === 0;
+}
+
+/** True when at least one draft needs the poll-level suggestion/availability cutoff. */
+export function anyDraftUsesPrephase(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftDbQuestionType(d) === 'time' || draftIsSuggestionMode(d));
+}
+
+/**
+ * Convert a draft into the `CreateQuestionParams` shape the server expects.
+ * `prephaseMinutes` is the poll-level prephase cutoff resolved at submit time
+ * (already accounts for fractional/absolute/custom). Returns null when not
+ * applicable for the draft's type.
+ */
+export function draftToQuestionParams(
+  d: QuestionDraft,
+  prephaseMinutes: number | null,
+): CreateQuestionParams {
+  const dbType = draftDbQuestionType(d);
+  const filledOptions = d.options.filter(o => o.trim() !== '');
+  const params: CreateQuestionParams = {
+    question_type: dbType,
+    is_auto_title: d.isAutoTitle,
+  };
+  if (dbType === 'ranked_choice' && d.category !== 'custom') {
+    params.category = d.category;
+  }
+  if (dbType === 'ranked_choice' && filledOptions.length > 0) {
+    params.options = filledOptions;
+  }
+  if (Object.keys(d.optionsMetadata).length > 0) {
+    params.options_metadata = d.optionsMetadata;
+  }
+  if (d.refLatitude !== undefined && d.refLongitude !== undefined) {
+    params.reference_latitude = d.refLatitude;
+    params.reference_longitude = d.refLongitude;
+    params.reference_location_label = d.refLocationLabel;
+  }
+  if (dbType === 'ranked_choice') {
+    params.min_responses = d.minResponses;
+    params.show_preliminary_results = d.showPreliminaryResults;
+  }
+  if (dbType === 'ranked_choice' && filledOptions.length === 0) {
+    params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+    params.allow_pre_ranking = d.allowPreRanking;
+  }
+  if (dbType === 'time') {
+    if (d.dayTimeWindows.length > 0) {
+      params.day_time_windows = d.dayTimeWindows;
+    }
+    if (d.durationMinEnabled || d.durationMaxEnabled) {
+      params.duration_window = {
+        minValue: d.durationMinValue,
+        maxValue: d.durationMaxValue,
+        minEnabled: d.durationMinEnabled,
+        maxEnabled: d.durationMaxEnabled,
+      };
+    }
+    params.min_availability_percent = d.minimumParticipation;
+    params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+  }
+  return params;
+}
+
+/** Compact one-line description for the draft list cards. */
+export function summarizeDraft(d: QuestionDraft): string {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'yes_no') {
+    return d.title.trim() || 'Yes / No';
+  }
+  if (dbType === 'time') {
+    const dayCount = d.dayTimeWindows.length;
+    if (dayCount === 0) return 'When?';
+    return `${dayCount} day${dayCount === 1 ? '' : 's'}`;
+  }
+  const filled = d.options.filter(o => o.trim() !== '');
+  if (filled.length === 0) {
+    const builtIn = getBuiltInType(d.category);
+    if (builtIn) return `${builtIn.label} (suggestions)`;
+    if (d.forField.trim()) return `Suggestions for ${d.forField.trim()}`;
+    return 'Suggestions';
+  }
+  if (filled.length === 1) return filled[0];
+  return `${filled[0]} or ${filled.length - 1} more`;
+}
+
+/** Icon + label for a draft card. Mirrors the BUILT_IN_TYPES table. */
+export function draftCardLabels(d: QuestionDraft): { icon: string; label: string } {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'time') return { icon: '📅', label: 'Time' };
+  if (dbType === 'yes_no') return { icon: '👍', label: 'Yes / No' };
+  const builtIn = getBuiltInType(d.category);
+  if (builtIn) return { icon: builtIn.icon, label: builtIn.label };
+  return { icon: '🗳️', label: d.category && d.category !== 'custom' ? d.category : 'Section' };
+}
 
 export function pollLookup() {
   const byPoll = buildPollMap(getCachedAccessiblePolls() ?? []);
