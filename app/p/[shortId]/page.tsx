@@ -392,7 +392,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!firstQuestionId) return;
       rafId = requestAnimationFrame(() => {
         const card = cardFrameRefs.current.get(firstQuestionId);
-        if (!card) return;
+        if (!card) { console.log('[FLIP] no card ref'); return; }
         const newBbox = card.getBoundingClientRect();
         const dx = fromBbox.x - newBbox.x;
         const dy = fromBbox.y - newBbox.y;
@@ -401,18 +401,26 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         card.style.transform = `translate(${dx}px, ${dy}px)`;
         card.style.width = `${fromBbox.width}px`;
         card.style.height = `${fromBbox.height}px`;
+        console.log('[FLIP] rAF1 set FROM state. dx=', dx, 'dy=', dy, 'fromH=', fromBbox.height, 'newH=', newBbox.height);
         rafId2 = requestAnimationFrame(() => {
-          if (!card.isConnected) return;
-          card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
-          card.style.transform = '';
-          card.style.width = `${newBbox.width}px`;
-          card.style.height = `${newBbox.height}px`;
+          if (!card.isConnected) { console.log('[FLIP] rAF2 card disconnected'); return; }
+          // Re-fetch the card from refs in case React replaced the DOM node
+          // between rAFs (e.g., key change / unmount-remount).
+          const liveCard = cardFrameRefs.current.get(firstQuestionId);
+          const target = liveCard ?? card;
+          if (target !== card) console.log('[FLIP] card ref changed between rAFs');
+          target.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
+          target.style.transform = '';
+          target.style.width = `${newBbox.width}px`;
+          target.style.height = `${newBbox.height}px`;
+          console.log('[FLIP] rAF2 set TO state. transition installed.');
           timeoutId = window.setTimeout(() => {
-            if (!card.isConnected) return;
-            card.style.transition = '';
-            card.style.transformOrigin = '';
-            card.style.width = '';
-            card.style.height = '';
+            const finalCard = cardFrameRefs.current.get(firstQuestionId) ?? target;
+            if (!finalCard.isConnected) return;
+            finalCard.style.transition = '';
+            finalCard.style.transformOrigin = '';
+            finalCard.style.width = '';
+            finalCard.style.height = '';
           }, 1050);
         });
       });
