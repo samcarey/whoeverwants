@@ -387,6 +387,27 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, [isCreateModalOpen]);
 
+  // Publish the bottom modal sheet's measured height to a CSS variable so the
+  // top question-form modal can anchor its `bottom:` to "just above" it. Tracks
+  // ResizeObserver-driven height changes (notes textarea autogrow, suggestion
+  // cutoff conditional, etc.) so the top modal slides up/down with the bottom.
+  useEffect(() => {
+    if (!isCreateModalOpen || !isMounted) return;
+    const sheet = modalSheetRef.current;
+    if (!sheet) return;
+    const html = document.documentElement;
+    const setVar = () => {
+      html.style.setProperty('--bottom-modal-height', `${sheet.offsetHeight}px`);
+    };
+    setVar();
+    const ro = new ResizeObserver(setVar);
+    ro.observe(sheet);
+    return () => {
+      ro.disconnect();
+      html.style.removeProperty('--bottom-modal-height');
+    };
+  }, [isCreateModalOpen, isMounted]);
+
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not question, thread, settings, home, or create-modal). */}

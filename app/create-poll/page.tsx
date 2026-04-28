@@ -1586,14 +1586,17 @@ export function CreateQuestionContent() {
       )}
 
       {/* TOP MODAL — question-specific form, opened by What/When/Where or
-          pencil-edit. Floats above the bottom modal with rounded corners.
-          X (left) discards; check (right) commits the form to the drafts list. */}
+          pencil-edit. Anchored just above the bottom modal sheet via the
+          --bottom-modal-height CSS var (set by template.tsx's ResizeObserver).
+          As the bottom sheet grows/shrinks, the top sheet rides above it. The
+          height cap is "viewport minus bottom sheet minus safe-area-top minus
+          breathing room" so the top sheet never crosses the notch. */}
       {topModalOpen && isClient && createPortal(
         <div
           className="fixed left-2 right-2 z-[70] rounded-3xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden"
           style={{
-            top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
-            maxHeight: 'calc(60vh)',
+            bottom: 'calc(var(--bottom-modal-height, 50vh) + 8px)',
+            maxHeight: 'calc(100vh - var(--bottom-modal-height, 50vh) - env(safe-area-inset-top, 0px) - 24px)',
           }}
           onClick={e => e.stopPropagation()}
         >
