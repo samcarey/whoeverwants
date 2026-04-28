@@ -352,16 +352,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
       const newPoll = detail?.poll;
       const fromBbox = detail?.fromBbox;
+      console.log('[FLIP] handler invoked. hasPoll=', !!newPoll, 'hasBbox=', !!fromBbox);
       if (!newPoll || !fromBbox) return;
 
       const polls = getCachedAccessiblePolls();
-      if (!polls) return;
+      if (!polls) { console.log('[FLIP] no cached polls'); return; }
 
       const t = threadRef.current;
       const threadPollIds = new Set(t?.polls.map((p) => p.id) ?? []);
       const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
       const isOwnRoot = t && newPoll.id === t.rootPollId;
-      if (!isFollowUp && !isOwnRoot) return;
+      console.log('[FLIP] isFollowUp=', isFollowUp, 'isOwnRoot=', isOwnRoot, 'newPoll.follow_up_to=', newPoll.follow_up_to, 'threadHasIt=', threadPollIds.has(newPoll.follow_up_to ?? ''));
+      if (!isFollowUp && !isOwnRoot) { console.log('[FLIP] early return'); return; }
 
       const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
       const rebuilt = t?.rootPollId
