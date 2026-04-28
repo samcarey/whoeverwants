@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
 import {
@@ -1276,13 +1276,13 @@ export function CreateQuestionContent() {
         startViewTransition?: (cb: () => void) => { finished: Promise<void> };
       }).startViewTransition;
       if (typeof startVT === 'function') {
-        // flushSync inside the callback ensures React commits state changes
-        // synchronously so the browser's "new" snapshot reflects the new card.
+        // Force React to commit setState synchronously inside the transition
+        // callback via `flushSync`. Without it, the browser captures the
+        // "new" snapshot before React reconciles — old and new look
+        // identical, so the browser optimizes the animation away and the
+        // user sees an instant swap.
         startVT.call(document, () => {
-          // Use queueMicrotask so the React state batched updates flush during
-          // the snapshot pass. (startViewTransition's callback is sync but
-          // setState is queued — letting React commit needs a microtask.)
-          applyMorph();
+          flushSync(applyMorph);
         });
       } else {
         applyMorph();
