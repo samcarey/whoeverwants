@@ -205,6 +205,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Same key as cardRefs but targets the inner BORDERED frame of each card —
+  // the visible "card shape" the user perceives. The FLIP animation applied
+  // on submit operates on this element so the actual visible frame morphs
+  // (and the surrounding grid wrapper / category-icon column stay still).
+  const cardFrameRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Ref to each card's overflow-hidden wrapper — its scrollHeight reports the
   // natural expanded content height (pre-mounted via IntersectionObserver) so
   // we can compute the target scroll position BEFORE the grid-rows animation
@@ -366,15 +371,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         setThread(rebuilt);
       });
 
-      // FLIP: after React commits, find the new card in the DOM and animate
-      // it from the captured draft bbox to its natural position. Animate
-      // width/height (not transform: scale) so the title and other content
-      // sit at their natural size in the morphing container — `scale(sx, sy)`
-      // would stretch the title vertically when the draft is much taller
-      // than the collapsed live card.
+      // FLIP: after React commits, find the new card's BORDERED FRAME in
+      // the DOM and animate it from the captured draft bbox to its natural
+      // position. Animate width/height (not transform: scale) so the title
+      // and other content sit at their natural size in the morphing
+      // container — `scale(sx, sy)` would stretch the title vertically
+      // when the draft is much taller than the collapsed live card.
+      // We target the bordered frame (cardFrameRefs) rather than the outer
+      // grid wrapper so the visible card shape morphs and the surrounding
+      // category-icon column stays still.
       if (firstQuestionId) {
         requestAnimationFrame(() => {
-          const card = cardRefs.current.get(firstQuestionId);
+          const card = cardFrameRefs.current.get(firstQuestionId);
           if (!card) return;
           const newBbox = card.getBoundingClientRect();
           const dx = fromBbox.x - newBbox.x;
@@ -1058,6 +1066,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div
+                  ref={(el) => {
+                    if (el) cardFrameRefs.current.set(question.id, el);
+                    else cardFrameRefs.current.delete(question.id);
+                  }}
                   className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
