@@ -17,12 +17,23 @@
 
 import type { Poll } from "@/lib/types";
 
-/** Fired by CreateQuestionContent immediately after `apiCreatePoll` succeeds.
- *  Listened to by ThreadContent so a freshly-submitted poll appears inline
- *  in the current thread without a route change / re-fetch. The poll is
- *  already cached + appended to `getCachedAccessiblePolls()` by the
- *  dispatcher, so listeners can rebuild state from the cache directly. */
-export const POLL_CREATED_EVENT = 'pollCreated';
-export interface PollCreatedDetail {
+/** Fired by CreateQuestionContent immediately on Submit (BEFORE the API call
+ *  resolves). Carries a placeholder Poll built from the draft state plus the
+ *  bounding box of the unmounting draft card. ThreadContent listens, inserts
+ *  the placeholder into its poll list, and FLIP-animates the new card from
+ *  the captured bbox to its natural collapsed-card position over 1s.
+ *  The real apiCreatePoll continues in parallel; on success it fires
+ *  `POLL_HYDRATED_EVENT` with the real Poll keyed by the placeholder id. */
+export const POLL_PENDING_EVENT = 'pollPending';
+export interface PollPendingDetail {
+  poll: Poll;
+  fromBbox: { x: number; y: number; width: number; height: number };
+}
+
+/** Fired after `apiCreatePoll` resolves. Identifies the placeholder by the
+ *  id it was inserted with so ThreadContent can swap its fields in-place. */
+export const POLL_HYDRATED_EVENT = 'pollHydrated';
+export interface PollHydratedDetail {
+  placeholderId: string;
   poll: Poll;
 }

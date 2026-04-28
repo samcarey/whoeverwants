@@ -31,7 +31,12 @@ import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from 
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
 import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls } from "@/lib/questionCache";
-import { POLL_CREATED_EVENT, type PollCreatedDetail } from "@/lib/eventChannels";
+import {
+  POLL_PENDING_EVENT,
+  POLL_HYDRATED_EVENT,
+  type PollPendingDetail,
+  type PollHydratedDetail,
+} from "@/lib/eventChannels";
 import {
   pollLookup,
   shortenOption,
@@ -50,6 +55,7 @@ import {
   deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
+  synthesizePlaceholderPoll,
 } from "./createPollHelpers";
 // (Legacy cross-component events for the bottom panel are gone — the form
 //  modal lifecycle is now URL-driven via the `?create=1` flag.)
@@ -1181,7 +1187,80 @@ export function CreateQuestionContent() {
         }
       }
 
-      let createdQuestion: Question;
+      const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
+
+      // Build a placeholder Poll from the draft data so the thread can render
+      // a real card in the destination position immediately, before the API
+      // call resolves. The card mounts with only the title visible (other
+      // fields empty / default) and FLIP-animates from the draft card's
+      // bbox to its natural collapsed-card slot. apiCreatePoll runs in
+      // parallel and dispatches POLL_HYDRATED_EVENT on success so the
+      // thread page can swap placeholder fields for real ones in place.
+      const placeholderPoll = synthesizePlaceholderPoll(drafts, {
+        wrapperTitle,
+        responseDeadline,
+        followUpTo: (() => {
+          // For the placeholder, follow_up_to should be the parent POLL id
+          // (so thread state recognizes it as part of the current thread).
+          // The CreatePollRequest accepts a question id and the server
+          // resolves it; here we resolve client-side via the cache.
+          if (!followUpTo) return null;
+          const cached = getCachedAccessiblePolls() ?? [];
+          for (const mp of cached) {
+            if (mp.questions.some(q => q.id === followUpTo)) return mp.id;
+          }
+          return null;
+        })(),
+        creatorName: creatorName.trim() || null,
+      });
+
+      // For new-root submissions on /thread/new the placeholder needs to be
+      // visible. EmptyThreadView doesn't render a poll list, so we still
+      // navigate first; the destination ThreadContent mounts with the
+      // placeholder in cache and FLIP-animates. We use router.replace with
+      // a placeholder id route — once apiCreatePoll resolves, we router.replace
+      // again to the real shortId.
+      // For follow-ups, the current thread page is already rendering and
+      // takes the placeholder via POLL_PENDING_EVENT inline.
+      const draftCardEl = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
+      const draftBbox = draftCardEl?.getBoundingClientRect();
+      const fromBbox = draftBbox
+        ? { x: draftBbox.x, y: draftBbox.y, width: draftBbox.width, height: draftBbox.height }
+        : { x: 0, y: 0, width: 0, height: 0 };
+
+      // Cache the placeholder so destination thread render can find it.
+      cachePoll(placeholderPoll);
+      const cachedAccessible = getCachedAccessiblePolls() ?? [];
+      cacheAccessiblePolls([...cachedAccessible.filter(p => p.id !== placeholderPoll.id), placeholderPoll]);
+
+      // Dispatch BEFORE we clear the draft state so listeners can read the
+      // bbox in time.
+      window.dispatchEvent(
+        new CustomEvent<PollPendingDetail>(POLL_PENDING_EVENT, {
+          detail: { poll: placeholderPoll, fromBbox },
+        }),
+      );
+
+      // Clear draft state immediately so the draft card unmounts and the
+      // bubble bar reappears.
+      flushSync(() => {
+        setDrafts([]);
+        setPollTitle('');
+        setIsPollTitleCustom(false);
+      });
+      stripCreateParams();
+
+      if (onEmptyThread) {
+        // Route to a temporary URL keyed by the placeholder id. The
+        // destination ThreadContent will pick up the placeholder from cache
+        // and render it. apiCreatePoll's success path navigates again to
+        // the real shortId.
+        router.replace(`/thread/${placeholderPoll.id}`);
+      }
+
+      // Run apiCreatePoll in the background. On success, hydrate the
+      // placeholder. On failure, surface the error and remove the
+      // placeholder so the user can retry.
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({
@@ -1196,7 +1275,6 @@ export function CreateQuestionContent() {
           details: details.trim() || null,
           questions: questionsForRequest,
         });
-        createdQuestion = createdPoll.questions[0];
       } catch (apiError: any) {
         console.error("Error creating question:", apiError);
         setError(apiError.message || "Failed to create question. Please try again.");
@@ -1214,78 +1292,40 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      // For suggestion questions, creators vote after creation like any other participant
-      // No initial vote is created
-
-      // Trigger question discovery if this is a follow-up question
       if (followUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
-        } catch (error) {
+        } catch {
           // Don't fail the question creation if discovery fails
         }
       }
 
-      // Save the creator's name if they provided one
       if (creatorName.trim()) {
         saveUserName(creatorName.trim());
       }
-
-      // Clear saved form state since question was created successfully
       clearFormState();
+      setIsSubmitted(false);
+      isSubmittingRef.current = false;
+      setIsLoading(false);
+      reEnableForm(form);
 
-      // Mark as submitted to prevent further submissions
-      setIsSubmitted(true);
+      // Cache the real poll, then notify thread state so it swaps placeholder
+      // fields for real ones in place (same DOM node — no remount mid-FLIP).
+      cachePoll(createdPoll);
+      const cached2 = getCachedAccessiblePolls() ?? [];
+      cacheAccessiblePolls([...cached2.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id), createdPoll]);
+      window.dispatchEvent(
+        new CustomEvent<PollHydratedDetail>(POLL_HYDRATED_EVENT, {
+          detail: { placeholderId: placeholderPoll.id, poll: createdPoll },
+        }),
+      );
 
-      // Inject the new poll into the in-memory caches so anything that reads
-      // them (thread page initial state, accessible polls list, etc.) sees
-      // the new poll without a network round-trip. Then dispatch
-      // POLL_CREATED_EVENT so the current thread page (if any) can append
-      // the poll to its local state inline — no route change, no re-fetch.
-      // The whole DOM mutation (draft card unmount + new live card mount in
-      // the thread list) is wrapped in `document.startViewTransition` so the
-      // browser auto-morphs the draft's frame into the new live card's
-      // frame using a shared `view-transition-name`. The draft side carries
-      // `view-transition-name: draft-poll-card` always; the new live side is
-      // tagged for one frame in the thread page via `morphingPollId`.
-      const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
-      const applyMorph = () => {
-        cachePoll(createdPoll);
-        const cachedAccessible = getCachedAccessiblePolls() ?? [];
-        if (!cachedAccessible.some(p => p.id === createdPoll.id)) {
-          cacheAccessiblePolls([...cachedAccessible, createdPoll]);
-        }
-        window.dispatchEvent(
-          new CustomEvent<PollCreatedDetail>(POLL_CREATED_EVENT, { detail: { poll: createdPoll } }),
-        );
-        setDrafts([]);
-        setPollTitle('');
-        setIsPollTitleCustom(false);
-        setIsSubmitted(false);
-        isSubmittingRef.current = false;
-        setIsLoading(false);
-        reEnableForm(form);
-        stripCreateParams();
-        if (onEmptyThread) {
-          const redirectId = createdPoll.short_id ?? createdPoll.id;
-          questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-          router.replace(`/thread/${redirectId}`);
-        }
-      };
-      const startVT = (document as Document & {
-        startViewTransition?: (cb: () => void) => { finished: Promise<void> };
-      }).startViewTransition;
-      if (typeof startVT === 'function') {
-        // Force React to commit setState synchronously inside the transition
-        // callback via `flushSync`. Without it, the browser captures the
-        // "new" snapshot before React reconciles — old and new look
-        // identical, so the browser optimizes the animation away and the
-        // user sees an instant swap.
-        startVT.call(document, () => {
-          flushSync(applyMorph);
-        });
-      } else {
-        applyMorph();
+      if (onEmptyThread) {
+        // Land on the real thread URL. ThreadContent's threadId will change,
+        // but the cache is hot so re-mount renders instantly.
+        const redirectId = createdPoll.short_id ?? createdPoll.id;
+        questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
+        router.replace(`/thread/${redirectId}`);
       }
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1589,12 +1629,12 @@ export function CreateQuestionContent() {
       {draftPollPortal && draftCardVisible && createPortal(
         <div className="pt-2">
           <div
+            data-draft-poll-card
             className={`mx-1.5 rounded-lg border-2 transition-colors duration-500 ease-out ${
               isFinalizing
                 ? 'border-solid border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
                 : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
             }`}
-            style={{ viewTransitionName: 'draft-poll-card' } as React.CSSProperties}
           >
             {/* Top row: title input (left) + up-arrow Submit (right). */}
             <div className="flex items-center gap-2 px-3 pt-3 pb-2">
