@@ -1543,7 +1543,7 @@ export function CreateQuestionContent() {
                 : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
             }`}
           >
-            {/* Top row: title input (left) + DRAFT pill + up-arrow Submit. */}
+            {/* Top row: title input (left) + up-arrow Submit (right). */}
             <div className="flex items-center gap-2 px-3 pt-3 pb-2">
               <div className="flex-1 min-w-0">
                 <InlineTitleField
@@ -1561,14 +1561,6 @@ export function CreateQuestionContent() {
                   disabled={isLoading || topModalOpen}
                 />
               </div>
-              {/* DRAFT pill — collapses out via opacity + max-width on submit. */}
-              <span
-                className={`inline-flex items-center justify-center h-5 rounded-full bg-blue-500 text-white text-xs font-bold uppercase tracking-wide overflow-hidden whitespace-nowrap transition-[opacity,max-width,padding] duration-300 ease-out flex-shrink-0 ${
-                  isFinalizing ? 'opacity-0 max-w-0 px-0' : 'opacity-100 max-w-[80px] px-2'
-                }`}
-              >
-                draft
-              </span>
               <button
                 type="button"
                 onClick={handleSubmitClick}
