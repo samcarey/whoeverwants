@@ -10,24 +10,7 @@
  * Add a new event by exporting a const + a `*Detail` type alongside it.
  */
 
-/** Open/close state of the top "New Question" form modal. Listened to by
- *  `template.tsx` to hide the floating What/When/Where bubble bar while the
- *  form is open (per spec: either the buttons or the form, not both). */
-export const QUESTION_FORM_STATE_CHANGE_EVENT = 'questionFormStateChange';
-export interface QuestionFormStateChangeDetail {
-  open: boolean;
-}
-
-/** Request from the bubble bar to open the top "New Question" form when the
- *  bottom panel is already open. CreateQuestionContent listens and calls its
- *  `handleOpenNewQuestion` with the preselect detail. */
-export const OPEN_QUESTION_FORM_EVENT = 'openQuestionForm';
-export interface OpenQuestionFormDetail {
-  mode?: 'question' | 'time';
-  category?: string;
-}
-
-/** Submit-time signal: CreateQuestionContent has resolved apiCreatePoll and
- *  is about to navigate. template.tsx listens to slide the bottom panel down
- *  in lockstep with the draft-poll-card morph animation. */
-export const CREATE_PANEL_FINALIZE_EVENT = 'createPanelFinalize';
+// (Form-modal lifecycle events were retired when the docked bottom panel was
+//  replaced by a true blocking modal owned by CreateQuestionContent. The
+//  modal is now URL-driven via `?create=1` so no cross-component event
+//  signaling is needed for it.)
