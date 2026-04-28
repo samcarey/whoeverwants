@@ -701,9 +701,8 @@ export function CreateQuestionContent() {
   // Check on top modal: validate per-question fields, snapshot current form
   // into a draft, insert/update in drafts list, close.
   const handleCheckCommit = useCallback(() => {
-    console.log('[CreatePoll] check commit; topOpen=', topModalOpen, 'drafts=', drafts.length);
     const subErr = getCurrentQuestionFormError();
-    if (subErr) { console.log('[CreatePoll] check err=', subErr); setError(subErr); return; }
+    if (subErr) { setError(subErr); return; }
     setError(null);
     const draft = readCurrentDraft();
     if (editingDraftIndex !== null) {
@@ -825,15 +824,29 @@ export function CreateQuestionContent() {
   // separate renders, so the effect would briefly see `?mode=time` AND
   // `topModalOpen=false`). Anchoring on the explicit `?openForm=1` flag lets
   // us strip it once and never re-fire spuriously.
+  // Tracks "we've already consumed an open-trigger this cycle" so the effect
+  // doesn't re-fire while Next.js's useSearchParams catches up to a `router.replace`
+  // that just stripped the trigger params. Cleared once the URL is fully scrubbed
+  // of every open-trigger param, freeing the effect to react to a fresh signal.
+  const openTriggerConsumedRef = useRef(false);
   useEffect(() => {
     if (!isClient) return;
-    if (topModalOpen) { console.log('[AutoOpen] bail topOpen=true'); return; }
+    if (topModalOpen) {
+      openTriggerConsumedRef.current = true;
+      return;
+    }
+    if (openTriggerConsumedRef.current) {
+      const triggersCleared = !openFormParam
+        && !duplicateOfParam
+        && !voteFromSuggestionParam
+        && !followUpToParam;
+      if (triggersCleared) openTriggerConsumedRef.current = false;
+      return;
+    }
     const hasOpenFormFlag = openFormParam === '1';
     const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
-    console.log('[AutoOpen] check', { topModalOpen, openFormParam, modeParam, categoryParam, followUpToParam, hasOpenFormFlag, hasSpecialFlow });
+    if (!hasOpenFormFlag && !hasSpecialFlow) return;
     if (hasOpenFormFlag) {
-      // Bubble bar tap: reset the question form to the preselected category /
-      // mode rather than reusing whatever was last in state.
       const opts: { mode?: 'question' | 'time'; category?: string } = {};
       if (modeParam === 'time') opts.mode = 'time';
       if (categoryParam) opts.category = categoryParam;
@@ -845,9 +858,10 @@ export function CreateQuestionContent() {
       const url = new URL(window.location.href);
       url.searchParams.delete('openForm');
       window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
-    } else if (hasSpecialFlow) {
+    } else {
       setTopModalOpen(true);
     }
+    openTriggerConsumedRef.current = true;
   }, [isClient, topModalOpen, openFormParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, modeParam, categoryParam, applyDraftToState]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
