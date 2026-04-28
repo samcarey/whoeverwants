@@ -395,10 +395,12 @@ function TemplateInner({ children }: AppTemplateProps) {
   // The create-poll panel is NOT a true modal: the underlying page stays
   // interactable and scrollable. We do not lock body scroll, so the user can
   // scroll the poll list (incl. the in-progress draft poll card portaled into
-  // the bottom of the list). The on-modal-mount housekeeping that used to live
-  // here (resetting close state) still needs to run.
+  // the bottom of the list).
+  // Reset the close-state on every isCreateModalOpen transition — including
+  // the close transition, so the bubble bar (which is gated on !modalClosing
+  // to hide during the slide-down) becomes visible again once the panel has
+  // actually closed.
   useEffect(() => {
-    if (!isCreateModalOpen) return;
     setModalClosing(false);
     dragState.current.isClosing = false;
     return () => {
