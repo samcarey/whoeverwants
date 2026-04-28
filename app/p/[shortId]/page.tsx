@@ -406,6 +406,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         card.style.transform = `translate(${dx}px, ${dy}px)`;
         card.style.width = `${fromBbox.width}px`;
         card.style.height = `${fromBbox.height}px`;
+        // Grid item default `min-height: auto` resolves to min-content,
+        // which clamps the cardFrame to its intrinsic content height and
+        // breaks the FLIP height transition (height 294 → 34 stays at 294
+        // because intrinsic min-content > 34). Override to 0 so the
+        // transition can drive the height freely.
+        card.style.minHeight = '0';
+        card.style.minWidth = '0';
         console.log('[FLIP] rAF1 set FROM state. dx=', dx, 'dy=', dy, 'fromH=', fromBbox.height, 'newH=', newBbox.height);
         rafId2 = requestAnimationFrame(() => {
           if (!card.isConnected) { console.log('[FLIP] rAF2 card disconnected'); return; }
@@ -426,6 +433,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             finalCard.style.transformOrigin = '';
             finalCard.style.width = '';
             finalCard.style.height = '';
+            finalCard.style.minHeight = '';
+            finalCard.style.minWidth = '';
           }, 1050);
         });
       });
