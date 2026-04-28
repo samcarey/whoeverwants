@@ -367,7 +367,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       });
 
       // FLIP: after React commits, find the new card in the DOM and animate
-      // it from the captured draft bbox to its natural position.
+      // it from the captured draft bbox to its natural position. Animate
+      // width/height (not transform: scale) so the title and other content
+      // sit at their natural size in the morphing container — `scale(sx, sy)`
+      // would stretch the title vertically when the draft is much taller
+      // than the collapsed live card.
       if (firstQuestionId) {
         requestAnimationFrame(() => {
           const card = cardRefs.current.get(firstQuestionId);
@@ -375,20 +379,30 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           const newBbox = card.getBoundingClientRect();
           const dx = fromBbox.x - newBbox.x;
           const dy = fromBbox.y - newBbox.y;
-          const sx = fromBbox.width / newBbox.width;
-          const sy = fromBbox.height / newBbox.height;
-          // Apply FIRST snapshot: card positioned at draft's bbox.
+          // Apply FIRST snapshot: card sized to the draft's bbox at the
+          // draft's position. `transform: translate(...)` shifts position
+          // without affecting layout; explicit width/height physically
+          // resize the container without scaling its contents.
           card.style.transformOrigin = 'top left';
-          card.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+          card.style.transform = `translate(${dx}px, ${dy}px)`;
+          card.style.width = `${fromBbox.width}px`;
+          card.style.height = `${fromBbox.height}px`;
           card.style.transition = 'none';
           // Force reflow so the browser commits the FIRST state.
           void card.offsetWidth;
-          // PLAY: animate to identity (natural position + size).
-          card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1)';
+          // PLAY: animate to natural position + natural size. We transition
+          // to explicit pixel values (not '') because CSS can't transition
+          // to/from `auto`; the inline overrides are cleared after the
+          // animation finishes so the card returns to layout-driven sizing.
+          card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
           card.style.transform = '';
+          card.style.width = `${newBbox.width}px`;
+          card.style.height = `${newBbox.height}px`;
           window.setTimeout(() => {
             card.style.transition = '';
             card.style.transformOrigin = '';
+            card.style.width = '';
+            card.style.height = '';
           }, 1050);
         });
       }
