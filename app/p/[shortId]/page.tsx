@@ -416,7 +416,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           // node between rAFs (e.g., a stray re-render); fall back to
           // the original element if not.
           const target = cardFrameRefs.current.get(firstQuestionId) ?? card;
-          target.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
+          target.style.transition = 'transform 0.5s ease-out, width 0.5s ease-out, height 0.5s ease-out';
           target.style.transform = '';
           target.style.width = `${newBbox.width}px`;
           target.style.height = `${newBbox.height}px`;
@@ -429,7 +429,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             finalCard.style.height = '';
             finalCard.style.minHeight = '';
             finalCard.style.minWidth = '';
-          }, 1050);
+          }, 550);
         });
       });
     };
