@@ -3,47 +3,73 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
+import { usePageReady } from "@/lib/usePageReady";
+import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
+import ThreadHeader from "@/components/ThreadHeader";
 
 export const dynamic = 'force-dynamic';
 
-function QuestionRedirect() {
+// `/p/` serves two roles:
+//   1. With `?id=<question-uuid>`, redirect to the friendly `/p/<short_id>` URL
+//      (legacy deep-link compatibility).
+//   2. With no params, render the empty placeholder for a not-yet-created
+//      thread. The home page's "+" FAB and the What/When/Where bubble bar both
+//      land here; the thread materializes once the user creates a question.
+function PollRoot() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const id = searchParams.get('id');
-  const isNew = searchParams.get('new');
 
   useEffect(() => {
-    async function handleRedirect() {
-      if (id) {
-        try {
-          // Phase 5b: short_id lives on the poll wrapper. Walk the
-          // question → poll path to resolve the friendly URL.
-          const question = await apiGetQuestionById(id);
-          const pollId = question?.poll_id;
-          const wrapper = pollId ? await apiGetPollById(pollId).catch(() => null) : null;
-          if (wrapper?.short_id) {
-            router.replace(`/p/${wrapper.short_id}`);
-          } else {
-            router.replace(`/p/${id}`);
-          }
-        } catch (error) {
+    if (!id) return;
+    (async () => {
+      try {
+        const question = await apiGetQuestionById(id);
+        const pollId = question?.poll_id;
+        const wrapper = pollId ? await apiGetPollById(pollId).catch(() => null) : null;
+        if (wrapper?.short_id) {
+          router.replace(`/p/${wrapper.short_id}`);
+        } else {
           router.replace(`/p/${id}`);
         }
-      } else {
-        router.replace('/');
+      } catch {
+        router.replace(`/p/${id}`);
       }
-    }
+    })();
+  }, [id, router]);
 
-    handleRedirect();
-  }, [id, isNew, router]);
-
-  return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
+  if (id) {
+    return <div className="min-h-screen flex items-center justify-center">Redirecting...</div>;
+  }
+  return <EmptyPlaceholder />;
 }
 
-export default function QuestionPage() {
+function EmptyPlaceholder() {
+  usePageReady(true);
+  const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
+
+  return (
+    <>
+      <ThreadHeader headerRef={headerRef} title="New Thread" />
+      <div
+        className="px-4 text-center"
+        style={{ paddingTop: `calc(${headerHeight}px + 1.5rem)` }}
+      >
+        <p className="text-base text-gray-700 dark:text-gray-300">
+          Create a question and then share the link!
+        </p>
+        {/* Render target for the in-progress draft poll card while the
+            create-poll panel is open. Filled by CreateQuestionContent. */}
+        <div id="draft-poll-portal" className="mt-4" />
+      </div>
+    </>
+  );
+}
+
+export default function PollRootPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <QuestionRedirect />
+      <PollRoot />
     </Suspense>
   );
 }

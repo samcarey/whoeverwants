@@ -41,7 +41,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
   // Prefetch thread page routes for all visible threads on mount
   useEffect(() => {
     if (threads.length === 0) return;
-    const hrefs = threads.map(t => `/thread/${getThreadRouteId(t)}`);
+    const hrefs = threads.map(t => `/p/${getThreadRouteId(t)}`);
     prefetchBatch(hrefs, { priority: "low" });
   }, [threads, prefetchBatch]);
 
@@ -88,7 +88,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
         const hasUnvoted = thread.unvotedCount > 0;
 
         const goToThread = () => {
-          navigateWithTransition(router, `/thread/${routeId}`, 'forward');
+          navigateWithTransition(router, `/p/${routeId}`, 'forward');
         };
 
         const handleTouchStart = (e: React.TouchEvent) => {

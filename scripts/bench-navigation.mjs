@@ -108,7 +108,7 @@ async function waitForReady(page, targetPath, timeout = NAV_READY_TIMEOUT) {
   // the page's canonical DOM fingerprint is present, treat as ready.
   const structuralSelector = target === '/'
     ? '[data-thread-root-id]'
-    : (target.startsWith('/thread/') || target.startsWith('/p/'))
+    : target.startsWith('/p/')
       ? '[data-thread-latest-poll-id="true"], body[data-thread-latest-poll-id]'
       : null;
 
@@ -340,14 +340,14 @@ async function main() {
     addResult(results, 'cold home load', 'goto+ready', samples);
   });
 
-  // Pre-warm the thread route: on dev servers, the first hit of
-  // `/thread/[id]` triggers Next.js on-demand compile (can exceed 30s).
+  // Pre-warm the poll route: on dev servers, the first hit of
+  // `/p/[shortId]` triggers Next.js on-demand compile (can exceed 30s).
   // Hitting it once here lets the real scenarios measure warm-compile
   // timings; otherwise the first click in every scenario eats the compile.
   console.log('Warming up thread route...');
   {
     const thread = polls[0];
-    const threadPath = `/thread/${thread.short_id || thread.id}`;
+    const threadPath = `/p/${thread.short_id || thread.id}`;
     await page.goto(`${BASE_URL}${threadPath}`, { timeout: 60_000 });
     await waitForReady(page, threadPath, 60_000);
   }
@@ -364,7 +364,7 @@ async function main() {
       await waitForReady(page, '/');
       await page.waitForSelector(`[data-thread-root-id]`);
       const thread = polls[i % polls.length];
-      const threadPath = `/thread/${thread.short_id || thread.id}`;
+      const threadPath = `/p/${thread.short_id || thread.id}`;
       const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
       readySamples.push(m.clickToReady);
       urlSamples.push(m.clickToUrl ?? m.clickToReady);
@@ -389,7 +389,7 @@ async function main() {
       await waitForReady(page, '/');
       await page.waitForSelector(`[data-thread-root-id]`);
       const thread = polls[i % polls.length];
-      const threadPath = `/thread/${thread.short_id || thread.id}`;
+      const threadPath = `/p/${thread.short_id || thread.id}`;
       const m = await measureClickNav(page, `[data-thread-root-id="${thread.id}"] > div`, threadPath);
       readySamples.push(m.clickToReady);
     }
@@ -412,7 +412,7 @@ async function main() {
   }
 
   async function measureHomeToThread(thread) {
-    const threadPath = `/thread/${thread.short_id || thread.id}`;
+    const threadPath = `/p/${thread.short_id || thread.id}`;
     const t0 = Date.now();
     await page.locator(`[data-thread-root-id="${thread.id}"] > div`).click();
     await waitForReady(page, threadPath);
@@ -425,7 +425,7 @@ async function main() {
     const samples = [];
     for (let i = 0; i < RUNS; i++) {
       const thread = polls[i % polls.length];
-      const threadPath = `/thread/${thread.short_id || thread.id}`;
+      const threadPath = `/p/${thread.short_id || thread.id}`;
       await page.goto(BASE_URL);
       await waitForReady(page, '/');
       await page.waitForSelector(`[data-thread-root-id]`);

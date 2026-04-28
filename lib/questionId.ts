@@ -17,21 +17,22 @@ export function isUuidLike(id: string): boolean {
 
 /** Normalize a URL pathname: strip a trailing slash, but keep root `/` as `/`.
  *  Used for comparing pathnames coming from different sources — the app has
- *  `trailingSlash: true`, so `/thread/abc` can render at `/thread/abc/`. */
+ *  `trailingSlash: true`, so `/p/abc` can render at `/p/abc/`. */
 export function normalizePath(path: string): string {
   return path.replace(/\/$/, '') || '/';
 }
 
-/** If `pathname` is a question page (`/p/<id>` with optional trailing slash),
- *  return the question route ID (short_id or UUID). Otherwise null. */
+/** If `pathname` is a poll page (`/p/<id>` with optional trailing slash),
+ *  return the poll route ID (short_id or UUID). Otherwise null. */
 export function extractQuestionRouteId(pathname: string): string | null {
   const match = pathname.match(/^\/p\/([^/]+)\/?$/);
   return match ? match[1] : null;
 }
 
-/** True when `pathname` is the top-level thread or question view (`/thread/<id>`
- *  or `/p/<id>`). False for sub-routes like `/thread/<id>/info`. Template uses
- *  this to decide which pages get the thread-like layout + floating-plus FAB. */
+/** True when `pathname` is the top-level poll view: the empty placeholder
+ *  (`/p` or `/p/`) or a specific poll (`/p/<id>`). False for sub-routes like
+ *  `/p/<id>/info`. Template uses this to decide which pages get the
+ *  thread-like layout + floating-plus FAB. */
 export function isThreadRootView(pathname: string): boolean {
-  return /^\/(thread|p)\/[^/]+\/?$/.test(pathname);
+  return /^\/p(\/[^/]+)?\/?$/.test(pathname);
 }

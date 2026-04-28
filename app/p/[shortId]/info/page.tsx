@@ -11,7 +11,7 @@ import { ThreadLoading, ThreadNotFound } from "@/components/ThreadLoadState";
 
 function ThreadInfoInner() {
   const params = useParams();
-  const threadId = params.threadId as string;
+  const threadId = params.shortId as string;
   const { thread, loading, error } = useThread(threadId);
 
   if (loading) return <ThreadLoading />;
@@ -25,7 +25,7 @@ function Info({ thread, threadId }: { thread: import("@/lib/threadUtils").Thread
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/thread/${threadId}`, 'back');
+    else navigateWithTransition(router, `/p/${threadId}`, 'back');
   };
 
   const totalCount = thread.participantNames.length;
@@ -38,7 +38,7 @@ function Info({ thread, threadId }: { thread: import("@/lib/threadUtils").Thread
         onBack={goBack}
         rightSlot={
           <button
-            onClick={() => navigateWithTransition(router, `/thread/${threadId}/edit-title`, 'forward')}
+            onClick={() => navigateWithTransition(router, `/p/${threadId}/edit-title`, 'forward')}
             className="w-10 h-10 flex items-center justify-center shrink-0 text-blue-600 dark:text-blue-400 text-sm font-medium"
             aria-label="Edit thread title"
           >

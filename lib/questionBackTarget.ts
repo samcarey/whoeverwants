@@ -15,13 +15,13 @@ import { normalizePath } from './questionId';
 
 const KEY_PREFIX = 'questionBackTarget:';
 
-/** Record `/thread/<threadRootRouteId>` as the back destination for the given
+/** Record `/p/<threadRootRouteId>` as the back destination for the given
  *  question page. Skipped when the page currently underneath the create modal
  *  already matches — natural `history.back()` will land there anyway, and an
  *  explicit override would just add a duplicate history entry. */
 export function set(questionRouteId: string, threadRootRouteId: string): void {
   if (typeof window === 'undefined') return;
-  const threadPath = `/thread/${threadRootRouteId}`;
+  const threadPath = `/p/${threadRootRouteId}`;
   if (normalizePath(window.location.pathname) === threadPath) return;
   sessionStorage.setItem(KEY_PREFIX + questionRouteId, threadPath);
 }
