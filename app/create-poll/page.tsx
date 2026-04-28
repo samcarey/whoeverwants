@@ -822,32 +822,40 @@ export function CreateQuestionContent() {
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
-  // Auto-open the question form modal whenever the URL signals a fresh create
-  // flow:
-  //  - `?openForm=1` set by the bubble bar tap, or
-  //  - a preselection (category/mode) lands on the URL, or
-  //  - this is a duplicate / follow-up / vote-from-suggestion flow.
-  // Re-runs on each URL change (CreateQuestionContent is now always mounted on
-  // thread-like pages, so we can't rely on first-mount semantics). Bails when
-  // the modal is already open so opening it doesn't churn state. Plain entry
-  // (reload with saved drafts but no signal in URL) leaves the modal closed
-  // so the user sees the draft poll card first. `?openForm=1` is stripped
-  // after consumption so a refresh doesn't reopen.
+  // Auto-open the question form modal when the URL carries an explicit
+  // "open form" signal:
+  //   - `?openForm=1` set by the bubble bar tap (consumed once + stripped), or
+  //   - a duplicate / follow-up / vote-from-suggestion flow.
+  // We deliberately do NOT auto-open just because `?category=` or `?mode=` is
+  // in the URL — those land alongside `?openForm=1` from the bubble bar, and
+  // reacting to them independently caused the modal to flap open during the
+  // close sequence (the URL-strip + setTopModalOpen(false) commits arrive on
+  // separate renders, so the effect would briefly see `?mode=time` AND
+  // `topModalOpen=false`). Anchoring on the explicit `?openForm=1` flag lets
+  // us strip it once and never re-fire spuriously.
   useEffect(() => {
     if (!isClient) return;
     if (topModalOpen) return;
-    const hasPreselect = !!(categoryParam || modeParam);
-    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
     const hasOpenFormFlag = openFormParam === '1';
-    if (hasPreselect || hasSpecialFlow || hasOpenFormFlag) {
-      setTopModalOpen(true);
-    }
+    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
     if (hasOpenFormFlag) {
+      // Bubble bar tap: reset the question form to the preselected category /
+      // mode rather than reusing whatever was last in state.
+      const opts: { mode?: 'question' | 'time'; category?: string } = {};
+      if (modeParam === 'time') opts.mode = 'time';
+      if (categoryParam) opts.category = categoryParam;
+      setError(null);
+      applyDraftToState(emptyDraft(opts));
+      setEditingDraftIndex(null);
+      setOriginalEditingDraft(null);
+      setTopModalOpen(true);
       const url = new URL(window.location.href);
       url.searchParams.delete('openForm');
       window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    } else if (hasSpecialFlow) {
+      setTopModalOpen(true);
     }
-  }, [isClient, topModalOpen, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, openFormParam]);
+  }, [isClient, topModalOpen, openFormParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, modeParam, categoryParam, applyDraftToState]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
