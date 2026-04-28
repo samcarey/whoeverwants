@@ -346,6 +346,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // for that case.
   useEffect(() => {
     let rafId = 0;
+    let rafId2 = 0;
     let timeoutId = 0;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
@@ -378,6 +379,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // shape morphs and the surrounding category-icon column stays still.
       // width/height (not `transform: scale`) so the title sits at its
       // natural size in the morphing container.
+      //
+      // Two-rAF dance: the first rAF measures the natural position +
+      // commits the "from" state inline (no transition); the second rAF
+      // (next frame) installs the transition + writes the "to" state.
+      // Single-rAF + `void offsetWidth` worked in some browsers but
+      // wasn't firing the transition reliably here — the new card's
+      // height stayed at the inline "to" value visually with no easing,
+      // looking like an instant snap. The double-rAF pattern is the
+      // standard FLIP idiom and lets the browser commit the from-state
+      // paint before the transition starts.
       if (!firstQuestionId) return;
       rafId = requestAnimationFrame(() => {
         const card = cardFrameRefs.current.get(firstQuestionId);
@@ -385,31 +396,32 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         const newBbox = card.getBoundingClientRect();
         const dx = fromBbox.x - newBbox.x;
         const dy = fromBbox.y - newBbox.y;
+        card.style.transition = 'none';
         card.style.transformOrigin = 'top left';
         card.style.transform = `translate(${dx}px, ${dy}px)`;
         card.style.width = `${fromBbox.width}px`;
         card.style.height = `${fromBbox.height}px`;
-        card.style.transition = 'none';
-        void card.offsetWidth;
-        card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
-        card.style.transform = '';
-        // CSS can't transition to/from `auto`; transition to explicit px,
-        // then clear the inline overrides so layout takes over after.
-        card.style.width = `${newBbox.width}px`;
-        card.style.height = `${newBbox.height}px`;
-        timeoutId = window.setTimeout(() => {
+        rafId2 = requestAnimationFrame(() => {
           if (!card.isConnected) return;
-          card.style.transition = '';
-          card.style.transformOrigin = '';
-          card.style.width = '';
-          card.style.height = '';
-        }, 1050);
+          card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
+          card.style.transform = '';
+          card.style.width = `${newBbox.width}px`;
+          card.style.height = `${newBbox.height}px`;
+          timeoutId = window.setTimeout(() => {
+            if (!card.isConnected) return;
+            card.style.transition = '';
+            card.style.transformOrigin = '';
+            card.style.width = '';
+            card.style.height = '';
+          }, 1050);
+        });
       });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
     return () => {
       window.removeEventListener(POLL_PENDING_EVENT, handler);
       if (rafId) cancelAnimationFrame(rafId);
+      if (rafId2) cancelAnimationFrame(rafId2);
       if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, []);
