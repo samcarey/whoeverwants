@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback, Suspense } from 'react';
+import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
@@ -10,11 +10,6 @@ import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isThreadRootView } from '@/lib/questionId';
-import {
-  QUESTION_FORM_STATE_CHANGE_EVENT,
-  CREATE_PANEL_FINALIZE_EVENT,
-  type QuestionFormStateChangeDetail,
-} from '@/lib/eventChannels';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -158,46 +153,6 @@ function TemplateInner({ children }: AppTemplateProps) {
   const isThreadLikePage = isThreadRootView(pathname);
   const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
-  const [modalClosing, setModalClosing] = useState(false);
-
-  // Refs for modal drag-to-dismiss — uses direct DOM manipulation for 60fps.
-  const modalSheetRef = useRef<HTMLDivElement>(null);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const modalScrollRef = useRef<HTMLDivElement>(null);
-  const dragState = useRef({
-    startY: 0,
-    currentTranslate: 0,
-    isDragging: false,
-    startedInHeader: false,
-    startedInScrollableChild: false,
-    isClosing: false,
-    rAFPending: false,
-    rAFId: 0,
-    lastMoveTime: 0,
-    lastMoveY: 0,
-  });
-  const closeTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Stable ref for close navigation — avoids searchParams in deps, preventing listener churn.
-  const navigateCloseModalRef = useRef(() => {});
-  useEffect(() => {
-    navigateCloseModalRef.current = () => {
-      const params = new URLSearchParams(searchParams.toString());
-      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category', 'openForm']
-        .forEach(p => params.delete(p));
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname);
-    };
-  }, [router, pathname, searchParams]);
-
-  const handleCloseCreateModal = useCallback(() => {
-    if (dragState.current.isClosing) return;
-    dragState.current.isClosing = true;
-    setModalClosing(true);
-    closeTimerRef.current = setTimeout(() => {
-      navigateCloseModalRef.current();
-    }, 300);
-  }, []);
 
   // Open the create-question modal from the floating What/When/Where bubble bar.
   // The bubble bar is only shown on thread-like pages, so we always open the
@@ -220,215 +175,11 @@ function TemplateInner({ children }: AppTemplateProps) {
     router.push(`${pathname}?${params.toString()}`);
   }, [pathname, router, searchParams]);
 
-  // Drag-to-dismiss touch handling for the create question modal sheet.
-  useEffect(() => {
-    if (!isCreateModalOpen || !isMounted) return;
-    const sheet = modalSheetRef.current;
-    if (!sheet) return;
-
-    const state = dragState.current;
-
-    const updateDOM = () => {
-      state.rAFPending = false;
-      const t = state.currentTranslate;
-      if (modalSheetRef.current) {
-        modalSheetRef.current.style.transform = `translateY(${t}px)`;
-      }
-      if (backdropRef.current) {
-        const h = modalSheetRef.current?.offsetHeight || window.innerHeight;
-        const progress = Math.min(t / (h * 0.5), 1);
-        backdropRef.current.style.opacity = String(1 - progress * 0.7);
-      }
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (state.isClosing) return;
-      state.startY = e.touches[0].clientY;
-      state.isDragging = false;
-      state.currentTranslate = 0;
-      state.lastMoveTime = Date.now();
-      state.lastMoveY = e.touches[0].clientY;
-      const scrollEl = modalScrollRef.current;
-      if (scrollEl) {
-        const rect = scrollEl.getBoundingClientRect();
-        state.startedInHeader = e.touches[0].clientY < rect.top;
-      }
-      // Check if touch started inside a scrollable child (e.g. autocomplete dropdown).
-      // If so, don't engage drag-to-dismiss — let the child scroll naturally.
-      // Only check for overflow-y style, not scrollHeight vs clientHeight — the height
-      // check has edge cases near the max-height boundary that cause false negatives.
-      state.startedInScrollableChild = false;
-      if (scrollEl) {
-        let el = e.target as HTMLElement | null;
-        while (el && el !== scrollEl) {
-          const overflowY = window.getComputedStyle(el).overflowY;
-          if (overflowY === 'auto' || overflowY === 'scroll') {
-            state.startedInScrollableChild = true;
-            break;
-          }
-          el = el.parentElement;
-        }
-      }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (state.isClosing) return;
-      const touchY = e.touches[0].clientY;
-      const deltaY = touchY - state.startY;
-
-      if (!state.isDragging) {
-        const scrollEl = modalScrollRef.current;
-        const scrollAtTop = !scrollEl || scrollEl.scrollTop <= 0;
-        if (!(state.startedInHeader || (!state.startedInScrollableChild && scrollAtTop && deltaY > 5))) return;
-        state.isDragging = true;
-        if (scrollEl) scrollEl.style.overflowY = 'hidden';
-        if (modalSheetRef.current) modalSheetRef.current.style.transition = 'none';
-        if (backdropRef.current) backdropRef.current.style.transition = 'none';
-      }
-
-      // Track velocity from the last few touchmove events
-      state.lastMoveTime = Date.now();
-      state.lastMoveY = touchY;
-
-      state.currentTranslate = Math.max(0, deltaY);
-      if (!state.rAFPending) {
-        state.rAFPending = true;
-        state.rAFId = requestAnimationFrame(updateDOM);
-      }
-    };
-
-    const onTouchEnd = (e: TouchEvent) => {
-      if (!state.isDragging || state.isClosing) return;
-      state.isDragging = false;
-
-      // Cancel any pending rAF so it doesn't overwrite the animation.
-      if (state.rAFPending) {
-        cancelAnimationFrame(state.rAFId);
-        state.rAFPending = false;
-      }
-
-      const scrollEl = modalScrollRef.current;
-      if (scrollEl) scrollEl.style.overflowY = '';
-
-      const modalHeight = modalSheetRef.current?.offsetHeight || window.innerHeight;
-      const threshold = modalHeight * 0.33;
-
-      // Compute downward velocity (px/ms) from the last touchmove to touchend.
-      const endY = e.changedTouches[0].clientY;
-      const dt = Date.now() - state.lastMoveTime;
-      const velocity = dt > 0 ? (endY - state.lastMoveY) / dt : 0;
-      // Dismiss if past halfway OR flicked downward fast (>0.5 px/ms ≈ 500px/s).
-      const shouldClose = state.currentTranslate > threshold || (velocity > 0.5 && state.currentTranslate > 30);
-
-      if (shouldClose) {
-        // Past halfway — close. Must force reflow between setting transition
-        // and target value, otherwise browser skips the animation (transition
-        // was 'none' during drag).
-        state.isClosing = true;
-        if (modalSheetRef.current) {
-          modalSheetRef.current.style.transition = 'transform 0.3s ease-in';
-          modalSheetRef.current.offsetHeight; // force reflow
-          modalSheetRef.current.style.transform = 'translateY(100%)';
-        }
-        if (backdropRef.current) {
-          backdropRef.current.style.transition = 'opacity 0.3s ease-in';
-          backdropRef.current.offsetHeight;
-          backdropRef.current.style.opacity = '0';
-        }
-        closeTimerRef.current = setTimeout(() => {
-          navigateCloseModalRef.current();
-        }, 300);
-      } else {
-        // Under halfway — spring back
-        if (modalSheetRef.current) {
-          modalSheetRef.current.style.transition = 'transform 0.3s ease-out';
-          modalSheetRef.current.offsetHeight;
-          modalSheetRef.current.style.transform = '';
-        }
-        if (backdropRef.current) {
-          backdropRef.current.style.transition = 'opacity 0.3s ease-out';
-          backdropRef.current.offsetHeight;
-          backdropRef.current.style.opacity = '';
-        }
-        setTimeout(() => {
-          if (modalSheetRef.current) modalSheetRef.current.style.transition = '';
-          if (backdropRef.current) backdropRef.current.style.transition = '';
-        }, 300);
-      }
-      state.currentTranslate = 0;
-    };
-
-    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
-    sheet.addEventListener('touchmove', onTouchMove, { passive: true });
-    sheet.addEventListener('touchend', onTouchEnd, { passive: true });
-
-    return () => {
-      sheet.removeEventListener('touchstart', onTouchStart);
-      sheet.removeEventListener('touchmove', onTouchMove);
-      sheet.removeEventListener('touchend', onTouchEnd);
-    };
-  }, [isCreateModalOpen, isMounted]);
-
-  // Hide the floating What/When/Where bubble bar while the top "New Question"
-  // form is open (per spec: buttons OR form, never both).
-  const [questionFormOpen, setQuestionFormOpen] = useState(false);
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<QuestionFormStateChangeDetail>).detail;
-      setQuestionFormOpen(!!detail?.open);
-    };
-    window.addEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
-    return () => window.removeEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
-  }, []);
-
-  // Submit-time: trigger the existing slide-down animation so the user sees
-  // the draft-poll-card morph alone. CreateQuestionContent owns the navigation
-  // after its 600ms hold, so we don't navigate here.
-  useEffect(() => {
-    const handler = () => {
-      setModalClosing(true);
-      dragState.current.isClosing = true;
-    };
-    window.addEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
-    return () => window.removeEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
-  }, []);
-
-  // The create-poll panel is NOT a true modal: the underlying page stays
-  // interactable and scrollable. We do not lock body scroll, so the user can
-  // scroll the poll list (incl. the in-progress draft poll card portaled into
-  // the bottom of the list).
-  // Reset the close-state on every isCreateModalOpen transition — including
-  // the close transition, so the bubble bar (which is gated on !modalClosing
-  // to hide during the slide-down) becomes visible again once the panel has
-  // actually closed.
-  useEffect(() => {
-    setModalClosing(false);
-    dragState.current.isClosing = false;
-    return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    };
-  }, [isCreateModalOpen]);
-
-  // Publish the bottom modal sheet's measured height to a CSS variable so the
-  // top question-form modal can anchor its `bottom:` to "just above" it. Tracks
-  // ResizeObserver-driven height changes (notes textarea autogrow, suggestion
-  // cutoff conditional, etc.) so the top modal slides up/down with the bottom.
-  useEffect(() => {
-    if (!isCreateModalOpen || !isMounted) return;
-    const sheet = modalSheetRef.current;
-    if (!sheet) return;
-    const html = document.documentElement;
-    const setVar = () => {
-      html.style.setProperty('--bottom-modal-height', `${sheet.offsetHeight}px`);
-    };
-    setVar();
-    const ro = new ResizeObserver(setVar);
-    ro.observe(sheet);
-    return () => {
-      ro.disconnect();
-      html.style.removeProperty('--bottom-modal-height');
-    };
-  }, [isCreateModalOpen, isMounted]);
+  // The question form is now a true blocking modal owned by CreateQuestionContent;
+  // template.tsx no longer hosts a docked bottom panel, so the previous
+  // drag-to-dismiss / --bottom-modal-height / CREATE_PANEL_FINALIZE plumbing
+  // is gone. Bubble bar visibility flips on the simple `isCreateModalOpen`
+  // URL-derived flag below.
 
   return (
     <>
@@ -509,67 +260,22 @@ function TemplateInner({ children }: AppTemplateProps) {
         <div
           className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
           style={(pathname === '/' || isThreadLikePage)
-            ? { paddingBottom: isCreateModalOpen
-                ? 'calc(var(--bottom-modal-height, 6rem) + 5rem)'
-                : '6rem' }
+            ? { paddingBottom: '6rem' }
             : undefined}
         >
           {children}
         </div>
       </div>
 
-      {/* Create-poll docked panel — NOT a true modal: no backdrop, page
-           stays scrollable + interactable so the user can see the in-progress
-           draft poll card portaled into the bottom of the page list. */}
-      {isCreateModalOpen && isMounted && createPortal(
-        <div className="fixed inset-x-0 bottom-0 z-[60] pointer-events-none">
-          {/* Modal sheet */}
-          <div
-            ref={modalSheetRef}
-            className={`pointer-events-auto rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
-              modalClosing ? 'animate-slide-down' : 'animate-slide-up'
-            }`}
-            style={{ maxHeight: 'calc(100% - env(safe-area-inset-top, 0px) - 15px)', overscrollBehavior: 'none' }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Drag handle */}
-            <div className="flex-shrink-0 flex justify-center pt-2.5 pb-1">
-              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
-            </div>
-            {/* Header */}
-            <div className="flex-shrink-0 relative flex items-center justify-between px-4 pb-2">
-              <button
-                onClick={handleCloseCreateModal}
-                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
-                aria-label="Close"
-              >
-                <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
-                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
-              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Poll</h2>
-              <div id="create-question-submit-portal" className="flex-shrink-0 z-10" />
-            </div>
-            {/* Generated title line */}
-            <div id="create-question-title-portal" className="flex-shrink-0 px-4" />
-            {/* Scrollable content */}
-            <div ref={modalScrollRef} className="overflow-auto overscroll-contain min-h-0">
-              <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
-                <Suspense fallback={
-                  <div className="flex justify-center items-center py-20">
-                    <svg className="animate-spin h-8 w-8 text-gray-400" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  </div>
-                }>
-                  <LazyCreateQuestionContent />
-                </Suspense>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {/* CreateQuestionContent owns the draft-poll-card portal AND the
+           question form modal. Mount it on every thread-like page so the
+           draft card appears whenever drafts exist (even after navigation
+           with the modal closed). The component renders nothing visible
+           when there are no drafts and the form modal is closed. */}
+      {isMounted && isThreadLikePage && (
+        <Suspense fallback={null}>
+          <LazyCreateQuestionContent />
+        </Suspense>
       )}
 
       {/* Floating "+" FAB — home page only. Navigates to /thread/new/ where
@@ -594,37 +300,18 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
-      {/* Floating What/When/Where create-question bubbles.
-           Visibility:
-             - When the create-poll panel is open (any page): float just ABOVE
-               the panel, hide while the top question form is open.
-             - Otherwise: thread-like pages only — bottom-of-screen, hidden on
-               home (which uses the single "+" FAB).
-           Tap behavior:
-             - Panel closed: openCreateFromBubble pushes URL params and opens
-               the panel; CreateQuestionContent's auto-open mounts the top
-               question form with the preselection.
-             - Panel open: dispatch `openQuestionForm` event with the
-               preselection so CreateQuestionContent opens a fresh top form
-               without re-pushing URL state. */}
-      {isMounted && (isThreadLikePage || isCreateModalOpen) && !questionFormOpen && !modalClosing && createPortal(
+      {/* Floating What/When/Where create-question bubbles. Always pinned at
+           the bottom of thread-like pages; hidden when the question form
+           modal is open (its backdrop covers them anyway, but skipping the
+           render avoids tap leakage during close animations). */}
+      {isMounted && isThreadLikePage && !isCreateModalOpen && createPortal(
         <div
           className="fixed z-[65] left-1/2 -translate-x-1/2 flex items-center gap-3"
-          style={{
-            bottom: isCreateModalOpen
-              ? 'calc(var(--bottom-modal-height, 50vh) + 8px)'
-              : 'max(1rem, env(safe-area-inset-bottom, 0px))',
-          }}
+          style={{ bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
         >
           <button
             type="button"
-            onClick={() => {
-              if (isCreateModalOpen) {
-                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: {} }));
-              } else {
-                openCreateFromBubble({});
-              }
-            }}
+            onClick={() => openCreateFromBubble({})}
             className={BUBBLE_BUTTON_WHAT}
             aria-label="Create new question"
           >
@@ -635,13 +322,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (isCreateModalOpen) {
-                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: { category: 'restaurant' } }));
-              } else {
-                openCreateFromBubble({ category: 'restaurant' });
-              }
-            }}
+            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
             className={BUBBLE_BUTTON_WHERE}
             aria-label="Create new place question"
           >
@@ -653,13 +334,7 @@ function TemplateInner({ children }: AppTemplateProps) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (isCreateModalOpen) {
-                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: { mode: 'time' } }));
-              } else {
-                openCreateFromBubble({ mode: 'time' });
-              }
-            }}
+            onClick={() => openCreateFromBubble({ mode: 'time' })}
             className={BUBBLE_BUTTON_WHEN}
             aria-label="Create new time question"
           >

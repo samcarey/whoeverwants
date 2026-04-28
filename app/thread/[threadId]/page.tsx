@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo, Suspense } from "react";
+import { flushSync } from "react-dom";
 import { useRouter, useParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
@@ -13,7 +14,13 @@ import { getUserName } from "@/lib/userProfile";
 import CompactNameField from "@/components/CompactNameField";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getAccessibleQuestionIds, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId } from "@/lib/questionCache";
+import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls } from "@/lib/questionCache";
+import {
+  POLL_PENDING_EVENT,
+  POLL_HYDRATED_EVENT,
+  type PollPendingDetail,
+  type PollHydratedDetail,
+} from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -198,6 +205,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Refs for each card wrapper so we can scroll the expanded card into view
   // and observe viewport intersection.
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Same key as cardRefs but targets the inner BORDERED frame of each card —
+  // the visible "card shape" the user perceives. The FLIP animation applied
+  // on submit operates on this element so the actual visible frame morphs
+  // (and the surrounding grid wrapper / category-icon column stay still).
+  const cardFrameRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Ref to each card's overflow-hidden wrapper — its scrollHeight reports the
   // natural expanded content height (pre-mounted via IntersectionObserver) so
   // we can compute the target scroll position BEFORE the grid-rows animation
@@ -307,6 +319,139 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     }
     fetchThread();
   }, [threadId]);
+
+  // The first question of a freshly submitted (placeholder) poll, while its
+  // card is FLIP-animating from the draft frame to its natural slot. While
+  // this is set, the matching card mounts with only its title visible — the
+  // status row, voter circles, etc. are suppressed until hydration completes.
+  const [pendingPollFirstQuestionId, setPendingPollFirstQuestionId] = useState<string | null>(null);
+
+  // Latest `thread` snapshot for the POLL_PENDING handler. Updated in a
+  // separate effect so the listener can stay registered with empty deps
+  // — re-attaching on every thread mutation would tear down + re-add the
+  // event listener on every vote/hydration/cache refresh.
+  const threadRef = useRef(thread);
+  useEffect(() => { threadRef.current = thread; }, [thread]);
+
+  // POLL_PENDING_EVENT: a draft was just submitted. Insert the placeholder
+  // poll into thread state immediately, find the freshly mounted card in the
+  // DOM, and run a FLIP animation from the draft card's captured bbox to
+  // the natural collapsed-card position. apiCreatePoll is running in
+  // parallel; POLL_HYDRATED_EVENT will swap the placeholder for the real
+  // Poll in-place.
+  //
+  // /thread/new placeholder case: the destination ThreadContent has not yet
+  // mounted, so it picks up the placeholder via cache on its initial render
+  // and runs the FLIP itself. The early return below skips this listener
+  // for that case.
+  useEffect(() => {
+    let rafId = 0;
+    let timeoutId = 0;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PollPendingDetail>).detail;
+      const newPoll = detail?.poll;
+      const fromBbox = detail?.fromBbox;
+      if (!newPoll || !fromBbox) return;
+
+      const polls = getCachedAccessiblePolls();
+      if (!polls) return;
+
+      const t = threadRef.current;
+      const threadPollIds = new Set(t?.polls.map((p) => p.id) ?? []);
+      const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
+      const isOwnRoot = t && newPoll.id === t.rootPollId;
+      if (!isFollowUp && !isOwnRoot) return;
+
+      const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+      const rebuilt = t?.rootPollId
+        ? buildThreadFromPollDown(t.rootPollId, polls, voted, abstained)
+        : null;
+      if (!rebuilt) return;
+
+      const firstQuestionId = newPoll.questions[0]?.id ?? null;
+      flushSync(() => {
+        setPendingPollFirstQuestionId(firstQuestionId);
+        setThread(rebuilt);
+      });
+
+      // FLIP the bordered frame (not the outer grid) so the visible card
+      // shape morphs and the surrounding category-icon column stays still.
+      // width/height (not `transform: scale`) so the title sits at its
+      // natural size in the morphing container.
+      if (!firstQuestionId) return;
+      rafId = requestAnimationFrame(() => {
+        const card = cardFrameRefs.current.get(firstQuestionId);
+        if (!card) return;
+        const newBbox = card.getBoundingClientRect();
+        const dx = fromBbox.x - newBbox.x;
+        const dy = fromBbox.y - newBbox.y;
+        card.style.transformOrigin = 'top left';
+        card.style.transform = `translate(${dx}px, ${dy}px)`;
+        card.style.width = `${fromBbox.width}px`;
+        card.style.height = `${fromBbox.height}px`;
+        card.style.transition = 'none';
+        void card.offsetWidth;
+        card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
+        card.style.transform = '';
+        // CSS can't transition to/from `auto`; transition to explicit px,
+        // then clear the inline overrides so layout takes over after.
+        card.style.width = `${newBbox.width}px`;
+        card.style.height = `${newBbox.height}px`;
+        timeoutId = window.setTimeout(() => {
+          if (!card.isConnected) return;
+          card.style.transition = '';
+          card.style.transformOrigin = '';
+          card.style.width = '';
+          card.style.height = '';
+        }, 1050);
+      });
+    };
+    window.addEventListener(POLL_PENDING_EVENT, handler);
+    return () => {
+      window.removeEventListener(POLL_PENDING_EVENT, handler);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
+  // Replace the placeholder fields in thread state with the real ones in
+  // place — keep the SAME placeholder id as the React key so the card's
+  // DOM node doesn't unmount/re-mount mid-FLIP. Once the placeholder is
+  // gone (its id was 'pending-...'), the real Poll's id takes over for
+  // subsequent operations.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PollHydratedDetail>).detail;
+      const placeholderId = detail?.placeholderId;
+      const realPoll = detail?.poll;
+      if (!placeholderId || !realPoll) return;
+      setThread((prev) => {
+        if (!prev) return prev;
+        if (!prev.polls.some(p => p.id === placeholderId)) return prev;
+        const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
+        const placeholderQuestionIds = new Set(
+          prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
+        );
+        const questions = prev.questions
+          .filter(q => !placeholderQuestionIds.has(q.id))
+          .concat(realPoll.questions);
+        const latestPoll = polls[polls.length - 1];
+        const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
+        return {
+          ...prev,
+          polls,
+          questions,
+          latestPoll,
+          latestQuestion,
+        };
+      });
+      // Clear the "pending" flag so the real card renders its full content.
+      setPendingPollFirstQuestionId(null);
+    };
+    window.addEventListener(POLL_HYDRATED_EVENT, handler);
+    return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
+  }, []);
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).
@@ -880,6 +1025,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             };
 
             const isExpanded = expandedQuestionId === question.id;
+            // Suppress the status row + voter circles + countdown for a
+            // freshly-submitted placeholder card while it FLIP-animates into
+            // its slot. Once POLL_HYDRATED_EVENT swaps the placeholder for
+            // the real Poll, this flag clears and the card paints normally.
+            const isPlaceholder = pendingPollFirstQuestionId === question.id
+              || (question.poll_id?.startsWith('pending-') ?? false);
 
             return (
               <div
@@ -910,6 +1061,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div
+                  ref={(el) => {
+                    if (el) cardFrameRefs.current.set(question.id, el);
+                    else cardFrameRefs.current.delete(question.id);
+                  }}
                   className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
@@ -953,7 +1108,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                        expanded since the full cards appear below). If the
                        row would be empty (no status AND no pill) it's not
                        rendered, so the gap doesn't appear. */}
-                  {(() => {
+                  {!isPlaceholder && (() => {
                     const stopBubble = (e: React.SyntheticEvent) => e.stopPropagation();
 
                     // Status label is anchor-based: the poll's voting
@@ -1363,7 +1518,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 {/* Creator + pub date on the left, respondents on the right.
                      Creator/date takes its natural width (shrink-0) so the
                      respondent bubbles get the remainder of the row — replacing
-                     the old fixed max-w-[75%] respondent cap. */}
+                     the old fixed max-w-[75%] respondent cap.
+                     Hidden during the placeholder/FLIP phase: only the title
+                     should be visible until the real poll hydrates. */}
+                {!isPlaceholder && (
                 <div className="col-start-2 row-start-3 mt-0 px-3 flex items-start gap-2 min-w-0">
                   <ClientOnly fallback={null}>
                     <span className="shrink-0 truncate text-xs text-gray-400 dark:text-gray-500 mt-px">
@@ -1411,6 +1569,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                     )}
                   </ClientOnly>
                 </div>
+                )}
               </div>
             );
           })}

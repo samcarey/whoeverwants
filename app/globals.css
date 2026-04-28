@@ -181,6 +181,12 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
 }
 
+/* Draft poll card → live poll card morph is now a JS-driven FLIP animation
+   on the actual DOM node (see app/thread/[threadId]/page.tsx). The View
+   Transitions API approach was abandoned because the bitmap snapshot
+   crossfade couldn't make the card content (title) flow naturally as the
+   frame resized — it was a stretched image, not a real card. */
+
 
 .responsive-scaling-container {
   transform-origin: top left;

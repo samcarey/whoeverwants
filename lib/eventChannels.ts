@@ -10,24 +10,25 @@
  * Add a new event by exporting a const + a `*Detail` type alongside it.
  */
 
-/** Open/close state of the top "New Question" form modal. Listened to by
- *  `template.tsx` to hide the floating What/When/Where bubble bar while the
- *  form is open (per spec: either the buttons or the form, not both). */
-export const QUESTION_FORM_STATE_CHANGE_EVENT = 'questionFormStateChange';
-export interface QuestionFormStateChangeDetail {
-  open: boolean;
+import type { Poll } from "@/lib/types";
+
+/** Fired by CreateQuestionContent immediately on Submit (BEFORE the API call
+ *  resolves). Carries a placeholder Poll built from the draft state plus the
+ *  bounding box of the unmounting draft card. ThreadContent listens, inserts
+ *  the placeholder into its poll list, and FLIP-animates the new card from
+ *  the captured bbox to its natural collapsed-card position over 1s.
+ *  The real apiCreatePoll continues in parallel; on success it fires
+ *  `POLL_HYDRATED_EVENT` with the real Poll keyed by the placeholder id. */
+export const POLL_PENDING_EVENT = 'pollPending';
+export interface PollPendingDetail {
+  poll: Poll;
+  fromBbox: { x: number; y: number; width: number; height: number };
 }
 
-/** Request from the bubble bar to open the top "New Question" form when the
- *  bottom panel is already open. CreateQuestionContent listens and calls its
- *  `handleOpenNewQuestion` with the preselect detail. */
-export const OPEN_QUESTION_FORM_EVENT = 'openQuestionForm';
-export interface OpenQuestionFormDetail {
-  mode?: 'question' | 'time';
-  category?: string;
+/** Fired after `apiCreatePoll` resolves. Identifies the placeholder by the
+ *  id it was inserted with so ThreadContent can swap its fields in-place. */
+export const POLL_HYDRATED_EVENT = 'pollHydrated';
+export interface PollHydratedDetail {
+  placeholderId: string;
+  poll: Poll;
 }
-
-/** Submit-time signal: CreateQuestionContent has resolved apiCreatePoll and
- *  is about to navigate. template.tsx listens to slide the bottom panel down
- *  in lockstep with the draft-poll-card morph animation. */
-export const CREATE_PANEL_FINALIZE_EVENT = 'createPanelFinalize';

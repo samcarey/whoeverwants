@@ -9,8 +9,8 @@
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/threadUtils";
-import { getBuiltInType } from "@/components/TypeFieldInput";
-import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
+import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
+import type { DayTimeWindow, OptionsMetadata, Poll, Question } from "@/lib/types";
 
 /**
  * Per-question form snapshot. The bottom modal holds a list of these as
@@ -146,6 +146,144 @@ export function draftToQuestionParams(
   }
   return params;
 }
+
+/**
+ * Derive the question's auto-title from a draft snapshot. Mirrors
+ * `generateTitle()` in page.tsx but operates on a draft (not live form
+ * state) so the draft list rows can show the same title the question
+ * would land on if submitted now. Returns text only — no leading icon.
+ */
+export function deriveDraftTitle(d: QuestionDraft): string {
+  // yes_no: the user-typed question text IS the title.
+  if (d.category === 'yes_no') {
+    return d.title.trim() || 'Yes/No?';
+  }
+  // time questions: fixed "Time?" + optional " for X" suffix.
+  if (d.questionType === 'time' || d.category === 'time') {
+    return appendForSuffix('Time?', d.forField);
+  }
+
+  // ranked_choice: build from options if any, else fall back to the
+  // category label as a placeholder.
+  const builtIn = getBuiltInType(d.category);
+  const shorten = isLocationLikeCategory(d.category) ? shortenLocation : shortenOption;
+  const filled = d.options.filter(o => o.trim()).map(shorten);
+
+  if (filled.length === 0) {
+    const prefix = d.category === 'location' ? 'Place'
+      : builtIn?.label || (d.category && d.category !== 'custom' ? d.category : '');
+    if (prefix) return appendForSuffix(`${prefix}?`, d.forField);
+    const trimmedFor = d.forField.trim();
+    if (trimmedFor) return `Options for ${trimmedFor}?`;
+    return 'Suggestions';
+  }
+
+  if (filled.length === 1) return appendForSuffix(filled[0], d.forField);
+
+  return appendForSuffix(buildOrList(filled), d.forField);
+}
+
+const TITLE_LIMIT = 40;
+
+function joinWithOr(items: string[]): string {
+  if (items.length === 2) return `${items[0]} or ${items[1]}?`;
+  return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
+}
+
+function buildOrList(items: string[]): string {
+  const included = [items[0]];
+  for (let i = 1; i < items.length; i++) {
+    const isLast = i === items.length - 1;
+    const candidate = isLast
+      ? joinWithOr([...included, items[i]])
+      : `${[...included, items[i]].join(', ')}, or ...?`;
+    if (candidate.length > TITLE_LIMIT && included.length >= 2) break;
+    included.push(items[i]);
+  }
+  return included.length === items.length
+    ? joinWithOr(included)
+    : `${included.join(', ')}, or ...?`;
+}
+
+function appendForSuffix(base: string, forField: string): string {
+  const trimmed = forField.trim();
+  if (!trimmed || !base) return base;
+  if (base.endsWith('?')) return `${base.slice(0, -1)} for ${trimmed}?`;
+  return `${base} for ${trimmed}`;
+}
+
+/**
+ * Build an optimistic Poll/Question pair from the draft list at submit
+ * time, before the server has responded. The thread page renders this as a
+ * normal collapsed poll card while the FLIP animation runs and apiCreatePoll
+ * resolves in parallel. Once the real Poll arrives, ThreadContent swaps the
+ * placeholder fields for the real ones via POLL_HYDRATED_EVENT.
+ *
+ * IDs use a `pending-...` prefix so thread state can identify and replace
+ * them on hydration. Placeholder questions get realistic-looking defaults
+ * (created_at = now, is_closed = false, empty voter_names) so the
+ * collapsed-card render path doesn't crash on missing fields.
+ */
+export function synthesizePlaceholderPoll(
+  drafts: QuestionDraft[],
+  args: { wrapperTitle: string | null; responseDeadline: string | null; followUpTo: string | null; creatorName: string | null },
+): Poll {
+  const now = new Date().toISOString();
+  const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const questions: Question[] = drafts.map((d, i) => {
+    const dbType = draftDbQuestionType(d);
+    const filledOptions = d.options.filter(o => o.trim() !== '');
+    const title = deriveDraftTitle(d);
+    return {
+      id: `${pollId}-q${i}`,
+      title,
+      question_type: dbType,
+      options: filledOptions.length > 0 ? filledOptions : undefined,
+      created_at: now,
+      updated_at: now,
+      poll_follow_up_to: args.followUpTo,
+      category: dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : null,
+      is_auto_title: d.isAutoTitle,
+      poll_id: pollId,
+      question_index: i,
+      results: null,
+      voter_names: [],
+      response_count: 0,
+    };
+  });
+  const fallbackTitle = drafts.length === 1
+    ? deriveDraftTitle(drafts[0])
+    : draftPollPreview(drafts, '').title;
+  return {
+    id: pollId,
+    short_id: null,
+    creator_secret: null,
+    creator_name: args.creatorName,
+    response_deadline: args.responseDeadline,
+    prephase_deadline: null,
+    prephase_deadline_minutes: null,
+    is_closed: false,
+    close_reason: null,
+    follow_up_to: args.followUpTo,
+    thread_title: null,
+    context: null,
+    details: null,
+    title: args.wrapperTitle || fallbackTitle,
+    created_at: now,
+    updated_at: now,
+    questions,
+    voter_names: [],
+    anonymous_count: 0,
+  };
+}
+
+/** Query-string params that gate or carry create-flow state. Stripped
+ *  together when the question modal closes so the bubble bar reappears
+ *  cleanly and refresh / back-nav don't re-trigger the modal. */
+export const CREATE_FLOW_URL_PARAMS = [
+  'create', 'openForm', 'mode', 'category',
+  'followUpTo', 'duplicate', 'voteFromSuggestion',
+] as const;
 
 /** Compact one-line description for the draft list cards. */
 export function summarizeDraft(d: QuestionDraft): string {

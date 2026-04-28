@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
 import {
@@ -26,9 +26,17 @@ import TimeQuestionFields from "@/components/TimeQuestionFields";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
+import InlineTitleField from "@/components/InlineTitleField";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
+import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls } from "@/lib/questionCache";
+import {
+  POLL_PENDING_EVENT,
+  POLL_HYDRATED_EVENT,
+  type PollPendingDetail,
+  type PollHydratedDetail,
+} from "@/lib/eventChannels";
 import {
   pollLookup,
   shortenOption,
@@ -38,23 +46,18 @@ import {
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
+  CREATE_FLOW_URL_PARAMS,
   type QuestionDraft,
   emptyDraft,
   draftDbQuestionType,
   draftIsSuggestionMode,
   draftToQuestionParams,
   anyDraftUsesPrephase,
-  summarizeDraft,
+  deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
+  synthesizePlaceholderPoll,
 } from "./createPollHelpers";
-import ThreadListItem from "@/components/ThreadListItem";
-import {
-  QUESTION_FORM_STATE_CHANGE_EVENT,
-  OPEN_QUESTION_FORM_EVENT,
-  CREATE_PANEL_FINALIZE_EVENT,
-  type OpenQuestionFormDetail,
-} from "@/lib/eventChannels";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -117,6 +120,13 @@ export function CreateQuestionContent() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
 
+  // Wrapper-level title: optional user override displayed at the top of the
+  // draft poll card. When `isPollTitleCustom` is false, the card shows the
+  // auto-generated `draftPreview.title` instead. On submit, an empty / non-
+  // custom value sends `null` and lets the server auto-generate.
+  const [pollTitle, setPollTitle] = useState("");
+  const [isPollTitleCustom, setIsPollTitleCustom] = useState(false);
+
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
@@ -124,12 +134,6 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
-  // Poll-level "Context" — short single-line that drives the auto-title's
-  // "for X" suffix. Maps to polls.context server-side. Distinct from `details`
-  // (Notes) which is a long multi-line description with link support.
-  const [pollContext, setPollContext] = useState("");
-  const [pollContextOpen, setPollContextOpen] = useState(false);
-  const pollContextRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>(categoryParam || 'custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
@@ -152,11 +156,8 @@ export function CreateQuestionContent() {
   // Bookkeeping: the draft that was popped out for editing, so X-during-edit
   // discards it (per spec). Restored on check.
   const [originalEditingDraft, setOriginalEditingDraft] = useState<QuestionDraft | null>(null);
-  // Submit-time animation flag: drives the draft poll card morph (dashed
-  // border + blue tint → solid border + white) and gates the bubble bar /
-  // panel slide-down so the user sees the draft becoming "real" before we
-  // navigate to the new poll's page.
-  const [isFinalizing, setIsFinalizing] = useState(false);
+  // (No "finalizing" state anymore — the draft → live morph is owned by
+  // ThreadContent's FLIP animation via POLL_PENDING_EVENT.)
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -376,8 +377,9 @@ export function CreateQuestionContent() {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
+        pollTitle,
+        isPollTitleCustom,
         details,
-        pollContext,
         options,
         deadlineOption,
         customDate,
@@ -397,7 +399,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
+  }, [title, pollTitle, isPollTitleCustom, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -426,12 +428,10 @@ export function CreateQuestionContent() {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
+          if (typeof formState.pollTitle === 'string') setPollTitle(formState.pollTitle);
+          if (formState.isPollTitleCustom === true) setIsPollTitleCustom(true);
           setDetails(formState.details || '');
           if (formState.details) setDetailsOpen(true);
-          if (typeof formState.pollContext === 'string') {
-            setPollContext(formState.pollContext);
-            if (formState.pollContext) setPollContextOpen(true);
-          }
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -494,8 +494,8 @@ export function CreateQuestionContent() {
   // time. Mirrors generate_poll_title() so the morph lands on the same
   // title the server will assign on submit.
   const draftPreview = useMemo(
-    () => draftPollPreview(drafts, pollContext),
-    [drafts, pollContext],
+    () => draftPollPreview(drafts, ''),
+    [drafts],
   );
 
   // Validates the whole poll at submit time: drafts exist + poll-level
@@ -639,6 +639,16 @@ export function CreateQuestionContent() {
     setMinimumParticipation(d.minimumParticipation);
   }, [router]);
 
+  // Push `?create=1` onto the URL so the floating bubble bar hides while the
+  // question form modal is open. Idempotent — won't re-push if already set.
+  const ensureCreateParam = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('create') === '1') return;
+    url.searchParams.set('create', '1');
+    router.replace(url.pathname + '?' + url.searchParams.toString());
+  }, [router]);
+
   // What/When/Where: open a fresh top modal with optional preselection.
   const handleOpenNewQuestion = useCallback((opts: { mode?: 'question' | 'time'; category?: string } = {}) => {
     setError(null);
@@ -646,7 +656,8 @@ export function CreateQuestionContent() {
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
     setTopModalOpen(true);
-  }, [applyDraftToState]);
+    ensureCreateParam();
+  }, [applyDraftToState, ensureCreateParam]);
 
   // Pencil: edit a committed draft. Pop it from drafts list (so it lives
   // exclusively in the top modal form), remember it for X-restore semantics.
@@ -659,7 +670,24 @@ export function CreateQuestionContent() {
     setDrafts(prev => prev.filter((_, i) => i !== index));
     applyDraftToState(target);
     setTopModalOpen(true);
-  }, [drafts, applyDraftToState]);
+    ensureCreateParam();
+  }, [drafts, applyDraftToState, ensureCreateParam]);
+
+  // Strip the URL params that gate the question form modal (?create / ?openForm
+  // / etc). Called by the modal's X and check handlers so closing the form
+  // un-hides the bubble bar and lets refresh / browser-back behave naturally.
+  const stripCreateParams = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    let touched = false;
+    for (const k of CREATE_FLOW_URL_PARAMS) {
+      if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
+    }
+    if (touched) {
+      const qs = url.searchParams.toString();
+      router.replace(qs ? `${url.pathname}?${qs}` : url.pathname);
+    }
+  }, [router]);
 
   // X on top modal: discard the form. If editing, the popped draft is NOT
   // restored (per spec — "clear it from the form and it will not go back in
@@ -669,7 +697,8 @@ export function CreateQuestionContent() {
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
     setError(null);
-  }, []);
+    stripCreateParams();
+  }, [stripCreateParams]);
 
   // Check on top modal: validate per-question fields, snapshot current form
   // into a draft, insert/update in drafts list, close.
@@ -692,58 +721,50 @@ export function CreateQuestionContent() {
     setTopModalOpen(false);
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
-  }, [editingDraftIndex, readCurrentDraft]);
+    stripCreateParams();
+  }, [editingDraftIndex, readCurrentDraft, stripCreateParams]);
 
-  // Portal targets in the modal header (rendered by template.tsx)
-  const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
-  const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
   // Portal target for the in-progress draft poll card, rendered in the page
-  // body by the home / thread / empty-thread routes. Re-queried via a
+  // body by the thread / empty-thread routes. Re-queried via a
   // MutationObserver because page navigations swap the portal target node;
   // a one-shot useEffect would leave us pointing at a detached element.
   // The observer fires on every DOM mutation under <body>, so we batch the
   // re-query into one rAF per frame to avoid running the lookup hundreds of
   // times during typing / scroll / animation.
+  // Disconnect once the portal is found and re-arm only if it later goes
+  // away (route change). Without that, the observer fires on every DOM
+  // mutation under <body> for the whole component lifetime — we'd waste
+  // work on every subsequent unrelated mutation.
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    setSubmitPortal(document.getElementById('create-question-submit-portal'));
-    setTitlePortal(document.getElementById('create-question-title-portal'));
     let scheduled = false;
-    const updateDraftPollPortal = () => {
+    let observer: MutationObserver | null = null;
+    const watch = () => {
+      if (observer) return;
+      observer = new MutationObserver(check);
+      observer.observe(document.body, { childList: true, subtree: true });
+    };
+    const stopWatching = () => {
+      observer?.disconnect();
+      observer = null;
+    };
+    const check = () => {
       if (scheduled) return;
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
         const el = document.getElementById('draft-poll-portal');
-        setDraftPollPortal(prev => (prev === el ? prev : el));
+        setDraftPollPortal(prev => {
+          if (prev === el) return prev;
+          if (el) stopWatching(); else watch();
+          return el;
+        });
       });
     };
-    updateDraftPollPortal();
-    const observer = new MutationObserver(updateDraftPollPortal);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    check();
+    if (!document.getElementById('draft-poll-portal')) watch();
+    return () => stopWatching();
   }, []);
-
-  // Broadcast top-modal open/closed state to hide the floating What/When/
-  // Where bubble bar while the question form is open. Cleanup intentionally
-  // does NOT re-dispatch — the next render's effect carries the new state.
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent(QUESTION_FORM_STATE_CHANGE_EVENT, { detail: { open: topModalOpen } }));
-  }, [topModalOpen]);
-  // Final close on unmount so the bubble bar reappears at screen-bottom.
-  useEffect(() => () => {
-    window.dispatchEvent(new CustomEvent(QUESTION_FORM_STATE_CHANGE_EVENT, { detail: { open: false } }));
-  }, []);
-
-  // Bubble bar runtime "open form" requests (panel already open).
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<OpenQuestionFormDetail>).detail;
-      handleOpenNewQuestion(detail ?? {});
-    };
-    window.addEventListener(OPEN_QUESTION_FORM_EVENT, handler);
-    return () => window.removeEventListener(OPEN_QUESTION_FORM_EVENT, handler);
-  }, [handleOpenNewQuestion]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -806,31 +827,56 @@ export function CreateQuestionContent() {
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
-  // Auto-open the top modal once on first mount when:
-  //  - the bubble bar set `?openForm=1` (panel just opened from a bubble tap), or
-  //  - the URL carries a What/When/Where preselection (category/mode), or
-  //  - this is a duplicate / follow-up / vote-from-suggestion flow.
-  // Plain entry (e.g. reload with saved drafts) leaves the top modal closed
-  // so the user sees the draft poll card on the page first.
-  // `?openForm=1` is stripped after consumption so a refresh doesn't reopen.
-  const topModalAutoOpenedRef = useRef(false);
+  // Auto-open the question form modal when the URL carries an explicit
+  // "open form" signal:
+  //   - `?openForm=1` set by the bubble bar tap (consumed once + stripped), or
+  //   - a duplicate / follow-up / vote-from-suggestion flow.
+  // We deliberately do NOT auto-open just because `?category=` or `?mode=` is
+  // in the URL — those land alongside `?openForm=1` from the bubble bar, and
+  // reacting to them independently caused the modal to flap open during the
+  // close sequence (the URL-strip + setTopModalOpen(false) commits arrive on
+  // separate renders, so the effect would briefly see `?mode=time` AND
+  // `topModalOpen=false`). Anchoring on the explicit `?openForm=1` flag lets
+  // us strip it once and never re-fire spuriously.
+  // Tracks "we've already consumed an open-trigger this cycle" so the effect
+  // doesn't re-fire while Next.js's useSearchParams catches up to a `router.replace`
+  // that just stripped the trigger params. Cleared once the URL is fully scrubbed
+  // of every open-trigger param, freeing the effect to react to a fresh signal.
+  const openTriggerConsumedRef = useRef(false);
   useEffect(() => {
     if (!isClient) return;
-    if (topModalAutoOpenedRef.current) return;
-    const hasPreselect = !!(categoryParam || modeParam);
-    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
-    const hasOpenFormFlag = openFormParam === '1';
-    topModalAutoOpenedRef.current = true;
-    if (hasPreselect || hasSpecialFlow || hasOpenFormFlag) {
-      setTopModalOpen(true);
+    if (topModalOpen) {
+      openTriggerConsumedRef.current = true;
+      return;
     }
+    if (openTriggerConsumedRef.current) {
+      const triggersCleared = !openFormParam
+        && !duplicateOfParam
+        && !voteFromSuggestionParam
+        && !followUpToParam;
+      if (triggersCleared) openTriggerConsumedRef.current = false;
+      return;
+    }
+    const hasOpenFormFlag = openFormParam === '1';
+    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
+    if (!hasOpenFormFlag && !hasSpecialFlow) return;
     if (hasOpenFormFlag) {
-      // Strip the marker so refresh / view-transitions don't re-trigger.
+      const opts: { mode?: 'question' | 'time'; category?: string } = {};
+      if (modeParam === 'time') opts.mode = 'time';
+      if (categoryParam) opts.category = categoryParam;
+      setError(null);
+      applyDraftToState(emptyDraft(opts));
+      setEditingDraftIndex(null);
+      setOriginalEditingDraft(null);
+      setTopModalOpen(true);
       const url = new URL(window.location.href);
       url.searchParams.delete('openForm');
       window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    } else {
+      setTopModalOpen(true);
     }
-  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, openFormParam]);
+    openTriggerConsumedRef.current = true;
+  }, [isClient, topModalOpen, openFormParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, modeParam, categoryParam, applyDraftToState]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
@@ -969,7 +1015,7 @@ export function CreateQuestionContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -1113,12 +1159,17 @@ export function CreateQuestionContent() {
       }
 
       // Wrapper title rule:
-      //  - Exactly 1 draft and the user typed an explicit title: use it.
-      //    Preserves legacy single-question yes_no behavior.
+      //  - Card-level title override (`isPollTitleCustom`): use it. The user
+      //    explicitly typed a title in the draft poll card's top slot.
+      //  - Else, exactly 1 draft + user-typed yes_no question text: use that.
+      //    Preserves legacy single-question yes_no behavior so the wrapper
+      //    title mirrors the question prompt.
       //  - Otherwise: send null; the server auto-generates from question
       //    categories + poll context.
       const onlyDraft = drafts.length === 1 ? drafts[0] : null;
-      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
+      const wrapperTitle = isPollTitleCustom && pollTitle.trim()
+        ? pollTitle.trim()
+        : (onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null);
 
       const questionsForRequest: CreateQuestionParams[] =
         drafts.map(d => draftToQuestionParams(d, prephaseMinutes));
@@ -1144,7 +1195,77 @@ export function CreateQuestionContent() {
         }
       }
 
-      let createdQuestion: Question;
+      const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
+
+      // Build a placeholder Poll from the draft data so the thread can render
+      // a real card in the destination position immediately, before the API
+      // call resolves. The card mounts with only the title visible (other
+      // fields empty / default) and FLIP-animates from the draft card's
+      // bbox to its natural collapsed-card slot. apiCreatePoll runs in
+      // parallel and dispatches POLL_HYDRATED_EVENT on success so the
+      // thread page can swap placeholder fields for real ones in place.
+      const placeholderPoll = synthesizePlaceholderPoll(drafts, {
+        wrapperTitle,
+        responseDeadline,
+        followUpTo: (() => {
+          // For the placeholder, follow_up_to should be the parent POLL id
+          // (so thread state recognizes it as part of the current thread).
+          // The CreatePollRequest accepts a question id and the server
+          // resolves it; here we resolve client-side via the cache.
+          if (!followUpTo) return null;
+          const cached = getCachedAccessiblePolls() ?? [];
+          return cached.find(mp => mp.questions.some(q => q.id === followUpTo))?.id ?? null;
+        })(),
+        creatorName: creatorName.trim() || null,
+      });
+
+      // For new-root submissions on /thread/new the placeholder needs to be
+      // visible. EmptyThreadView doesn't render a poll list, so we still
+      // navigate first; the destination ThreadContent mounts with the
+      // placeholder in cache and FLIP-animates. We use router.replace with
+      // a placeholder id route — once apiCreatePoll resolves, we router.replace
+      // again to the real shortId.
+      // For follow-ups, the current thread page is already rendering and
+      // takes the placeholder via POLL_PENDING_EVENT inline.
+      const draftCardEl = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
+      const draftBbox = draftCardEl?.getBoundingClientRect();
+      const fromBbox = draftBbox
+        ? { x: draftBbox.x, y: draftBbox.y, width: draftBbox.width, height: draftBbox.height }
+        : { x: 0, y: 0, width: 0, height: 0 };
+
+      // Cache the placeholder so destination thread render can find it.
+      cachePoll(placeholderPoll);
+      const cachedAccessible = getCachedAccessiblePolls() ?? [];
+      cacheAccessiblePolls([...cachedAccessible.filter(p => p.id !== placeholderPoll.id), placeholderPoll]);
+
+      // Dispatch BEFORE we clear the draft state so listeners can read the
+      // bbox in time.
+      window.dispatchEvent(
+        new CustomEvent<PollPendingDetail>(POLL_PENDING_EVENT, {
+          detail: { poll: placeholderPoll, fromBbox },
+        }),
+      );
+
+      // Clear draft state immediately so the draft card unmounts and the
+      // bubble bar reappears.
+      flushSync(() => {
+        setDrafts([]);
+        setPollTitle('');
+        setIsPollTitleCustom(false);
+      });
+      stripCreateParams();
+
+      if (onEmptyThread) {
+        // Route to a temporary URL keyed by the placeholder id. The
+        // destination ThreadContent will pick up the placeholder from cache
+        // and render it. apiCreatePoll's success path navigates again to
+        // the real shortId.
+        router.replace(`/thread/${placeholderPoll.id}`);
+      }
+
+      // Run apiCreatePoll in the background. On success, hydrate the
+      // placeholder. On failure, surface the error and remove the
+      // placeholder so the user can retry.
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({
@@ -1155,11 +1276,10 @@ export function CreateQuestionContent() {
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
           follow_up_to: followUpTo || duplicateOf || null,
           title: wrapperTitle,
-          context: pollContext.trim() || null,
+          context: null,
           details: details.trim() || null,
           questions: questionsForRequest,
         });
-        createdQuestion = createdPoll.questions[0];
       } catch (apiError: any) {
         console.error("Error creating question:", apiError);
         setError(apiError.message || "Failed to create question. Please try again.");
@@ -1177,48 +1297,41 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      // For suggestion questions, creators vote after creation like any other participant
-      // No initial vote is created
-
-      // Trigger question discovery if this is a follow-up question
       if (followUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
-        } catch (error) {
+        } catch {
           // Don't fail the question creation if discovery fails
         }
       }
 
-      // Save the creator's name if they provided one
       if (creatorName.trim()) {
         saveUserName(creatorName.trim());
       }
-
-      // Clear saved form state since question was created successfully
       clearFormState();
+      setIsSubmitted(false);
+      isSubmittingRef.current = false;
+      setIsLoading(false);
+      reEnableForm(form);
 
-      // Mark as submitted to prevent further submissions
-      setIsSubmitted(true);
+      // Cache the real poll, then notify thread state so it swaps placeholder
+      // fields for real ones in place (same DOM node — no remount mid-FLIP).
+      cachePoll(createdPoll);
+      const cached2 = getCachedAccessiblePolls() ?? [];
+      cacheAccessiblePolls([...cached2.filter(p => p.id !== placeholderPoll.id && p.id !== createdPoll.id), createdPoll]);
+      window.dispatchEvent(
+        new CustomEvent<PollHydratedDetail>(POLL_HYDRATED_EVENT, {
+          detail: { placeholderId: placeholderPoll.id, poll: createdPoll },
+        }),
+      );
 
-      // Smoothie transition: morph the draft poll card from dashed/blue
-      // "Draft Poll" styling to a solid normal-card style, slide the bottom
-      // panel down, hide the bubble bar — then navigate to the new poll.
-      // The CSS transition is 600ms (see the draft poll card className), and
-      // the panel slide-down animation is 300ms (animate-slide-down). We hold
-      // for 600ms so both finish before the navigation unmounts the panel.
-      setIsFinalizing(true);
-      window.dispatchEvent(new CustomEvent(CREATE_PANEL_FINALIZE_EVENT));
-      await new Promise(r => setTimeout(r, 600));
-
-      // Navigate to the new question. `questionBackTarget.set` records the thread
-      // URL so the question page's back button leads to the thread containing
-      // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      // Phase 5b: short_id lives on the poll wrapper, so the redirect
-      // targets the wrapper's friendly URL. The thread back target walks
-      // poll-level chains via findThreadRootRouteId.
-      const redirectId = createdPoll.short_id ?? createdQuestion.id;
-      questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-      router.replace(`/p/${redirectId}`);
+      if (onEmptyThread) {
+        // Land on the real thread URL. ThreadContent's threadId will change,
+        // but the cache is hot so re-mount renders instantly.
+        const redirectId = createdPoll.short_id ?? createdPoll.id;
+        questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
+        router.replace(`/thread/${redirectId}`);
+      }
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
@@ -1507,282 +1620,261 @@ export function CreateQuestionContent() {
     </form>
   );
 
+  // The draft poll card surfaces whenever there's something for it to host:
+  // committed drafts OR an in-flight question form (so tapping What/When/Where
+  // immediately reveals the empty card alongside the modal).
+  const draftCardVisible = drafts.length > 0 || topModalOpen;
+
   return (
     <div className="question-content">
-      {submitPortal && createPortal(
-        <button
-          type="button"
-          onClick={handleSubmitClick}
-          disabled={submitDisabled}
-          className="h-[43px] px-4 flex items-center justify-center rounded-full bg-blue-500 text-white font-semibold text-[15px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isSubmitted || isLoading ? (
-            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          ) : 'Submit'}
-        </button>,
-        submitPortal
-      )}
-
-      {/* Bottom modal title portal stays empty — title display is per-section
-          inside the top modal now. Leaving the portal mounted by template.tsx
-          intentionally empty avoids layout shift if a future feature wants
-          to inject a poll-level summary line. */}
-      {error && (
-        <div className="mb-4 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md">
-          {error}
-        </div>
-      )}
-
       {/* Draft poll card — portal-rendered into the page's poll list at the
-          bottom (`#draft-poll-portal`). Uses the SAME ThreadListItem that
-          live polls use, with a draftMode flag for the dashed-blue chrome
-          + DRAFT pill. Below it, a collapsible "edit drafts" section lets
-          the user pencil-edit each committed question. On submit the
-          draftMode chrome releases (border morphs to solid, DRAFT pill
-          collapses out, edit rows fold up) so the card lands on its
-          final live appearance over a single CSS transition — no swap. */}
-      {draftPollPortal && drafts.length > 0 && createPortal(
+          bottom (`#draft-poll-portal`). Hosts the wrapper title, up-arrow
+          submit, the questions list (with pencil-edit per row), and the
+          Settings section that used to live in the bottom modal. */}
+      {draftPollPortal && draftCardVisible && createPortal(
         <div className="pt-2">
-          <ThreadListItem
-            title={draftPreview.title}
-            latestQuestionTitle={draftPreview.latestQuestionTitle}
-            participantNames={[]}
-            anonymousRespondentCount={0}
-            questionCount={draftPreview.questionCount}
-            soonestUnvotedDeadline={isClient ? calculateDeadline() : null}
-            draftMode
-            finalizing={isFinalizing}
-            hideRespondents
-            statusBadge={isFinalizing ? 'just now' : 'ready to submit'}
-          />
-          {/* Collapsible edit-drafts section — the slight modification per spec
-              ("don't have suggestion text input but do have the same general
-              structure"). Folds up via opacity + max-height when finalizing. */}
           <div
-            className={`mx-1.5 px-3 overflow-hidden transition-[max-height,opacity,padding,margin] duration-500 ease-out ${
-              isFinalizing
-                ? 'max-h-0 opacity-0 py-0 mb-0'
-                : 'max-h-96 opacity-100 py-2 mb-3'
-            }`}
+            data-draft-poll-card
+            className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
-            <ul className="space-y-1.5">
-              {drafts.map((d, i) => {
-                const { icon, label } = draftCardLabels(d);
-                return (
-                  <li
-                    key={i}
-                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                  >
-                    <span className="text-lg leading-none" aria-hidden>{icon}</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
-                      {summarizeDraft(d)}
-                    </span>
-                    {!topModalOpen && (
-                      <button
-                        type="button"
-                        onClick={() => handleEditDraft(i)}
-                        disabled={isLoading}
-                        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
-                        aria-label={`Edit ${label} section`}
+            {/* Top row: title input (left) + up-arrow Submit (right). */}
+            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+              <div className="flex-1 min-w-0">
+                <InlineTitleField
+                  title={pollTitle}
+                  isAutoTitle={!isPollTitleCustom}
+                  autoTitle={draftPreview.title}
+                  onChange={(v) => {
+                    setPollTitle(v);
+                    setIsPollTitleCustom(true);
+                  }}
+                  onRevertToAuto={() => {
+                    setPollTitle('');
+                    setIsPollTitleCustom(false);
+                  }}
+                  disabled={isLoading || topModalOpen}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSubmitClick}
+                disabled={submitDisabled}
+                aria-label="Submit poll"
+                className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isSubmitted || isLoading ? (
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* Questions list — folds out via opacity + max-height on submit. */}
+            {drafts.length > 0 && (
+              <div className="px-3 pb-2">
+                <ul className="space-y-1.5">
+                  {drafts.map((d, i) => {
+                    const { icon, label } = draftCardLabels(d);
+                    const derivedTitle = deriveDraftTitle(d);
+                    return (
+                      <li
+                        key={i}
+                        className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
                       >
-                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
-                        </svg>
-                      </button>
+                        <span className="text-lg leading-none" aria-hidden>{icon}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
+                          {derivedTitle}
+                        </span>
+                        {!topModalOpen && (
+                          <button
+                            type="button"
+                            onClick={() => handleEditDraft(i)}
+                            disabled={isLoading}
+                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                            aria-label={`Edit ${label} section`}
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
+                            </svg>
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {/* Settings — voting cutoff, suggestion/availability cutoff,
+                context, notes, voter name. Folds out on submit. */}
+            <div className="pb-3">
+              <div className="px-3 pt-1">
+                <form
+                  onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  className="space-y-3"
+                >
+                  <VotingCutoffField
+                    deadlineOption={deadlineOption}
+                    setDeadlineOption={setDeadlineOption}
+                    customDate={customDate}
+                    setCustomDate={setCustomDate}
+                    customTime={customTime}
+                    setCustomTime={setCustomTime}
+                    isLoading={isLoading || topModalOpen}
+                    isClient={isClient}
+                  />
+
+                  {pollHasPrephase && suggestionCutoffField}
+
+                  {/* Notes — multi-line longer description. */}
+                  <div>
+                    {detailsOpen ? (
+                      <>
+                        <label htmlFor="details" className="block text-sm font-medium mb-1">
+                          Notes
+                        </label>
+                        <textarea
+                          ref={detailsRef}
+                          id="details"
+                          value={details}
+                          onChange={(e) => {
+                            setDetails(e.target.value);
+                            const el = e.target;
+                            el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
+                            const maxH = 5 * 20 + 16;
+                            el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+                            el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+                          }}
+                          onBlur={() => {
+                            const trimmed = details.trim();
+                            if (!trimmed) {
+                              setDetailsOpen(false);
+                              setDetails('');
+                            } else if (trimmed !== details) {
+                              setDetails(trimmed);
+                            }
+                          }}
+                          disabled={isLoading || topModalOpen}
+                          style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
+                          className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
+                          placeholder="Add more context or instructions..."
+                        />
+                      </>
+                    ) : (
+                      <div className="text-sm font-medium">
+                        Notes:{' '}
+                        <button
+                          type="button"
+                          onClick={() => setDetailsOpen(true)}
+                          disabled={topModalOpen}
+                          className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                        >
+                          Add
+                        </button>
+                      </div>
                     )}
-                  </li>
-                );
-              })}
-            </ul>
+                  </div>
+
+                  <CompactNameField
+                    name={creatorName}
+                    setName={setCreatorName}
+                    disabled={isLoading || topModalOpen}
+                  />
+                </form>
+
+                {error && (
+                  <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
+                    {error}
+                  </div>
+                )}
+                {validationError && drafts.length > 0 && (
+                  <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
+                    {validationError}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         </div>,
         draftPollPortal
       )}
 
-      {/* Poll-level fields: voting cutoff, suggestion/availability cutoff
-          (when applicable), notes, creator name. All shared across every
-          draft. */}
-      <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
-        <VotingCutoffField
-          deadlineOption={deadlineOption}
-          setDeadlineOption={setDeadlineOption}
-          customDate={customDate}
-          setCustomDate={setCustomDate}
-          customTime={customTime}
-          setCustomTime={setCustomTime}
-          isLoading={isLoading}
-          isClient={isClient}
-        />
-
-        {pollHasPrephase && suggestionCutoffField}
-
-        {/* Context — short single-line, drives the auto-title "for X". */}
-        <div>
-          {pollContextOpen ? (
-            <>
-              <label htmlFor="pollContext" className="block text-sm font-medium mb-1">
-                Context
-              </label>
-              <input
-                type="text"
-                id="pollContext"
-                ref={pollContextRef}
-                value={pollContext}
-                onChange={(e) => setPollContext(e.target.value)}
-                onBlur={() => {
-                  const trimmed = pollContext.trim();
-                  if (!trimmed) {
-                    setPollContextOpen(false);
-                    setPollContext('');
-                  } else if (trimmed !== pollContext) {
-                    setPollContext(trimmed);
-                  }
-                }}
-                disabled={isLoading}
-                maxLength={80}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Friday night, lunch, etc."
-              />
-            </>
-          ) : (
-            <div className="text-sm font-medium">
-              Context:{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setPollContextOpen(true);
-                  setTimeout(() => pollContextRef.current?.focus(), 0);
-                }}
-                className="font-normal text-blue-600 dark:text-blue-400"
-              >
-                {pollContext || 'Add'}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Notes — multi-line longer description. */}
-        <div>
-          {detailsOpen ? (
-            <>
-              <label htmlFor="details" className="block text-sm font-medium mb-1">
-                Notes
-              </label>
-              <textarea
-                ref={detailsRef}
-                id="details"
-                value={details}
-                onChange={(e) => {
-                  setDetails(e.target.value);
-                  const el = e.target;
-                  el.style.height = `${SINGLE_LINE_INPUT_HEIGHT}px`;
-                  const maxH = 5 * 20 + 16;
-                  el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
-                  el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
-                }}
-                onBlur={() => {
-                  const trimmed = details.trim();
-                  if (!trimmed) {
-                    setDetailsOpen(false);
-                    setDetails('');
-                  } else if (trimmed !== details) {
-                    setDetails(trimmed);
-                  }
-                }}
-                disabled={isLoading}
-                style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
-                placeholder="Add more context or instructions..."
-              />
-            </>
-          ) : (
-            <div className="text-sm font-medium">
-              Notes:{' '}
-              <button
-                type="button"
-                onClick={() => setDetailsOpen(true)}
-                className="font-normal text-blue-600 dark:text-blue-400"
-              >
-                Add
-              </button>
-            </div>
-          )}
-        </div>
-
-        <CompactNameField name={creatorName} setName={setCreatorName} disabled={isLoading} />
-      </form>
-
-      {validationError && drafts.length > 0 && (
-        <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
-          {validationError}
-        </p>
-      )}
-
-      {/* TOP MODAL — question-specific form, opened by What/When/Where or
-          pencil-edit. Anchored just above the bottom modal sheet via the
-          --bottom-modal-height CSS var (set by template.tsx's ResizeObserver).
-          As the bottom sheet grows/shrinks, the top sheet rides above it. The
-          height cap is "viewport minus bottom sheet minus safe-area-top minus
-          breathing room" so the top sheet never crosses the notch. */}
+      {/* Question form modal — slide-up bottom sheet with backdrop. The
+          backdrop blocks taps on the page underneath (including the draft
+          card's submit button) so the user has to commit or cancel before
+          interacting with the rest of the page. */}
       {topModalOpen && isClient && createPortal(
-        <div
-          className="fixed left-2 right-2 z-[70] rounded-3xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col overflow-hidden"
-          style={{
-            bottom: 'calc(var(--bottom-modal-height, 50vh) + 8px)',
-            maxHeight: 'calc(100vh - var(--bottom-modal-height, 50vh) - env(safe-area-inset-top, 0px) - 24px)',
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Header — same X/check button style as the bottom modal. */}
-          <div className="flex-shrink-0 relative flex items-center justify-between px-4 pt-3 pb-2">
-            <button
-              type="button"
-              onClick={handleTopModalCancel}
-              className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
-              aria-label="Close question form"
-            >
-              <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
-                <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
-            <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">
-              {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
-            </h2>
-            <button
-              type="button"
-              onClick={handleCheckCommit}
-              disabled={isLoading || !!getCurrentQuestionFormError()}
-              className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed z-10"
-              aria-label="Save question"
-            >
-              <svg className="w-[28px] h-[28px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 13l4 4L19 7" />
-              </svg>
-            </button>
-          </div>
-          {/* Title line — same CategoryForLine for question mode, or animated title for time. */}
-          <div className="flex-shrink-0 px-4">
-            {questionType === 'question' ? (
-              <CategoryForLine
-                category={category}
-                onCategoryChange={handleCategoryChange}
-                forField={forField}
-                onForFieldChange={setForField}
-                generatedCategoryText={generatedCategoryFromOptions}
-                disabled={isLoading}
-              />
-            ) : (
-              <AnimatedTitle title={title} initialDelay={0} />
-            )}
-          </div>
-          {/* Scrollable form body */}
-          <div className="overflow-auto overscroll-contain min-h-0">
-            <div className="px-4 pt-2 pb-5">
-              {questionFormBody}
+        <div className="fixed inset-0 z-[70]">
+          <div
+            className="absolute inset-0 bg-black/40 animate-fade-in"
+            onClick={handleTopModalCancel}
+            aria-hidden="true"
+          />
+          <div
+            className="absolute left-0 right-0 bottom-0 rounded-t-[32px] bg-white dark:bg-gray-900 shadow-2xl flex flex-col animate-slide-up overflow-hidden"
+            style={{
+              maxHeight: 'calc(100% - env(safe-area-inset-top, 0px) - 15px)',
+              overscrollBehavior: 'none',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex-shrink-0 flex justify-center pt-2.5 pb-1">
+              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
+            </div>
+            {/* Header — X / title / check */}
+            <div className="flex-shrink-0 relative flex items-center justify-between px-4 pb-2">
+              <button
+                type="button"
+                onClick={handleTopModalCancel}
+                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
+                aria-label="Close question form"
+              >
+                <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
+                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">
+                {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
+              </h2>
+              <button
+                type="button"
+                onClick={handleCheckCommit}
+                disabled={isLoading || !!getCurrentQuestionFormError()}
+                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed z-10"
+                aria-label="Save question"
+              >
+                <svg className="w-[28px] h-[28px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+            </div>
+            {/* CategoryForLine (question mode) or AnimatedTitle (time). */}
+            <div className="flex-shrink-0 px-4">
+              {questionType === 'question' ? (
+                <CategoryForLine
+                  category={category}
+                  onCategoryChange={handleCategoryChange}
+                  forField={forField}
+                  onForFieldChange={setForField}
+                  generatedCategoryText={generatedCategoryFromOptions}
+                  disabled={isLoading}
+                />
+              ) : (
+                <AnimatedTitle title={title} initialDelay={0} />
+              )}
+            </div>
+            {/* Scrollable body */}
+            <div className="overflow-auto overscroll-contain min-h-0">
+              <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
+                {questionFormBody}
+              </div>
             </div>
           </div>
         </div>,

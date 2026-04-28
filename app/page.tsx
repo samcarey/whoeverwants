@@ -239,10 +239,6 @@ export default function Home() {
         <ThreadList polls={polls} />
       )}
 
-      {/* Render target for the in-progress draft poll card while the
-          create-poll panel is open. Filled by CreateQuestionContent. */}
-      <div id="draft-poll-portal" />
-
     </>
   );
 }
