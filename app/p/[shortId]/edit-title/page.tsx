@@ -23,7 +23,7 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
 
   const goBack = () => {
     if (hasAppHistory()) navigateBackWithTransition();
-    else navigateWithTransition(router, `/thread/${threadId}/info`, 'back');
+    else navigateWithTransition(router, `/p/${threadId}/info`, 'back');
   };
 
   const save = async () => {
@@ -83,7 +83,7 @@ function Editor({ thread, threadId }: { thread: Thread; threadId: string }) {
 
 function EditThreadTitleInner() {
   const params = useParams();
-  const threadId = params.threadId as string;
+  const threadId = params.shortId as string;
   const { thread, loading, error } = useThread(threadId);
 
   if (loading) return <ThreadLoading />;

@@ -52,7 +52,7 @@ interface UseThreadVotingArgs {
 
 /**
  * Owns every piece of state and every handler involved in submitting or
- * editing a vote from the thread page. Pulled out of `app/thread/[threadId]/
+ * editing a vote from the thread page. Pulled out of `app/p/[shortId]/
  * page.tsx` so the page only deals with thread layout/expand/scroll concerns
  * while voting flows live in one place.
  *

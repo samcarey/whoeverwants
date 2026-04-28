@@ -1195,7 +1195,7 @@ export function CreateQuestionContent() {
         }
       }
 
-      const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
+      const onEmptyThread = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
 
       // Build a placeholder Poll from the draft data so the thread can render
       // a real card in the destination position immediately, before the API
@@ -1219,12 +1219,12 @@ export function CreateQuestionContent() {
         creatorName: creatorName.trim() || null,
       });
 
-      // For new-root submissions on /thread/new the placeholder needs to be
-      // visible. EmptyThreadView doesn't render a poll list, so we still
-      // navigate first; the destination ThreadContent mounts with the
-      // placeholder in cache and FLIP-animates. We use router.replace with
-      // a placeholder id route — once apiCreatePoll resolves, we router.replace
-      // again to the real shortId.
+      // For new-root submissions on /p/ (the empty placeholder), the
+      // placeholder card needs to be visible. The placeholder route doesn't
+      // render a poll list, so we still navigate first; the destination
+      // ThreadContent mounts with the placeholder in cache and FLIP-animates.
+      // We use router.replace with a placeholder id route — once apiCreatePoll
+      // resolves, we router.replace again to the real shortId.
       // For follow-ups, the current thread page is already rendering and
       // takes the placeholder via POLL_PENDING_EVENT inline.
       const draftCardEl = document.querySelector('[data-draft-poll-card]') as HTMLElement | null;
@@ -1260,7 +1260,7 @@ export function CreateQuestionContent() {
         // destination ThreadContent will pick up the placeholder from cache
         // and render it. apiCreatePoll's success path navigates again to
         // the real shortId.
-        router.replace(`/thread/${placeholderPoll.id}`);
+        router.replace(`/p/${placeholderPoll.id}`);
       }
 
       // Run apiCreatePoll in the background. On success, hydrate the
@@ -1330,7 +1330,7 @@ export function CreateQuestionContent() {
         // but the cache is hot so re-mount renders instantly.
         const redirectId = createdPoll.short_id ?? createdPoll.id;
         questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-        router.replace(`/thread/${redirectId}`);
+        router.replace(`/p/${redirectId}`);
       }
     } catch (error) {
       console.error("Unexpected error:", error);

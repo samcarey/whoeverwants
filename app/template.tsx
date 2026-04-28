@@ -144,12 +144,12 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, []);
 
-  const isQuestionPage = pathname.startsWith('/p/');
-  const isThreadPage = pathname.startsWith('/thread/');
-  // /p/<id> now renders the thread view with a card expanded; both routes share the
-  // thread-page layout (fixed header + scroll list) and the thread's own back button.
-  // Thread sub-routes (/thread/<id>/info, .../edit-title) render their own fixed
-  // header but opt out of the thread-like FAB + padding treatment.
+  const isPollPage = pathname === '/p' || pathname === '/p/' || pathname.startsWith('/p/');
+  // /p/<id> renders the thread view with a card expanded; the bare /p/ route is
+  // the empty placeholder. Both share the thread-like layout (fixed header +
+  // scroll list, bottom-padding for the floating FAB). Sub-routes
+  // (/p/<id>/info, .../edit-title) render their own fixed header but opt out
+  // of the thread-like FAB + padding treatment via isThreadRootView.
   const isThreadLikePage = isThreadRootView(pathname);
   const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
@@ -158,7 +158,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   // The bubble bar is only shown on thread-like pages, so we always open the
   // modal in place (with auto-set followUpTo when the page exposes a
   // thread-latest-question-id on <body>). The home page uses the single "+" FAB
-  // below, which navigates to /thread/new/ as before.
+  // below, which navigates to /p/ (the empty placeholder).
   // The `openForm=1` marker tells CreateQuestionContent to auto-open the top
   // question form on mount, regardless of whether category/mode were preselected.
   // Without it, tapping "what" (no preselect) would open the panel only and
@@ -184,7 +184,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   return (
     <>
       {/* Fallback header for pages without a page-specific header (not question, thread, settings, home, or create-modal). */}
-      {!isQuestionPage && !isThreadPage && !isSettingsPage && pathname !== '/' && (
+      {!isPollPage && !isSettingsPage && pathname !== '/' && (
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700"
              style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="relative flex items-start justify-between pt-2 pb-2 pl-2 pr-2.5">
@@ -278,14 +278,15 @@ function TemplateInner({ children }: AppTemplateProps) {
         </Suspense>
       )}
 
-      {/* Floating "+" FAB — home page only. Navigates to /thread/new/ where
-           the user picks a What/When/Where bubble for what they want to create.
-           Rendered via portal outside the scaling container so it positions
-           against the viewport. Slides with the rest of the page in view
-           transitions (no shared transition name with the thread bubble bar). */}
+      {/* Floating "+" FAB — home page only. Navigates to /p/ (the empty
+           placeholder) where the user picks a What/When/Where bubble for what
+           they want to create. Rendered via portal outside the scaling
+           container so it positions against the viewport. Slides with the
+           rest of the page in view transitions (no shared transition name
+           with the thread bubble bar). */}
       {isMounted && pathname === '/' && !isCreateModalOpen && createPortal(
         <button
-          onClick={() => navigateWithTransition(router, '/thread/new', 'forward')}
+          onClick={() => navigateWithTransition(router, '/p', 'forward')}
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
           style={{
             right: 'max(1.5rem, env(safe-area-inset-right, 0px))',
