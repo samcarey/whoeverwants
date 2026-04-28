@@ -181,14 +181,13 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
 }
 
-/* Draft poll card → live poll card morph. Temporarily slow to 5s for
-   debugging — the default UA crossfade is ~0.25s. */
+/* Draft poll card → live poll card morph. */
 
 /* The group + image-pair animate position + width/height from the draft
-   card's frame to the live poll card's frame over 5s. */
+   card's frame to the live poll card's frame over 1s. */
 ::view-transition-group(draft-poll-card),
 ::view-transition-image-pair(draft-poll-card) {
-  animation-duration: 5s !important;
+  animation-duration: 1s !important;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
@@ -217,10 +216,10 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   100% { opacity: 1; }
 }
 ::view-transition-old(draft-poll-card) {
-  animation: vt-old-hold 5s cubic-bezier(0.32, 0.72, 0, 1) both !important;
+  animation: vt-old-hold 1s cubic-bezier(0.32, 0.72, 0, 1) both !important;
 }
 ::view-transition-new(draft-poll-card) {
-  animation: vt-new-hold 5s cubic-bezier(0.32, 0.72, 0, 1) both !important;
+  animation: vt-new-hold 1s cubic-bezier(0.32, 0.72, 0, 1) both !important;
 }
 
 
