@@ -700,7 +700,6 @@ export function CreateQuestionContent() {
   // restored (per spec — "clear it from the form and it will not go back in
   // the draft").
   const handleTopModalCancel = useCallback(() => {
-    console.log('[CreatePoll] cancel; URL=', typeof window !== 'undefined' ? window.location.search : '');
     setTopModalOpen(false);
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
