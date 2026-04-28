@@ -45,7 +45,7 @@ import {
   draftIsSuggestionMode,
   draftToQuestionParams,
   anyDraftUsesPrephase,
-  summarizeDraft,
+  deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
 } from "./createPollHelpers";
@@ -1599,15 +1599,15 @@ export function CreateQuestionContent() {
                 <ul className="space-y-1.5">
                   {drafts.map((d, i) => {
                     const { icon, label } = draftCardLabels(d);
+                    const derivedTitle = deriveDraftTitle(d);
                     return (
                       <li
                         key={i}
                         className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
                       >
                         <span className="text-lg leading-none" aria-hidden>{icon}</span>
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>
-                        <span className="text-sm text-gray-600 dark:text-gray-400 truncate flex-1 min-w-0">
-                          {summarizeDraft(d)}
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
+                          {derivedTitle}
                         </span>
                         {!topModalOpen && (
                           <button

@@ -9,7 +9,7 @@
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/threadUtils";
-import { getBuiltInType } from "@/components/TypeFieldInput";
+import { getBuiltInType, isLocationLikeCategory } from "@/components/TypeFieldInput";
 import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
 
 /**
@@ -145,6 +145,71 @@ export function draftToQuestionParams(
     params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
   }
   return params;
+}
+
+/**
+ * Derive the question's auto-title from a draft snapshot. Mirrors
+ * `generateTitle()` in page.tsx but operates on a draft (not live form
+ * state) so the draft list rows can show the same title the question
+ * would land on if submitted now. Returns text only — no leading icon.
+ */
+export function deriveDraftTitle(d: QuestionDraft): string {
+  // yes_no: the user-typed question text IS the title.
+  if (d.category === 'yes_no') {
+    return d.title.trim() || 'Yes/No?';
+  }
+  // time questions: fixed "Time?" + optional " for X" suffix.
+  if (d.questionType === 'time' || d.category === 'time') {
+    return appendForSuffix('Time?', d.forField);
+  }
+
+  // ranked_choice: build from options if any, else fall back to the
+  // category label as a placeholder.
+  const builtIn = getBuiltInType(d.category);
+  const shorten = isLocationLikeCategory(d.category) ? shortenLocation : shortenOption;
+  const filled = d.options.filter(o => o.trim()).map(shorten);
+
+  if (filled.length === 0) {
+    const prefix = d.category === 'location' ? 'Place'
+      : builtIn?.label || (d.category && d.category !== 'custom' ? d.category : '');
+    if (prefix) return appendForSuffix(`${prefix}?`, d.forField);
+    const trimmedFor = d.forField.trim();
+    if (trimmedFor) return `Options for ${trimmedFor}?`;
+    return 'Suggestions';
+  }
+
+  if (filled.length === 1) return appendForSuffix(filled[0], d.forField);
+
+  return appendForSuffix(buildOrList(filled), d.forField);
+}
+
+const TITLE_LIMIT = 40;
+
+function joinWithOr(items: string[]): string {
+  if (items.length === 2) return `${items[0]} or ${items[1]}?`;
+  return `${items.slice(0, -1).join(', ')}, or ${items[items.length - 1]}?`;
+}
+
+function buildOrList(items: string[]): string {
+  const included = [items[0]];
+  for (let i = 1; i < items.length; i++) {
+    const isLast = i === items.length - 1;
+    const candidate = isLast
+      ? joinWithOr([...included, items[i]])
+      : `${[...included, items[i]].join(', ')}, or ...?`;
+    if (candidate.length > TITLE_LIMIT && included.length >= 2) break;
+    included.push(items[i]);
+  }
+  return included.length === items.length
+    ? joinWithOr(included)
+    : `${included.join(', ')}, or ...?`;
+}
+
+function appendForSuffix(base: string, forField: string): string {
+  const trimmed = forField.trim();
+  if (!trimmed || !base) return base;
+  if (base.endsWith('?')) return `${base.slice(0, -1)} for ${trimmed}?`;
+  return `${base} for ${trimmed}`;
 }
 
 /** Compact one-line description for the draft list cards. */
