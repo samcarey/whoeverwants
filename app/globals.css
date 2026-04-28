@@ -182,28 +182,45 @@ html[data-nav-direction="back"]::view-transition-new(root) {
 }
 
 /* Draft poll card → live poll card morph. Temporarily slow to 5s for
-   debugging — the default UA crossfade is ~0.25s. Override all four
-   pseudo-elements so both the group's reposition AND the crossfade run
-   at the slow duration on every browser. */
+   debugging — the default UA crossfade is ~0.25s. */
+
+/* The group + image-pair animate position + width/height from the draft
+   card's frame to the live poll card's frame over 5s. */
 ::view-transition-group(draft-poll-card),
-::view-transition-image-pair(draft-poll-card),
-::view-transition-old(draft-poll-card),
-::view-transition-new(draft-poll-card) {
+::view-transition-image-pair(draft-poll-card) {
   animation-duration: 5s !important;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
-/* Make the old/new images resize WITH the group as it animates from the
-   draft's frame to the live card's frame. Default behavior keeps each
-   image at its captured intrinsic size (so the group resizes but the
-   visible card content does not). `width/height: 100%` + `object-fit:
-   fill` stretches the snapshot to fill the group at every frame, so the
-   visible card actually shrinks/grows in lockstep with the morph. */
+/* Stretch the old/new card snapshots so they fill the morphing group.
+   Without this, each image keeps its captured intrinsic size, so the
+   group's bounds change but the visible card content stays the same
+   size — what the user described as "moves and fades, no resize". */
 ::view-transition-old(draft-poll-card),
 ::view-transition-new(draft-poll-card) {
   width: 100%;
   height: 100%;
   object-fit: fill;
+}
+
+/* Suppress the default UA crossfade in favor of a hard handoff: the OLD
+   card snapshot stays fully opaque while the group physically reshapes,
+   then snaps to the NEW card snapshot at the end. This makes the morph
+   read as "draft frame transforms into poll-card frame" rather than
+   "two cards crossfade in place". */
+@keyframes vt-old-hold {
+  0%, 90% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes vt-new-hold {
+  0%, 90% { opacity: 0; }
+  100% { opacity: 1; }
+}
+::view-transition-old(draft-poll-card) {
+  animation: vt-old-hold 5s cubic-bezier(0.32, 0.72, 0, 1) both !important;
+}
+::view-transition-new(draft-poll-card) {
+  animation: vt-new-hold 5s cubic-bezier(0.32, 0.72, 0, 1) both !important;
 }
 
 
