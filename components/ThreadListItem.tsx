@@ -43,8 +43,9 @@ export interface ThreadListItemProps {
    *  text content takes the full row width. Used by the draft poll card so the
    *  in-progress poll doesn't show pre-vote initials before anyone has voted. */
   hideRespondents?: boolean;
-  /** Caller can drop in extra metadata (e.g. "ready to submit") inline. */
-  metadataExtra?: React.ReactNode;
+  /** Inline replacement for the relative-time stamp when `createdAt` is
+   *  absent — e.g. "ready to submit" / "just now" for the draft poll card. */
+  statusBadge?: React.ReactNode;
   onClick?: () => void;
   onTouchStart?: (e: React.TouchEvent) => void;
   onTouchEnd?: () => void;
@@ -68,7 +69,7 @@ export default function ThreadListItem(props: ThreadListItemProps) {
     finalizing = false,
     isFirst = false,
     hideRespondents = false,
-    metadataExtra,
+    statusBadge,
     onClick,
     onTouchStart,
     onTouchEnd,
@@ -106,11 +107,8 @@ export default function ThreadListItem(props: ThreadListItemProps) {
           showDraftChrome ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
         }`}
       >
-        {/* Respondent circles — omitted in draft mode (hideRespondents=true)
-            so the user doesn't see their own initials in a placeholder
-            position before anyone has actually voted. RespondentCircles
-            renders a "?" placeholder when both lists are empty, which we also
-            hide via this prop. */}
+        {/* Drafts skip this entirely so the "?" placeholder doesn't appear
+            before anyone has actually voted. */}
         {!hideRespondents && (
           <RespondentCircles
             names={participantNames}
@@ -157,7 +155,7 @@ export default function ThreadListItem(props: ThreadListItemProps) {
                   {questionCount > 1 && <>{questionCount} questions &middot; </>}
                   {createdAt
                     ? relativeTime(createdAt)
-                    : metadataExtra ?? null}
+                    : statusBadge ?? null}
                 </>
               </ClientOnly>
             </div>

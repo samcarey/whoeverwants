@@ -49,6 +49,12 @@ import {
   draftPollPreview,
 } from "./createPollHelpers";
 import ThreadListItem from "@/components/ThreadListItem";
+import {
+  QUESTION_FORM_STATE_CHANGE_EVENT,
+  OPEN_QUESTION_FORM_EVENT,
+  CREATE_PANEL_FINALIZE_EVENT,
+  type OpenQuestionFormDetail,
+} from "@/lib/eventChannels";
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -602,14 +608,14 @@ export function CreateQuestionContent() {
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
-    // questionType lives on the URL `mode` param; sync it through that.
-    if (d.questionType === 'time') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('mode', 'time');
-      router.replace(url.pathname + url.search);
-    } else {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('mode');
+    // questionType lives on the URL `mode` param; only re-push when it
+    // actually changes (otherwise every form-open churns history).
+    const url = new URL(window.location.href);
+    const desiredMode = d.questionType === 'time' ? 'time' : null;
+    const currentMode = url.searchParams.get('mode');
+    if (currentMode !== desiredMode) {
+      if (desiredMode) url.searchParams.set('mode', desiredMode);
+      else url.searchParams.delete('mode');
       router.replace(url.pathname + url.search);
     }
     setTitle(d.title);
@@ -692,16 +698,25 @@ export function CreateQuestionContent() {
   const [submitPortal, setSubmitPortal] = useState<HTMLElement | null>(null);
   const [titlePortal, setTitlePortal] = useState<HTMLElement | null>(null);
   // Portal target for the in-progress draft poll card, rendered in the page
-  // body by the home / thread / empty-thread routes. Re-queried via
-  // MutationObserver: page navigations swap the portal target node, so a
-  // single one-shot useEffect would leave us pointing at a detached element.
+  // body by the home / thread / empty-thread routes. Re-queried via a
+  // MutationObserver because page navigations swap the portal target node;
+  // a one-shot useEffect would leave us pointing at a detached element.
+  // The observer fires on every DOM mutation under <body>, so we batch the
+  // re-query into one rAF per frame to avoid running the lookup hundreds of
+  // times during typing / scroll / animation.
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setSubmitPortal(document.getElementById('create-question-submit-portal'));
     setTitlePortal(document.getElementById('create-question-title-portal'));
+    let scheduled = false;
     const updateDraftPollPortal = () => {
-      const el = document.getElementById('draft-poll-portal');
-      setDraftPollPortal(prev => (prev === el ? prev : el));
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        const el = document.getElementById('draft-poll-portal');
+        setDraftPollPortal(prev => (prev === el ? prev : el));
+      });
     };
     updateDraftPollPortal();
     const observer = new MutationObserver(updateDraftPollPortal);
@@ -709,26 +724,25 @@ export function CreateQuestionContent() {
     return () => observer.disconnect();
   }, []);
 
-  // Broadcast top-modal open/closed state so template.tsx can hide the
-  // floating What/When/Where bubble bar while the question form is open
-  // (per spec: either the buttons or the form are visible, never both).
+  // Broadcast top-modal open/closed state to hide the floating What/When/
+  // Where bubble bar while the question form is open. Cleanup intentionally
+  // does NOT re-dispatch — the next render's effect carries the new state.
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('questionFormStateChange', { detail: { open: topModalOpen } }));
-    return () => {
-      window.dispatchEvent(new CustomEvent('questionFormStateChange', { detail: { open: false } }));
-    };
+    window.dispatchEvent(new CustomEvent(QUESTION_FORM_STATE_CHANGE_EVENT, { detail: { open: topModalOpen } }));
   }, [topModalOpen]);
+  // Final close on unmount so the bubble bar reappears at screen-bottom.
+  useEffect(() => () => {
+    window.dispatchEvent(new CustomEvent(QUESTION_FORM_STATE_CHANGE_EVENT, { detail: { open: false } }));
+  }, []);
 
-  // Listen for the floating bubble bar's runtime "open form" requests when
-  // the panel is already open (so tapping a bubble pops a fresh top form
-  // without re-pushing URL state).
+  // Bubble bar runtime "open form" requests (panel already open).
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { mode?: 'question' | 'time'; category?: string } | undefined;
+      const detail = (e as CustomEvent<OpenQuestionFormDetail>).detail;
       handleOpenNewQuestion(detail ?? {});
     };
-    window.addEventListener('openQuestionForm', handler);
-    return () => window.removeEventListener('openQuestionForm', handler);
+    window.addEventListener(OPEN_QUESTION_FORM_EVENT, handler);
+    return () => window.removeEventListener(OPEN_QUESTION_FORM_EVENT, handler);
   }, [handleOpenNewQuestion]);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
@@ -1193,7 +1207,7 @@ export function CreateQuestionContent() {
       // the panel slide-down animation is 300ms (animate-slide-down). We hold
       // for 600ms so both finish before the navigation unmounts the panel.
       setIsFinalizing(true);
-      window.dispatchEvent(new CustomEvent('createPanelFinalize'));
+      window.dispatchEvent(new CustomEvent(CREATE_PANEL_FINALIZE_EVENT));
       await new Promise(r => setTimeout(r, 600));
 
       // Navigate to the new question. `questionBackTarget.set` records the thread
@@ -1531,7 +1545,7 @@ export function CreateQuestionContent() {
           collapses out, edit rows fold up) so the card lands on its
           final live appearance over a single CSS transition — no swap. */}
       {draftPollPortal && drafts.length > 0 && createPortal(
-        <div data-draft-poll-card className="pt-2">
+        <div className="pt-2">
           <ThreadListItem
             title={draftPreview.title}
             latestQuestionTitle={draftPreview.latestQuestionTitle}
@@ -1542,7 +1556,7 @@ export function CreateQuestionContent() {
             draftMode
             finalizing={isFinalizing}
             hideRespondents
-            metadataExtra={isFinalizing ? 'just now' : 'ready to submit'}
+            statusBadge={isFinalizing ? 'just now' : 'ready to submit'}
           />
           {/* Collapsible edit-drafts section — the slight modification per spec
               ("don't have suggestion text input but do have the same general

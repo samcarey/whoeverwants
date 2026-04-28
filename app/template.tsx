@@ -10,6 +10,11 @@ import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isThreadRootView } from '@/lib/questionId';
+import {
+  QUESTION_FORM_STATE_CHANGE_EVENT,
+  CREATE_PANEL_FINALIZE_EVENT,
+  type QuestionFormStateChangeDetail,
+} from '@/lib/eventChannels';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -364,32 +369,28 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, [isCreateModalOpen, isMounted]);
 
-  // Track whether the top "New Question" form modal is open. CreateQuestionContent
-  // dispatches `questionFormStateChange` whenever its top modal toggles; we use
-  // it to hide the floating What/When/Where bubble bar while the form is open
-  // (the form takes its place per spec).
+  // Hide the floating What/When/Where bubble bar while the top "New Question"
+  // form is open (per spec: buttons OR form, never both).
   const [questionFormOpen, setQuestionFormOpen] = useState(false);
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { open: boolean } | undefined;
+      const detail = (e as CustomEvent<QuestionFormStateChangeDetail>).detail;
       setQuestionFormOpen(!!detail?.open);
     };
-    window.addEventListener('questionFormStateChange', handler);
-    return () => window.removeEventListener('questionFormStateChange', handler);
+    window.addEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
   }, []);
 
-  // `createPanelFinalize` fires from CreateQuestionContent when submit succeeds:
-  // we slide the bottom panel down (via the existing modalClosing animation)
-  // and hide the bubble bar so the only motion the user sees is the draft poll
-  // card morphing into a real poll card. CreateQuestionContent does the
-  // actual router.replace after its own 600ms hold, so we don't navigate here.
+  // Submit-time: trigger the existing slide-down animation so the user sees
+  // the draft-poll-card morph alone. CreateQuestionContent owns the navigation
+  // after its 600ms hold, so we don't navigate here.
   useEffect(() => {
     const handler = () => {
       setModalClosing(true);
       dragState.current.isClosing = true;
     };
-    window.addEventListener('createPanelFinalize', handler);
-    return () => window.removeEventListener('createPanelFinalize', handler);
+    window.addEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
+    return () => window.removeEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
   }, []);
 
   // The create-poll panel is NOT a true modal: the underlying page stays
