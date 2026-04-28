@@ -750,44 +750,30 @@ export function CreateQuestionContent() {
 
   // Portal target for the in-progress draft poll card, rendered in the page
   // body by the thread / empty-thread routes. Re-queried via a
-  // MutationObserver because page navigations swap the portal target node;
-  // a one-shot useEffect would leave us pointing at a detached element.
-  // The observer fires on every DOM mutation under <body>, so we batch the
-  // re-query into one rAF per frame to avoid running the lookup hundreds of
-  // times during typing / scroll / animation.
-  // Disconnect once the portal is found and re-arm only if it later goes
-  // away (route change). Without that, the observer fires on every DOM
-  // mutation under <body> for the whole component lifetime — we'd waste
-  // work on every subsequent unrelated mutation.
+  // MutationObserver that stays armed for the full component lifetime —
+  // page navigations swap the portal target node (and the loading-spinner
+  // early-return inside ThreadContent unmounts it transiently), so a
+  // self-disconnecting observer can leave us holding a stale reference
+  // pointing at a detached node and the draft card stops rendering.
+  // The mutation callback is coalesced into one rAF per frame, so the
+  // always-on listener doesn't run getElementById hundreds of times during
+  // typing / scroll / animation.
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let scheduled = false;
-    let observer: MutationObserver | null = null;
-    const watch = () => {
-      if (observer) return;
-      observer = new MutationObserver(check);
-      observer.observe(document.body, { childList: true, subtree: true });
-    };
-    const stopWatching = () => {
-      observer?.disconnect();
-      observer = null;
-    };
     const check = () => {
       if (scheduled) return;
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
         const el = document.getElementById('draft-poll-portal');
-        setDraftPollPortal(prev => {
-          if (prev === el) return prev;
-          if (el) stopWatching(); else watch();
-          return el;
-        });
+        setDraftPollPortal(prev => (prev === el ? prev : el));
       });
     };
+    const observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true });
     check();
-    if (!document.getElementById('draft-poll-portal')) watch();
-    return () => stopWatching();
+    return () => observer.disconnect();
   }, []);
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
