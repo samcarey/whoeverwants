@@ -369,13 +369,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const rebuilt = t?.rootPollId
         ? buildThreadFromPollDown(t.rootPollId, polls, voted, abstained)
         : null;
+      console.log('[FLIP] rebuilt?', !!rebuilt, 'rootPollId=', t?.rootPollId);
       if (!rebuilt) return;
 
       const firstQuestionId = newPoll.questions[0]?.id ?? null;
+      console.log('[FLIP] firstQuestionId=', firstQuestionId);
       flushSync(() => {
         setPendingPollFirstQuestionId(firstQuestionId);
         setThread(rebuilt);
       });
+      console.log('[FLIP] flushSync done');
 
       // FLIP the bordered frame (not the outer grid) so the visible card
       // shape morphs and the surrounding category-icon column stays still.
