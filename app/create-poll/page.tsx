@@ -64,6 +64,18 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
+// What/When/Where bubble buttons rendered inside the draft poll card.
+// Styling mirrors the legacy floating bubble bar that lived on
+// template.tsx — same heights, same pastel palette.
+const BUBBLE_BUTTON_BASE =
+  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 shadow-md shadow-black/20 cursor-pointer text-gray-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed";
+const BUBBLE_BUTTON_WHAT =
+  `${BUBBLE_BUTTON_BASE} bg-amber-200 dark:bg-amber-300 active:bg-amber-300 dark:active:bg-amber-200`;
+const BUBBLE_BUTTON_WHERE =
+  `${BUBBLE_BUTTON_BASE} bg-rose-200 dark:bg-rose-300 active:bg-rose-300 dark:active:bg-rose-200`;
+const BUBBLE_BUTTON_WHEN =
+  `${BUBBLE_BUTTON_BASE} bg-sky-200 dark:bg-sky-300 active:bg-sky-300 dark:active:bg-sky-200`;
+
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -650,14 +662,26 @@ export function CreateQuestionContent() {
   }, [router]);
 
   // What/When/Where: open a fresh top modal with optional preselection.
+  // Auto-sets followUpTo from the thread page's body attribute so a question
+  // started inside the in-card bubble bar inherits the thread context.
   const handleOpenNewQuestion = useCallback((opts: { mode?: 'question' | 'time'; category?: string } = {}) => {
     setError(null);
     applyDraftToState(emptyDraft(opts));
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      let touched = false;
+      if (url.searchParams.get('create') !== '1') { url.searchParams.set('create', '1'); touched = true; }
+      const threadLatest = document.body.getAttribute('data-thread-latest-question-id');
+      if (threadLatest && url.searchParams.get('followUpTo') !== threadLatest) {
+        url.searchParams.set('followUpTo', threadLatest);
+        touched = true;
+      }
+      if (touched) router.replace(url.pathname + '?' + url.searchParams.toString());
+    }
     setTopModalOpen(true);
-    ensureCreateParam();
-  }, [applyDraftToState, ensureCreateParam]);
+  }, [applyDraftToState, router]);
 
   // Pencil: edit a committed draft. Pop it from drafts list (so it lives
   // exclusively in the top modal form), remember it for X-restore semantics.
@@ -1620,63 +1644,75 @@ export function CreateQuestionContent() {
     </form>
   );
 
-  // The draft poll card surfaces whenever there's something for it to host:
-  // committed drafts OR an in-flight question form (so tapping What/When/Where
-  // immediately reveals the empty card alongside the modal).
-  const draftCardVisible = drafts.length > 0 || topModalOpen;
+  // The draft poll card is always rendered on thread-like pages so the
+  // user always has a place to drop a new question. The title row, the
+  // questions list, and the Settings section only render once at least one
+  // question has been committed. The in-card What/When/Where bubble bar is
+  // visible whenever the question form modal is closed (its prior home —
+  // the floating bottom bar — moved into this card).
+  const hasDrafts = drafts.length > 0;
 
   return (
     <div className="question-content">
       {/* Draft poll card — portal-rendered into the page's poll list at the
-          bottom (`#draft-poll-portal`). Hosts the wrapper title, up-arrow
-          submit, the questions list (with pencil-edit per row), and the
-          Settings section that used to live in the bottom modal. */}
-      {draftPollPortal && draftCardVisible && createPortal(
+          bottom (`#draft-poll-portal`). Always present so the user always
+          has a place to drop a new question. Hosts (when populated) the
+          wrapper title, up-arrow submit, the questions list (with pencil-
+          edit per row), and the Settings section that used to live in the
+          bottom modal. */}
+      {draftPollPortal && createPortal(
         <div className="pt-2">
+          {/* Centered header above the dashed card. */}
+          <div className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 select-none">
+            Create Poll
+          </div>
           <div
             data-draft-poll-card
             className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
-            {/* Top row: title input (left) + up-arrow Submit (right). */}
-            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-              <div className="flex-1 min-w-0">
-                <InlineTitleField
-                  title={pollTitle}
-                  isAutoTitle={!isPollTitleCustom}
-                  autoTitle={draftPreview.title}
-                  onChange={(v) => {
-                    setPollTitle(v);
-                    setIsPollTitleCustom(true);
-                  }}
-                  onRevertToAuto={() => {
-                    setPollTitle('');
-                    setIsPollTitleCustom(false);
-                  }}
-                  disabled={isLoading || topModalOpen}
-                />
+            {/* Top row: title input (left) + up-arrow Submit (right). Only
+                shown once the user has committed at least one question. */}
+            {hasDrafts && (
+              <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+                <div className="flex-1 min-w-0">
+                  <InlineTitleField
+                    title={pollTitle}
+                    isAutoTitle={!isPollTitleCustom}
+                    autoTitle={draftPreview.title}
+                    onChange={(v) => {
+                      setPollTitle(v);
+                      setIsPollTitleCustom(true);
+                    }}
+                    onRevertToAuto={() => {
+                      setPollTitle('');
+                      setIsPollTitleCustom(false);
+                    }}
+                    disabled={isLoading || topModalOpen}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSubmitClick}
+                  disabled={submitDisabled}
+                  aria-label="Submit poll"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                    </svg>
+                  )}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleSubmitClick}
-                disabled={submitDisabled}
-                aria-label="Submit poll"
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isSubmitted || isLoading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                  </svg>
-                )}
-              </button>
-            </div>
+            )}
 
-            {/* Questions list — folds out via opacity + max-height on submit. */}
-            {drafts.length > 0 && (
+            {/* Questions list. */}
+            {hasDrafts && (
               <div className="px-3 pb-2">
                 <ul className="space-y-1.5">
                   {drafts.map((d, i) => {
@@ -1711,8 +1747,60 @@ export function CreateQuestionContent() {
               </div>
             )}
 
+            {/* What/When/Where bubble bar — always sits just under whatever
+                questions are already in the draft (inside the card,
+                replacing the legacy floating bottom bar). Hidden while the
+                question form modal is open since the user is already
+                editing a question. */}
+            {!topModalOpen && (
+              <div
+                className={`flex items-center justify-center gap-3 px-3 ${hasDrafts ? 'pt-1 pb-3' : 'py-4'}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleOpenNewQuestion({})}
+                  disabled={isLoading}
+                  className={BUBBLE_BUTTON_WHAT}
+                  aria-label="Add a new question"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-[1.12rem]">what</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenNewQuestion({ category: 'restaurant' })}
+                  disabled={isLoading}
+                  className={BUBBLE_BUTTON_WHERE}
+                  aria-label="Add a new place question"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                  </svg>
+                  <span className="text-[1.12rem]">where</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenNewQuestion({ mode: 'time' })}
+                  disabled={isLoading}
+                  className={BUBBLE_BUTTON_WHEN}
+                  aria-label="Add a new time question"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                  </svg>
+                  <span className="text-[1.12rem]">when</span>
+                </button>
+              </div>
+            )}
+
             {/* Settings — voting cutoff, suggestion/availability cutoff,
-                context, notes, voter name. Folds out on submit. */}
+                notes, voter name. Only shown once a question has been
+                committed (no point configuring poll-level fields with
+                nothing to submit). */}
+            {hasDrafts && (
             <div className="pb-3">
               <div className="px-3 pt-1">
                 <form
@@ -1800,6 +1888,7 @@ export function CreateQuestionContent() {
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>,
         draftPollPortal

@@ -100,7 +100,22 @@ function collectDescendants(
       queue.push(mp.follow_up_to);
     }
   }
-  collected.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  // Closed/expired polls first, non-expired polls after — both groups
+  // chronological (oldest first). Result: the most recently submitted
+  // non-expired poll is always at the very bottom of the thread, just
+  // above the always-present draft poll card.
+  const now = Date.now();
+  const isPollExpired = (mp: Poll): boolean => {
+    if (mp.is_closed) return true;
+    if (mp.response_deadline && new Date(mp.response_deadline).getTime() < now) return true;
+    return false;
+  };
+  collected.sort((a, b) => {
+    const aExpired = isPollExpired(a);
+    const bExpired = isPollExpired(b);
+    if (aExpired !== bExpired) return aExpired ? -1 : 1;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
   return collected;
 }
 
@@ -226,6 +241,19 @@ function buildThreadFromPolls(
     0,
   );
 
+  // latestActivityMs measures cross-thread "most recent activity" for the
+  // home page sort and must reflect the most recent created_at across all
+  // polls — not just the post-sort tail. The collectDescendants sort puts
+  // closed polls before open polls, so polls[polls.length - 1] is now the
+  // most recent OPEN poll (or the most recent closed poll if every poll
+  // is closed). Compute the true max separately so a thread whose latest
+  // activity was closing a poll today doesn't sink behind a thread whose
+  // open poll is older.
+  const latestActivityMs = polls.reduce(
+    (max, p) => Math.max(max, new Date(p.created_at).getTime()),
+    0,
+  );
+
   return {
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
@@ -239,7 +267,7 @@ function buildThreadFromPolls(
     soonestUnvotedDeadlineMs: soonestUnvotedDeadline
       ? new Date(soonestUnvotedDeadline).getTime()
       : undefined,
-    latestActivityMs: new Date(latestPoll.created_at).getTime(),
+    latestActivityMs,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
     anonymousRespondentCount,
