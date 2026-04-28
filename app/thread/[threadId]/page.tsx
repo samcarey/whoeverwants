@@ -13,7 +13,8 @@ import { getUserName } from "@/lib/userProfile";
 import CompactNameField from "@/components/CompactNameField";
 import type { QuestionResults } from "@/lib/types";
 import { addAccessibleQuestionId, getAccessibleQuestionIds, getCreatorSecret } from "@/lib/browserQuestionAccess";
-import { getCachedQuestionById, getCachedQuestionByShortId } from "@/lib/questionCache";
+import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessiblePolls } from "@/lib/questionCache";
+import { POLL_CREATED_EVENT, type PollCreatedDetail } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
@@ -307,6 +308,47 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     }
     fetchThread();
   }, [threadId]);
+
+  // POLL_CREATED_EVENT: a draft just got submitted. If the new poll belongs
+  // to this thread (its chain of `follow_up_to` resolves to our root), rebuild
+  // the local thread state from the in-memory poll cache so the new poll
+  // appears inline with no route change / re-fetch. The dispatcher already
+  // calls `cachePoll` + appends to `cacheAccessiblePolls`, so the cache is
+  // warm by the time we read it here.
+  useEffect(() => {
+    if (!thread) return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PollCreatedDetail>).detail;
+      const newPoll = detail?.poll;
+      if (!newPoll) return;
+
+      const polls = getCachedAccessiblePolls();
+      if (!polls) return;
+
+      // Skip if the new poll isn't part of this thread (avoids rebuilding for
+      // unrelated submissions on other threads).
+      const threadPollIds = new Set(thread.polls.map((p) => p.id));
+      const inThread = newPoll.id === thread.rootPollId
+        || (newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to));
+      if (!inThread) return;
+
+      const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+      const rebuilt = buildThreadFromPollDown(thread.rootPollId, polls, voted, abstained);
+      if (!rebuilt) return;
+      // Seed inline results before swapping thread state so compact previews
+      // render on first paint of the new card.
+      setQuestionResultsMap((prev) => {
+        const additions = rebuilt.questions.filter((p) => p.results && !prev.has(p.id));
+        if (additions.length === 0) return prev;
+        const next = new Map(prev);
+        for (const p of additions) next.set(p.id, p.results!);
+        return next;
+      });
+      setThread(rebuilt);
+    };
+    window.addEventListener(POLL_CREATED_EVENT, handler);
+    return () => window.removeEventListener(POLL_CREATED_EVENT, handler);
+  }, [thread]);
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list
   // (the header is position:fixed and out of flow, so the list doesn't naturally reserve space).

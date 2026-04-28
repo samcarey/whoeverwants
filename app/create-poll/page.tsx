@@ -30,6 +30,8 @@ import InlineTitleField from "@/components/InlineTitleField";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
+import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls } from "@/lib/questionCache";
+import { POLL_CREATED_EVENT, type PollCreatedDetail } from "@/lib/eventChannels";
 import {
   pollLookup,
   shortenOption,
@@ -1219,22 +1221,44 @@ export function CreateQuestionContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
-      // Smoothie transition: morph the draft poll card from dashed/blue to
-      // a solid normal-card appearance over a 600ms CSS transition before we
-      // navigate to the new poll's URL. Hold matches the longest transition
-      // on the card so the morph completes before unmount.
-      setIsFinalizing(true);
-      await new Promise(r => setTimeout(r, 600));
+      // Inject the new poll into the in-memory caches so anything that reads
+      // them (thread page initial state, accessible polls list, etc.) sees
+      // the new poll without a network round-trip. Then dispatch
+      // POLL_CREATED_EVENT so the current thread page (if any) can append
+      // the poll to its local state inline — no route change, no re-fetch.
+      cachePoll(createdPoll);
+      const cachedAccessible = getCachedAccessiblePolls() ?? [];
+      if (!cachedAccessible.some(p => p.id === createdPoll.id)) {
+        cacheAccessiblePolls([...cachedAccessible, createdPoll]);
+      }
+      window.dispatchEvent(
+        new CustomEvent<PollCreatedDetail>(POLL_CREATED_EVENT, { detail: { poll: createdPoll } }),
+      );
 
-      // Navigate to the new question. `questionBackTarget.set` records the thread
-      // URL so the question page's back button leads to the thread containing
-      // it (oldest ancestor on top). `router.replace` drops `?create=1`.
-      // Phase 5b: short_id lives on the poll wrapper, so the redirect
-      // targets the wrapper's friendly URL. The thread back target walks
-      // poll-level chains via findThreadRootRouteId.
-      const redirectId = createdPoll.short_id ?? createdQuestion.id;
-      questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-      router.replace(`/p/${redirectId}`);
+      // Reset wrapper-level state so the draft poll card unmounts (drafts list
+      // empty + topModalOpen=false) and the next bubble tap starts clean.
+      setDrafts([]);
+      setPollTitle('');
+      setIsPollTitleCustom(false);
+      setIsSubmitted(false);
+      isSubmittingRef.current = false;
+      setIsLoading(false);
+      reEnableForm(form);
+
+      // Strip ?create from URL so the bubble bar reappears.
+      stripCreateParams();
+
+      // Decide whether we need to navigate. If the user is currently on
+      // /thread/new (the empty-thread placeholder), the new poll is its own
+      // root — replace the URL with the new thread's route so refresh /
+      // back-nav land on it. Otherwise stay put: ThreadContent's listener
+      // will append the new poll to the visible thread inline.
+      const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
+      if (onEmptyThread) {
+        const redirectId = createdPoll.short_id ?? createdPoll.id;
+        questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
+        router.replace(`/thread/${redirectId}`);
+      }
     } catch (error) {
       console.error("Unexpected error:", error);
       setError("An unexpected error occurred. Please try again.");
