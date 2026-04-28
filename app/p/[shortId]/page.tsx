@@ -352,33 +352,28 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
       const newPoll = detail?.poll;
       const fromBbox = detail?.fromBbox;
-      console.log('[FLIP] handler invoked. hasPoll=', !!newPoll, 'hasBbox=', !!fromBbox);
       if (!newPoll || !fromBbox) return;
 
       const polls = getCachedAccessiblePolls();
-      if (!polls) { console.log('[FLIP] no cached polls'); return; }
+      if (!polls) return;
 
       const t = threadRef.current;
       const threadPollIds = new Set(t?.polls.map((p) => p.id) ?? []);
       const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
       const isOwnRoot = t && newPoll.id === t.rootPollId;
-      console.log('[FLIP] isFollowUp=', isFollowUp, 'isOwnRoot=', isOwnRoot, 'newPoll.follow_up_to=', newPoll.follow_up_to, 'threadHasIt=', threadPollIds.has(newPoll.follow_up_to ?? ''));
-      if (!isFollowUp && !isOwnRoot) { console.log('[FLIP] early return'); return; }
+      if (!isFollowUp && !isOwnRoot) return;
 
       const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
       const rebuilt = t?.rootPollId
         ? buildThreadFromPollDown(t.rootPollId, polls, voted, abstained)
         : null;
-      console.log('[FLIP] rebuilt?', !!rebuilt, 'rootPollId=', t?.rootPollId);
       if (!rebuilt) return;
 
       const firstQuestionId = newPoll.questions[0]?.id ?? null;
-      console.log('[FLIP] firstQuestionId=', firstQuestionId);
       flushSync(() => {
         setPendingPollFirstQuestionId(firstQuestionId);
         setThread(rebuilt);
       });
-      console.log('[FLIP] flushSync done');
 
       // FLIP the bordered frame (not the outer grid) so the visible card
       // shape morphs and the surrounding category-icon column stays still.
@@ -397,7 +392,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!firstQuestionId) return;
       rafId = requestAnimationFrame(() => {
         const card = cardFrameRefs.current.get(firstQuestionId);
-        if (!card) { console.log('[FLIP] no card ref'); return; }
+        if (!card) return;
         const newBbox = card.getBoundingClientRect();
         const dx = fromBbox.x - newBbox.x;
         const dy = fromBbox.y - newBbox.y;
@@ -406,26 +401,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         card.style.transform = `translate(${dx}px, ${dy}px)`;
         card.style.width = `${fromBbox.width}px`;
         card.style.height = `${fromBbox.height}px`;
-        // Grid item default `min-height: auto` resolves to min-content,
-        // which clamps the cardFrame to its intrinsic content height and
-        // breaks the FLIP height transition (height 294 → 34 stays at 294
-        // because intrinsic min-content > 34). Override to 0 so the
-        // transition can drive the height freely.
+        // Grid items default to `min-height: auto`/`min-width: auto`,
+        // which resolves to min-content and clamps the cardFrame to its
+        // intrinsic content size — the FLIP height transition stalls
+        // until the curve crosses the min-content threshold near the
+        // very end. Override both to 0 so the transition can interpolate
+        // freely; cleared with the rest of the inline overrides at
+        // animation end.
         card.style.minHeight = '0';
         card.style.minWidth = '0';
-        console.log('[FLIP] rAF1 set FROM state. dx=', dx, 'dy=', dy, 'fromH=', fromBbox.height, 'newH=', newBbox.height);
         rafId2 = requestAnimationFrame(() => {
-          if (!card.isConnected) { console.log('[FLIP] rAF2 card disconnected'); return; }
-          // Re-fetch the card from refs in case React replaced the DOM node
-          // between rAFs (e.g., key change / unmount-remount).
-          const liveCard = cardFrameRefs.current.get(firstQuestionId);
-          const target = liveCard ?? card;
-          if (target !== card) console.log('[FLIP] card ref changed between rAFs');
+          if (!card.isConnected) return;
+          // Re-fetch the cardFrame ref in case React swapped the DOM
+          // node between rAFs (e.g., a stray re-render); fall back to
+          // the original element if not.
+          const target = cardFrameRefs.current.get(firstQuestionId) ?? card;
           target.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
           target.style.transform = '';
           target.style.width = `${newBbox.width}px`;
           target.style.height = `${newBbox.height}px`;
-          console.log('[FLIP] rAF2 set TO state. transition installed.');
           timeoutId = window.setTimeout(() => {
             const finalCard = cardFrameRefs.current.get(firstQuestionId) ?? target;
             if (!finalCard.isConnected) return;
