@@ -1629,9 +1629,6 @@ export function CreateQuestionContent() {
               }`}
             >
               <div className="px-3 pt-1">
-                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
-                  Settings
-                </h4>
                 <form
                   onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}
                   className="space-y-3"
