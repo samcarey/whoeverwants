@@ -1242,38 +1242,50 @@ export function CreateQuestionContent() {
       // the new poll without a network round-trip. Then dispatch
       // POLL_CREATED_EVENT so the current thread page (if any) can append
       // the poll to its local state inline — no route change, no re-fetch.
-      cachePoll(createdPoll);
-      const cachedAccessible = getCachedAccessiblePolls() ?? [];
-      if (!cachedAccessible.some(p => p.id === createdPoll.id)) {
-        cacheAccessiblePolls([...cachedAccessible, createdPoll]);
-      }
-      window.dispatchEvent(
-        new CustomEvent<PollCreatedDetail>(POLL_CREATED_EVENT, { detail: { poll: createdPoll } }),
-      );
-
-      // Reset wrapper-level state so the draft poll card unmounts (drafts list
-      // empty + topModalOpen=false) and the next bubble tap starts clean.
-      setDrafts([]);
-      setPollTitle('');
-      setIsPollTitleCustom(false);
-      setIsSubmitted(false);
-      isSubmittingRef.current = false;
-      setIsLoading(false);
-      reEnableForm(form);
-
-      // Strip ?create from URL so the bubble bar reappears.
-      stripCreateParams();
-
-      // Decide whether we need to navigate. If the user is currently on
-      // /thread/new (the empty-thread placeholder), the new poll is its own
-      // root — replace the URL with the new thread's route so refresh /
-      // back-nav land on it. Otherwise stay put: ThreadContent's listener
-      // will append the new poll to the visible thread inline.
+      // The whole DOM mutation (draft card unmount + new live card mount in
+      // the thread list) is wrapped in `document.startViewTransition` so the
+      // browser auto-morphs the draft's frame into the new live card's
+      // frame using a shared `view-transition-name`. The draft side carries
+      // `view-transition-name: draft-poll-card` always; the new live side is
+      // tagged for one frame in the thread page via `morphingPollId`.
       const onEmptyThread = typeof window !== 'undefined' && /\/thread\/new\/?$/.test(window.location.pathname);
-      if (onEmptyThread) {
-        const redirectId = createdPoll.short_id ?? createdPoll.id;
-        questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
-        router.replace(`/thread/${redirectId}`);
+      const applyMorph = () => {
+        cachePoll(createdPoll);
+        const cachedAccessible = getCachedAccessiblePolls() ?? [];
+        if (!cachedAccessible.some(p => p.id === createdPoll.id)) {
+          cacheAccessiblePolls([...cachedAccessible, createdPoll]);
+        }
+        window.dispatchEvent(
+          new CustomEvent<PollCreatedDetail>(POLL_CREATED_EVENT, { detail: { poll: createdPoll } }),
+        );
+        setDrafts([]);
+        setPollTitle('');
+        setIsPollTitleCustom(false);
+        setIsSubmitted(false);
+        isSubmittingRef.current = false;
+        setIsLoading(false);
+        reEnableForm(form);
+        stripCreateParams();
+        if (onEmptyThread) {
+          const redirectId = createdPoll.short_id ?? createdPoll.id;
+          questionBackTarget.set(redirectId, findThreadRootRouteId(createdPoll, pollLookup()));
+          router.replace(`/thread/${redirectId}`);
+        }
+      };
+      const startVT = (document as Document & {
+        startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+      }).startViewTransition;
+      if (typeof startVT === 'function') {
+        // flushSync inside the callback ensures React commits state changes
+        // synchronously so the browser's "new" snapshot reflects the new card.
+        startVT.call(document, () => {
+          // Use queueMicrotask so the React state batched updates flush during
+          // the snapshot pass. (startViewTransition's callback is sync but
+          // setState is queued — letting React commit needs a microtask.)
+          applyMorph();
+        });
+      } else {
+        applyMorph();
       }
     } catch (error) {
       console.error("Unexpected error:", error);
@@ -1582,6 +1594,7 @@ export function CreateQuestionContent() {
                 ? 'border-solid border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
                 : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
             }`}
+            style={{ viewTransitionName: 'draft-poll-card' } as React.CSSProperties}
           >
             {/* Top row: title input (left) + up-arrow Submit (right). */}
             <div className="flex items-center gap-2 px-3 pt-3 pb-2">

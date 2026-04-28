@@ -309,6 +309,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     fetchThread();
   }, [threadId]);
 
+  // Tracks the poll id whose card should temporarily carry
+  // `view-transition-name: draft-poll-card` so the browser auto-morphs the
+  // unmounting draft card's frame into the freshly mounted live card. Set
+  // when POLL_CREATED_EVENT fires for this thread, cleared after the
+  // browser's view transition finishes.
+  const [morphingPollId, setMorphingPollId] = useState<string | null>(null);
+
   // POLL_CREATED_EVENT: a draft just got submitted. If the new poll belongs
   // to this thread (its chain of `follow_up_to` resolves to our root), rebuild
   // the local thread state from the in-memory poll cache so the new poll
@@ -344,6 +351,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         for (const p of additions) next.set(p.id, p.results!);
         return next;
       });
+      // Pair the new card with the unmounting draft card via the shared
+      // `view-transition-name`. Cleared after the View Transition's CSS
+      // animation duration (default 0.25s, plus a buffer) so the name
+      // doesn't stick around for future transitions.
+      setMorphingPollId(newPoll.id);
+      window.setTimeout(() => setMorphingPollId(null), 600);
       setThread(rebuilt);
     };
     window.addEventListener(POLL_CREATED_EVENT, handler);
@@ -922,6 +935,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             };
 
             const isExpanded = expandedQuestionId === question.id;
+            const isMorphTarget = !!morphingPollId && question.poll_id === morphingPollId;
 
             return (
               <div
@@ -938,6 +952,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                   }
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
+                style={isMorphTarget ? ({ viewTransitionName: 'draft-poll-card' } as React.CSSProperties) : undefined}
               >
                 {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
                      than line-box centering (9px); emoji glyphs feel slightly
