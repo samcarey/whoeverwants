@@ -353,10 +353,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       });
       // Pair the new card with the unmounting draft card via the shared
       // `view-transition-name`. The CSS in globals.css sets the morph
-      // animation to 1s; we clear the name slightly after that so it
+      // animation to 5s (debug); clear the name slightly after that so it
       // doesn't stick around for future transitions.
       setMorphingPollId(newPoll.id);
-      window.setTimeout(() => setMorphingPollId(null), 1100);
+      window.setTimeout(() => setMorphingPollId(null), 5200);
       setThread(rebuilt);
     };
     window.addEventListener(POLL_CREATED_EVENT, handler);
