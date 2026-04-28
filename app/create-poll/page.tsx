@@ -690,6 +690,7 @@ export function CreateQuestionContent() {
     for (const k of ['create', 'openForm', 'mode', 'category', 'followUpTo', 'duplicate', 'voteFromSuggestion']) {
       if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
     }
+    console.log('[CreatePoll] stripCreateParams: touched=', touched, 'before=', window.location.search, 'after=', url.searchParams.toString());
     if (touched) {
       const qs = url.searchParams.toString();
       router.replace(qs ? `${url.pathname}?${qs}` : url.pathname);
@@ -700,6 +701,7 @@ export function CreateQuestionContent() {
   // restored (per spec — "clear it from the form and it will not go back in
   // the draft").
   const handleTopModalCancel = useCallback(() => {
+    console.log('[CreatePoll] handleTopModalCancel called');
     setTopModalOpen(false);
     setEditingDraftIndex(null);
     setOriginalEditingDraft(null);
