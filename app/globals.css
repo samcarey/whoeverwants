@@ -182,11 +182,15 @@ html[data-nav-direction="back"]::view-transition-new(root) {
 }
 
 /* Draft poll card → live poll card morph. Temporarily slow to 5s for
-   debugging — the default UA crossfade is ~0.25s. */
+   debugging — the default UA crossfade is ~0.25s. Override all four
+   pseudo-elements so both the group's reposition AND the crossfade run
+   at the slow duration on every browser. */
+::view-transition-group(draft-poll-card),
+::view-transition-image-pair(draft-poll-card),
 ::view-transition-old(draft-poll-card),
 ::view-transition-new(draft-poll-card) {
-  animation-duration: 5s;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  animation-duration: 5s !important;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
 
