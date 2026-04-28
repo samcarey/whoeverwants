@@ -1791,19 +1791,22 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 function PollPageInner() {
   const router = useRouter();
   const params = useParams();
+  const shortId = params.shortId as string;
 
-  const resolvedInitial = (() => {
+  // Memo on shortId — without it the IIFE allocates a new object every render,
+  // and the useEffect below (which depends on resolvedInitial) would refire
+  // on every parent re-render even when the URL hasn't changed.
+  const resolvedInitial = useMemo(() => {
     if (typeof window === "undefined") return null;
-    const raw = params.shortId as string;
-    if (!raw) return null;
+    if (!shortId) return null;
     let poll: Poll | null = null;
     let question: Question | null = null;
-    if (isUuidLike(raw)) {
-      poll = getCachedPollById(raw);
+    if (isUuidLike(shortId)) {
+      poll = getCachedPollById(shortId);
       if (poll) {
         question = poll.questions[0] ?? null;
       } else {
-        const cachedQuestion = getCachedQuestionById(raw);
+        const cachedQuestion = getCachedQuestionById(shortId);
         if (cachedQuestion) {
           question = cachedQuestion;
           if (cachedQuestion.poll_id) {
@@ -1812,20 +1815,19 @@ function PollPageInner() {
         }
       }
     } else {
-      poll = getCachedPollByShortId(raw);
+      poll = getCachedPollByShortId(shortId);
       if (poll) question = poll.questions[0] ?? null;
     }
     if (!question || !poll) return null;
     const byPoll = buildPollMap([poll, ...(getCachedAccessiblePolls() ?? [])]);
     const rootRouteId = findThreadRootRouteId(poll, (mid) => byPoll.get(mid) ?? null);
     return { question, rootRouteId };
-  })();
+  }, [shortId]);
 
   const [resolved, setResolved] = useState<{ question: Question; rootRouteId: string } | null>(resolvedInitial);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    const shortId = params.shortId as string;
     if (!shortId) {
       router.replace("/");
       return;
@@ -1868,7 +1870,7 @@ function PollPageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [params.shortId, router, resolvedInitial]);
+  }, [shortId, router, resolvedInitial]);
 
   if (error) {
     return (
