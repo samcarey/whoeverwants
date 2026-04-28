@@ -763,10 +763,10 @@ export function CreateQuestionContent() {
 
   // Auto-open the top modal once on first mount when:
   //  - the URL carries a What/When/Where preselection (category/mode), or
-  //  - this is a duplicate / follow-up / vote-from-suggestion flow, or
-  //  - there are no saved drafts (plain entry).
-  // When saved drafts exist (cold reopen with state), keep the top modal closed
-  // so the user sees the drafts list and the What/When/Where buttons.
+  //  - this is a duplicate / follow-up / vote-from-suggestion flow.
+  // Plain entry (no params) leaves the top modal closed so the user sees
+  // the bubble bar floating above the panel and picks a category first
+  // (matches the spec "when a new question button is pressed, open ...").
   const topModalAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (!isClient) return;
@@ -774,10 +774,10 @@ export function CreateQuestionContent() {
     const hasPreselect = !!(categoryParam || modeParam);
     const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
     topModalAutoOpenedRef.current = true;
-    if (hasPreselect || hasSpecialFlow || drafts.length === 0) {
+    if (hasPreselect || hasSpecialFlow) {
       setTopModalOpen(true);
     }
-  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, drafts.length]);
+  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
