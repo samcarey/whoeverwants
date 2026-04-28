@@ -701,8 +701,9 @@ export function CreateQuestionContent() {
   // Check on top modal: validate per-question fields, snapshot current form
   // into a draft, insert/update in drafts list, close.
   const handleCheckCommit = useCallback(() => {
+    console.log('[CreatePoll] check commit; topOpen=', topModalOpen, 'drafts=', drafts.length);
     const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return; }
+    if (subErr) { console.log('[CreatePoll] check err=', subErr); setError(subErr); return; }
     setError(null);
     const draft = readCurrentDraft();
     if (editingDraftIndex !== null) {
@@ -826,9 +827,10 @@ export function CreateQuestionContent() {
   // us strip it once and never re-fire spuriously.
   useEffect(() => {
     if (!isClient) return;
-    if (topModalOpen) return;
+    if (topModalOpen) { console.log('[AutoOpen] bail topOpen=true'); return; }
     const hasOpenFormFlag = openFormParam === '1';
     const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
+    console.log('[AutoOpen] check', { topModalOpen, openFormParam, modeParam, categoryParam, followUpToParam, hasOpenFormFlag, hasSpecialFlow });
     if (hasOpenFormFlag) {
       // Bubble bar tap: reset the question form to the preselected category /
       // mode rather than reusing whatever was last in state.
