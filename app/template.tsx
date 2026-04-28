@@ -178,7 +178,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     navigateCloseModalRef.current = () => {
       const params = new URLSearchParams(searchParams.toString());
-      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category']
+      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category', 'openForm']
         .forEach(p => params.delete(p));
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
@@ -199,9 +199,14 @@ function TemplateInner({ children }: AppTemplateProps) {
   // modal in place (with auto-set followUpTo when the page exposes a
   // thread-latest-question-id on <body>). The home page uses the single "+" FAB
   // below, which navigates to /thread/new/ as before.
+  // The `openForm=1` marker tells CreateQuestionContent to auto-open the top
+  // question form on mount, regardless of whether category/mode were preselected.
+  // Without it, tapping "what" (no preselect) would open the panel only and
+  // leave the form closed — the user still has to tap a bubble inside.
   const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('create', '1');
+    params.set('openForm', '1');
     for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
     const threadLatestQuestionId = document.body.getAttribute('data-thread-latest-question-id');
     if (threadLatestQuestionId) {

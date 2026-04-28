@@ -39,6 +39,10 @@ export interface ThreadListItemProps {
   finalizing?: boolean;
   /** Renders the top border too — caller passes true on the first list item. */
   isFirst?: boolean;
+  /** When true, the left respondent-circle column is omitted entirely so the
+   *  text content takes the full row width. Used by the draft poll card so the
+   *  in-progress poll doesn't show pre-vote initials before anyone has voted. */
+  hideRespondents?: boolean;
   /** Caller can drop in extra metadata (e.g. "ready to submit") inline. */
   metadataExtra?: React.ReactNode;
   onClick?: () => void;
@@ -63,6 +67,7 @@ export default function ThreadListItem(props: ThreadListItemProps) {
     draftMode = false,
     finalizing = false,
     isFirst = false,
+    hideRespondents = false,
     metadataExtra,
     onClick,
     onTouchStart,
@@ -101,12 +106,17 @@ export default function ThreadListItem(props: ThreadListItemProps) {
           showDraftChrome ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
         }`}
       >
-        {/* Respondent circles — empty for drafts (RespondentCircles renders a
-            placeholder when names is empty + anonymous=0). */}
-        <RespondentCircles
-          names={participantNames}
-          anonymousCount={anonymousRespondentCount}
-        />
+        {/* Respondent circles — omitted in draft mode (hideRespondents=true)
+            so the user doesn't see their own initials in a placeholder
+            position before anyone has actually voted. RespondentCircles
+            renders a "?" placeholder when both lists are empty, which we also
+            hide via this prop. */}
+        {!hideRespondents && (
+          <RespondentCircles
+            names={participantNames}
+            anonymousCount={anonymousRespondentCount}
+          />
+        )}
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">

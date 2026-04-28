@@ -67,6 +67,10 @@ export function CreateQuestionContent() {
   // "When" uses ?mode=time (question-type-level switch); "Where" uses ?category=restaurant.
   // Restored from URL on mount only — subsequent edits go through CategoryForLine.
   const categoryParam = searchParams.get('category');
+  // `?openForm=1` is set by the bubble bar when the panel was closed at click
+  // time. It tells us to auto-open the top form on first mount even when there
+  // was no category/mode preselect (e.g. the "what" button).
+  const openFormParam = searchParams.get('openForm');
 
   // Track relationship to source question as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -114,6 +118,12 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
+  // Poll-level "Context" — short single-line that drives the auto-title's
+  // "for X" suffix. Maps to polls.context server-side. Distinct from `details`
+  // (Notes) which is a long multi-line description with link support.
+  const [pollContext, setPollContext] = useState("");
+  const [pollContextOpen, setPollContextOpen] = useState(false);
+  const pollContextRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>(categoryParam || 'custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
@@ -361,6 +371,7 @@ export function CreateQuestionContent() {
       const formState = {
         title,
         details,
+        pollContext,
         options,
         deadlineOption,
         customDate,
@@ -380,7 +391,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
+  }, [title, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -411,6 +422,10 @@ export function CreateQuestionContent() {
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
           setDetails(formState.details || '');
           if (formState.details) setDetailsOpen(true);
+          if (typeof formState.pollContext === 'string') {
+            setPollContext(formState.pollContext);
+            if (formState.pollContext) setPollContextOpen(true);
+          }
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -473,8 +488,8 @@ export function CreateQuestionContent() {
   // time. Mirrors generate_poll_title() so the morph lands on the same
   // title the server will assign on submit.
   const draftPreview = useMemo(
-    () => draftPollPreview(drafts, details),
-    [drafts, details],
+    () => draftPollPreview(drafts, pollContext),
+    [drafts, pollContext],
   );
 
   // Validates the whole poll at submit time: drafts exist + poll-level
@@ -778,22 +793,30 @@ export function CreateQuestionContent() {
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
 
   // Auto-open the top modal once on first mount when:
+  //  - the bubble bar set `?openForm=1` (panel just opened from a bubble tap), or
   //  - the URL carries a What/When/Where preselection (category/mode), or
   //  - this is a duplicate / follow-up / vote-from-suggestion flow.
-  // Plain entry (no params) leaves the top modal closed so the user sees
-  // the bubble bar floating above the panel and picks a category first
-  // (matches the spec "when a new question button is pressed, open ...").
+  // Plain entry (e.g. reload with saved drafts) leaves the top modal closed
+  // so the user sees the draft poll card on the page first.
+  // `?openForm=1` is stripped after consumption so a refresh doesn't reopen.
   const topModalAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (!isClient) return;
     if (topModalAutoOpenedRef.current) return;
     const hasPreselect = !!(categoryParam || modeParam);
     const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
+    const hasOpenFormFlag = openFormParam === '1';
     topModalAutoOpenedRef.current = true;
-    if (hasPreselect || hasSpecialFlow) {
+    if (hasPreselect || hasSpecialFlow || hasOpenFormFlag) {
       setTopModalOpen(true);
     }
-  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam]);
+    if (hasOpenFormFlag) {
+      // Strip the marker so refresh / view-transitions don't re-trigger.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('openForm');
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
+    }
+  }, [isClient, categoryParam, modeParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, openFormParam]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
@@ -932,7 +955,7 @@ export function CreateQuestionContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
+  }, [title, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -1118,7 +1141,8 @@ export function CreateQuestionContent() {
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
           follow_up_to: followUpTo || duplicateOf || null,
           title: wrapperTitle,
-          context: details.trim() || null,
+          context: pollContext.trim() || null,
+          details: details.trim() || null,
           questions: questionsForRequest,
         });
         createdQuestion = createdPoll.questions[0];
@@ -1511,12 +1535,13 @@ export function CreateQuestionContent() {
           <ThreadListItem
             title={draftPreview.title}
             latestQuestionTitle={draftPreview.latestQuestionTitle}
-            participantNames={creatorName.trim() ? [creatorName.trim()] : []}
-            anonymousRespondentCount={creatorName.trim() ? 0 : 1}
+            participantNames={[]}
+            anonymousRespondentCount={0}
             questionCount={draftPreview.questionCount}
             soonestUnvotedDeadline={isClient ? calculateDeadline() : null}
             draftMode
             finalizing={isFinalizing}
+            hideRespondents
             metadataExtra={isFinalizing ? 'just now' : 'ready to submit'}
           />
           {/* Collapsible edit-drafts section — the slight modification per spec
@@ -1581,6 +1606,52 @@ export function CreateQuestionContent() {
 
         {pollHasPrephase && suggestionCutoffField}
 
+        {/* Context — short single-line, drives the auto-title "for X". */}
+        <div>
+          {pollContextOpen ? (
+            <>
+              <label htmlFor="pollContext" className="block text-sm font-medium mb-1">
+                Context
+              </label>
+              <input
+                type="text"
+                id="pollContext"
+                ref={pollContextRef}
+                value={pollContext}
+                onChange={(e) => setPollContext(e.target.value)}
+                onBlur={() => {
+                  const trimmed = pollContext.trim();
+                  if (!trimmed) {
+                    setPollContextOpen(false);
+                    setPollContext('');
+                  } else if (trimmed !== pollContext) {
+                    setPollContext(trimmed);
+                  }
+                }}
+                disabled={isLoading}
+                maxLength={80}
+                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                placeholder="Friday night, lunch, etc."
+              />
+            </>
+          ) : (
+            <div className="text-sm font-medium">
+              Context:{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setPollContextOpen(true);
+                  setTimeout(() => pollContextRef.current?.focus(), 0);
+                }}
+                className="font-normal text-blue-600 dark:text-blue-400"
+              >
+                {pollContext || 'Add'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Notes — multi-line longer description. */}
         <div>
           {detailsOpen ? (
             <>

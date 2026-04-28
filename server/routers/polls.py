@@ -121,14 +121,14 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
         INSERT INTO polls (
             creator_secret, creator_name, response_deadline,
             prephase_deadline, prephase_deadline_minutes,
-            follow_up_to, context,
+            follow_up_to, context, details,
             thread_title,
             created_at, updated_at
         )
         VALUES (
             %(creator_secret)s, %(creator_name)s, %(response_deadline)s,
             %(prephase_deadline)s, %(prephase_deadline_minutes)s,
-            %(follow_up_poll_id)s, %(context)s,
+            %(follow_up_poll_id)s, %(context)s, %(details)s,
             COALESCE(
                 %(explicit_title)s,
                 (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
@@ -150,6 +150,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "prephase_deadline_minutes": req.prephase_deadline_minutes,
             "follow_up_poll_id": parent_followup_poll_id,
             "context": req.context,
+            "details": req.details,
             "explicit_title": explicit_title,
             "now": now,
         },
@@ -269,6 +270,7 @@ def _row_to_poll(
         follow_up_to=poll_follow_up_to,
         thread_title=row.get("thread_title"),
         context=row.get("context"),
+        details=row.get("details"),
         title=_compute_display_title(row, question_rows),
         created_at=_iso_or_none(row["created_at"]) or "",
         updated_at=_iso_or_none(row["updated_at"]) or "",
