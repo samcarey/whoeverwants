@@ -181,6 +181,15 @@ html[data-nav-direction="back"]::view-transition-new(root) {
   animation: 500ms cubic-bezier(0.32, 0.72, 0, 1) both vt-slide-in-left;
 }
 
+/* Draft poll card → live poll card morph. The default UA crossfade is
+   ~0.25s; bump to a full second so the dashed-blue draft frame visibly
+   eases into the live card frame. */
+::view-transition-old(draft-poll-card),
+::view-transition-new(draft-poll-card) {
+  animation-duration: 1s;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 
 .responsive-scaling-container {
   transform-origin: top left;
