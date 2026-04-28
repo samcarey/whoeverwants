@@ -46,6 +46,7 @@ import {
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
+  CREATE_FLOW_URL_PARAMS,
   type QuestionDraft,
   emptyDraft,
   draftDbQuestionType,
@@ -57,8 +58,6 @@ import {
   draftPollPreview,
   synthesizePlaceholderPoll,
 } from "./createPollHelpers";
-// (Legacy cross-component events for the bottom panel are gone — the form
-//  modal lifecycle is now URL-driven via the `?create=1` flag.)
 export const dynamic = 'force-dynamic';
 
 // Matches the rendered height of a single-line <input> with py-2 padding.
@@ -157,11 +156,8 @@ export function CreateQuestionContent() {
   // Bookkeeping: the draft that was popped out for editing, so X-during-edit
   // discards it (per spec). Restored on check.
   const [originalEditingDraft, setOriginalEditingDraft] = useState<QuestionDraft | null>(null);
-  // Submit-time animation flag: drives the draft poll card morph (dashed
-  // border + blue tint → solid border + white) and gates the bubble bar /
-  // panel slide-down so the user sees the draft becoming "real" before we
-  // navigate to the new poll's page.
-  const [isFinalizing, setIsFinalizing] = useState(false);
+  // (No "finalizing" state anymore — the draft → live morph is owned by
+  // ThreadContent's FLIP animation via POLL_PENDING_EVENT.)
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -684,7 +680,7 @@ export function CreateQuestionContent() {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     let touched = false;
-    for (const k of ['create', 'openForm', 'mode', 'category', 'followUpTo', 'duplicate', 'voteFromSuggestion']) {
+    for (const k of CREATE_FLOW_URL_PARAMS) {
       if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
     }
     if (touched) {
@@ -735,28 +731,40 @@ export function CreateQuestionContent() {
   // The observer fires on every DOM mutation under <body>, so we batch the
   // re-query into one rAF per frame to avoid running the lookup hundreds of
   // times during typing / scroll / animation.
+  // Disconnect once the portal is found and re-arm only if it later goes
+  // away (route change). Without that, the observer fires on every DOM
+  // mutation under <body> for the whole component lifetime — we'd waste
+  // work on every subsequent unrelated mutation.
   const [draftPollPortal, setDraftPollPortal] = useState<HTMLElement | null>(null);
   useEffect(() => {
     let scheduled = false;
-    const updateDraftPollPortal = () => {
+    let observer: MutationObserver | null = null;
+    const watch = () => {
+      if (observer) return;
+      observer = new MutationObserver(check);
+      observer.observe(document.body, { childList: true, subtree: true });
+    };
+    const stopWatching = () => {
+      observer?.disconnect();
+      observer = null;
+    };
+    const check = () => {
       if (scheduled) return;
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
         const el = document.getElementById('draft-poll-portal');
-        setDraftPollPortal(prev => (prev === el ? prev : el));
+        setDraftPollPortal(prev => {
+          if (prev === el) return prev;
+          if (el) stopWatching(); else watch();
+          return el;
+        });
       });
     };
-    updateDraftPollPortal();
-    const observer = new MutationObserver(updateDraftPollPortal);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    check();
+    if (!document.getElementById('draft-poll-portal')) watch();
+    return () => stopWatching();
   }, []);
-
-  // Bubble bar visibility is now driven by the URL `?create=1` flag (set by
-  // openCreateFromBubble in template.tsx, stripped by stripCreateParams here),
-  // not by a custom event. The legacy QUESTION_FORM_STATE_CHANGE_EVENT and
-  // OPEN_QUESTION_FORM_EVENT plumbing is gone.
 
   // Get today's date in YYYY-MM-DD format (client-side only to avoid hydration mismatch)
   const getTodayDate = () => {
@@ -1206,10 +1214,7 @@ export function CreateQuestionContent() {
           // resolves it; here we resolve client-side via the cache.
           if (!followUpTo) return null;
           const cached = getCachedAccessiblePolls() ?? [];
-          for (const mp of cached) {
-            if (mp.questions.some(q => q.id === followUpTo)) return mp.id;
-          }
-          return null;
+          return cached.find(mp => mp.questions.some(q => q.id === followUpTo))?.id ?? null;
         })(),
         creatorName: creatorName.trim() || null,
       });
@@ -1630,11 +1635,7 @@ export function CreateQuestionContent() {
         <div className="pt-2">
           <div
             data-draft-poll-card
-            className={`mx-1.5 rounded-lg border-2 transition-colors duration-500 ease-out ${
-              isFinalizing
-                ? 'border-solid border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
-                : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
-            }`}
+            className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
             {/* Top row: title input (left) + up-arrow Submit (right). */}
             <div className="flex items-center gap-2 px-3 pt-3 pb-2">
@@ -1676,11 +1677,7 @@ export function CreateQuestionContent() {
 
             {/* Questions list — folds out via opacity + max-height on submit. */}
             {drafts.length > 0 && (
-              <div
-                className={`px-3 overflow-hidden transition-[max-height,opacity,padding] duration-500 ease-out ${
-                  isFinalizing ? 'max-h-0 opacity-0 py-0' : 'max-h-96 opacity-100 pb-2'
-                }`}
-              >
+              <div className="px-3 pb-2">
                 <ul className="space-y-1.5">
                   {drafts.map((d, i) => {
                     const { icon, label } = draftCardLabels(d);
@@ -1716,11 +1713,7 @@ export function CreateQuestionContent() {
 
             {/* Settings — voting cutoff, suggestion/availability cutoff,
                 context, notes, voter name. Folds out on submit. */}
-            <div
-              className={`overflow-hidden transition-[max-height,opacity,padding] duration-500 ease-out ${
-                isFinalizing ? 'max-h-0 opacity-0 py-0' : 'max-h-[600px] opacity-100 pb-3'
-              }`}
-            >
+            <div className="pb-3">
               <div className="px-3 pt-1">
                 <form
                   onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }}

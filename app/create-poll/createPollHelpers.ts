@@ -277,6 +277,14 @@ export function synthesizePlaceholderPoll(
   };
 }
 
+/** Query-string params that gate or carry create-flow state. Stripped
+ *  together when the question modal closes so the bubble bar reappears
+ *  cleanly and refresh / back-nav don't re-trigger the modal. */
+export const CREATE_FLOW_URL_PARAMS = [
+  'create', 'openForm', 'mode', 'category',
+  'followUpTo', 'duplicate', 'voteFromSuggestion',
+] as const;
+
 /** Compact one-line description for the draft list cards. */
 export function summarizeDraft(d: QuestionDraft): string {
   const dbType = draftDbQuestionType(d);

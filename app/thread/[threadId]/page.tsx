@@ -326,13 +326,27 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // status row, voter circles, etc. are suppressed until hydration completes.
   const [pendingPollFirstQuestionId, setPendingPollFirstQuestionId] = useState<string | null>(null);
 
+  // Latest `thread` snapshot for the POLL_PENDING handler. Updated in a
+  // separate effect so the listener can stay registered with empty deps
+  // — re-attaching on every thread mutation would tear down + re-add the
+  // event listener on every vote/hydration/cache refresh.
+  const threadRef = useRef(thread);
+  useEffect(() => { threadRef.current = thread; }, [thread]);
+
   // POLL_PENDING_EVENT: a draft was just submitted. Insert the placeholder
   // poll into thread state immediately, find the freshly mounted card in the
   // DOM, and run a FLIP animation from the draft card's captured bbox to
   // the natural collapsed-card position. apiCreatePoll is running in
   // parallel; POLL_HYDRATED_EVENT will swap the placeholder for the real
   // Poll in-place.
+  //
+  // /thread/new placeholder case: the destination ThreadContent has not yet
+  // mounted, so it picks up the placeholder via cache on its initial render
+  // and runs the FLIP itself. The early return below skips this listener
+  // for that case.
   useEffect(() => {
+    let rafId = 0;
+    let timeoutId = 0;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
       const newPoll = detail?.poll;
@@ -342,26 +356,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const polls = getCachedAccessiblePolls();
       if (!polls) return;
 
-      // Determine whether the new poll belongs to THIS thread. For follow-ups,
-      // newPoll.follow_up_to points to a poll already in this thread. For
-      // brand-new threads (created from /thread/new), the placeholder is
-      // its own root and the matching ThreadContent has not yet mounted —
-      // the destination instance will pick up the placeholder via cache on
-      // its initial render and run the FLIP itself. We still listen here in
-      // case the user submitted while already on this thread.
-      let rootPollIdForRebuild = thread?.rootPollId;
-      const threadPollIds = new Set(thread?.polls.map((p) => p.id) ?? []);
+      const t = threadRef.current;
+      const threadPollIds = new Set(t?.polls.map((p) => p.id) ?? []);
       const isFollowUp = newPoll.follow_up_to && threadPollIds.has(newPoll.follow_up_to);
-      const isOwnRoot = thread && newPoll.id === thread.rootPollId;
-      // If we don't have a thread yet (e.g. /thread/new just navigated to
-      // /thread/<placeholderId>) we leave rebuild to the next render cycle's
-      // initial state initializer — which reads from cache and finds the
-      // placeholder.
+      const isOwnRoot = t && newPoll.id === t.rootPollId;
       if (!isFollowUp && !isOwnRoot) return;
 
       const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-      const rebuilt = rootPollIdForRebuild
-        ? buildThreadFromPollDown(rootPollIdForRebuild, polls, voted, abstained)
+      const rebuilt = t?.rootPollId
+        ? buildThreadFromPollDown(t.rootPollId, polls, voted, abstained)
         : null;
       if (!rebuilt) return;
 
@@ -371,53 +374,45 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         setThread(rebuilt);
       });
 
-      // FLIP: after React commits, find the new card's BORDERED FRAME in
-      // the DOM and animate it from the captured draft bbox to its natural
-      // position. Animate width/height (not transform: scale) so the title
-      // and other content sit at their natural size in the morphing
-      // container — `scale(sx, sy)` would stretch the title vertically
-      // when the draft is much taller than the collapsed live card.
-      // We target the bordered frame (cardFrameRefs) rather than the outer
-      // grid wrapper so the visible card shape morphs and the surrounding
-      // category-icon column stays still.
-      if (firstQuestionId) {
-        requestAnimationFrame(() => {
-          const card = cardFrameRefs.current.get(firstQuestionId);
-          if (!card) return;
-          const newBbox = card.getBoundingClientRect();
-          const dx = fromBbox.x - newBbox.x;
-          const dy = fromBbox.y - newBbox.y;
-          // Apply FIRST snapshot: card sized to the draft's bbox at the
-          // draft's position. `transform: translate(...)` shifts position
-          // without affecting layout; explicit width/height physically
-          // resize the container without scaling its contents.
-          card.style.transformOrigin = 'top left';
-          card.style.transform = `translate(${dx}px, ${dy}px)`;
-          card.style.width = `${fromBbox.width}px`;
-          card.style.height = `${fromBbox.height}px`;
-          card.style.transition = 'none';
-          // Force reflow so the browser commits the FIRST state.
-          void card.offsetWidth;
-          // PLAY: animate to natural position + natural size. We transition
-          // to explicit pixel values (not '') because CSS can't transition
-          // to/from `auto`; the inline overrides are cleared after the
-          // animation finishes so the card returns to layout-driven sizing.
-          card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
-          card.style.transform = '';
-          card.style.width = `${newBbox.width}px`;
-          card.style.height = `${newBbox.height}px`;
-          window.setTimeout(() => {
-            card.style.transition = '';
-            card.style.transformOrigin = '';
-            card.style.width = '';
-            card.style.height = '';
-          }, 1050);
-        });
-      }
+      // FLIP the bordered frame (not the outer grid) so the visible card
+      // shape morphs and the surrounding category-icon column stays still.
+      // width/height (not `transform: scale`) so the title sits at its
+      // natural size in the morphing container.
+      if (!firstQuestionId) return;
+      rafId = requestAnimationFrame(() => {
+        const card = cardFrameRefs.current.get(firstQuestionId);
+        if (!card) return;
+        const newBbox = card.getBoundingClientRect();
+        const dx = fromBbox.x - newBbox.x;
+        const dy = fromBbox.y - newBbox.y;
+        card.style.transformOrigin = 'top left';
+        card.style.transform = `translate(${dx}px, ${dy}px)`;
+        card.style.width = `${fromBbox.width}px`;
+        card.style.height = `${fromBbox.height}px`;
+        card.style.transition = 'none';
+        void card.offsetWidth;
+        card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
+        card.style.transform = '';
+        // CSS can't transition to/from `auto`; transition to explicit px,
+        // then clear the inline overrides so layout takes over after.
+        card.style.width = `${newBbox.width}px`;
+        card.style.height = `${newBbox.height}px`;
+        timeoutId = window.setTimeout(() => {
+          if (!card.isConnected) return;
+          card.style.transition = '';
+          card.style.transformOrigin = '';
+          card.style.width = '';
+          card.style.height = '';
+        }, 1050);
+      });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
-    return () => window.removeEventListener(POLL_PENDING_EVENT, handler);
-  }, [thread]);
+    return () => {
+      window.removeEventListener(POLL_PENDING_EVENT, handler);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, []);
 
   // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
   // Replace the placeholder fields in thread state with the real ones in

@@ -10,11 +10,6 @@
  * Add a new event by exporting a const + a `*Detail` type alongside it.
  */
 
-// (Form-modal lifecycle events were retired when the docked bottom panel was
-//  replaced by a true blocking modal owned by CreateQuestionContent. The
-//  modal is now URL-driven via `?create=1` so no cross-component event
-//  signaling is needed for it.)
-
 import type { Poll } from "@/lib/types";
 
 /** Fired by CreateQuestionContent immediately on Submit (BEFORE the API call
