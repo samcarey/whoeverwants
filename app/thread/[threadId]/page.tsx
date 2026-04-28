@@ -952,7 +952,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                   }
                 }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
-                style={isMorphTarget ? ({ viewTransitionName: 'draft-poll-card' } as React.CSSProperties) : undefined}
               >
                 {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
                      than line-box centering (9px); emoji glyphs feel slightly
@@ -968,6 +967,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
                 <div
                   className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  style={isMorphTarget ? ({ viewTransitionName: 'draft-poll-card' } as React.CSSProperties) : undefined}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
