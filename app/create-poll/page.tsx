@@ -134,6 +134,11 @@ export function CreateQuestionContent() {
   // Bookkeeping: the draft that was popped out for editing, so X-during-edit
   // discards it (per spec). Restored on check.
   const [originalEditingDraft, setOriginalEditingDraft] = useState<QuestionDraft | null>(null);
+  // Submit-time animation flag: drives the draft poll card morph (dashed
+  // border + blue tint → solid border + white) and gates the bubble bar /
+  // panel slide-down so the user sees the draft becoming "real" before we
+  // navigate to the new poll's page.
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -1146,6 +1151,16 @@ export function CreateQuestionContent() {
       // Mark as submitted to prevent further submissions
       setIsSubmitted(true);
 
+      // Smoothie transition: morph the draft poll card from dashed/blue
+      // "Draft Poll" styling to a solid normal-card style, slide the bottom
+      // panel down, hide the bubble bar — then navigate to the new poll.
+      // The CSS transition is 600ms (see the draft poll card className), and
+      // the panel slide-down animation is 300ms (animate-slide-down). We hold
+      // for 600ms so both finish before the navigation unmounts the panel.
+      setIsFinalizing(true);
+      window.dispatchEvent(new CustomEvent('createPanelFinalize'));
+      await new Promise(r => setTimeout(r, 600));
+
       // Navigate to the new question. `questionBackTarget.set` records the thread
       // URL so the question page's back button leads to the thread containing
       // it (oldest ancestor on top). `router.replace` drops `?create=1`.
@@ -1478,8 +1493,18 @@ export function CreateQuestionContent() {
           in-progress poll alongside their existing polls. */}
       {draftPollPortal && drafts.length > 0 && createPortal(
         <div className="px-4 mt-3 mb-4">
-          <div className="rounded-2xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10 p-3">
-            <div className="flex items-center gap-2 mb-2">
+          <div
+            className={`rounded-2xl border-2 p-3 transition-[background-color,border-color] duration-500 ease-out ${
+              isFinalizing
+                ? 'border-solid border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-md'
+                : 'border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10'
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2 mb-2 transition-[opacity,max-height,margin] duration-300 ease-out overflow-hidden ${
+                isFinalizing ? 'opacity-0 max-h-0 mb-0' : 'opacity-100 max-h-8'
+              }`}
+            >
               <span className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                 Draft Poll
               </span>
@@ -1493,7 +1518,11 @@ export function CreateQuestionContent() {
                 return (
                   <li
                     key={i}
-                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md border transition-colors duration-500 ease-out ${
+                      isFinalizing
+                        ? 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+                    }`}
                   >
                     <span className="text-lg leading-none" aria-hidden>{icon}</span>
                     <span className="text-sm font-medium text-gray-900 dark:text-gray-100 shrink-0">{label}</span>

@@ -373,6 +373,20 @@ function TemplateInner({ children }: AppTemplateProps) {
     return () => window.removeEventListener('questionFormStateChange', handler);
   }, []);
 
+  // `createPanelFinalize` fires from CreateQuestionContent when submit succeeds:
+  // we slide the bottom panel down (via the existing modalClosing animation)
+  // and hide the bubble bar so the only motion the user sees is the draft poll
+  // card morphing into a real poll card. CreateQuestionContent does the
+  // actual router.replace after its own 600ms hold, so we don't navigate here.
+  useEffect(() => {
+    const handler = () => {
+      setModalClosing(true);
+      dragState.current.isClosing = true;
+    };
+    window.addEventListener('createPanelFinalize', handler);
+    return () => window.removeEventListener('createPanelFinalize', handler);
+  }, []);
+
   // The create-poll panel is NOT a true modal: the underlying page stays
   // interactable and scrollable. We do not lock body scroll, so the user can
   // scroll the poll list (incl. the in-progress draft poll card portaled into
@@ -585,7 +599,7 @@ function TemplateInner({ children }: AppTemplateProps) {
              - Panel open: dispatch `openQuestionForm` event with the
                preselection so CreateQuestionContent opens a fresh top form
                without re-pushing URL state. */}
-      {isMounted && (isThreadLikePage || isCreateModalOpen) && !questionFormOpen && createPortal(
+      {isMounted && (isThreadLikePage || isCreateModalOpen) && !questionFormOpen && !modalClosing && createPortal(
         <div
           className="fixed z-[65] left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
