@@ -127,12 +127,6 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
-  // Poll-level "Context" — short single-line that drives the auto-title's
-  // "for X" suffix. Maps to polls.context server-side. Distinct from `details`
-  // (Notes) which is a long multi-line description with link support.
-  const [pollContext, setPollContext] = useState("");
-  const [pollContextOpen, setPollContextOpen] = useState(false);
-  const pollContextRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<string>(categoryParam || 'custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
@@ -382,7 +376,6 @@ export function CreateQuestionContent() {
         pollTitle,
         isPollTitleCustom,
         details,
-        pollContext,
         options,
         deadlineOption,
         customDate,
@@ -402,7 +395,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, pollTitle, isPollTitleCustom, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
+  }, [title, pollTitle, isPollTitleCustom, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -435,10 +428,6 @@ export function CreateQuestionContent() {
           if (formState.isPollTitleCustom === true) setIsPollTitleCustom(true);
           setDetails(formState.details || '');
           if (formState.details) setDetailsOpen(true);
-          if (typeof formState.pollContext === 'string') {
-            setPollContext(formState.pollContext);
-            if (formState.pollContext) setPollContextOpen(true);
-          }
           setOptions(formState.options || ['']);
           setDeadlineOption(formState.deadlineOption || '10min');
           setCustomDate(formState.customDate || '');
@@ -501,8 +490,8 @@ export function CreateQuestionContent() {
   // time. Mirrors generate_poll_title() so the morph lands on the same
   // title the server will assign on submit.
   const draftPreview = useMemo(
-    () => draftPollPreview(drafts, pollContext),
-    [drafts, pollContext],
+    () => draftPollPreview(drafts, ''),
+    [drafts],
   );
 
   // Validates the whole poll at submit time: drafts exist + poll-level
@@ -994,7 +983,7 @@ export function CreateQuestionContent() {
     if (isClient) {
       saveFormState();
     }
-  }, [title, details, pollContext, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
+  }, [title, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, duplicateOf, isClient, saveFormState, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, drafts]);
 
   // Auto-focus new option fields
   useEffect(() => {
@@ -1185,7 +1174,7 @@ export function CreateQuestionContent() {
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
           follow_up_to: followUpTo || duplicateOf || null,
           title: wrapperTitle,
-          context: pollContext.trim() || null,
+          context: null,
           details: details.trim() || null,
           questions: questionsForRequest,
         });
@@ -1667,52 +1656,6 @@ export function CreateQuestionContent() {
                   />
 
                   {pollHasPrephase && suggestionCutoffField}
-
-                  {/* Context — short single-line, drives the auto-title "for X". */}
-                  <div>
-                    {pollContextOpen ? (
-                      <>
-                        <label htmlFor="pollContext" className="block text-sm font-medium mb-1">
-                          Context
-                        </label>
-                        <input
-                          type="text"
-                          id="pollContext"
-                          ref={pollContextRef}
-                          value={pollContext}
-                          onChange={(e) => setPollContext(e.target.value)}
-                          onBlur={() => {
-                            const trimmed = pollContext.trim();
-                            if (!trimmed) {
-                              setPollContextOpen(false);
-                              setPollContext('');
-                            } else if (trimmed !== pollContext) {
-                              setPollContext(trimmed);
-                            }
-                          }}
-                          disabled={isLoading || topModalOpen}
-                          maxLength={80}
-                          className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                          placeholder="Friday night, lunch, etc."
-                        />
-                      </>
-                    ) : (
-                      <div className="text-sm font-medium">
-                        Context:{' '}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPollContextOpen(true);
-                            setTimeout(() => pollContextRef.current?.focus(), 0);
-                          }}
-                          disabled={topModalOpen}
-                          className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
-                        >
-                          {pollContext || 'Add'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Notes — multi-line longer description. */}
                   <div>
