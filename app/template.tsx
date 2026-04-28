@@ -10,6 +10,11 @@ import { usePrefetch } from '@/lib/prefetch';
 import { navigateWithTransition, navigateBackWithTransition, NAV_COUNT_KEY } from '@/lib/viewTransitions';
 import { getCachedQuestionById, getCachedQuestionByShortId } from '@/lib/questionCache';
 import { isUuidLike, isThreadRootView } from '@/lib/questionId';
+import {
+  QUESTION_FORM_STATE_CHANGE_EVENT,
+  CREATE_PANEL_FINALIZE_EVENT,
+  type QuestionFormStateChangeDetail,
+} from '@/lib/eventChannels';
 
 // Extract the import so it can be triggered independently for preloading.
 // When called a second time, the module cache returns the already-resolved module instantly.
@@ -178,7 +183,7 @@ function TemplateInner({ children }: AppTemplateProps) {
   useEffect(() => {
     navigateCloseModalRef.current = () => {
       const params = new URLSearchParams(searchParams.toString());
-      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category']
+      ['create', 'followUpTo', 'duplicate', 'voteFromSuggestion', 'mode', 'category', 'openForm']
         .forEach(p => params.delete(p));
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname);
@@ -199,9 +204,14 @@ function TemplateInner({ children }: AppTemplateProps) {
   // modal in place (with auto-set followUpTo when the page exposes a
   // thread-latest-question-id on <body>). The home page uses the single "+" FAB
   // below, which navigates to /thread/new/ as before.
+  // The `openForm=1` marker tells CreateQuestionContent to auto-open the top
+  // question form on mount, regardless of whether category/mode were preselected.
+  // Without it, tapping "what" (no preselect) would open the panel only and
+  // leave the form closed — the user still has to tap a bubble inside.
   const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('create', '1');
+    params.set('openForm', '1');
     for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
     const threadLatestQuestionId = document.body.getAttribute('data-thread-latest-question-id');
     if (threadLatestQuestionId) {
@@ -359,33 +369,66 @@ function TemplateInner({ children }: AppTemplateProps) {
     };
   }, [isCreateModalOpen, isMounted]);
 
-  // Lock body scroll when create-question modal is open to prevent browser pull-to-refresh.
-  // On iOS, overflow:hidden alone doesn't prevent native PTR — position:fixed is required.
+  // Hide the floating What/When/Where bubble bar while the top "New Question"
+  // form is open (per spec: buttons OR form, never both).
+  const [questionFormOpen, setQuestionFormOpen] = useState(false);
   useEffect(() => {
-    if (!isCreateModalOpen) return;
-    // Reset stale close state from previous dismiss
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<QuestionFormStateChangeDetail>).detail;
+      setQuestionFormOpen(!!detail?.open);
+    };
+    window.addEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(QUESTION_FORM_STATE_CHANGE_EVENT, handler);
+  }, []);
+
+  // Submit-time: trigger the existing slide-down animation so the user sees
+  // the draft-poll-card morph alone. CreateQuestionContent owns the navigation
+  // after its 600ms hold, so we don't navigate here.
+  useEffect(() => {
+    const handler = () => {
+      setModalClosing(true);
+      dragState.current.isClosing = true;
+    };
+    window.addEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
+    return () => window.removeEventListener(CREATE_PANEL_FINALIZE_EVENT, handler);
+  }, []);
+
+  // The create-poll panel is NOT a true modal: the underlying page stays
+  // interactable and scrollable. We do not lock body scroll, so the user can
+  // scroll the poll list (incl. the in-progress draft poll card portaled into
+  // the bottom of the list).
+  // Reset the close-state on every isCreateModalOpen transition — including
+  // the close transition, so the bubble bar (which is gated on !modalClosing
+  // to hide during the slide-down) becomes visible again once the panel has
+  // actually closed.
+  useEffect(() => {
     setModalClosing(false);
     dragState.current.isClosing = false;
-    const scrollY = window.scrollY;
-    const html = document.documentElement;
-    html.style.overscrollBehavior = 'none';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.overflow = 'hidden';
     return () => {
-      // Cancel any pending close animation timeout to prevent stale navigation.
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-      html.style.overscrollBehavior = '';
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.left = '';
-      document.body.style.right = '';
-      document.body.style.overflow = '';
-      window.scrollTo(0, scrollY);
     };
   }, [isCreateModalOpen]);
+
+  // Publish the bottom modal sheet's measured height to a CSS variable so the
+  // top question-form modal can anchor its `bottom:` to "just above" it. Tracks
+  // ResizeObserver-driven height changes (notes textarea autogrow, suggestion
+  // cutoff conditional, etc.) so the top modal slides up/down with the bottom.
+  useEffect(() => {
+    if (!isCreateModalOpen || !isMounted) return;
+    const sheet = modalSheetRef.current;
+    if (!sheet) return;
+    const html = document.documentElement;
+    const setVar = () => {
+      html.style.setProperty('--bottom-modal-height', `${sheet.offsetHeight}px`);
+    };
+    setVar();
+    const ro = new ResizeObserver(setVar);
+    ro.observe(sheet);
+    return () => {
+      ro.disconnect();
+      html.style.removeProperty('--bottom-modal-height');
+    };
+  }, [isCreateModalOpen, isMounted]);
 
   return (
     <>
@@ -465,26 +508,25 @@ function TemplateInner({ children }: AppTemplateProps) {
 
         <div
           className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
-          style={(pathname === '/' || isThreadLikePage) ? { paddingBottom: '6rem' } : undefined}
+          style={(pathname === '/' || isThreadLikePage)
+            ? { paddingBottom: isCreateModalOpen
+                ? 'calc(var(--bottom-modal-height, 6rem) + 5rem)'
+                : '6rem' }
+            : undefined}
         >
           {children}
         </div>
       </div>
 
-      {/* Create question modal - iOS-style sheet rendered via portal.
-           Triggered by ?create query param so the underlying page stays mounted. */}
+      {/* Create-poll docked panel — NOT a true modal: no backdrop, page
+           stays scrollable + interactable so the user can see the in-progress
+           draft poll card portaled into the bottom of the page list. */}
       {isCreateModalOpen && isMounted && createPortal(
-        <div className="fixed inset-0 z-[60]">
-          {/* Backdrop */}
-          <div
-            ref={backdropRef}
-            className={`absolute inset-0 bg-black/40 ${modalClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
-            onClick={handleCloseCreateModal}
-          />
+        <div className="fixed inset-x-0 bottom-0 z-[60] pointer-events-none">
           {/* Modal sheet */}
           <div
             ref={modalSheetRef}
-            className={`absolute bottom-0 left-0 right-0 rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
+            className={`pointer-events-auto rounded-t-[32px] bg-white dark:bg-gray-900 flex flex-col shadow-2xl ${
               modalClosing ? 'animate-slide-down' : 'animate-slide-up'
             }`}
             style={{ maxHeight: 'calc(100% - env(safe-area-inset-top, 0px) - 15px)', overscrollBehavior: 'none' }}
@@ -505,7 +547,7 @@ function TemplateInner({ children }: AppTemplateProps) {
                   <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
                 </svg>
               </button>
-              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Question</h2>
+              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">New Poll</h2>
               <div id="create-question-submit-portal" className="flex-shrink-0 z-10" />
             </div>
             {/* Generated title line */}
@@ -535,7 +577,7 @@ function TemplateInner({ children }: AppTemplateProps) {
            Rendered via portal outside the scaling container so it positions
            against the viewport. Slides with the rest of the page in view
            transitions (no shared transition name with the thread bubble bar). */}
-      {isMounted && pathname === '/' && createPortal(
+      {isMounted && pathname === '/' && !isCreateModalOpen && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/thread/new', 'forward')}
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"
@@ -552,25 +594,37 @@ function TemplateInner({ children }: AppTemplateProps) {
         document.getElementById('floating-fab-portal')!
       )}
 
-      {/* Floating What/When/Where create-question bubbles — thread-like pages only
-           (`/thread/<id>/`, `/p/<id>/`, `/thread/new/`). Each opens the create
-           modal in place with a different preselection:
-             - What  → no preselection
-             - When  → ?mode=time
-             - Where → ?category=restaurant (most common "where" type)
-           Auto-sets followUpTo when the page exposes data-thread-latest-question-id.
-           The bar is part of the root snapshot during view transitions so it
-           slides in/out with the page. */}
-      {isMounted && isThreadLikePage && createPortal(
+      {/* Floating What/When/Where create-question bubbles.
+           Visibility:
+             - When the create-poll panel is open (any page): float just ABOVE
+               the panel, hide while the top question form is open.
+             - Otherwise: thread-like pages only — bottom-of-screen, hidden on
+               home (which uses the single "+" FAB).
+           Tap behavior:
+             - Panel closed: openCreateFromBubble pushes URL params and opens
+               the panel; CreateQuestionContent's auto-open mounts the top
+               question form with the preselection.
+             - Panel open: dispatch `openQuestionForm` event with the
+               preselection so CreateQuestionContent opens a fresh top form
+               without re-pushing URL state. */}
+      {isMounted && (isThreadLikePage || isCreateModalOpen) && !questionFormOpen && !modalClosing && createPortal(
         <div
-          className="fixed z-50 left-1/2 -translate-x-1/2 flex items-center gap-3"
+          className="fixed z-[65] left-1/2 -translate-x-1/2 flex items-center gap-3"
           style={{
-            bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+            bottom: isCreateModalOpen
+              ? 'calc(var(--bottom-modal-height, 50vh) + 8px)'
+              : 'max(1rem, env(safe-area-inset-bottom, 0px))',
           }}
         >
           <button
             type="button"
-            onClick={() => openCreateFromBubble({})}
+            onClick={() => {
+              if (isCreateModalOpen) {
+                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: {} }));
+              } else {
+                openCreateFromBubble({});
+              }
+            }}
             className={BUBBLE_BUTTON_WHAT}
             aria-label="Create new question"
           >
@@ -581,7 +635,13 @@ function TemplateInner({ children }: AppTemplateProps) {
           </button>
           <button
             type="button"
-            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
+            onClick={() => {
+              if (isCreateModalOpen) {
+                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: { category: 'restaurant' } }));
+              } else {
+                openCreateFromBubble({ category: 'restaurant' });
+              }
+            }}
             className={BUBBLE_BUTTON_WHERE}
             aria-label="Create new place question"
           >
@@ -593,7 +653,13 @@ function TemplateInner({ children }: AppTemplateProps) {
           </button>
           <button
             type="button"
-            onClick={() => openCreateFromBubble({ mode: 'time' })}
+            onClick={() => {
+              if (isCreateModalOpen) {
+                window.dispatchEvent(new CustomEvent('openQuestionForm', { detail: { mode: 'time' } }));
+              } else {
+                openCreateFromBubble({ mode: 'time' });
+              }
+            }}
             className={BUBBLE_BUTTON_WHEN}
             aria-label="Create new time question"
           >

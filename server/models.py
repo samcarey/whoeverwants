@@ -278,7 +278,12 @@ class CreatePollRequest(BaseModel):
     # keeps working until Phase 5.
     follow_up_to: str | None = None
     thread_title: str | None = None
+    # Short single-line poll-level context — drives the auto-title's "for X"
+    # suffix. Stored on polls.context.
     context: str | None = None
+    # Multi-line description (with link support). Stored on polls.details.
+    # Independent from context; surfaced to voters but not used for title gen.
+    details: str | None = None
     # Optional explicit title; when absent, derived from question categories
     # and `context` via algorithms.poll_title.generate_poll_title.
     title: str | None = None
@@ -298,6 +303,7 @@ class PollResponse(BaseModel):
     follow_up_to: str | None = None
     thread_title: str | None = None
     context: str | None = None
+    details: str | None = None
     title: str
     created_at: str
     updated_at: str

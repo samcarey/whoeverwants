@@ -187,6 +187,7 @@ export function toPoll(data: any): Poll {
     follow_up_to: data.follow_up_to ?? null,
     thread_title: data.thread_title ?? null,
     context: data.context ?? null,
+    details: data.details ?? null,
     title: data.title,
     created_at: data.created_at,
     updated_at: data.updated_at,

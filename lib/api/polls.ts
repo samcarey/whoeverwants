@@ -41,7 +41,10 @@ export interface CreatePollParams {
   prephase_deadline_minutes?: number | null;
   follow_up_to?: string | null;
   thread_title?: string | null;
+  /** Short single-line — drives the auto-title's "for X" suffix. Maps to polls.context. */
   context?: string | null;
+  /** Multi-line description with link support. Maps to polls.details. */
+  details?: string | null;
   title?: string | null;
   questions: CreateQuestionParams[];
 }

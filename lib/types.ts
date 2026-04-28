@@ -141,6 +141,7 @@ export interface Poll {
   follow_up_to?: string | null;
   thread_title?: string | null;
   context?: string | null;
+  details?: string | null;
   title: string;
   created_at: string;
   updated_at: string;

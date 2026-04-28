@@ -9,6 +9,267 @@
 import { CreatePollParams, CreateQuestionParams } from "@/lib/api";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
 import { buildPollMap } from "@/lib/threadUtils";
+import { getBuiltInType } from "@/components/TypeFieldInput";
+import type { DayTimeWindow, OptionsMetadata } from "@/lib/types";
+
+/**
+ * Per-question form snapshot. The bottom modal holds a list of these as
+ * `drafts`; the top modal edits one at a time. Captures every field the
+ * top modal can edit so a draft round-trips losslessly through edit. Poll-
+ * level fields (voting cutoff, notes, creator name, suggestion cutoff)
+ * live on `CreateQuestionContent` itself, not on the draft.
+ */
+export interface QuestionDraft {
+  questionType: 'question' | 'time';
+  title: string;
+  isAutoTitle: boolean;
+  category: string;
+  forField: string;
+  options: string[];
+  optionsMetadata: OptionsMetadata;
+  refLatitude?: number;
+  refLongitude?: number;
+  refLocationLabel: string;
+  searchRadius: number;
+  minResponses: number;
+  showPreliminaryResults: boolean;
+  allowPreRanking: boolean;
+  durationMinValue: number | null;
+  durationMaxValue: number | null;
+  durationMinEnabled: boolean;
+  durationMaxEnabled: boolean;
+  dayTimeWindows: DayTimeWindow[];
+  minimumParticipation: number;
+}
+
+/** Default empty draft, optionally preselected by the What/When/Where bubble. */
+export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string } = {}): QuestionDraft {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return {
+    questionType: opts.mode === 'time' ? 'time' : 'question',
+    title: '',
+    isAutoTitle: true,
+    category: opts.category ?? 'custom',
+    forField: '',
+    options: [''],
+    optionsMetadata: {},
+    refLatitude: undefined,
+    refLongitude: undefined,
+    refLocationLabel: '',
+    searchRadius: 25,
+    minResponses: 1,
+    showPreliminaryResults: true,
+    allowPreRanking: true,
+    durationMinValue: 1,
+    durationMaxValue: 2,
+    durationMinEnabled: true,
+    durationMaxEnabled: true,
+    dayTimeWindows: opts.mode === 'time' ? [{ day: todayStr, windows: [] }] : [],
+    minimumParticipation: 95,
+  };
+}
+
+/**
+ * Resolve effective DB question_type for a draft. Mirrors the legacy
+ * getQuestionType() in page.tsx so server-side validation rules stay aligned.
+ */
+export function draftDbQuestionType(d: QuestionDraft): 'yes_no' | 'ranked_choice' | 'time' {
+  if (d.questionType === 'time' || d.category === 'time') return 'time';
+  if (d.category === 'yes_no') return 'yes_no';
+  return 'ranked_choice';
+}
+
+/** True when a draft is in "suggestion mode" (ranked_choice with no options yet). */
+export function draftIsSuggestionMode(d: QuestionDraft): boolean {
+  if (draftDbQuestionType(d) !== 'ranked_choice') return false;
+  return d.options.filter(o => o.trim()).length === 0;
+}
+
+/** True when at least one draft needs the poll-level suggestion/availability cutoff. */
+export function anyDraftUsesPrephase(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftDbQuestionType(d) === 'time' || draftIsSuggestionMode(d));
+}
+
+/**
+ * Convert a draft into the `CreateQuestionParams` shape the server expects.
+ * `prephaseMinutes` is the poll-level prephase cutoff resolved at submit time
+ * (already accounts for fractional/absolute/custom). Returns null when not
+ * applicable for the draft's type.
+ */
+export function draftToQuestionParams(
+  d: QuestionDraft,
+  prephaseMinutes: number | null,
+): CreateQuestionParams {
+  const dbType = draftDbQuestionType(d);
+  const filledOptions = d.options.filter(o => o.trim() !== '');
+  const params: CreateQuestionParams = {
+    question_type: dbType,
+    is_auto_title: d.isAutoTitle,
+  };
+  if (dbType === 'ranked_choice' && d.category !== 'custom') {
+    params.category = d.category;
+  }
+  if (dbType === 'ranked_choice' && filledOptions.length > 0) {
+    params.options = filledOptions;
+  }
+  if (Object.keys(d.optionsMetadata).length > 0) {
+    params.options_metadata = d.optionsMetadata;
+  }
+  if (d.refLatitude !== undefined && d.refLongitude !== undefined) {
+    params.reference_latitude = d.refLatitude;
+    params.reference_longitude = d.refLongitude;
+    params.reference_location_label = d.refLocationLabel;
+  }
+  if (dbType === 'ranked_choice') {
+    params.min_responses = d.minResponses;
+    params.show_preliminary_results = d.showPreliminaryResults;
+  }
+  if (dbType === 'ranked_choice' && filledOptions.length === 0) {
+    params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+    params.allow_pre_ranking = d.allowPreRanking;
+  }
+  if (dbType === 'time') {
+    if (d.dayTimeWindows.length > 0) {
+      params.day_time_windows = d.dayTimeWindows;
+    }
+    if (d.durationMinEnabled || d.durationMaxEnabled) {
+      params.duration_window = {
+        minValue: d.durationMinValue,
+        maxValue: d.durationMaxValue,
+        minEnabled: d.durationMinEnabled,
+        maxEnabled: d.durationMaxEnabled,
+      };
+    }
+    params.min_availability_percent = d.minimumParticipation;
+    params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
+  }
+  return params;
+}
+
+/** Compact one-line description for the draft list cards. */
+export function summarizeDraft(d: QuestionDraft): string {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'yes_no') {
+    return d.title.trim() || 'Yes / No';
+  }
+  if (dbType === 'time') {
+    const dayCount = d.dayTimeWindows.length;
+    if (dayCount === 0) return 'When?';
+    return `${dayCount} day${dayCount === 1 ? '' : 's'}`;
+  }
+  const filled = d.options.filter(o => o.trim() !== '');
+  if (filled.length === 0) {
+    const builtIn = getBuiltInType(d.category);
+    if (builtIn) return `${builtIn.label} (suggestions)`;
+    if (d.forField.trim()) return `Suggestions for ${d.forField.trim()}`;
+    return 'Suggestions';
+  }
+  if (filled.length === 1) return filled[0];
+  return `${filled[0]} or ${filled.length - 1} more`;
+}
+
+/** Category labels used by the auto-title generator. Mirrors
+ *  server/algorithms/poll_title.py so the FE preview matches whatever the
+ *  server will actually pick on submit (when the user hasn't typed an
+ *  explicit title). */
+const _CATEGORY_LABELS: Record<string, string> = {
+  yes_no: 'Yes/No',
+  restaurant: 'Restaurant',
+  location: 'Place',
+  time: 'Time',
+  movie: 'Movie',
+  video_game: 'Video Game',
+  videogame: 'Video Game',
+  petname: 'Pet Name',
+  custom: 'Custom',
+};
+
+function _labelForCategory(category: string): string {
+  if (!category) return '';
+  const key = category.trim().toLowerCase();
+  if (key in _CATEGORY_LABELS) return _CATEGORY_LABELS[key];
+  return category
+    .trim()
+    .split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function _joinCategories(labels: string[]): string {
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+}
+
+function _singleQuestionDefaultTitle(category: string): string {
+  const key = (category || '').trim().toLowerCase();
+  if (key === 'yes_no') return 'Yes/No?';
+  if (key === 'time') return 'Time?';
+  const label = _labelForCategory(category);
+  return label ? `${label}?` : 'Question?';
+}
+
+/** Pick the category string used in title generation for a draft. yes_no /
+ *  time questions ignore the user's category field. */
+function _draftCategory(d: QuestionDraft): string {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'yes_no') return 'yes_no';
+  if (dbType === 'time') return 'time';
+  return d.category || 'custom';
+}
+
+/**
+ * Preview values for the in-progress "Draft Poll" card in the create-poll
+ * panel. Drives a `ThreadListItem` rendered in draft mode so the card
+ * looks like the live poll will when submitted (just with a DRAFT pill +
+ * dashed border that morph away on submit).
+ */
+export function draftPollPreview(
+  drafts: QuestionDraft[],
+  pollContext: string,
+): { title: string; latestQuestionTitle: string; questionCount: number } {
+  const trimmedContext = pollContext.trim();
+  if (drafts.length === 0) {
+    return { title: trimmedContext || 'New Poll', latestQuestionTitle: '', questionCount: 0 };
+  }
+
+  // Wrapper title: when exactly 1 draft AND the user typed an explicit
+  // title (yes_no with !isAutoTitle), use it — that's what the server
+  // will use too. Otherwise mirror generate_poll_title().
+  let title: string;
+  if (drafts.length === 1 && !drafts[0].isAutoTitle && drafts[0].title.trim()) {
+    title = drafts[0].title.trim();
+  } else if (drafts.length === 1) {
+    if (trimmedContext) title = `${_labelForCategory(_draftCategory(drafts[0]))} for ${trimmedContext}`;
+    else title = _singleQuestionDefaultTitle(_draftCategory(drafts[0]));
+  } else {
+    const joined = _joinCategories(drafts.map(d => _labelForCategory(_draftCategory(d))));
+    title = trimmedContext ? `${joined} for ${trimmedContext}` : joined;
+  }
+
+  // Preview line — same role as `latestQuestion.title` on a live thread
+  // card. Use the most recently committed draft's summary so the user sees
+  // their last edit reflected.
+  const latest = drafts[drafts.length - 1];
+  const summary = summarizeDraft(latest);
+  const { label } = draftCardLabels(latest);
+  const latestQuestionTitle = drafts.length === 1
+    ? summary
+    : `${label}: ${summary}`;
+
+  return { title, latestQuestionTitle, questionCount: drafts.length };
+}
+
+/** Icon + label for a draft card. Mirrors the BUILT_IN_TYPES table. */
+export function draftCardLabels(d: QuestionDraft): { icon: string; label: string } {
+  const dbType = draftDbQuestionType(d);
+  if (dbType === 'time') return { icon: '📅', label: 'Time' };
+  if (dbType === 'yes_no') return { icon: '👍', label: 'Yes / No' };
+  const builtIn = getBuiltInType(d.category);
+  if (builtIn) return { icon: builtIn.icon, label: builtIn.label };
+  return { icon: '🗳️', label: d.category && d.category !== 'custom' ? d.category : 'Section' };
+}
 
 export function pollLookup() {
   const byPoll = buildPollMap(getCachedAccessiblePolls() ?? []);
