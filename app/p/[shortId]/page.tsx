@@ -18,8 +18,10 @@ import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessibleP
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
+  POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
+  type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
@@ -440,6 +442,34 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
+  }, []);
+
+  // POLL_FAILED_EVENT: apiCreatePoll rejected. Remove the orphan placeholder
+  // from thread state — without this it sits in the polls list as a partial
+  // card (just the title, no chrome / no metadata) since POLL_HYDRATED never
+  // fires to swap it for a real poll. Form / draft restoration happens in
+  // CreateQuestionContent.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PollFailedDetail>).detail;
+      const placeholderId = detail?.placeholderId;
+      if (!placeholderId) return;
+      setThread((prev) => {
+        if (!prev) return prev;
+        if (!prev.polls.some(p => p.id === placeholderId)) return prev;
+        const placeholderQuestionIds = new Set(
+          prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
+        );
+        const polls = prev.polls.filter(p => p.id !== placeholderId);
+        const questions = prev.questions.filter(q => !placeholderQuestionIds.has(q.id));
+        const latestPoll = polls[polls.length - 1] ?? prev.latestPoll;
+        const latestQuestion = latestPoll?.questions[latestPoll.questions.length - 1] ?? prev.latestQuestion;
+        return { ...prev, polls, questions, latestPoll, latestQuestion };
+      });
+      setPendingPollFirstQuestionId(null);
+    };
+    window.addEventListener(POLL_FAILED_EVENT, handler);
+    return () => window.removeEventListener(POLL_FAILED_EVENT, handler);
   }, []);
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list

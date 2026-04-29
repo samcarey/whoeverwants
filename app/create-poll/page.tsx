@@ -29,12 +29,14 @@ import CategoryForLine from "@/components/CategoryForLine";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls } from "@/lib/questionCache";
+import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls, invalidatePoll } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
+  POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
+  type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
@@ -1161,6 +1163,21 @@ export function CreateQuestionContent() {
         setIsLoading(false);
         isSubmittingRef.current = false;
         reEnableForm(form);
+        // Clean up the optimistic state so the user doesn't see a stuck
+        // placeholder card with no chrome (just a title) lingering in the
+        // thread, with the form cleared and seemingly nothing to retry. The
+        // POLL_FAILED listener on the thread page removes the placeholder
+        // from thread state; here we evict it from cache and restore the
+        // staged drafts so the user can edit and resubmit.
+        invalidatePoll(placeholderPoll.id);
+        const cachedAfter = getCachedAccessiblePolls() ?? [];
+        cacheAccessiblePolls(cachedAfter.filter(p => p.id !== placeholderPoll.id));
+        window.dispatchEvent(
+          new CustomEvent<PollFailedDetail>(POLL_FAILED_EVENT, {
+            detail: { placeholderId: placeholderPoll.id },
+          }),
+        );
+        setDrafts(effectiveDrafts);
         return;
       }
 

@@ -107,6 +107,18 @@ export function draftToQuestionParams(
     question_type: dbType,
     is_auto_title: d.isAutoTitle,
   };
+  // Per-question "for X" context (`forField`) maps to the API's `context`
+  // field, stored server-side on `questions.details`. Required when a poll
+  // has multiple questions of the same kind so the server can disambiguate
+  // them — without this mapping, two ranked_choice / two restaurant /
+  // etc. questions are indistinguishable and the create endpoint rejects
+  // with 400 ("Sub-questions of the same kind must each have a distinct
+  // context to disambiguate them"), even when the user typed distinct "for"
+  // values in the UI.
+  const trimmedForField = d.forField.trim();
+  if (trimmedForField) {
+    params.context = trimmedForField;
+  }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
   }
