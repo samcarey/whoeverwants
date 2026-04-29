@@ -22,6 +22,7 @@ import {
   type PollHydratedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
+import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/questionListUtils";
@@ -126,9 +127,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Set data attribute on body so the bottom bar "+" button can auto-follow-up
   useEffect(() => {
     if (thread) {
-      document.body.setAttribute('data-thread-latest-question-id', thread.latestQuestion.id);
+      document.body.setAttribute(THREAD_LATEST_QUESTION_ID_ATTR, thread.latestQuestion.id);
     }
-    return () => { document.body.removeAttribute('data-thread-latest-question-id'); };
+    return () => { document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR); };
   }, [thread]);
 
   // Signal to the view transition helper that this page's content is rendered.
@@ -1557,7 +1558,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
         {/* Render target for the in-progress draft poll card while the
             create-poll panel is open. Filled by CreateQuestionContent. */}
-        <div id="draft-poll-portal" />
+        <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when

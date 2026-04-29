@@ -37,6 +37,7 @@ import {
   type PollPendingDetail,
   type PollHydratedDetail,
 } from "@/lib/eventChannels";
+import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -673,7 +674,7 @@ export function CreateQuestionContent() {
       const url = new URL(window.location.href);
       let touched = false;
       if (url.searchParams.get('create') !== '1') { url.searchParams.set('create', '1'); touched = true; }
-      const threadLatest = document.body.getAttribute('data-thread-latest-question-id');
+      const threadLatest = document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR);
       if (threadLatest && url.searchParams.get('followUpTo') !== threadLatest) {
         url.searchParams.set('followUpTo', threadLatest);
         touched = true;
@@ -766,7 +767,7 @@ export function CreateQuestionContent() {
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
-        const el = document.getElementById('draft-poll-portal');
+        const el = document.getElementById(DRAFT_POLL_PORTAL_ID);
         setDraftPollPortal(prev => (prev === el ? prev : el));
       });
     };

@@ -104,15 +104,20 @@ function collectDescendants(
   // chronological (oldest first). Result: the most recently submitted
   // non-expired poll is always at the very bottom of the thread, just
   // above the always-present draft poll card.
+  // Pre-compute expiry per poll so the sort comparator is O(1) per
+  // compare instead of re-parsing response_deadline on every comparison.
   const now = Date.now();
-  const isPollExpired = (mp: Poll): boolean => {
-    if (mp.is_closed) return true;
-    if (mp.response_deadline && new Date(mp.response_deadline).getTime() < now) return true;
-    return false;
-  };
+  const expiredById = new Map<string, boolean>();
+  for (const mp of collected) {
+    expiredById.set(
+      mp.id,
+      mp.is_closed
+        || (!!mp.response_deadline && new Date(mp.response_deadline).getTime() < now),
+    );
+  }
   collected.sort((a, b) => {
-    const aExpired = isPollExpired(a);
-    const bExpired = isPollExpired(b);
+    const aExpired = expiredById.get(a.id) ?? false;
+    const bExpired = expiredById.get(b.id) ?? false;
     if (aExpired !== bExpired) return aExpired ? -1 : 1;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
