@@ -1512,21 +1512,26 @@ export function CreateQuestionContent() {
           has a place to drop a new question. */}
       {draftPollPortal && createPortal(
         <div className="pt-2">
-          {/* Centered header above the dashed card. */}
-          <div className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 select-none">
-            Create Poll
-          </div>
-          {/* Submit button — sits above the draft card, right-aligned with
-              its right edge 12px (pr-3) inside the card's right edge to mirror
-              the card's px-3 inner padding, and 12px (mb-3) above the card top
-              so the vertical gap matches that horizontal inset. */}
-          <div className="mx-1.5 pr-3 mb-3 flex justify-end">
+          {/* "Create Poll" header + Submit button on a single row above the
+              dashed card. The text stays horizontally centered (relative
+              wrapper, no flex-distribution), and the Submit button is
+              absolutely positioned at the right edge — its right edge sits
+              12px (right-3) inside the wrapper's right edge, matching the
+              card's px-3 inner padding so it lines up with where it was
+              previously inside the card. The wrapper's min-h-9 matches the
+              button height so the centered text aligns vertically with the
+              button; mb-3 (12px) below keeps the gap-to-card equal to that
+              horizontal inset. */}
+          <div className="relative mx-1.5 mb-3 flex items-center justify-center min-h-9">
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
+              Create Poll
+            </span>
             <button
               type="button"
               onClick={handleSubmitClick}
               disabled={submitDisabled}
               aria-label="Submit poll"
-              className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isSubmitted || isLoading ? (
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
