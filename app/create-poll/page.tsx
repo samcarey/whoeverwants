@@ -36,7 +36,7 @@ import {
   type PollPendingDetail,
   type PollHydratedDetail,
 } from "@/lib/eventChannels";
-import { DRAFT_POLL_PORTAL_ID } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
   pollLookup,
   shortenOption,
@@ -1017,6 +1017,20 @@ export function CreateQuestionContent() {
 
       const creatorSecret = generateCreatorSecret();
 
+      // Resolve the effective follow-up target. Explicit URL params (?followUpTo=…
+      // from the FollowUp / VoteOnIt buttons) take precedence; otherwise, when
+      // the user submits the inline form on a thread page, fall back to the
+      // current thread's latest question id (set on `<body>` by the thread
+      // page on mount). Without this fallback, submitting the always-on draft
+      // card while on /p/<id>/ would silently create a brand-new thread
+      // root instead of a follow-up — the form clears (drafts emptied,
+      // optimistic placeholder posted), the API call succeeds, but the new
+      // poll never appears in the current thread.
+      const effectiveFollowUpTo = followUpTo
+        ?? (typeof document !== 'undefined'
+          ? document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR)
+          : null);
+
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
       // field and for each draft that has a prephase (suggestion mode + time).
       const prephaseMinutes = pollHasPrephase ? getSuggestionCutoffMinutes() : null;
@@ -1040,9 +1054,9 @@ export function CreateQuestionContent() {
 
       // Find duplicate when this is a follow-up to an existing question.
       const dedupTitle = wrapperTitle || onlyDraft?.title || '';
-      if (followUpTo && dedupTitle.trim()) {
+      if (effectiveFollowUpTo && dedupTitle.trim()) {
         try {
-          const existing = await apiFindDuplicateQuestion(dedupTitle, followUpTo);
+          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveFollowUpTo);
           if (existing) {
             const lookup = pollLookup();
             const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
@@ -1076,9 +1090,9 @@ export function CreateQuestionContent() {
           // (so thread state recognizes it as part of the current thread).
           // The CreatePollRequest accepts a question id and the server
           // resolves it; here we resolve client-side via the cache.
-          if (!followUpTo) return null;
+          if (!effectiveFollowUpTo) return null;
           const cached = getCachedAccessiblePolls() ?? [];
-          return cached.find(mp => mp.questions.some(q => q.id === followUpTo))?.id ?? null;
+          return cached.find(mp => mp.questions.some(q => q.id === effectiveFollowUpTo))?.id ?? null;
         })(),
         creatorName: creatorName.trim() || null,
       });
@@ -1135,7 +1149,7 @@ export function CreateQuestionContent() {
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
-          follow_up_to: followUpTo || duplicateOf || null,
+          follow_up_to: effectiveFollowUpTo || duplicateOf || null,
           title: wrapperTitle,
           context: null,
           details: details.trim() || null,
@@ -1158,7 +1172,7 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      if (followUpTo) {
+      if (effectiveFollowUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
         } catch {
