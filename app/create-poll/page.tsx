@@ -1738,9 +1738,9 @@ export function CreateQuestionContent() {
                   />
                 </form>
 
-                {error && (
+                {(error || (validationError && drafts.length > 0)) && (
                   <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                    {error}
+                    {error ?? validationError}
                   </div>
                 )}
               </div>
