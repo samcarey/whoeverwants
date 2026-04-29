@@ -1016,43 +1016,16 @@ export function CreateQuestionContent() {
     isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
-
-    // No DOM-mutation form-disable here. Every input/select/button in the
-    // form already takes `disabled={isLoading}` directly from React state,
-    // so flipping `setIsLoading(true)` re-renders them as disabled. The
-    // previous `document.querySelector('form').querySelectorAll(...)` +
-    // imperative `.disabled = true` pattern was brittle:
-    //   - It only matched the FIRST <form> on the page, not necessarily
-    //     the one we're submitting from.
-    //   - On empty-thread submits (`router.replace` to `/p/<short_id>`)
-    //     the captured form node became stale post-navigation, so
-    //     `reEnableForm` operated on a detached DOM tree and the actual
-    //     mounted form's inputs stayed `disabled` until refresh —
-    //     manifesting as "submit button unresponsive after first submit".
-    // React-state-only is the single source of truth.
-
     try {
       const responseDeadline = calculateDeadline();
 
       const creatorSecret = generateCreatorSecret();
 
-      // Resolve the effective follow-up target. Explicit URL params (?followUpTo=…
-      // from the FollowUp / VoteOnIt buttons) take precedence; otherwise, when
-      // the user submits the inline form on a thread page, fall back to the
-      // current thread's latest question id (set on `<body>` by the thread
-      // page on mount). Without this fallback, submitting the always-on draft
-      // card while on /p/<id>/ would silently create a brand-new thread
-      // root instead of a follow-up — the form clears (drafts emptied,
-      // optimistic placeholder posted), the API call succeeds, but the new
-      // poll never appears in the current thread.
-      //
-      // BUT: if the user is currently on the empty placeholder route
-      // (`/p` or `/p/`), they're starting a brand-new thread by
-      // construction; ignore any body attribute that might be left over
-      // from a previous thread visit (the cleanup is a useEffect return on
-      // the thread route — react/HMR/view-transition timing can delay it,
-      // resulting in stale-attribute submits that bind the new poll as a
-      // follow-up to whatever thread the user previously viewed).
+      // Implicit follow-up: pick up the thread's latest question id from
+      // <body> when submitting from a thread page. Skip when on /p (empty
+      // placeholder) — by construction the user is starting a new thread,
+      // and the body attribute can be stale (the thread route's cleanup
+      // is a useEffect return that React/HMR/view-transitions can delay).
       const onEmptyThreadPath = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
       const effectiveFollowUpTo = followUpTo
         ?? (!onEmptyThreadPath && typeof document !== 'undefined'
@@ -1158,21 +1131,11 @@ export function CreateQuestionContent() {
         setDrafts([]);
       });
 
-      // Don't redirect to /p/<placeholderPoll.id>/ on empty-thread submits.
-      // The placeholder id is `pending-...` — not a UUID, not a short_id, not
-      // resolvable by the thread route, so the destination renders "Poll
-      // Not Found" instead of the placeholder. Worse, that view doesn't
-      // include the draft-poll-portal, so a subsequent API failure can't
-      // restore the form (drafts go invisible) or display the error
-      // (errors render inside the draft card). Stay on /p until the API
-      // resolves; the success branch below redirects to the real short_id,
-      // the failure branch in the catch block leaves the user on /p with
-      // the draft-poll-portal intact so restored drafts + error are
-      // visible in place.
-
-      // Run apiCreatePoll in the background. On success, hydrate the
-      // placeholder. On failure, surface the error and remove the
-      // placeholder so the user can retry.
+      // Stay on /p until the API resolves on empty-thread submits — the
+      // placeholder id (`pending-...`) doesn't resolve as a UUID/short_id,
+      // so redirecting eagerly would render "Poll Not Found" and lose the
+      // draft-poll-portal that hosts restored drafts + error on failure.
+      // Success redirects to the real short_id below.
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({

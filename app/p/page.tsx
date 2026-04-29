@@ -49,11 +49,10 @@ function EmptyPlaceholder() {
   usePageReady(true);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
 
-  // Clear any stale `<body data-thread-latest-question-id>` left over from a
-  // prior thread page. The thread route's useEffect-cleanup normally removes
-  // it, but React/HMR/view-transition timing can leave it set when navigating
-  // to /p — and the always-on draft card would then submit as a follow-up to
-  // the previously-viewed thread instead of as a brand-new root.
+  // Defense against stale `<body data-thread-latest-question-id>` from a
+  // prior thread page — the create-poll submit handler reads it as the
+  // implicit follow-up target, so a missed cleanup binds new threads as
+  // follow-ups to whatever was previously viewed.
   useEffect(() => {
     document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR);
   }, []);

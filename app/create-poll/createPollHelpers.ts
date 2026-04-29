@@ -107,14 +107,8 @@ export function draftToQuestionParams(
     question_type: dbType,
     is_auto_title: d.isAutoTitle,
   };
-  // Per-question "for X" context (`forField`) maps to the API's `context`
-  // field, stored server-side on `questions.details`. Required when a poll
-  // has multiple questions of the same kind so the server can disambiguate
-  // them — without this mapping, two ranked_choice / two restaurant /
-  // etc. questions are indistinguishable and the create endpoint rejects
-  // with 400 ("Sub-questions of the same kind must each have a distinct
-  // context to disambiguate them"), even when the user typed distinct "for"
-  // values in the UI.
+  // `forField` → API `context` (stored on `questions.details`). Required
+  // for the server's same-kind disambiguation check (otherwise 400).
   const trimmedForField = d.forField.trim();
   if (trimmedForField) {
     params.context = trimmedForField;
@@ -242,11 +236,8 @@ export function synthesizePlaceholderPoll(
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  // Combined poll title — the server gives every question of a multi-
-  // question poll the SAME title (the combined "Movie and Video Game"
-  // form). Mirror that here so the placeholder card doesn't briefly
-  // show a single-question title (e.g., "Movie?") that then morphs into
-  // the combined title on hydration.
+  // Server reuses the combined poll title across all questions; mirror
+  // that so the placeholder doesn't morph the title on hydration.
   const fallbackTitle = drafts.length === 1
     ? deriveDraftTitle(drafts[0])
     : draftPollPreview(drafts, '').title;

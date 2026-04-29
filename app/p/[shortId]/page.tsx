@@ -57,6 +57,24 @@ const suggestionPhaseRespondentFilter = (v: ApiVote) =>
 // with the heavy-content expand clip below. The pill sits directly at the
 // top of the overflow-hidden child so its text center aligns with the
 // sibling status text via the parent flex row's items-center.
+// Shared cache-driven Thread rebuild for POLL_HYDRATED / POLL_FAILED setThread
+// updaters. Returns prev when the rebuild would produce the same poll-id
+// sequence (no placeholder swap) so identity-based memos stay stable.
+function rebuildThreadFromCacheOrPrev(prev: Thread): Thread {
+  if (!prev.rootPollId) return prev;
+  const allPolls = getCachedAccessiblePolls() ?? [];
+  const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+  const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+  if (!rebuilt) return prev;
+  if (
+    rebuilt.polls.length === prev.polls.length &&
+    rebuilt.polls.every((p, i) => p.id === prev.polls[i].id)
+  ) {
+    return prev;
+  }
+  return rebuilt;
+}
+
 function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; children: React.ReactNode }) {
   return (
     <div
@@ -400,28 +418,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
-        // Rebuild from the cache as the source of truth. The submit handler
-        // has already cached the real poll and the accessible polls list
-        // before dispatching POLL_HYDRATED. Rebuilding (rather than
-        // hand-mapping `prev.polls` from the placeholder to the real poll)
-        // is robust to any earlier step having failed: if POLL_PENDING
-        // bailed (cache cold, threadRef stale, listener registration
-        // race in Firefox iOS, etc.), the placeholder isn't in
-        // `prev.polls` and the swap-in-place path leaves the new poll
-        // invisible until refresh — bug seen on Firefox iOS in the live
-        // dev session. Cache-driven rebuild lands the new poll regardless.
+        // Rebuild from the cache (which submit handler has already
+        // updated). Hand-mapping prev.polls leaves the new poll invisible
+        // when POLL_PENDING bailed (Firefox iOS listener race).
         const threadPollIds = new Set(prev.polls.map(p => p.id));
         const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
         const isOwnRoot = realPoll.id === prev.rootPollId;
         const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
         if (!hasPlaceholder && !isFollowUp && !isOwnRoot) return prev;
-        if (!prev.rootPollId) return prev;
-        const allPolls = getCachedAccessiblePolls() ?? [];
-        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
-        return rebuilt ?? prev;
+        return rebuildThreadFromCacheOrPrev(prev);
       });
-      // Clear the "pending" flag so the real card renders its full content.
       setPendingPollFirstQuestionId(null);
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
@@ -429,17 +435,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, []);
 
   // POLL_FAILED_EVENT: apiCreatePoll rejected. Rebuild from cache (the
-  // submit handler has already evicted the placeholder before dispatching)
-  // — same source-of-truth pattern as the POLL_HYDRATED handler so the
-  // path is symmetric and self-healing across browser quirks.
+  // submit handler has already evicted the placeholder before dispatching).
   useEffect(() => {
     const handler = () => {
       setThread((prev) => {
-        if (!prev || !prev.rootPollId) return prev;
-        const allPolls = getCachedAccessiblePolls() ?? [];
-        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
-        return rebuilt ?? prev;
+        if (!prev) return prev;
+        // Skip rebuild when no placeholder is present — POLL_FAILED on a
+        // brand-new-thread submit fires while we're on a different thread.
+        if (!prev.polls.some(p => p.id.startsWith('pending-'))) return prev;
+        return rebuildThreadFromCacheOrPrev(prev);
       });
       setPendingPollFirstQuestionId(null);
     };
