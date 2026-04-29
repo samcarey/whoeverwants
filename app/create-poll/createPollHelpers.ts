@@ -242,13 +242,21 @@ export function synthesizePlaceholderPoll(
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  // Combined poll title — the server gives every question of a multi-
+  // question poll the SAME title (the combined "Movie and Video Game"
+  // form). Mirror that here so the placeholder card doesn't briefly
+  // show a single-question title (e.g., "Movie?") that then morphs into
+  // the combined title on hydration.
+  const fallbackTitle = drafts.length === 1
+    ? deriveDraftTitle(drafts[0])
+    : draftPollPreview(drafts, '').title;
+  const titleForAllQuestions = args.wrapperTitle || fallbackTitle;
   const questions: Question[] = drafts.map((d, i) => {
     const dbType = draftDbQuestionType(d);
     const filledOptions = d.options.filter(o => o.trim() !== '');
-    const title = deriveDraftTitle(d);
     return {
       id: `${pollId}-q${i}`,
-      title,
+      title: titleForAllQuestions,
       question_type: dbType,
       options: filledOptions.length > 0 ? filledOptions : undefined,
       created_at: now,
@@ -263,9 +271,6 @@ export function synthesizePlaceholderPoll(
       response_count: 0,
     };
   });
-  const fallbackTitle = drafts.length === 1
-    ? deriveDraftTitle(drafts[0])
-    : draftPollPreview(drafts, '').title;
   return {
     id: pollId,
     short_id: null,
@@ -280,7 +285,7 @@ export function synthesizePlaceholderPoll(
     thread_title: null,
     context: null,
     details: null,
-    title: args.wrapperTitle || fallbackTitle,
+    title: titleForAllQuestions,
     created_at: now,
     updated_at: now,
     questions,
