@@ -1648,7 +1648,7 @@ export function CreateQuestionContent() {
           edit per row), and the Settings section that used to live in the
           bottom modal. */}
       {draftPollPortal && createPortal(
-        <div className="pt-2">
+        <div className="pt-6">
           {/* Header row above the dashed card: "Create Poll" label centered
               and vertically aligned with the up-arrow Submit button anchored
               just above the card's top-right corner. */}
@@ -1661,7 +1661,7 @@ export function CreateQuestionContent() {
               onClick={handleSubmitClick}
               disabled={submitDisabled}
               aria-label="Submit poll"
-              className="absolute right-0 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              className="absolute right-2 -top-1 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isSubmitted || isLoading ? (
                 <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
