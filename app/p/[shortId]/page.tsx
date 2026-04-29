@@ -459,6 +459,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const detail = (e as CustomEvent<PollHydratedDetail>).detail;
       const placeholderId = detail?.placeholderId;
       const realPoll = detail?.poll;
+      console.log('[HYDRATE] event fired. placeholderId=', placeholderId?.slice(0,20), 'realPollId=', realPoll?.id?.slice(0,20));
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
