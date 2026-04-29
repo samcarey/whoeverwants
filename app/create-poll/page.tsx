@@ -477,6 +477,31 @@ export function CreateQuestionContent() {
         return "Custom deadline must be in the future.";
       }
     }
+    // Mirror the server's same-kind / distinct-context check so the user gets
+    // an immediate error inside the draft card instead of a silent 400 after
+    // the optimistic UI has already cleared the form. Server logic
+    // (server/routers/polls.py: _validate_request) groups by
+    // (question_type, category) and requires the per-question contexts in
+    // each group to be unique (case-insensitive); empty contexts collide
+    // with each other.
+    if (effectiveDrafts.length > 1) {
+      const groups = new Map<string, string[]>();
+      for (const d of effectiveDrafts) {
+        const dbType = draftDbQuestionType(d);
+        const cat = dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : '';
+        const key = `${dbType}:${cat.toLowerCase()}`;
+        const ctx = d.forField.trim().toLowerCase();
+        const list = groups.get(key) ?? [];
+        list.push(ctx);
+        groups.set(key, list);
+      }
+      for (const ctxs of groups.values()) {
+        if (ctxs.length <= 1) continue;
+        if (new Set(ctxs).size !== ctxs.length) {
+          return "Questions of the same kind need a distinct “for X” context to tell them apart.";
+        }
+      }
+    }
     if (anyDraftUsesPrephase(effectiveDrafts)) {
       if (suggestionCutoff === 'custom') {
         if (!customSuggestionDate || !customSuggestionTime) {
@@ -1132,13 +1157,17 @@ export function CreateQuestionContent() {
         setDrafts([]);
       });
 
-      if (onEmptyThread) {
-        // Route to a temporary URL keyed by the placeholder id. The
-        // destination ThreadContent will pick up the placeholder from cache
-        // and render it. apiCreatePoll's success path navigates again to
-        // the real shortId.
-        router.replace(`/p/${placeholderPoll.id}`);
-      }
+      // Don't redirect to /p/<placeholderPoll.id>/ on empty-thread submits.
+      // The placeholder id is `pending-...` — not a UUID, not a short_id, not
+      // resolvable by the thread route, so the destination renders "Poll
+      // Not Found" instead of the placeholder. Worse, that view doesn't
+      // include the draft-poll-portal, so a subsequent API failure can't
+      // restore the form (drafts go invisible) or display the error
+      // (errors render inside the draft card). Stay on /p until the API
+      // resolves; the success branch below redirects to the real short_id,
+      // the failure branch in the catch block leaves the user on /p with
+      // the draft-poll-portal intact so restored drafts + error are
+      // visible in place.
 
       // Run apiCreatePoll in the background. On success, hydrate the
       // placeholder. On failure, surface the error and remove the
