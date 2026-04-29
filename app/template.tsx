@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, Suspense } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
@@ -48,15 +48,6 @@ export default function Template({ children }: AppTemplateProps) {
     </Suspense>
   );
 }
-
-const BUBBLE_BUTTON_BASE =
-  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 shadow-md shadow-black/20 cursor-pointer text-gray-800 font-medium";
-const BUBBLE_BUTTON_WHAT =
-  `${BUBBLE_BUTTON_BASE} bg-amber-200 dark:bg-amber-300 active:bg-amber-300 dark:active:bg-amber-200`;
-const BUBBLE_BUTTON_WHERE =
-  `${BUBBLE_BUTTON_BASE} bg-rose-200 dark:bg-rose-300 active:bg-rose-300 dark:active:bg-rose-200`;
-const BUBBLE_BUTTON_WHEN =
-  `${BUBBLE_BUTTON_BASE} bg-sky-200 dark:bg-sky-300 active:bg-sky-300 dark:active:bg-sky-200`;
 
 function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
@@ -154,32 +145,12 @@ function TemplateInner({ children }: AppTemplateProps) {
   const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
 
-  // Open the create-question modal from the floating What/When/Where bubble bar.
-  // The bubble bar is only shown on thread-like pages, so we always open the
-  // modal in place (with auto-set followUpTo when the page exposes a
-  // thread-latest-question-id on <body>). The home page uses the single "+" FAB
-  // below, which navigates to /p/ (the empty placeholder).
-  // The `openForm=1` marker tells CreateQuestionContent to auto-open the top
-  // question form on mount, regardless of whether category/mode were preselected.
-  // Without it, tapping "what" (no preselect) would open the panel only and
-  // leave the form closed — the user still has to tap a bubble inside.
-  const openCreateFromBubble = useCallback((extraParams: Record<string, string>) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('create', '1');
-    params.set('openForm', '1');
-    for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
-    const threadLatestQuestionId = document.body.getAttribute('data-thread-latest-question-id');
-    if (threadLatestQuestionId) {
-      params.set('followUpTo', threadLatestQuestionId);
-    }
-    router.push(`${pathname}?${params.toString()}`);
-  }, [pathname, router, searchParams]);
-
-  // The question form is now a true blocking modal owned by CreateQuestionContent;
-  // template.tsx no longer hosts a docked bottom panel, so the previous
-  // drag-to-dismiss / --bottom-modal-height / CREATE_PANEL_FINALIZE plumbing
-  // is gone. Bubble bar visibility flips on the simple `isCreateModalOpen`
-  // URL-derived flag below.
+  // The What/When/Where bubble bar previously lived as a floating element at
+  // the bottom of every thread-like page. It now lives INSIDE the draft poll
+  // card itself (always pinned at the bottom of the poll list on thread-like
+  // pages), rendered by CreateQuestionContent. The home page keeps its single
+  // "+" FAB below, which navigates to /p/ (the empty placeholder) where the
+  // user picks a bubble inside the always-visible draft card.
 
   return (
     <>
@@ -298,53 +269,6 @@ function TemplateInner({ children }: AppTemplateProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
         </button>,
-        document.getElementById('floating-fab-portal')!
-      )}
-
-      {/* Floating What/When/Where create-question bubbles. Always pinned at
-           the bottom of thread-like pages; hidden when the question form
-           modal is open (its backdrop covers them anyway, but skipping the
-           render avoids tap leakage during close animations). */}
-      {isMounted && isThreadLikePage && !isCreateModalOpen && createPortal(
-        <div
-          className="fixed z-[65] left-1/2 -translate-x-1/2 flex items-center gap-3"
-          style={{ bottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
-        >
-          <button
-            type="button"
-            onClick={() => openCreateFromBubble({})}
-            className={BUBBLE_BUTTON_WHAT}
-            aria-label="Create new question"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-[1.12rem]">what</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => openCreateFromBubble({ category: 'restaurant' })}
-            className={BUBBLE_BUTTON_WHERE}
-            aria-label="Create new place question"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-            </svg>
-            <span className="text-[1.12rem]">where</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => openCreateFromBubble({ mode: 'time' })}
-            className={BUBBLE_BUTTON_WHEN}
-            aria-label="Create new time question"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-            </svg>
-            <span className="text-[1.12rem]">when</span>
-          </button>
-        </div>,
         document.getElementById('floating-fab-portal')!
       )}
 

@@ -22,6 +22,7 @@ import {
   type PollHydratedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
+import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import { getCategoryIcon, relativeTime, isInSuggestionPhase, isInTimeAvailabilityPhase, compactDurationSince } from "@/lib/questionListUtils";
@@ -126,9 +127,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Set data attribute on body so the bottom bar "+" button can auto-follow-up
   useEffect(() => {
     if (thread) {
-      document.body.setAttribute('data-thread-latest-question-id', thread.latestQuestion.id);
+      document.body.setAttribute(THREAD_LATEST_QUESTION_ID_ATTR, thread.latestQuestion.id);
     }
-    return () => { document.body.removeAttribute('data-thread-latest-question-id'); };
+    return () => { document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR); };
   }, [thread]);
 
   // Signal to the view transition helper that this page's content is rendered.
@@ -334,24 +335,24 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   useEffect(() => { threadRef.current = thread; }, [thread]);
 
   // POLL_PENDING_EVENT: a draft was just submitted. Insert the placeholder
-  // poll into thread state immediately, find the freshly mounted card in the
-  // DOM, and run a FLIP animation from the draft card's captured bbox to
-  // the natural collapsed-card position. apiCreatePoll is running in
-  // parallel; POLL_HYDRATED_EVENT will swap the placeholder for the real
-  // Poll in-place.
+  // poll into thread state immediately so the user sees the new card in
+  // its sorted position right away. apiCreatePoll is running in parallel;
+  // POLL_HYDRATED_EVENT will swap the placeholder for the real Poll once
+  // it resolves.
   //
-  // /p/ (empty placeholder) case: the destination ThreadContent has not yet
-  // mounted, so it picks up the placeholder via cache on its initial render
-  // and runs the FLIP itself. The early return below skips this listener
-  // for that case.
+  // The placeholder card mounts with a `card-pending-enter` CSS class that
+  // fades it in from translateY(8px) → 0 + opacity 0 → 1 over 300ms.
+  // (We previously tried a FLIP morph from the draft card's bbox to the
+  // new card's natural slot, but the cardFrame is a CSS Grid item with
+  // default `min-height: auto` resolving to min-content, which clamped the
+  // height transition; even after pinning min-height: 0 with a double-rAF
+  // dance, the morph was inconsistent across browsers. A simple fade-in
+  // on the new card is reliable and reads as "something just appeared".)
   useEffect(() => {
-    let rafId = 0;
-    let timeoutId = 0;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
       const newPoll = detail?.poll;
-      const fromBbox = detail?.fromBbox;
-      if (!newPoll || !fromBbox) return;
+      if (!newPoll) return;
 
       const polls = getCachedAccessiblePolls();
       if (!polls) return;
@@ -373,45 +374,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         setPendingPollFirstQuestionId(firstQuestionId);
         setThread(rebuilt);
       });
-
-      // FLIP the bordered frame (not the outer grid) so the visible card
-      // shape morphs and the surrounding category-icon column stays still.
-      // width/height (not `transform: scale`) so the title sits at its
-      // natural size in the morphing container.
-      if (!firstQuestionId) return;
-      rafId = requestAnimationFrame(() => {
-        const card = cardFrameRefs.current.get(firstQuestionId);
-        if (!card) return;
-        const newBbox = card.getBoundingClientRect();
-        const dx = fromBbox.x - newBbox.x;
-        const dy = fromBbox.y - newBbox.y;
-        card.style.transformOrigin = 'top left';
-        card.style.transform = `translate(${dx}px, ${dy}px)`;
-        card.style.width = `${fromBbox.width}px`;
-        card.style.height = `${fromBbox.height}px`;
-        card.style.transition = 'none';
-        void card.offsetWidth;
-        card.style.transition = 'transform 1s cubic-bezier(0.32, 0.72, 0, 1), width 1s cubic-bezier(0.32, 0.72, 0, 1), height 1s cubic-bezier(0.32, 0.72, 0, 1)';
-        card.style.transform = '';
-        // CSS can't transition to/from `auto`; transition to explicit px,
-        // then clear the inline overrides so layout takes over after.
-        card.style.width = `${newBbox.width}px`;
-        card.style.height = `${newBbox.height}px`;
-        timeoutId = window.setTimeout(() => {
-          if (!card.isConnected) return;
-          card.style.transition = '';
-          card.style.transformOrigin = '';
-          card.style.width = '';
-          card.style.height = '';
-        }, 1050);
-      });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
-    return () => {
-      window.removeEventListener(POLL_PENDING_EVENT, handler);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (timeoutId) window.clearTimeout(timeoutId);
-    };
+    return () => window.removeEventListener(POLL_PENDING_EVENT, handler);
   }, []);
 
   // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
@@ -420,6 +385,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // DOM node doesn't unmount/re-mount mid-FLIP. Once the placeholder is
   // gone (its id was 'pending-...'), the real Poll's id takes over for
   // subsequent operations.
+  //
+  // Fallback: if the placeholder isn't in the thread (POLL_PENDING bailed
+  // out, e.g., follow_up_to wasn't recognized at the time), still add the
+  // real poll if it belongs to this thread — without that, the user sees
+  // the form clear with no new poll appearing despite a successful API
+  // create.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollHydratedDetail>).detail;
@@ -428,23 +399,41 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
-        if (!prev.polls.some(p => p.id === placeholderId)) return prev;
-        const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
-        const placeholderQuestionIds = new Set(
-          prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
-        );
-        const questions = prev.questions
-          .filter(q => !placeholderQuestionIds.has(q.id))
-          .concat(realPoll.questions);
-        const latestPoll = polls[polls.length - 1];
-        const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
-        return {
-          ...prev,
-          polls,
-          questions,
-          latestPoll,
-          latestQuestion,
-        };
+        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
+        if (hasPlaceholder) {
+          const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
+          const placeholderQuestionIds = new Set(
+            prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
+          );
+          const questions = prev.questions
+            .filter(q => !placeholderQuestionIds.has(q.id))
+            .concat(realPoll.questions);
+          const latestPoll = polls[polls.length - 1];
+          const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
+          return {
+            ...prev,
+            polls,
+            questions,
+            latestPoll,
+            latestQuestion,
+          };
+        }
+        // No placeholder in the thread — POLL_PENDING never landed. Still
+        // try to attach this poll if it belongs to the thread (its
+        // follow_up_to points at one of the thread's polls, or it IS the
+        // thread root). Otherwise leave the thread untouched.
+        const threadPollIds = new Set(prev.polls.map(p => p.id));
+        const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
+        const isOwnRoot = realPoll.id === prev.rootPollId;
+        if (!isFollowUp && !isOwnRoot) return prev;
+        // Re-derive the thread from the cache so the new poll lands at
+        // its sorted position. The poll has already been cached by the
+        // submit handler before dispatching POLL_HYDRATED.
+        const allPolls = getCachedAccessiblePolls() ?? [];
+        if (!prev.rootPollId) return prev;
+        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+        return rebuilt ?? prev;
       });
       // Clear the "pending" flag so the real card renders its full content.
       setPendingPollFirstQuestionId(null);
@@ -1058,7 +1047,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                     if (el) cardFrameRefs.current.set(question.id, el);
                     else cardFrameRefs.current.delete(question.id);
                   }}
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isPlaceholder ? 'card-pending-enter' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -1569,7 +1558,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
         {/* Render target for the in-progress draft poll card while the
             create-poll panel is open. Filled by CreateQuestionContent. */}
-        <div id="draft-poll-portal" />
+        <div id={DRAFT_POLL_PORTAL_ID} />
       </div>
 
       {/* Thread-aware long-press modal — Copy + Forget, plus Reopen when

@@ -85,6 +85,24 @@ body {
   animation: fade-in 0.2s ease-out;
 }
 
+/* Card fade-in for newly-submitted poll placeholders. The card
+   mounts in its sorted slot and rises up + fades in over 300ms so
+   the user sees a clear "the new poll just appeared" cue. */
+@keyframes card-pending-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-pending-enter {
+  animation: card-pending-enter 0.3s ease-out;
+}
+
 @keyframes slide-down {
   from {
     transform: translateY(0);

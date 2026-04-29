@@ -6,6 +6,7 @@ import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import ThreadHeader from "@/components/ThreadHeader";
+import { DRAFT_POLL_PORTAL_ID } from "@/lib/threadDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +61,7 @@ function EmptyPlaceholder() {
         </p>
         {/* Render target for the in-progress draft poll card while the
             create-poll panel is open. Filled by CreateQuestionContent. */}
-        <div id="draft-poll-portal" className="mt-4" />
+        <div id={DRAFT_POLL_PORTAL_ID} className="mt-4" />
       </div>
     </>
   );
