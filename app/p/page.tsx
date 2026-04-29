@@ -6,7 +6,7 @@ import { apiGetQuestionById, apiGetPollById } from "@/lib/api";
 import { usePageReady } from "@/lib/usePageReady";
 import { useMeasuredHeight } from "@/lib/useMeasuredHeight";
 import ThreadHeader from "@/components/ThreadHeader";
-import { DRAFT_POLL_PORTAL_ID } from "@/lib/threadDomMarkers";
+import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +48,15 @@ function PollRoot() {
 function EmptyPlaceholder() {
   usePageReady(true);
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>();
+
+  // Clear any stale `<body data-thread-latest-question-id>` left over from a
+  // prior thread page. The thread route's useEffect-cleanup normally removes
+  // it, but React/HMR/view-transition timing can leave it set when navigating
+  // to /p — and the always-on draft card would then submit as a follow-up to
+  // the previously-viewed thread instead of as a brand-new root.
+  useEffect(() => {
+    document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR);
+  }, []);
 
   return (
     <>

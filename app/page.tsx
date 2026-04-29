@@ -7,6 +7,7 @@ import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
+import { POLL_HYDRATED_EVENT, POLL_FAILED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
@@ -177,6 +178,27 @@ export default function Home() {
     }
 
     fetchQuestions();
+  }, []);
+
+  // Live-refresh the polls list when a poll is created (POLL_HYDRATED) or
+  // a placeholder is evicted (POLL_FAILED) elsewhere in the app — most
+  // commonly when the user submits a brand-new thread root from /p (the
+  // empty placeholder route) and then navigates home, expecting to see
+  // their new thread in the list. Without this listener, the list shows
+  // whatever was loaded at mount time and only updates on refresh.
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const data = await getAccessiblePolls();
+        if (data) setPolls(data);
+      } catch {}
+    };
+    window.addEventListener(POLL_HYDRATED_EVENT, handler);
+    window.addEventListener(POLL_FAILED_EVENT, handler);
+    return () => {
+      window.removeEventListener(POLL_HYDRATED_EVENT, handler);
+      window.removeEventListener(POLL_FAILED_EVENT, handler);
+    };
   }, []);
 
   // Extract fetchQuestions function for reuse in pull-to-refresh

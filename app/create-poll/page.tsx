@@ -1053,8 +1053,17 @@ export function CreateQuestionContent() {
       // root instead of a follow-up — the form clears (drafts emptied,
       // optimistic placeholder posted), the API call succeeds, but the new
       // poll never appears in the current thread.
+      //
+      // BUT: if the user is currently on the empty placeholder route
+      // (`/p` or `/p/`), they're starting a brand-new thread by
+      // construction; ignore any body attribute that might be left over
+      // from a previous thread visit (the cleanup is a useEffect return on
+      // the thread route — react/HMR/view-transition timing can delay it,
+      // resulting in stale-attribute submits that bind the new poll as a
+      // follow-up to whatever thread the user previously viewed).
+      const onEmptyThreadPath = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
       const effectiveFollowUpTo = followUpTo
-        ?? (typeof document !== 'undefined'
+        ?? (!onEmptyThreadPath && typeof document !== 'undefined'
           ? document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR)
           : null);
 
