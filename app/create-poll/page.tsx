@@ -1592,6 +1592,9 @@ export function CreateQuestionContent() {
                 a horizontal divider below the "+ Question" button separates
                 the per-question form from the poll-level settings. */}
             <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 select-none">
+                Question
+              </div>
               <div className="min-w-0">
                 {questionType === 'question' ? (
                   <CategoryForLine
