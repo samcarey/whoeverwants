@@ -1334,6 +1334,13 @@ export function CreateQuestionContent() {
     : drafts;
   const validationError = getValidationErrorFor(projectedDrafts);
   const submitDisabled = isLoading || isSubmitted || !!validationError;
+  if (typeof window !== 'undefined') {
+    (window as any).__submitDebug = {
+      isLoading, isSubmitted, validationError, submitDisabled,
+      draftsLen: drafts.length, projectedLen: projectedDrafts.length,
+      inlineHas: inlineFormHasContent(), questionFormError: getCurrentQuestionFormError(),
+    };
+  }
 
   // Compact suggestion/availability cutoff field — used in the BOTTOM modal
   // when the poll has at least one prephase question, since the cutoff is
