@@ -1649,50 +1649,52 @@ export function CreateQuestionContent() {
           bottom modal. */}
       {draftPollPortal && createPortal(
         <div className="pt-2">
-          {/* Centered header above the dashed card. */}
-          <div className="text-center text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 select-none">
-            Create Poll
+          {/* Header row above the dashed card: "Create Poll" label centered
+              and vertically aligned with the up-arrow Submit button anchored
+              just above the card's top-right corner. */}
+          <div className="relative flex items-center justify-center mb-2 mx-1.5">
+            <div className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none">
+              Create Poll
+            </div>
+            <button
+              type="button"
+              onClick={handleSubmitClick}
+              disabled={submitDisabled}
+              aria-label="Submit poll"
+              className="absolute right-0 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isSubmitted || isLoading ? (
+                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                </svg>
+              )}
+            </button>
           </div>
           <div
             data-draft-poll-card
             className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
-            {/* Top row: title input (left) + up-arrow Submit (right). */}
-            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-              <div className="flex-1 min-w-0">
-                <InlineTitleField
-                  title={pollTitle}
-                  isAutoTitle={!isPollTitleCustom}
-                  autoTitle={draftPreview.title}
-                  onChange={(v) => {
-                    setPollTitle(v);
-                    setIsPollTitleCustom(true);
-                  }}
-                  onRevertToAuto={() => {
-                    setPollTitle('');
-                    setIsPollTitleCustom(false);
-                  }}
-                  disabled={isLoading || topModalOpen}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleSubmitClick}
-                disabled={submitDisabled}
-                aria-label="Submit poll"
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isSubmitted || isLoading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                  </svg>
-                )}
-              </button>
+            {/* Title input row. */}
+            <div className="px-3 pt-3 pb-2">
+              <InlineTitleField
+                title={pollTitle}
+                isAutoTitle={!isPollTitleCustom}
+                autoTitle={draftPreview.title}
+                onChange={(v) => {
+                  setPollTitle(v);
+                  setIsPollTitleCustom(true);
+                }}
+                onRevertToAuto={() => {
+                  setPollTitle('');
+                  setIsPollTitleCustom(false);
+                }}
+                disabled={isLoading || topModalOpen}
+              />
             </div>
 
             {/* Questions list. */}
