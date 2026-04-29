@@ -448,6 +448,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // DOM node doesn't unmount/re-mount mid-FLIP. Once the placeholder is
   // gone (its id was 'pending-...'), the real Poll's id takes over for
   // subsequent operations.
+  //
+  // Fallback: if the placeholder isn't in the thread (POLL_PENDING bailed
+  // out, e.g., follow_up_to wasn't recognized at the time), still add the
+  // real poll if it belongs to this thread — without that, the user sees
+  // the form clear with no new poll appearing despite a successful API
+  // create.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollHydratedDetail>).detail;
@@ -456,23 +462,41 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
-        if (!prev.polls.some(p => p.id === placeholderId)) return prev;
-        const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
-        const placeholderQuestionIds = new Set(
-          prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
-        );
-        const questions = prev.questions
-          .filter(q => !placeholderQuestionIds.has(q.id))
-          .concat(realPoll.questions);
-        const latestPoll = polls[polls.length - 1];
-        const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
-        return {
-          ...prev,
-          polls,
-          questions,
-          latestPoll,
-          latestQuestion,
-        };
+        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
+        if (hasPlaceholder) {
+          const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
+          const placeholderQuestionIds = new Set(
+            prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
+          );
+          const questions = prev.questions
+            .filter(q => !placeholderQuestionIds.has(q.id))
+            .concat(realPoll.questions);
+          const latestPoll = polls[polls.length - 1];
+          const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
+          return {
+            ...prev,
+            polls,
+            questions,
+            latestPoll,
+            latestQuestion,
+          };
+        }
+        // No placeholder in the thread — POLL_PENDING never landed. Still
+        // try to attach this poll if it belongs to the thread (its
+        // follow_up_to points at one of the thread's polls, or it IS the
+        // thread root). Otherwise leave the thread untouched.
+        const threadPollIds = new Set(prev.polls.map(p => p.id));
+        const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
+        const isOwnRoot = realPoll.id === prev.rootPollId;
+        if (!isFollowUp && !isOwnRoot) return prev;
+        // Re-derive the thread from the cache so the new poll lands at
+        // its sorted position. The poll has already been cached by the
+        // submit handler before dispatching POLL_HYDRATED.
+        const allPolls = getCachedAccessiblePolls() ?? [];
+        if (!prev.rootPollId) return prev;
+        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+        return rebuilt ?? prev;
       });
       // Clear the "pending" flag so the real card renders its full content.
       setPendingPollFirstQuestionId(null);
