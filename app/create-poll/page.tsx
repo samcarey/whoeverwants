@@ -1537,24 +1537,25 @@ export function CreateQuestionContent() {
 
             {/* Inline question form — sits right below the staged list (or
                 at the top of the card when no questions are staged yet),
-                acting as the next item to be added. */}
+                acting as the next item to be added. The form is flush with
+                the surrounding dashed card (no inner white-card wrapper) —
+                a horizontal divider below the "+ Question" button separates
+                the per-question form from the poll-level settings. */}
             <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
-              <div className="rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-3">
-                {questionType === 'question' ? (
-                  <CategoryForLine
-                    category={category}
-                    onCategoryChange={handleCategoryChange}
-                    forField={forField}
-                    onForFieldChange={setForField}
-                    generatedCategoryText={generatedCategoryFromOptions}
-                    disabled={isLoading}
-                  />
-                ) : (
-                  <AnimatedTitle title={title} initialDelay={0} />
-                )}
-                <div className="mt-3">
-                  {questionFormBody}
-                </div>
+              {questionType === 'question' ? (
+                <CategoryForLine
+                  category={category}
+                  onCategoryChange={handleCategoryChange}
+                  forField={forField}
+                  onForFieldChange={setForField}
+                  generatedCategoryText={generatedCategoryFromOptions}
+                  disabled={isLoading}
+                />
+              ) : (
+                <AnimatedTitle title={title} initialDelay={0} />
+              )}
+              <div className="mt-3">
+                {questionFormBody}
               </div>
             </div>
 
@@ -1571,6 +1572,10 @@ export function CreateQuestionContent() {
                 {editingDraftIndex !== null ? 'Save Question' : '+ Question'}
               </button>
             </div>
+
+            {/* Divider — separates the per-question form (above) from the
+                poll-level settings (below). */}
+            <hr className="mx-3 border-t border-gray-200 dark:border-gray-700" />
 
             {/* Settings — voting cutoff, suggestion/availability cutoff,
                 notes, voter name. Always visible so the user can configure
