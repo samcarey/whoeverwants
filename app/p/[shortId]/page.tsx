@@ -21,7 +21,6 @@ import {
   POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
-  type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { isUuidLike } from "@/lib/questionId";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
@@ -401,38 +400,23 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
-        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
-        if (hasPlaceholder) {
-          const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
-          const placeholderQuestionIds = new Set(
-            prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
-          );
-          const questions = prev.questions
-            .filter(q => !placeholderQuestionIds.has(q.id))
-            .concat(realPoll.questions);
-          const latestPoll = polls[polls.length - 1];
-          const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
-          return {
-            ...prev,
-            polls,
-            questions,
-            latestPoll,
-            latestQuestion,
-          };
-        }
-        // No placeholder in the thread — POLL_PENDING never landed. Still
-        // try to attach this poll if it belongs to the thread (its
-        // follow_up_to points at one of the thread's polls, or it IS the
-        // thread root). Otherwise leave the thread untouched.
+        // Rebuild from the cache as the source of truth. The submit handler
+        // has already cached the real poll and the accessible polls list
+        // before dispatching POLL_HYDRATED. Rebuilding (rather than
+        // hand-mapping `prev.polls` from the placeholder to the real poll)
+        // is robust to any earlier step having failed: if POLL_PENDING
+        // bailed (cache cold, threadRef stale, listener registration
+        // race in Firefox iOS, etc.), the placeholder isn't in
+        // `prev.polls` and the swap-in-place path leaves the new poll
+        // invisible until refresh — bug seen on Firefox iOS in the live
+        // dev session. Cache-driven rebuild lands the new poll regardless.
         const threadPollIds = new Set(prev.polls.map(p => p.id));
         const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
         const isOwnRoot = realPoll.id === prev.rootPollId;
-        if (!isFollowUp && !isOwnRoot) return prev;
-        // Re-derive the thread from the cache so the new poll lands at
-        // its sorted position. The poll has already been cached by the
-        // submit handler before dispatching POLL_HYDRATED.
-        const allPolls = getCachedAccessiblePolls() ?? [];
+        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
+        if (!hasPlaceholder && !isFollowUp && !isOwnRoot) return prev;
         if (!prev.rootPollId) return prev;
+        const allPolls = getCachedAccessiblePolls() ?? [];
         const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
         const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
         return rebuilt ?? prev;
@@ -444,27 +428,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
   }, []);
 
-  // POLL_FAILED_EVENT: apiCreatePoll rejected. Remove the orphan placeholder
-  // from thread state — without this it sits in the polls list as a partial
-  // card (just the title, no chrome / no metadata) since POLL_HYDRATED never
-  // fires to swap it for a real poll. Form / draft restoration happens in
-  // CreateQuestionContent.
+  // POLL_FAILED_EVENT: apiCreatePoll rejected. Rebuild from cache (the
+  // submit handler has already evicted the placeholder before dispatching)
+  // — same source-of-truth pattern as the POLL_HYDRATED handler so the
+  // path is symmetric and self-healing across browser quirks.
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<PollFailedDetail>).detail;
-      const placeholderId = detail?.placeholderId;
-      if (!placeholderId) return;
+    const handler = () => {
       setThread((prev) => {
-        if (!prev) return prev;
-        if (!prev.polls.some(p => p.id === placeholderId)) return prev;
-        const placeholderQuestionIds = new Set(
-          prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
-        );
-        const polls = prev.polls.filter(p => p.id !== placeholderId);
-        const questions = prev.questions.filter(q => !placeholderQuestionIds.has(q.id));
-        const latestPoll = polls[polls.length - 1] ?? prev.latestPoll;
-        const latestQuestion = latestPoll?.questions[latestPoll.questions.length - 1] ?? prev.latestQuestion;
-        return { ...prev, polls, questions, latestPoll, latestQuestion };
+        if (!prev || !prev.rootPollId) return prev;
+        const allPolls = getCachedAccessiblePolls() ?? [];
+        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+        return rebuilt ?? prev;
       });
       setPendingPollFirstQuestionId(null);
     };
