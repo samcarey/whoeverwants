@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, Suspense } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import HeaderPortal from '@/components/HeaderPortal';
 import { useLongPress } from '@/lib/useLongPress';
@@ -52,7 +52,6 @@ export default function Template({ children }: AppTemplateProps) {
 function TemplateInner({ children }: AppTemplateProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { prefetchOnHover } = usePrefetch();
   const [hasAppHistory, setHasAppHistory] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -142,15 +141,14 @@ function TemplateInner({ children }: AppTemplateProps) {
   // (/p/<id>/info, .../edit-title) render their own fixed header but opt out
   // of the thread-like FAB + padding treatment via isThreadRootView.
   const isThreadLikePage = isThreadRootView(pathname);
-  const isCreateModalOpen = searchParams.has('create');
   const isSettingsPage = pathname === '/settings' || pathname === '/settings/';
 
-  // The What/When/Where bubble bar previously lived as a floating element at
-  // the bottom of every thread-like page. It now lives INSIDE the draft poll
-  // card itself (always pinned at the bottom of the poll list on thread-like
-  // pages), rendered by CreateQuestionContent. The home page keeps its single
-  // "+" FAB below, which navigates to /p/ (the empty placeholder) where the
-  // user picks a bubble inside the always-visible draft card.
+  // The draft poll card on every thread-like page hosts the inline question
+  // form (CategoryForLine + question fields) plus the staged-questions list
+  // and Settings. The "+ Question" button inside the card commits the
+  // in-progress form to the staged list. The home page keeps a single "+"
+  // FAB which navigates to /p/ (the empty placeholder) so the user can
+  // start a new poll.
 
   return (
     <>
@@ -255,7 +253,7 @@ function TemplateInner({ children }: AppTemplateProps) {
            container so it positions against the viewport. Slides with the
            rest of the page in view transitions (no shared transition name
            with the thread bubble bar). */}
-      {isMounted && pathname === '/' && !isCreateModalOpen && createPortal(
+      {isMounted && pathname === '/' && createPortal(
         <button
           onClick={() => navigateWithTransition(router, '/p', 'forward')}
           className="fixed z-50 w-12 h-12 rounded-full flex items-center justify-center bg-blue-500 dark:bg-blue-600 active:bg-blue-600 dark:active:bg-blue-500 shadow-md shadow-black/20 cursor-pointer"

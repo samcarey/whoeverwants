@@ -114,7 +114,7 @@ export default function FollowUpModal({ isOpen, question, poll, onClose, totalVo
             <button
               onClick={() => {
                 localStorage.setItem(`duplicate-data-${question.id}`, JSON.stringify(questionSnapshot));
-                router.push(`${pathname}?create=1&duplicate=${question.id}`);
+                router.push(`${pathname}?duplicate=${question.id}`);
                 onClose();
               }}
               className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 active:scale-95 text-white font-medium text-sm rounded-lg transition-all duration-200"
