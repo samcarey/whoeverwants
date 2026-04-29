@@ -265,18 +265,6 @@ export function CreateQuestionContent() {
     }
   }, []);
 
-  // Helper to re-enable form elements
-  const reEnableForm = useCallback((form: HTMLFormElement | null) => {
-    if (form) {
-      const inputs = form.querySelectorAll('input, select, button');
-      inputs.forEach(input => {
-        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
-          input.disabled = false;
-        }
-      });
-    }
-  }, []);
-
   // Set default deadline based on question type
   const isPreferenceQuestion = questionType === 'question' && category !== 'yes_no';
   const prevIsPreferenceQuestionRef = useRef(isPreferenceQuestion);
@@ -1029,15 +1017,19 @@ export function CreateQuestionContent() {
     setIsLoading(true);
     setError(null);
 
-    const form = document.querySelector('form');
-    if (form) {
-      const inputs = form.querySelectorAll('input, select, button');
-      inputs.forEach(input => {
-        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
-          input.disabled = true;
-        }
-      });
-    }
+    // No DOM-mutation form-disable here. Every input/select/button in the
+    // form already takes `disabled={isLoading}` directly from React state,
+    // so flipping `setIsLoading(true)` re-renders them as disabled. The
+    // previous `document.querySelector('form').querySelectorAll(...)` +
+    // imperative `.disabled = true` pattern was brittle:
+    //   - It only matched the FIRST <form> on the page, not necessarily
+    //     the one we're submitting from.
+    //   - On empty-thread submits (`router.replace` to `/p/<short_id>`)
+    //     the captured form node became stale post-navigation, so
+    //     `reEnableForm` operated on a detached DOM tree and the actual
+    //     mounted form's inputs stayed `disabled` until refresh —
+    //     manifesting as "submit button unresponsive after first submit".
+    // React-state-only is the single source of truth.
 
     try {
       const responseDeadline = calculateDeadline();
@@ -1200,7 +1192,6 @@ export function CreateQuestionContent() {
         setError(apiError.message || "Failed to create question. Please try again.");
         setIsLoading(false);
         isSubmittingRef.current = false;
-        reEnableForm(form);
         // Clean up the optimistic state so the user doesn't see a stuck
         // placeholder card with no chrome (just a title) lingering in the
         // thread, with the form cleared and seemingly nothing to retry. The
@@ -1242,7 +1233,6 @@ export function CreateQuestionContent() {
       setIsSubmitted(false);
       isSubmittingRef.current = false;
       setIsLoading(false);
-      reEnableForm(form);
 
       // Cache the real poll, then notify thread state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
@@ -1267,7 +1257,6 @@ export function CreateQuestionContent() {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
       isSubmittingRef.current = false;
-      reEnableForm(form);
     }
   };
 
@@ -1334,13 +1323,6 @@ export function CreateQuestionContent() {
     : drafts;
   const validationError = getValidationErrorFor(projectedDrafts);
   const submitDisabled = isLoading || isSubmitted || !!validationError;
-  if (typeof window !== 'undefined') {
-    (window as any).__submitDebug = {
-      isLoading, isSubmitted, validationError, submitDisabled,
-      draftsLen: drafts.length, projectedLen: projectedDrafts.length,
-      inlineHas: inlineFormHasContent(), questionFormError: getCurrentQuestionFormError(),
-    };
-  }
 
   // Compact suggestion/availability cutoff field — used in the BOTTOM modal
   // when the poll has at least one prephase question, since the cutoff is
