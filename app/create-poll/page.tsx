@@ -1512,17 +1512,11 @@ export function CreateQuestionContent() {
           has a place to drop a new question. */}
       {draftPollPortal && createPortal(
         <div className="pt-3">
-          {/* "Create Poll" header + Submit button on a single row above the
-              dashed card. The text stays horizontally centered (relative
-              wrapper, no flex-distribution), and the Submit button is
-              absolutely positioned at the right edge — its right edge sits
-              12px (right-3) inside the wrapper's right edge, matching the
-              card's px-3 inner padding so it lines up with where it was
-              previously inside the card. The wrapper's min-h-9 matches the
-              button height so the centered text aligns vertically with the
-              button; mb-3 (12px) below keeps the gap-to-card equal to that
-              horizontal inset. */}
+          {/* Submit button is absolute-positioned so adding it doesn't shift
+              the centered "Create Poll" label off-axis. */}
           <div className="relative mx-1.5 mb-2 flex items-center justify-center min-h-9">
+            {/* mt-[3px] optically centers the cap-height label against the
+                button's visual midline. */}
             <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px]">
               Create Poll
             </span>
@@ -1595,20 +1589,18 @@ export function CreateQuestionContent() {
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 select-none">
                 Add Question
               </div>
-              <div className="min-w-0">
-                {questionType === 'question' ? (
-                  <CategoryForLine
-                    category={category}
-                    onCategoryChange={handleCategoryChange}
-                    forField={forField}
-                    onForFieldChange={setForField}
-                    generatedCategoryText={generatedCategoryFromOptions}
-                    disabled={isLoading}
-                  />
-                ) : (
-                  <AnimatedTitle title={title} initialDelay={0} />
-                )}
-              </div>
+              {questionType === 'question' ? (
+                <CategoryForLine
+                  category={category}
+                  onCategoryChange={handleCategoryChange}
+                  forField={forField}
+                  onForFieldChange={setForField}
+                  generatedCategoryText={generatedCategoryFromOptions}
+                  disabled={isLoading}
+                />
+              ) : (
+                <AnimatedTitle title={title} initialDelay={0} />
+              )}
               <div className="mt-3">
                 {questionFormBody}
               </div>
