@@ -1511,7 +1511,7 @@ export function CreateQuestionContent() {
           bottom (`#draft-poll-portal`). Always present so the user always
           has a place to drop a new question. */}
       {draftPollPortal && createPortal(
-        <div className="pt-2">
+        <div className="pt-3">
           {/* "Create Poll" header + Submit button on a single row above the
               dashed card. The text stays horizontally centered (relative
               wrapper, no flex-distribution), and the Submit button is
