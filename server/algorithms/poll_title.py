@@ -9,7 +9,7 @@ _CATEGORY_LABELS: dict[str, str] = {
     "yes_no": "Yes/No",
     "yes/no": "Yes/No",
     "restaurant": "Restaurant",
-    "location": "Location",
+    "location": "Place",
     "time": "Time",
     "movie": "Movie",
     "videogame": "Video Game",
