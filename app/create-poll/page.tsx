@@ -1522,7 +1522,7 @@ export function CreateQuestionContent() {
               button height so the centered text aligns vertically with the
               button; mb-3 (12px) below keeps the gap-to-card equal to that
               horizontal inset. */}
-          <div className="relative mx-1.5 mt-8 mb-3 flex items-center justify-center min-h-9">
+          <div className="relative mx-1.5 mb-1 flex items-center justify-center min-h-9">
             <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px]">
               Create Poll
             </span>
