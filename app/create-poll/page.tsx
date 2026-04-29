@@ -1468,7 +1468,7 @@ export function CreateQuestionContent() {
             className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <span className="text-sm text-gray-600 dark:text-gray-400">
-            Allow voters to pre-rank during the suggestion phase
+            allow pre-rank during suggestion phase
           </span>
         </label>
       )}
@@ -1540,20 +1540,44 @@ export function CreateQuestionContent() {
                 acting as the next item to be added. The form is flush with
                 the surrounding dashed card (no inner white-card wrapper) —
                 a horizontal divider below the "+ Question" button separates
-                the per-question form from the poll-level settings. */}
+                the per-question form from the poll-level settings. The
+                up-arrow Submit lives on the same row as the category line
+                (upper-right of the draft section). */}
             <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
-              {questionType === 'question' ? (
-                <CategoryForLine
-                  category={category}
-                  onCategoryChange={handleCategoryChange}
-                  forField={forField}
-                  onForFieldChange={setForField}
-                  generatedCategoryText={generatedCategoryFromOptions}
-                  disabled={isLoading}
-                />
-              ) : (
-                <AnimatedTitle title={title} initialDelay={0} />
-              )}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  {questionType === 'question' ? (
+                    <CategoryForLine
+                      category={category}
+                      onCategoryChange={handleCategoryChange}
+                      forField={forField}
+                      onForFieldChange={setForField}
+                      generatedCategoryText={generatedCategoryFromOptions}
+                      disabled={isLoading}
+                    />
+                  ) : (
+                    <AnimatedTitle title={title} initialDelay={0} />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSubmitClick}
+                  disabled={submitDisabled}
+                  aria-label="Submit poll"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               <div className="mt-3">
                 {questionFormBody}
               </div>
@@ -1653,30 +1677,6 @@ export function CreateQuestionContent() {
                     disabled={isLoading}
                   />
                 </form>
-
-                {/* Submit poll — up-arrow button anchoring the bottom of
-                    the card. Auto-stages the inline form's contents (when
-                    valid) before creating the poll. */}
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleSubmitClick}
-                    disabled={submitDisabled}
-                    aria-label="Submit poll"
-                    className="w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitted || isLoading ? (
-                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
 
                 {error && (
                   <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
