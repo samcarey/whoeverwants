@@ -1522,7 +1522,7 @@ export function CreateQuestionContent() {
               button height so the centered text aligns vertically with the
               button; mb-3 (12px) below keeps the gap-to-card equal to that
               horizontal inset. */}
-          <div className="relative mx-1.5 mb-3 flex items-center justify-center min-h-9">
+          <div className="relative mx-1.5 mt-2 mb-3 flex items-center justify-center min-h-9">
             <span className="text-sm font-medium text-gray-500 dark:text-gray-400 select-none mt-[3px]">
               Create Poll
             </span>
@@ -1593,7 +1593,7 @@ export function CreateQuestionContent() {
                 the per-question form from the poll-level settings. */}
             <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 select-none">
-                Question
+                Add Question
               </div>
               <div className="min-w-0">
                 {questionType === 'question' ? (
