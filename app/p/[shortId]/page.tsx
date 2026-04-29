@@ -334,25 +334,24 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   useEffect(() => { threadRef.current = thread; }, [thread]);
 
   // POLL_PENDING_EVENT: a draft was just submitted. Insert the placeholder
-  // poll into thread state immediately, find the freshly mounted card in the
-  // DOM, and run a FLIP animation from the draft card's captured bbox to
-  // the natural collapsed-card position. apiCreatePoll is running in
-  // parallel; POLL_HYDRATED_EVENT will swap the placeholder for the real
-  // Poll in-place.
+  // poll into thread state immediately so the user sees the new card in
+  // its sorted position right away. apiCreatePoll is running in parallel;
+  // POLL_HYDRATED_EVENT will swap the placeholder for the real Poll once
+  // it resolves.
   //
-  // /p/ (empty placeholder) case: the destination ThreadContent has not yet
-  // mounted, so it picks up the placeholder via cache on its initial render
-  // and runs the FLIP itself. The early return below skips this listener
-  // for that case.
+  // The placeholder card mounts with a `card-pending-enter` CSS class that
+  // fades it in from translateY(8px) → 0 + opacity 0 → 1 over 300ms.
+  // (We previously tried a FLIP morph from the draft card's bbox to the
+  // new card's natural slot, but the cardFrame is a CSS Grid item with
+  // default `min-height: auto` resolving to min-content, which clamped the
+  // height transition; even after pinning min-height: 0 with a double-rAF
+  // dance, the morph was inconsistent across browsers. A simple fade-in
+  // on the new card is reliable and reads as "something just appeared".)
   useEffect(() => {
-    let rafId = 0;
-    let rafId2 = 0;
-    let timeoutId = 0;
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PollPendingDetail>).detail;
       const newPoll = detail?.poll;
-      const fromBbox = detail?.fromBbox;
-      if (!newPoll || !fromBbox) return;
+      if (!newPoll) return;
 
       const polls = getCachedAccessiblePolls();
       if (!polls) return;
@@ -374,72 +373,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         setPendingPollFirstQuestionId(firstQuestionId);
         setThread(rebuilt);
       });
-
-      // FLIP the bordered frame (not the outer grid) so the visible card
-      // shape morphs and the surrounding category-icon column stays still.
-      // width/height (not `transform: scale`) so the title sits at its
-      // natural size in the morphing container.
-      //
-      // Two-rAF dance: the first rAF measures the natural position +
-      // commits the "from" state inline (no transition); the second rAF
-      // (next frame) installs the transition + writes the "to" state.
-      // Single-rAF + `void offsetWidth` worked in some browsers but
-      // wasn't firing the transition reliably here — the new card's
-      // height stayed at the inline "to" value visually with no easing,
-      // looking like an instant snap. The double-rAF pattern is the
-      // standard FLIP idiom and lets the browser commit the from-state
-      // paint before the transition starts.
-      if (!firstQuestionId) return;
-      rafId = requestAnimationFrame(() => {
-        const card = cardFrameRefs.current.get(firstQuestionId);
-        if (!card) return;
-        const newBbox = card.getBoundingClientRect();
-        const dx = fromBbox.x - newBbox.x;
-        const dy = fromBbox.y - newBbox.y;
-        card.style.transition = 'none';
-        card.style.transformOrigin = 'top left';
-        card.style.transform = `translate(${dx}px, ${dy}px)`;
-        card.style.width = `${fromBbox.width}px`;
-        card.style.height = `${fromBbox.height}px`;
-        // Grid items default to `min-height: auto`/`min-width: auto`,
-        // which resolves to min-content and clamps the cardFrame to its
-        // intrinsic content size — the FLIP height transition stalls
-        // until the curve crosses the min-content threshold near the
-        // very end. Override both to 0 so the transition can interpolate
-        // freely; cleared with the rest of the inline overrides at
-        // animation end.
-        card.style.minHeight = '0';
-        card.style.minWidth = '0';
-        rafId2 = requestAnimationFrame(() => {
-          if (!card.isConnected) return;
-          // Re-fetch the cardFrame ref in case React swapped the DOM
-          // node between rAFs (e.g., a stray re-render); fall back to
-          // the original element if not.
-          const target = cardFrameRefs.current.get(firstQuestionId) ?? card;
-          target.style.transition = 'transform 0.5s ease-out, width 0.5s ease-out, height 0.5s ease-out';
-          target.style.transform = '';
-          target.style.width = `${newBbox.width}px`;
-          target.style.height = `${newBbox.height}px`;
-          timeoutId = window.setTimeout(() => {
-            const finalCard = cardFrameRefs.current.get(firstQuestionId) ?? target;
-            if (!finalCard.isConnected) return;
-            finalCard.style.transition = '';
-            finalCard.style.transformOrigin = '';
-            finalCard.style.width = '';
-            finalCard.style.height = '';
-            finalCard.style.minHeight = '';
-            finalCard.style.minWidth = '';
-          }, 550);
-        });
-      });
     };
     window.addEventListener(POLL_PENDING_EVENT, handler);
-    return () => {
-      window.removeEventListener(POLL_PENDING_EVENT, handler);
-      if (rafId) cancelAnimationFrame(rafId);
-      if (rafId2) cancelAnimationFrame(rafId2);
-      if (timeoutId) window.clearTimeout(timeoutId);
-    };
+    return () => window.removeEventListener(POLL_PENDING_EVENT, handler);
   }, []);
 
   // POLL_HYDRATED_EVENT: the API call has resolved with the real Poll.
@@ -459,7 +395,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const detail = (e as CustomEvent<PollHydratedDetail>).detail;
       const placeholderId = detail?.placeholderId;
       const realPoll = detail?.poll;
-      console.log('[HYDRATE] event fired. placeholderId=', placeholderId?.slice(0,20), 'realPollId=', realPoll?.id?.slice(0,20));
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
@@ -1111,7 +1046,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                     if (el) cardFrameRefs.current.set(question.id, el);
                     else cardFrameRefs.current.delete(question.id);
                   }}
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} transition-colors select-none relative`}
+                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isPlaceholder ? 'card-pending-enter' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
