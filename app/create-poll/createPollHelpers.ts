@@ -107,6 +107,12 @@ export function draftToQuestionParams(
     question_type: dbType,
     is_auto_title: d.isAutoTitle,
   };
+  // `forField` → API `context` (stored on `questions.details`). Required
+  // for the server's same-kind disambiguation check (otherwise 400).
+  const trimmedForField = d.forField.trim();
+  if (trimmedForField) {
+    params.context = trimmedForField;
+  }
   if (dbType === 'ranked_choice' && d.category !== 'custom') {
     params.category = d.category;
   }
@@ -230,13 +236,18 @@ export function synthesizePlaceholderPoll(
 ): Poll {
   const now = new Date().toISOString();
   const pollId = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  // Server reuses the combined poll title across all questions; mirror
+  // that so the placeholder doesn't morph the title on hydration.
+  const fallbackTitle = drafts.length === 1
+    ? deriveDraftTitle(drafts[0])
+    : draftPollPreview(drafts, '').title;
+  const titleForAllQuestions = args.wrapperTitle || fallbackTitle;
   const questions: Question[] = drafts.map((d, i) => {
     const dbType = draftDbQuestionType(d);
     const filledOptions = d.options.filter(o => o.trim() !== '');
-    const title = deriveDraftTitle(d);
     return {
       id: `${pollId}-q${i}`,
-      title,
+      title: titleForAllQuestions,
       question_type: dbType,
       options: filledOptions.length > 0 ? filledOptions : undefined,
       created_at: now,
@@ -251,9 +262,6 @@ export function synthesizePlaceholderPoll(
       response_count: 0,
     };
   });
-  const fallbackTitle = drafts.length === 1
-    ? deriveDraftTitle(drafts[0])
-    : draftPollPreview(drafts, '').title;
   return {
     id: pollId,
     short_id: null,
@@ -268,7 +276,7 @@ export function synthesizePlaceholderPoll(
     thread_title: null,
     context: null,
     details: null,
-    title: args.wrapperTitle || fallbackTitle,
+    title: titleForAllQuestions,
     created_at: now,
     updated_at: now,
     questions,
@@ -276,14 +284,6 @@ export function synthesizePlaceholderPoll(
     anonymous_count: 0,
   };
 }
-
-/** Query-string params that gate or carry create-flow state. Stripped
- *  together when the question modal closes so the bubble bar reappears
- *  cleanly and refresh / back-nav don't re-trigger the modal. */
-export const CREATE_FLOW_URL_PARAMS = [
-  'create', 'openForm', 'mode', 'category',
-  'followUpTo', 'duplicate', 'voteFromSuggestion',
-] as const;
 
 /** Compact one-line description for the draft list cards. */
 export function summarizeDraft(d: QuestionDraft): string {

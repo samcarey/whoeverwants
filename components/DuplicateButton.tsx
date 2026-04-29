@@ -24,8 +24,8 @@ export default function DuplicateButton({ question }: DuplicateButtonProps) {
     
     debugLog.logObject('Stored duplicate data', { storageKey, data: localStorage.getItem(storageKey) }, 'DuplicateButton');
     
-    // Open create modal with duplicate parameter
-    const navigateUrl = `${pathname}?create=1&duplicate=${question.id}`;
+    // Surface the duplicate URL param so the inline draft form pre-fills.
+    const navigateUrl = `${pathname}?duplicate=${question.id}`;
     debugLog.info(`Navigating to: ${navigateUrl}`, 'DuplicateButton');
     router.push(navigateUrl);
   };

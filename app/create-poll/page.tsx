@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import AnimatedTitle from "@/components/AnimatedTitle";
@@ -26,16 +26,17 @@ import TimeQuestionFields from "@/components/TimeQuestionFields";
 import ReferenceLocationInput from "@/components/ReferenceLocationInput";
 import type { DayTimeWindow } from "@/lib/types";
 import CategoryForLine from "@/components/CategoryForLine";
-import InlineTitleField from "@/components/InlineTitleField";
 import { windowDurationMinutes, formatDurationLabel, formatDeadlineLabel } from "@/lib/timeUtils";
 import { findThreadRootRouteId } from "@/lib/threadUtils";
 import * as questionBackTarget from "@/lib/questionBackTarget";
-import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls } from "@/lib/questionCache";
+import { cachePoll, cacheAccessiblePolls, getCachedAccessiblePolls, invalidatePoll } from "@/lib/questionCache";
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
+  POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
+  type PollFailedDetail,
 } from "@/lib/eventChannels";
 import { DRAFT_POLL_PORTAL_ID, THREAD_LATEST_QUESTION_ID_ATTR } from "@/lib/threadDomMarkers";
 import {
@@ -47,16 +48,13 @@ import {
   FRACTIONAL_CUTOFF_OPTIONS,
   ABSOLUTE_CUTOFF_OPTIONS,
   DEV_DEADLINE_OPTIONS,
-  CREATE_FLOW_URL_PARAMS,
   type QuestionDraft,
   emptyDraft,
   draftDbQuestionType,
-  draftIsSuggestionMode,
   draftToQuestionParams,
   anyDraftUsesPrephase,
   deriveDraftTitle,
   draftCardLabels,
-  draftPollPreview,
   synthesizePlaceholderPoll,
 } from "./createPollHelpers";
 export const dynamic = 'force-dynamic';
@@ -65,18 +63,6 @@ export const dynamic = 'force-dynamic';
 // Used for the Details textarea initial height and auto-grow reset.
 const SINGLE_LINE_INPUT_HEIGHT = 42;
 
-// What/When/Where bubble buttons rendered inside the draft poll card.
-// Styling mirrors the legacy floating bubble bar that lived on
-// template.tsx — same heights, same pastel palette.
-const BUBBLE_BUTTON_BASE =
-  "h-8 px-2.5 rounded-full flex items-center justify-center gap-1.5 shadow-md shadow-black/20 cursor-pointer text-gray-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed";
-const BUBBLE_BUTTON_WHAT =
-  `${BUBBLE_BUTTON_BASE} bg-amber-200 dark:bg-amber-300 active:bg-amber-300 dark:active:bg-amber-200`;
-const BUBBLE_BUTTON_WHERE =
-  `${BUBBLE_BUTTON_BASE} bg-rose-200 dark:bg-rose-300 active:bg-rose-300 dark:active:bg-rose-200`;
-const BUBBLE_BUTTON_WHEN =
-  `${BUBBLE_BUTTON_BASE} bg-sky-200 dark:bg-sky-300 active:bg-sky-300 dark:active:bg-sky-200`;
-
 export function CreateQuestionContent() {
   const { prefetch } = useAppPrefetch();
   const router = useRouter();
@@ -84,15 +70,6 @@ export function CreateQuestionContent() {
   const followUpToParam = searchParams.get('followUpTo');
   const duplicateOfParam = searchParams.get('duplicate');
   const voteFromSuggestionParam = searchParams.get('voteFromSuggestion');
-  const modeParam = searchParams.get('mode');
-  // Optional category preselection from the What/When/Where bubble FAB.
-  // "When" uses ?mode=time (question-type-level switch); "Where" uses ?category=restaurant.
-  // Restored from URL on mount only — subsequent edits go through CategoryForLine.
-  const categoryParam = searchParams.get('category');
-  // `?openForm=1` is set by the bubble bar when the panel was closed at click
-  // time. It tells us to auto-open the top form on first mount even when there
-  // was no category/mode preselect (e.g. the "what" button).
-  const openFormParam = searchParams.get('openForm');
 
   // Track relationship to source question as part of form state
   const [followUpTo, setFollowUpTo] = useState<string | null>(null);
@@ -100,16 +77,11 @@ export function CreateQuestionContent() {
   const [voteFromSuggestion, setVoteFromSuggestion] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
-  const questionType = modeParam === 'time' ? 'time' : 'question';
-  const setQuestionType = useCallback((type: 'question' | 'time') => {
-    const url = new URL(window.location.href);
-    if (type === 'time') {
-      url.searchParams.set('mode', 'time');
-    } else {
-      url.searchParams.delete('mode');
-    }
-    router.replace(url.pathname + url.search);
-  }, [router]);
+  // The legacy URL `?mode=time` switch is gone — pick the time question via
+  // the category dropdown ("Time" built-in). `questionType` still tracks
+  // whether the form is in time-question mode locally so the duplicate flow
+  // can pre-load a copied question of any type.
+  const [questionType, setQuestionType] = useState<'question' | 'time'>('question');
   const [options, setOptions] = useState<string[]>(['']);
   const [durationMinValue, setDurationMinValue] = useState<number | null>(1);
   const [durationMaxValue, setDurationMaxValue] = useState<number | null>(2);
@@ -133,13 +105,6 @@ export function CreateQuestionContent() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const loadedTitleRef = useRef<string | null>(null);
 
-  // Wrapper-level title: optional user override displayed at the top of the
-  // draft poll card. When `isPollTitleCustom` is false, the card shows the
-  // auto-generated `draftPreview.title` instead. On submit, an empty / non-
-  // custom value sends `null` and lets the server auto-generate.
-  const [pollTitle, setPollTitle] = useState("");
-  const [isPollTitleCustom, setIsPollTitleCustom] = useState(false);
-
   const [suggestionCutoff, setSuggestionCutoff] = useState("0.5x");
   const [customSuggestionDate, setCustomSuggestionDate] = useState('');
   const [customSuggestionTime, setCustomSuggestionTime] = useState('');
@@ -147,7 +112,7 @@ export function CreateQuestionContent() {
   const [details, setDetails] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsRef = useRef<HTMLTextAreaElement>(null);
-  const [category, setCategory] = useState<string>(categoryParam || 'custom');
+  const [category, setCategory] = useState<string>('custom');
   const [forField, setForField] = useState("");
   const [optionsMetadata, setOptionsMetadata] = useState<OptionsMetadata>({});
   // Reference location for proximity-based search
@@ -158,19 +123,13 @@ export function CreateQuestionContent() {
   const [minResponses, setMinResponses] = useState<number>(1);
   const [showPreliminaryResults, setShowPreliminaryResults] = useState(true);
 
-  // Drafts list — every question committed via the top-modal "check" button
+  // Drafts list — every question committed via the "+ Question" button
   // becomes a draft. The poll is built from this list at submit time.
-  // Draft 0 is the first section displayed in the bottom modal's compact list.
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
-  // Top modal open + which draft index it's editing.
-  // editingDraftIndex === null when adding a new question.
-  const [topModalOpen, setTopModalOpen] = useState(false);
+  // When non-null, the in-progress form is editing a previously-committed
+  // draft and tapping "+ Question" re-inserts at this index (preserving
+  // display order). null when adding a new question.
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
-  // Bookkeeping: the draft that was popped out for editing, so X-during-edit
-  // discards it (per spec). Restored on check.
-  const [originalEditingDraft, setOriginalEditingDraft] = useState<QuestionDraft | null>(null);
-  // (No "finalizing" state anymore — the draft → live morph is owned by
-  // ThreadContent's FLIP animation via POLL_PENDING_EVENT.)
 
   const hasNoOptions = options.filter(o => o.trim()).length === 0;
   const isSuggestionMode = questionType === 'question' && category !== 'yes_no' && category !== 'time' && hasNoOptions;
@@ -306,18 +265,6 @@ export function CreateQuestionContent() {
     }
   }, []);
 
-  // Helper to re-enable form elements
-  const reEnableForm = useCallback((form: HTMLFormElement | null) => {
-    if (form) {
-      const inputs = form.querySelectorAll('input, select, button');
-      inputs.forEach(input => {
-        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
-          input.disabled = false;
-        }
-      });
-    }
-  }, []);
-
   // Set default deadline based on question type
   const isPreferenceQuestion = questionType === 'question' && category !== 'yes_no';
   const prevIsPreferenceQuestionRef = useRef(isPreferenceQuestion);
@@ -390,8 +337,7 @@ export function CreateQuestionContent() {
     if (typeof window !== 'undefined') {
       const formState = {
         title,
-        pollTitle,
-        isPollTitleCustom,
+        questionType,
         details,
         options,
         deadlineOption,
@@ -412,7 +358,7 @@ export function CreateQuestionContent() {
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, pollTitle, isPollTitleCustom, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -441,8 +387,7 @@ export function CreateQuestionContent() {
           const formState = JSON.parse(saved);
           setTitle(formState.title || '');
           if (formState.isAutoTitle === false) setIsAutoTitle(false);
-          if (typeof formState.pollTitle === 'string') setPollTitle(formState.pollTitle);
-          if (formState.isPollTitleCustom === true) setIsPollTitleCustom(true);
+          if (formState.questionType === 'time') setQuestionType('time');
           setDetails(formState.details || '');
           if (formState.details) setDetailsOpen(true);
           setOptions(formState.options || ['']);
@@ -450,8 +395,7 @@ export function CreateQuestionContent() {
           setCustomDate(formState.customDate || '');
           setCustomTime(formState.customTime || '');
           setCreatorName(formState.creatorName || '');
-          // URL ?category= preselection (from the Where bubble FAB) wins over saved drafts.
-          if (formState.category && !categoryParam) setCategory(formState.category);
+          if (formState.category) setCategory(formState.category);
           if (formState.forField) setForField(formState.forField);
 
           if (formState.durationMinValue !== undefined) setDurationMinValue(formState.durationMinValue);
@@ -497,25 +441,19 @@ export function CreateQuestionContent() {
 
 
 
-  // Whether any committed draft uses the poll-level prephase cutoff
-  // (suggestion mode or time question). Drives whether the suggestion
-  // cutoff field is rendered in the bottom modal.
-  const pollHasPrephase = anyDraftUsesPrephase(drafts);
-
-  // Title/preview/count for the draft poll card. Re-runs as drafts or the
-  // poll-level details change so the user sees the preview update in real
-  // time. Mirrors generate_poll_title() so the morph lands on the same
-  // title the server will assign on submit.
-  const draftPreview = useMemo(
-    () => draftPollPreview(drafts, ''),
-    [drafts],
-  );
+  // Whether any staged draft (or the in-progress inline form, when filled)
+  // uses the poll-level prephase cutoff (suggestion mode or time question).
+  // Drives whether the suggestion-cutoff field is rendered in Settings.
+  const inlineFormUsesPrephase = isSuggestionMode
+    || questionType === 'time'
+    || category === 'time';
+  const pollHasPrephase = anyDraftUsesPrephase(drafts) || inlineFormUsesPrephase;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
-  // cutoffs are sane. Per-question fields were already validated when
-  // each draft was checked-in.
-  const getValidationError = (): string | null => {
-    if (drafts.length === 0) {
+  // cutoffs are sane. Per-question fields are validated when each draft is
+  // staged (and the in-progress form is validated separately at submit).
+  const getValidationErrorFor = (effectiveDrafts: QuestionDraft[]): string | null => {
+    if (effectiveDrafts.length === 0) {
       return "Add at least one question.";
     }
     if (deadlineOption === "custom") {
@@ -527,7 +465,32 @@ export function CreateQuestionContent() {
         return "Custom deadline must be in the future.";
       }
     }
-    if (pollHasPrephase) {
+    // Mirror the server's same-kind / distinct-context check so the user gets
+    // an immediate error inside the draft card instead of a silent 400 after
+    // the optimistic UI has already cleared the form. Server logic
+    // (server/routers/polls.py: _validate_request) groups by
+    // (question_type, category) and requires the per-question contexts in
+    // each group to be unique (case-insensitive); empty contexts collide
+    // with each other.
+    if (effectiveDrafts.length > 1) {
+      const groups = new Map<string, string[]>();
+      for (const d of effectiveDrafts) {
+        const dbType = draftDbQuestionType(d);
+        const cat = dbType === 'ranked_choice' && d.category !== 'custom' ? d.category : '';
+        const key = `${dbType}:${cat.toLowerCase()}`;
+        const ctx = d.forField.trim().toLowerCase();
+        const list = groups.get(key) ?? [];
+        list.push(ctx);
+        groups.set(key, list);
+      }
+      for (const ctxs of groups.values()) {
+        if (ctxs.length <= 1) continue;
+        if (new Set(ctxs).size !== ctxs.length) {
+          return "Questions of the same kind need a distinct “for X” context to tell them apart.";
+        }
+      }
+    }
+    if (anyDraftUsesPrephase(effectiveDrafts)) {
       if (suggestionCutoff === 'custom') {
         if (!customSuggestionDate || !customSuggestionTime) {
           return "Please select both a suggestion cutoff date and time.";
@@ -554,12 +517,20 @@ export function CreateQuestionContent() {
     return null;
   };
 
-  const isFormValid = (): boolean => {
-    return getValidationError() === null;
-  };
+  // Whether the inline form has user input that should be auto-staged on
+  // Submit. We treat the form as "empty" only if it matches the default
+  // empty draft for its question type — otherwise any user input counts.
+  const inlineFormHasContent = useCallback((): boolean => {
+    if (title.trim()) return true;
+    if (forField.trim()) return true;
+    if (category !== 'custom') return true;
+    if (options.some(o => o.trim() !== '')) return true;
+    if (questionType === 'time' && dayTimeWindows.some(d => d.windows.length > 0)) return true;
+    return false;
+  }, [title, forField, category, options, questionType, dayTimeWindows]);
 
   // Validates only the per-question fields the top modal can edit.
-  // Used to gate the "check" button. Different from getValidationError
+  // Used to gate the "+ Question" button. Different from getValidationErrorFor
   // (which validates poll-level fields too).
   const getCurrentQuestionFormError = (): string | null => {
     const dbQuestionType = getQuestionType();
@@ -621,16 +592,7 @@ export function CreateQuestionContent() {
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
-    // questionType lives on the URL `mode` param; only re-push when it
-    // actually changes (otherwise every form-open churns history).
-    const url = new URL(window.location.href);
-    const desiredMode = d.questionType === 'time' ? 'time' : null;
-    const currentMode = url.searchParams.get('mode');
-    if (currentMode !== desiredMode) {
-      if (desiredMode) url.searchParams.set('mode', desiredMode);
-      else url.searchParams.delete('mode');
-      router.replace(url.pathname + url.search);
-    }
+    setQuestionType(d.questionType);
     setTitle(d.title);
     setIsAutoTitle(d.isAutoTitle);
     setCategory(d.category);
@@ -650,90 +612,30 @@ export function CreateQuestionContent() {
     setDurationMaxEnabled(d.durationMaxEnabled);
     setDayTimeWindows([...d.dayTimeWindows]);
     setMinimumParticipation(d.minimumParticipation);
-  }, [router]);
+  }, []);
 
-  // Push `?create=1` onto the URL so the floating bubble bar hides while the
-  // question form modal is open. Idempotent — won't re-push if already set.
-  const ensureCreateParam = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get('create') === '1') return;
-    url.searchParams.set('create', '1');
-    router.replace(url.pathname + '?' + url.searchParams.toString());
-  }, [router]);
-
-  // What/When/Where: open a fresh top modal with optional preselection.
-  // Auto-sets followUpTo from the thread page's body attribute so a question
-  // started inside the in-card bubble bar inherits the thread context.
-  const handleOpenNewQuestion = useCallback((opts: { mode?: 'question' | 'time'; category?: string } = {}) => {
-    setError(null);
-    applyDraftToState(emptyDraft(opts));
-    setEditingDraftIndex(null);
-    setOriginalEditingDraft(null);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      let touched = false;
-      if (url.searchParams.get('create') !== '1') { url.searchParams.set('create', '1'); touched = true; }
-      const threadLatest = document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR);
-      if (threadLatest && url.searchParams.get('followUpTo') !== threadLatest) {
-        url.searchParams.set('followUpTo', threadLatest);
-        touched = true;
-      }
-      if (touched) router.replace(url.pathname + '?' + url.searchParams.toString());
-    }
-    setTopModalOpen(true);
-  }, [applyDraftToState, router]);
-
-  // Pencil: edit a committed draft. Pop it from drafts list (so it lives
-  // exclusively in the top modal form), remember it for X-restore semantics.
+  // Pencil on a staged question: pop the draft from the list and load it
+  // back into the inline form for editing. Pressing "+ Question" re-inserts
+  // at the original index to preserve display order.
   const handleEditDraft = useCallback((index: number) => {
     const target = drafts[index];
     if (!target) return;
     setError(null);
-    setOriginalEditingDraft(target);
     setEditingDraftIndex(index);
     setDrafts(prev => prev.filter((_, i) => i !== index));
     applyDraftToState(target);
-    setTopModalOpen(true);
-    ensureCreateParam();
-  }, [drafts, applyDraftToState, ensureCreateParam]);
+  }, [drafts, applyDraftToState]);
 
-  // Strip the URL params that gate the question form modal (?create / ?openForm
-  // / etc). Called by the modal's X and check handlers so closing the form
-  // un-hides the bubble bar and lets refresh / browser-back behave naturally.
-  const stripCreateParams = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    let touched = false;
-    for (const k of CREATE_FLOW_URL_PARAMS) {
-      if (url.searchParams.has(k)) { url.searchParams.delete(k); touched = true; }
-    }
-    if (touched) {
-      const qs = url.searchParams.toString();
-      router.replace(qs ? `${url.pathname}?${qs}` : url.pathname);
-    }
-  }, [router]);
-
-  // X on top modal: discard the form. If editing, the popped draft is NOT
-  // restored (per spec — "clear it from the form and it will not go back in
-  // the draft").
-  const handleTopModalCancel = useCallback(() => {
-    setTopModalOpen(false);
-    setEditingDraftIndex(null);
-    setOriginalEditingDraft(null);
-    setError(null);
-    stripCreateParams();
-  }, [stripCreateParams]);
-
-  // Check on top modal: validate per-question fields, snapshot current form
-  // into a draft, insert/update in drafts list, close.
-  const handleCheckCommit = useCallback(() => {
+  // "+ Question" (or auto-stage on Submit): validate per-question fields,
+  // snapshot the inline form into a draft, insert at the original index when
+  // editing or append otherwise, then reset the form for the next question.
+  // Returns true on success, false if validation failed.
+  const stageCurrentQuestion = useCallback((): boolean => {
     const subErr = getCurrentQuestionFormError();
-    if (subErr) { setError(subErr); return; }
+    if (subErr) { setError(subErr); return false; }
     setError(null);
     const draft = readCurrentDraft();
     if (editingDraftIndex !== null) {
-      // Re-insert at original index to preserve display order.
       setDrafts(prev => {
         const next = [...prev];
         const at = Math.min(editingDraftIndex, next.length);
@@ -743,11 +645,10 @@ export function CreateQuestionContent() {
     } else {
       setDrafts(prev => [...prev, draft]);
     }
-    setTopModalOpen(false);
+    applyDraftToState(emptyDraft());
     setEditingDraftIndex(null);
-    setOriginalEditingDraft(null);
-    stripCreateParams();
-  }, [editingDraftIndex, readCurrentDraft, stripCreateParams]);
+    return true;
+  }, [editingDraftIndex, readCurrentDraft, applyDraftToState]);
 
   // Portal target for the in-progress draft poll card, rendered in the page
   // body by the thread / empty-thread routes. Re-queried via a
@@ -837,57 +738,6 @@ export function CreateQuestionContent() {
       }
     }
   }, [followUpToParam, duplicateOfParam, voteFromSuggestionParam]);
-
-  // Auto-open the question form modal when the URL carries an explicit
-  // "open form" signal:
-  //   - `?openForm=1` set by the bubble bar tap (consumed once + stripped), or
-  //   - a duplicate / follow-up / vote-from-suggestion flow.
-  // We deliberately do NOT auto-open just because `?category=` or `?mode=` is
-  // in the URL — those land alongside `?openForm=1` from the bubble bar, and
-  // reacting to them independently caused the modal to flap open during the
-  // close sequence (the URL-strip + setTopModalOpen(false) commits arrive on
-  // separate renders, so the effect would briefly see `?mode=time` AND
-  // `topModalOpen=false`). Anchoring on the explicit `?openForm=1` flag lets
-  // us strip it once and never re-fire spuriously.
-  // Tracks "we've already consumed an open-trigger this cycle" so the effect
-  // doesn't re-fire while Next.js's useSearchParams catches up to a `router.replace`
-  // that just stripped the trigger params. Cleared once the URL is fully scrubbed
-  // of every open-trigger param, freeing the effect to react to a fresh signal.
-  const openTriggerConsumedRef = useRef(false);
-  useEffect(() => {
-    if (!isClient) return;
-    if (topModalOpen) {
-      openTriggerConsumedRef.current = true;
-      return;
-    }
-    if (openTriggerConsumedRef.current) {
-      const triggersCleared = !openFormParam
-        && !duplicateOfParam
-        && !voteFromSuggestionParam
-        && !followUpToParam;
-      if (triggersCleared) openTriggerConsumedRef.current = false;
-      return;
-    }
-    const hasOpenFormFlag = openFormParam === '1';
-    const hasSpecialFlow = !!(duplicateOfParam || voteFromSuggestionParam || followUpToParam);
-    if (!hasOpenFormFlag && !hasSpecialFlow) return;
-    if (hasOpenFormFlag) {
-      const opts: { mode?: 'question' | 'time'; category?: string } = {};
-      if (modeParam === 'time') opts.mode = 'time';
-      if (categoryParam) opts.category = categoryParam;
-      setError(null);
-      applyDraftToState(emptyDraft(opts));
-      setEditingDraftIndex(null);
-      setOriginalEditingDraft(null);
-      setTopModalOpen(true);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('openForm');
-      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : ''));
-    } else {
-      setTopModalOpen(true);
-    }
-    openTriggerConsumedRef.current = true;
-  }, [isClient, topModalOpen, openFormParam, duplicateOfParam, voteFromSuggestionParam, followUpToParam, modeParam, categoryParam, applyDraftToState]);
 
   // Load duplicate data if this is a duplicate (for follow-up questions)
   useEffect(() => {
@@ -1131,34 +981,56 @@ export function CreateQuestionContent() {
     e.preventDefault();
     e.stopPropagation();
 
-    const validationError = getValidationError();
-    if (validationError) {
-      setError(validationError);
+    if (isSubmittingRef.current) {
       return;
     }
 
-    if (isSubmittingRef.current) {
+    // Auto-stage the inline form when it carries valid content. Lets the
+    // user submit a single-question poll without first tapping "+ Question".
+    // We compute the effective drafts list locally because setDrafts won't
+    // be visible later in this function (React batches state updates).
+    let effectiveDrafts = drafts;
+    if (inlineFormHasContent()) {
+      const subErr = getCurrentQuestionFormError();
+      if (subErr) { setError(subErr); return; }
+      const newDraft = readCurrentDraft();
+      if (editingDraftIndex !== null) {
+        const next = [...drafts];
+        const at = Math.min(editingDraftIndex, next.length);
+        next.splice(at, 0, newDraft);
+        effectiveDrafts = next;
+      } else {
+        effectiveDrafts = [...drafts, newDraft];
+      }
+      setDrafts(effectiveDrafts);
+      applyDraftToState(emptyDraft());
+      setEditingDraftIndex(null);
+    }
+
+    const validationError = getValidationErrorFor(effectiveDrafts);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     isSubmittingRef.current = true;
     setIsLoading(true);
     setError(null);
-
-    const form = document.querySelector('form');
-    if (form) {
-      const inputs = form.querySelectorAll('input, select, button');
-      inputs.forEach(input => {
-        if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement || input instanceof HTMLButtonElement) {
-          input.disabled = true;
-        }
-      });
-    }
-
     try {
       const responseDeadline = calculateDeadline();
 
       const creatorSecret = generateCreatorSecret();
+
+      // Implicit follow-up: pick up the thread's latest question id from
+      // <body> when submitting from a thread page. Skip when on /p (empty
+      // placeholder) — by construction the user is starting a new thread,
+      // and the body attribute can be stale (the thread route's cleanup
+      // is a useEffect return that React/HMR/view-transitions can delay).
+      const onEmptyThreadPath = typeof window !== 'undefined' && /^\/p\/?$/.test(window.location.pathname);
+      const effectiveFollowUpTo = followUpTo
+        ?? (!onEmptyThreadPath && typeof document !== 'undefined'
+          ? document.body.getAttribute(THREAD_LATEST_QUESTION_ID_ATTR)
+          : null);
 
       // Resolve the poll-level prephase cutoff once. Used both for the wrapper
       // field and for each draft that has a prephase (suggestion mode + time).
@@ -1169,27 +1041,23 @@ export function CreateQuestionContent() {
         prephaseDeadlineIso = new Date(`${customSuggestionDate}T${customSuggestionTime}`).toISOString();
       }
 
-      // Wrapper title rule:
-      //  - Card-level title override (`isPollTitleCustom`): use it. The user
-      //    explicitly typed a title in the draft poll card's top slot.
-      //  - Else, exactly 1 draft + user-typed yes_no question text: use that.
-      //    Preserves legacy single-question yes_no behavior so the wrapper
-      //    title mirrors the question prompt.
-      //  - Otherwise: send null; the server auto-generates from question
-      //    categories + poll context.
-      const onlyDraft = drafts.length === 1 ? drafts[0] : null;
-      const wrapperTitle = isPollTitleCustom && pollTitle.trim()
-        ? pollTitle.trim()
-        : (onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null);
+      // Wrapper title rule: when there's exactly one staged question and the
+      // user typed its title (yes_no questions, where the prompt IS the
+      // title), use that as the wrapper title. Otherwise send null and let
+      // the server auto-generate from question categories + poll context.
+      // The standalone wrapper-title input was removed when the form moved
+      // inline; users can override the title later via /p/<id>/edit-title.
+      const onlyDraft = effectiveDrafts.length === 1 ? effectiveDrafts[0] : null;
+      const wrapperTitle = onlyDraft && !onlyDraft.isAutoTitle ? onlyDraft.title.trim() : null;
 
       const questionsForRequest: CreateQuestionParams[] =
-        drafts.map(d => draftToQuestionParams(d, prephaseMinutes));
+        effectiveDrafts.map(d => draftToQuestionParams(d, prephaseMinutes));
 
       // Find duplicate when this is a follow-up to an existing question.
       const dedupTitle = wrapperTitle || onlyDraft?.title || '';
-      if (followUpTo && dedupTitle.trim()) {
+      if (effectiveFollowUpTo && dedupTitle.trim()) {
         try {
-          const existing = await apiFindDuplicateQuestion(dedupTitle, followUpTo);
+          const existing = await apiFindDuplicateQuestion(dedupTitle, effectiveFollowUpTo);
           if (existing) {
             const lookup = pollLookup();
             const wrapper = existing.poll_id ? lookup(existing.poll_id) : null;
@@ -1215,7 +1083,7 @@ export function CreateQuestionContent() {
       // bbox to its natural collapsed-card slot. apiCreatePoll runs in
       // parallel and dispatches POLL_HYDRATED_EVENT on success so the
       // thread page can swap placeholder fields for real ones in place.
-      const placeholderPoll = synthesizePlaceholderPoll(drafts, {
+      const placeholderPoll = synthesizePlaceholderPoll(effectiveDrafts, {
         wrapperTitle,
         responseDeadline,
         followUpTo: (() => {
@@ -1223,9 +1091,9 @@ export function CreateQuestionContent() {
           // (so thread state recognizes it as part of the current thread).
           // The CreatePollRequest accepts a question id and the server
           // resolves it; here we resolve client-side via the cache.
-          if (!followUpTo) return null;
+          if (!effectiveFollowUpTo) return null;
           const cached = getCachedAccessiblePolls() ?? [];
-          return cached.find(mp => mp.questions.some(q => q.id === followUpTo))?.id ?? null;
+          return cached.find(mp => mp.questions.some(q => q.id === effectiveFollowUpTo))?.id ?? null;
         })(),
         creatorName: creatorName.trim() || null,
       });
@@ -1257,26 +1125,17 @@ export function CreateQuestionContent() {
         }),
       );
 
-      // Clear draft state immediately so the draft card unmounts and the
-      // bubble bar reappears.
+      // Clear staged drafts immediately so the in-card list resets to the
+      // empty inline form for the user's next poll.
       flushSync(() => {
         setDrafts([]);
-        setPollTitle('');
-        setIsPollTitleCustom(false);
       });
-      stripCreateParams();
 
-      if (onEmptyThread) {
-        // Route to a temporary URL keyed by the placeholder id. The
-        // destination ThreadContent will pick up the placeholder from cache
-        // and render it. apiCreatePoll's success path navigates again to
-        // the real shortId.
-        router.replace(`/p/${placeholderPoll.id}`);
-      }
-
-      // Run apiCreatePoll in the background. On success, hydrate the
-      // placeholder. On failure, surface the error and remove the
-      // placeholder so the user can retry.
+      // Stay on /p until the API resolves on empty-thread submits — the
+      // placeholder id (`pending-...`) doesn't resolve as a UUID/short_id,
+      // so redirecting eagerly would render "Poll Not Found" and lose the
+      // draft-poll-portal that hosts restored drafts + error on failure.
+      // Success redirects to the real short_id below.
       let createdPoll: Poll;
       try {
         createdPoll = await apiCreatePoll({
@@ -1285,7 +1144,7 @@ export function CreateQuestionContent() {
           response_deadline: responseDeadline,
           prephase_deadline: prephaseDeadlineIso,
           prephase_deadline_minutes: prephaseDeadlineIso ? null : prephaseMinutes != null ? Math.round(prephaseMinutes) : null,
-          follow_up_to: followUpTo || duplicateOf || null,
+          follow_up_to: effectiveFollowUpTo || duplicateOf || null,
           title: wrapperTitle,
           context: null,
           details: details.trim() || null,
@@ -1296,7 +1155,21 @@ export function CreateQuestionContent() {
         setError(apiError.message || "Failed to create question. Please try again.");
         setIsLoading(false);
         isSubmittingRef.current = false;
-        reEnableForm(form);
+        // Clean up the optimistic state so the user doesn't see a stuck
+        // placeholder card with no chrome (just a title) lingering in the
+        // thread, with the form cleared and seemingly nothing to retry. The
+        // POLL_FAILED listener on the thread page removes the placeholder
+        // from thread state; here we evict it from cache and restore the
+        // staged drafts so the user can edit and resubmit.
+        invalidatePoll(placeholderPoll.id);
+        const cachedAfter = getCachedAccessiblePolls() ?? [];
+        cacheAccessiblePolls(cachedAfter.filter(p => p.id !== placeholderPoll.id));
+        window.dispatchEvent(
+          new CustomEvent<PollFailedDetail>(POLL_FAILED_EVENT, {
+            detail: { placeholderId: placeholderPoll.id },
+          }),
+        );
+        setDrafts(effectiveDrafts);
         return;
       }
 
@@ -1308,7 +1181,7 @@ export function CreateQuestionContent() {
         recordQuestionCreation(sp.id, creatorSecret);
       }
 
-      if (followUpTo) {
+      if (effectiveFollowUpTo) {
         try {
           await triggerDiscoveryIfNeeded();
         } catch {
@@ -1323,7 +1196,6 @@ export function CreateQuestionContent() {
       setIsSubmitted(false);
       isSubmittingRef.current = false;
       setIsLoading(false);
-      reEnableForm(form);
 
       // Cache the real poll, then notify thread state so it swaps placeholder
       // fields for real ones in place (same DOM node — no remount mid-FLIP).
@@ -1348,7 +1220,6 @@ export function CreateQuestionContent() {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
       isSubmittingRef.current = false;
-      reEnableForm(form);
     }
   };
 
@@ -1406,8 +1277,15 @@ export function CreateQuestionContent() {
     </div>
   );
 
-  const validationError = getValidationError();
-  const submitDisabled = isLoading || isSubmitted || topModalOpen || !!validationError;
+  // Mirror the auto-stage logic from handleSubmitClick so the displayed error
+  // and the disabled-state of the Submit button match what would actually
+  // happen on tap. If the inline form has content, treat it as if it were
+  // already staged for validation purposes.
+  const projectedDrafts = inlineFormHasContent() && !getCurrentQuestionFormError()
+    ? [...drafts, readCurrentDraft()]
+    : drafts;
+  const validationError = getValidationErrorFor(projectedDrafts);
+  const submitDisabled = isLoading || isSubmitted || !!validationError;
 
   // Compact suggestion/availability cutoff field — used in the BOTTOM modal
   // when the poll has at least one prephase question, since the cutoff is
@@ -1517,23 +1395,10 @@ export function CreateQuestionContent() {
     </div>
   );
 
-  // Question-specific JSX rendered into the TOP MODAL portal.
-  // Mirrors the legacy single-form rendering, minus voting / suggestion
-  // cutoff and Notes / Name (those moved to the bottom modal as poll fields).
+  // Question-specific JSX rendered inline at the top of the draft poll card,
+  // right above the staged-questions list and the "+ Question" button.
   const questionFormBody = (
     <form onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); }} className="space-y-4">
-      {questionType === 'time' && (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => setQuestionType('question')}
-            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            Switch to Preferences Question
-          </button>
-        </div>
-      )}
-
       {isLocationLikeCategory(category) && (
         <ReferenceLocationInput
           latitude={refLatitude}
@@ -1624,7 +1489,7 @@ export function CreateQuestionContent() {
             className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <span className="text-sm text-gray-600 dark:text-gray-400">
-            Allow voters to pre-rank during the suggestion phase
+            allow pre-rank during suggestion phase
           </span>
         </label>
       )}
@@ -1632,21 +1497,19 @@ export function CreateQuestionContent() {
   );
 
   // The draft poll card is always rendered on thread-like pages so the
-  // user always has a place to drop a new question. The title row, the
-  // questions list, and the Settings section only render once at least one
-  // question has been committed. The in-card What/When/Where bubble bar is
-  // visible whenever the question form modal is closed (its prior home —
-  // the floating bottom bar — moved into this card).
+  // user always has a place to drop a new question. The inline question
+  // form (CategoryForLine + question fields) renders below the staged-
+  // questions list at the bottom of the list — pressing "+ Question"
+  // commits the in-progress form to the staged list and resets the form
+  // for the next question. Submit creates the poll from the staged list,
+  // auto-staging the in-progress form first when it has content.
   const hasDrafts = drafts.length > 0;
 
   return (
     <div className="question-content">
       {/* Draft poll card — portal-rendered into the page's poll list at the
           bottom (`#draft-poll-portal`). Always present so the user always
-          has a place to drop a new question. Hosts (when populated) the
-          wrapper title, up-arrow submit, the questions list (with pencil-
-          edit per row), and the Settings section that used to live in the
-          bottom modal. */}
+          has a place to drop a new question. */}
       {draftPollPortal && createPortal(
         <div className="pt-2">
           {/* Centered header above the dashed card. */}
@@ -1657,47 +1520,11 @@ export function CreateQuestionContent() {
             data-draft-poll-card
             className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
-            {/* Top row: title input (left) + up-arrow Submit (right). */}
-            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-              <div className="flex-1 min-w-0">
-                <InlineTitleField
-                  title={pollTitle}
-                  isAutoTitle={!isPollTitleCustom}
-                  autoTitle={draftPreview.title}
-                  onChange={(v) => {
-                    setPollTitle(v);
-                    setIsPollTitleCustom(true);
-                  }}
-                  onRevertToAuto={() => {
-                    setPollTitle('');
-                    setIsPollTitleCustom(false);
-                  }}
-                  disabled={isLoading || topModalOpen}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleSubmitClick}
-                disabled={submitDisabled}
-                aria-label="Submit poll"
-                className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {isSubmitted || isLoading ? (
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            {/* Questions list. */}
+            {/* Staged questions list — sits at the top of the card with the
+                inline form appearing right below it (as if the form is the
+                next item being added to the list). */}
             {hasDrafts && (
-              <div className="px-3 pb-2">
+              <div className="px-3 pt-3 pb-1">
                 <ul className="space-y-1.5">
                   {drafts.map((d, i) => {
                     const { icon, label } = draftCardLabels(d);
@@ -1711,19 +1538,17 @@ export function CreateQuestionContent() {
                         <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1 min-w-0">
                           {derivedTitle}
                         </span>
-                        {!topModalOpen && (
-                          <button
-                            type="button"
-                            onClick={() => handleEditDraft(i)}
-                            disabled={isLoading}
-                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
-                            aria-label={`Edit ${label} section`}
-                          >
-                            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
-                            </svg>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleEditDraft(i)}
+                          disabled={isLoading}
+                          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                          aria-label={`Edit ${label} section`}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14.166 2.5a1.65 1.65 0 012.334 2.334L6.667 14.667 3 15.5l.833-3.667L14.166 2.5z" />
+                          </svg>
+                        </button>
                       </li>
                     );
                   })}
@@ -1731,54 +1556,71 @@ export function CreateQuestionContent() {
               </div>
             )}
 
-            {/* What/When/Where bubble bar — always sits just under whatever
-                questions are already in the draft (inside the card,
-                replacing the legacy floating bottom bar). Hidden while the
-                question form modal is open since the user is already
-                editing a question. */}
-            {!topModalOpen && (
-              <div
-                className={`flex items-center justify-center gap-3 px-3 ${hasDrafts ? 'pt-1 pb-3' : 'py-4'}`}
-              >
+            {/* Inline question form — sits right below the staged list (or
+                at the top of the card when no questions are staged yet),
+                acting as the next item to be added. The form is flush with
+                the surrounding dashed card (no inner white-card wrapper) —
+                a horizontal divider below the "+ Question" button separates
+                the per-question form from the poll-level settings. The
+                up-arrow Submit lives on the same row as the category line
+                (upper-right of the draft section). */}
+            <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  {questionType === 'question' ? (
+                    <CategoryForLine
+                      category={category}
+                      onCategoryChange={handleCategoryChange}
+                      forField={forField}
+                      onForFieldChange={setForField}
+                      generatedCategoryText={generatedCategoryFromOptions}
+                      disabled={isLoading}
+                    />
+                  ) : (
+                    <AnimatedTitle title={title} initialDelay={0} />
+                  )}
+                </div>
                 <button
                   type="button"
-                  onClick={() => handleOpenNewQuestion({})}
-                  disabled={isLoading}
-                  className={BUBBLE_BUTTON_WHAT}
-                  aria-label="Add a new question"
+                  onClick={handleSubmitClick}
+                  disabled={submitDisabled}
+                  aria-label="Submit poll"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-[1.12rem]">what</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenNewQuestion({ category: 'restaurant' })}
-                  disabled={isLoading}
-                  className={BUBBLE_BUTTON_WHERE}
-                  aria-label="Add a new place question"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                  </svg>
-                  <span className="text-[1.12rem]">where</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenNewQuestion({ mode: 'time' })}
-                  disabled={isLoading}
-                  className={BUBBLE_BUTTON_WHEN}
-                  aria-label="Add a new time question"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.25} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                  <span className="text-[1.12rem]">when</span>
+                  {isSubmitted || isLoading ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 11l7-7 7 7M12 4v16" />
+                    </svg>
+                  )}
                 </button>
               </div>
-            )}
+              <div className="mt-3">
+                {questionFormBody}
+              </div>
+            </div>
+
+            {/* "+ Question" button — commits the inline form to the staged
+                list and resets the form for the next question. Disabled
+                until the in-progress form is valid. */}
+            <div className="px-3 pb-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => stageCurrentQuestion()}
+                disabled={isLoading || !!getCurrentQuestionFormError()}
+                className="h-9 px-4 rounded-full text-sm font-medium border border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-300 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {editingDraftIndex !== null ? 'Save Question' : '+ Question'}
+              </button>
+            </div>
+
+            {/* Divider — separates the per-question form (above) from the
+                poll-level settings (below). */}
+            <hr className="mx-3 border-t border-gray-200 dark:border-gray-700" />
 
             {/* Settings — voting cutoff, suggestion/availability cutoff,
                 notes, voter name. Always visible so the user can configure
@@ -1796,7 +1638,7 @@ export function CreateQuestionContent() {
                     setCustomDate={setCustomDate}
                     customTime={customTime}
                     setCustomTime={setCustomTime}
-                    isLoading={isLoading || topModalOpen}
+                    isLoading={isLoading}
                     isClient={isClient}
                   />
 
@@ -1830,7 +1672,7 @@ export function CreateQuestionContent() {
                               setDetails(trimmed);
                             }
                           }}
-                          disabled={isLoading || topModalOpen}
+                          disabled={isLoading}
                           style={{ height: SINGLE_LINE_INPUT_HEIGHT }}
                           className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed resize-none overflow-hidden"
                           placeholder="Add more context or instructions..."
@@ -1842,8 +1684,7 @@ export function CreateQuestionContent() {
                         <button
                           type="button"
                           onClick={() => setDetailsOpen(true)}
-                          disabled={topModalOpen}
-                          className="font-normal text-blue-600 dark:text-blue-400 disabled:opacity-50"
+                          className="font-normal text-blue-600 dark:text-blue-400"
                         >
                           Add
                         </button>
@@ -1854,101 +1695,20 @@ export function CreateQuestionContent() {
                   <CompactNameField
                     name={creatorName}
                     setName={setCreatorName}
-                    disabled={isLoading || topModalOpen}
+                    disabled={isLoading}
                   />
                 </form>
 
-                {error && (
+                {(error || (validationError && drafts.length > 0)) && (
                   <div className="mt-3 p-2 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 rounded-md text-sm">
-                    {error}
+                    {error ?? validationError}
                   </div>
-                )}
-                {validationError && drafts.length > 0 && (
-                  <p className="text-sm text-red-500 dark:text-red-400 text-center mt-3">
-                    {validationError}
-                  </p>
                 )}
               </div>
             </div>
           </div>
         </div>,
         draftPollPortal
-      )}
-
-      {/* Question form modal — slide-up bottom sheet with backdrop. The
-          backdrop blocks taps on the page underneath (including the draft
-          card's submit button) so the user has to commit or cancel before
-          interacting with the rest of the page. */}
-      {topModalOpen && isClient && createPortal(
-        <div className="fixed inset-0 z-[70]">
-          <div
-            className="absolute inset-0 bg-black/40 animate-fade-in"
-            onClick={handleTopModalCancel}
-            aria-hidden="true"
-          />
-          <div
-            className="absolute left-0 right-0 bottom-0 rounded-t-[32px] bg-white dark:bg-gray-900 shadow-2xl flex flex-col animate-slide-up overflow-hidden"
-            style={{
-              maxHeight: 'calc(100% - env(safe-area-inset-top, 0px) - 15px)',
-              overscrollBehavior: 'none',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Drag handle */}
-            <div className="flex-shrink-0 flex justify-center pt-2.5 pb-1">
-              <div className="w-9 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
-            </div>
-            {/* Header — X / title / check */}
-            <div className="flex-shrink-0 relative flex items-center justify-between px-4 pb-2">
-              <button
-                type="button"
-                onClick={handleTopModalCancel}
-                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-gray-200/80 dark:bg-gray-700/80 cursor-pointer z-10"
-                aria-label="Close question form"
-              >
-                <svg className="w-[34px] h-[34px] text-black dark:text-white" fill="none" viewBox="0 0 24 24">
-                  <path stroke="currentColor" strokeLinecap="round" strokeWidth={0.75} d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
-              <h2 className="absolute inset-0 flex items-center justify-center text-[17px] font-semibold pointer-events-none">
-                {editingDraftIndex !== null ? 'Edit Question' : 'New Question'}
-              </h2>
-              <button
-                type="button"
-                onClick={handleCheckCommit}
-                disabled={isLoading || !!getCurrentQuestionFormError()}
-                className="w-[43px] h-[43px] flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed z-10"
-                aria-label="Save question"
-              >
-                <svg className="w-[28px] h-[28px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 13l4 4L19 7" />
-                </svg>
-              </button>
-            </div>
-            {/* CategoryForLine (question mode) or AnimatedTitle (time). */}
-            <div className="flex-shrink-0 px-4">
-              {questionType === 'question' ? (
-                <CategoryForLine
-                  category={category}
-                  onCategoryChange={handleCategoryChange}
-                  forField={forField}
-                  onForFieldChange={setForField}
-                  generatedCategoryText={generatedCategoryFromOptions}
-                  disabled={isLoading}
-                />
-              ) : (
-                <AnimatedTitle title={title} initialDelay={0} />
-              )}
-            </div>
-            {/* Scrollable body */}
-            <div className="overflow-auto overscroll-contain min-h-0">
-              <div className="max-w-4xl mx-auto px-4 pt-2 pb-8">
-                {questionFormBody}
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
       )}
 
       <MinimumParticipationModal
@@ -1962,12 +1722,14 @@ export function CreateQuestionContent() {
   );
 }
 
-// Redirect /create-poll to /?create so the modal opens over the home page.
+// Redirect /create-poll to /p/ where the always-visible draft card lives.
+// Forwards any duplicate / followUpTo / voteFromSuggestion params so the
+// inline form can pre-fill from the original entry-point.
 export default function CreateQuestionRedirect() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    params.set('create', '1');
-    window.location.replace(`/?${params.toString()}`);
+    const qs = params.toString();
+    window.location.replace(`/p/${qs ? `?${qs}` : ''}`);
   }, []);
 
   return null;

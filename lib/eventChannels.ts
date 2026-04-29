@@ -32,3 +32,12 @@ export interface PollHydratedDetail {
   placeholderId: string;
   poll: Poll;
 }
+
+/** Fired when `apiCreatePoll` rejects. ThreadContent removes the orphan
+ *  placeholder from thread state so the user doesn't see a partial card
+ *  with no chrome lingering after a failed submit. The form is restored
+ *  separately by CreateQuestionContent. */
+export const POLL_FAILED_EVENT = 'pollFailed';
+export interface PollFailedDetail {
+  placeholderId: string;
+}

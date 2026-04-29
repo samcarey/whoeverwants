@@ -88,7 +88,7 @@ export default function VoteOnItModal({ isOpen, questionId, questionTitle, sugge
       followUpTo: questionId,
     };
     localStorage.setItem(`vote-from-suggestion-${questionId}`, JSON.stringify(voteData));
-    router.push(`${pathname}?create=1&voteFromSuggestion=${questionId}`);
+    router.push(`${pathname}?voteFromSuggestion=${questionId}`);
     onClose();
   };
 

@@ -18,6 +18,7 @@ import { getCachedQuestionById, getCachedQuestionByShortId, getCachedAccessibleP
 import {
   POLL_PENDING_EVENT,
   POLL_HYDRATED_EVENT,
+  POLL_FAILED_EVENT,
   type PollPendingDetail,
   type PollHydratedDetail,
 } from "@/lib/eventChannels";
@@ -56,6 +57,24 @@ const suggestionPhaseRespondentFilter = (v: ApiVote) =>
 // with the heavy-content expand clip below. The pill sits directly at the
 // top of the overflow-hidden child so its text center aligns with the
 // sibling status text via the parent flex row's items-center.
+// Shared cache-driven Thread rebuild for POLL_HYDRATED / POLL_FAILED setThread
+// updaters. Returns prev when the rebuild would produce the same poll-id
+// sequence (no placeholder swap) so identity-based memos stay stable.
+function rebuildThreadFromCacheOrPrev(prev: Thread): Thread {
+  if (!prev.rootPollId) return prev;
+  const allPolls = getCachedAccessiblePolls() ?? [];
+  const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
+  const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
+  if (!rebuilt) return prev;
+  if (
+    rebuilt.polls.length === prev.polls.length &&
+    rebuilt.polls.every((p, i) => p.id === prev.polls[i].id)
+  ) {
+    return prev;
+  }
+  return rebuilt;
+}
+
 function CompactPreviewClip({ isExpanded, children }: { isExpanded: boolean; children: React.ReactNode }) {
   return (
     <div
@@ -399,47 +418,37 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (!placeholderId || !realPoll) return;
       setThread((prev) => {
         if (!prev) return prev;
-        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
-        if (hasPlaceholder) {
-          const polls = prev.polls.map((p) => (p.id === placeholderId ? realPoll : p));
-          const placeholderQuestionIds = new Set(
-            prev.polls.find(p => p.id === placeholderId)?.questions.map(q => q.id) ?? [],
-          );
-          const questions = prev.questions
-            .filter(q => !placeholderQuestionIds.has(q.id))
-            .concat(realPoll.questions);
-          const latestPoll = polls[polls.length - 1];
-          const latestQuestion = realPoll.questions[realPoll.questions.length - 1];
-          return {
-            ...prev,
-            polls,
-            questions,
-            latestPoll,
-            latestQuestion,
-          };
-        }
-        // No placeholder in the thread — POLL_PENDING never landed. Still
-        // try to attach this poll if it belongs to the thread (its
-        // follow_up_to points at one of the thread's polls, or it IS the
-        // thread root). Otherwise leave the thread untouched.
+        // Rebuild from the cache (which submit handler has already
+        // updated). Hand-mapping prev.polls leaves the new poll invisible
+        // when POLL_PENDING bailed (Firefox iOS listener race).
         const threadPollIds = new Set(prev.polls.map(p => p.id));
         const isFollowUp = realPoll.follow_up_to && threadPollIds.has(realPoll.follow_up_to);
         const isOwnRoot = realPoll.id === prev.rootPollId;
-        if (!isFollowUp && !isOwnRoot) return prev;
-        // Re-derive the thread from the cache so the new poll lands at
-        // its sorted position. The poll has already been cached by the
-        // submit handler before dispatching POLL_HYDRATED.
-        const allPolls = getCachedAccessiblePolls() ?? [];
-        if (!prev.rootPollId) return prev;
-        const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-        const rebuilt = buildThreadFromPollDown(prev.rootPollId, allPolls, voted, abstained);
-        return rebuilt ?? prev;
+        const hasPlaceholder = prev.polls.some(p => p.id === placeholderId);
+        if (!hasPlaceholder && !isFollowUp && !isOwnRoot) return prev;
+        return rebuildThreadFromCacheOrPrev(prev);
       });
-      // Clear the "pending" flag so the real card renders its full content.
       setPendingPollFirstQuestionId(null);
     };
     window.addEventListener(POLL_HYDRATED_EVENT, handler);
     return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
+  }, []);
+
+  // POLL_FAILED_EVENT: apiCreatePoll rejected. Rebuild from cache (the
+  // submit handler has already evicted the placeholder before dispatching).
+  useEffect(() => {
+    const handler = () => {
+      setThread((prev) => {
+        if (!prev) return prev;
+        // Skip rebuild when no placeholder is present — POLL_FAILED on a
+        // brand-new-thread submit fires while we're on a different thread.
+        if (!prev.polls.some(p => p.id.startsWith('pending-'))) return prev;
+        return rebuildThreadFromCacheOrPrev(prev);
+      });
+      setPendingPollFirstQuestionId(null);
+    };
+    window.addEventListener(POLL_FAILED_EVENT, handler);
+    return () => window.removeEventListener(POLL_FAILED_EVENT, handler);
   }, []);
 
   // Measure the fixed thread header so we can apply matching padding-top on the scroll list

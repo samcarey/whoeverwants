@@ -7,6 +7,7 @@ import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
 import { apiGetAllQuestionIds } from "@/lib/api";
 import { addAccessibleQuestionId } from "@/lib/browserQuestionAccess";
 import { getCachedAccessiblePolls } from "@/lib/questionCache";
+import { POLL_HYDRATED_EVENT } from "@/lib/eventChannels";
 import { usePageReady } from "@/lib/usePageReady";
 import ThreadList from "@/components/ThreadList";
 
@@ -177,6 +178,27 @@ export default function Home() {
     }
 
     fetchQuestions();
+  }, []);
+
+  // Live-refresh the polls list on poll creation. User submits from /p
+  // (empty placeholder), router.replace lands them on /p/<short_id>, and
+  // when they navigate home the list would otherwise be stale until refresh.
+  // POLL_FAILED is intentionally not listened to: placeholder polls never
+  // reach the home cache, so a failure can't change the home list.
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const data = await getAccessiblePolls();
+        if (!data) return;
+        setPolls((prev) =>
+          prev.length === data.length && prev.every((p, i) => p.id === data[i].id)
+            ? prev
+            : data,
+        );
+      } catch {}
+    };
+    window.addEventListener(POLL_HYDRATED_EVENT, handler);
+    return () => window.removeEventListener(POLL_HYDRATED_EVENT, handler);
   }, []);
 
   // Extract fetchQuestions function for reuse in pull-to-refresh
