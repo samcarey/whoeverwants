@@ -123,6 +123,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             prephase_deadline, prephase_deadline_minutes,
             follow_up_to, context, details,
             thread_title,
+            min_responses, show_preliminary_results, allow_pre_ranking,
             created_at, updated_at
         )
         VALUES (
@@ -133,6 +134,7 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
                 %(explicit_title)s,
                 (SELECT thread_title FROM polls WHERE id = %(follow_up_poll_id)s)
             ),
+            %(min_responses)s, %(show_preliminary_results)s, %(allow_pre_ranking)s,
             %(now)s, %(now)s
         )
         RETURNING *
@@ -152,6 +154,9 @@ def _insert_poll(conn, req: CreatePollRequest, now: datetime) -> dict:
             "context": req.context,
             "details": req.details,
             "explicit_title": explicit_title,
+            "min_responses": req.min_responses,
+            "show_preliminary_results": req.show_preliminary_results,
+            "allow_pre_ranking": req.allow_pre_ranking,
             "now": now,
         },
     ).fetchone()
@@ -175,13 +180,11 @@ def _insert_question(
         INSERT INTO questions (
             title, question_type, options,
             suggestion_deadline_minutes,
-            allow_pre_ranking,
             details,
             day_time_windows, duration_window,
             category, options_metadata,
             reference_latitude, reference_longitude,
             reference_location_label,
-            min_responses, show_preliminary_results,
             min_availability_percent,
             is_auto_title,
             poll_id, question_index,
@@ -190,13 +193,11 @@ def _insert_question(
         VALUES (
             %(title)s, %(question_type)s, %(options)s::jsonb,
             %(suggestion_deadline_minutes)s,
-            %(allow_pre_ranking)s,
             %(details)s,
             %(day_time_windows)s::jsonb, %(duration_window)s::jsonb,
             %(category)s, %(options_metadata)s::jsonb,
             %(reference_latitude)s, %(reference_longitude)s,
             %(reference_location_label)s,
-            %(min_responses)s, %(show_preliminary_results)s,
             %(min_availability_percent)s,
             %(is_auto_title)s,
             %(poll_id)s, %(question_index)s,
@@ -209,7 +210,6 @@ def _insert_question(
             "question_type": sub.question_type.value,
             "options": _json_or_none(sub.options),
             "suggestion_deadline_minutes": sub.suggestion_deadline_minutes,
-            "allow_pre_ranking": sub.allow_pre_ranking,
             "details": sub.context,
             "day_time_windows": _json_or_none(sub.day_time_windows),
             "duration_window": _json_or_none(sub.duration_window),
@@ -218,8 +218,6 @@ def _insert_question(
             "reference_latitude": sub.reference_latitude,
             "reference_longitude": sub.reference_longitude,
             "reference_location_label": sub.reference_location_label,
-            "min_responses": sub.min_responses,
-            "show_preliminary_results": sub.show_preliminary_results,
             "min_availability_percent": (
                 sub.min_availability_percent if sub.question_type == QuestionType.time else None
             ),
@@ -274,6 +272,9 @@ def _row_to_poll(
         title=_compute_display_title(row, question_rows),
         created_at=_iso_or_none(row["created_at"]) or "",
         updated_at=_iso_or_none(row["updated_at"]) or "",
+        min_responses=row.get("min_responses"),
+        show_preliminary_results=row.get("show_preliminary_results", True),
+        allow_pre_ranking=row.get("allow_pre_ranking", True),
         questions=[_row_to_question(sp) for sp in enriched],
         voter_names=voter_names or [],
         anonymous_count=anonymous_count,

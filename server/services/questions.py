@@ -43,7 +43,10 @@ _SELECT_QUESTION_FULL = """
            mp.close_reason AS close_reason,
            mp.thread_title AS thread_title,
            mp.prephase_deadline AS suggestion_deadline,
-           mp.follow_up_to AS poll_follow_up_to
+           mp.follow_up_to AS poll_follow_up_to,
+           mp.min_responses AS min_responses,
+           mp.show_preliminary_results AS show_preliminary_results,
+           mp.allow_pre_ranking AS allow_pre_ranking
       FROM questions p
       LEFT JOIN polls mp ON p.poll_id = mp.id
 """
@@ -81,6 +84,9 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
             "thread_title",
             "suggestion_deadline",
             "poll_follow_up_to",
+            "min_responses",
+            "show_preliminary_results",
+            "allow_pre_ranking",
         ):
             row.setdefault(key, None)
         return row
@@ -88,7 +94,8 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
         """
         SELECT short_id, creator_secret, creator_name, response_deadline,
                is_closed, close_reason, thread_title, prephase_deadline,
-               follow_up_to
+               follow_up_to, min_responses, show_preliminary_results,
+               allow_pre_ranking
           FROM polls WHERE id = %(id)s
         """,
         {"id": str(poll_id)},
@@ -105,6 +112,9 @@ def _attach_wrapper_fields(conn, row) -> dict | None:
         row["poll_follow_up_to"] = (
             str(mp_row["follow_up_to"]) if mp_row.get("follow_up_to") else None
         )
+        row["min_responses"] = mp_row["min_responses"]
+        row["show_preliminary_results"] = mp_row["show_preliminary_results"]
+        row["allow_pre_ranking"] = mp_row["allow_pre_ranking"]
     return row
 
 
@@ -234,7 +244,6 @@ def _row_to_question(row: dict) -> QuestionResponse:
         created_at=row["created_at"].isoformat() if isinstance(row["created_at"], datetime) else str(row["created_at"]),
         updated_at=row["updated_at"].isoformat() if isinstance(row["updated_at"], datetime) else str(row["updated_at"]),
         suggestion_deadline_minutes=row.get("suggestion_deadline_minutes"),
-        allow_pre_ranking=row.get("allow_pre_ranking", True),
         auto_close_after=row.get("auto_close_after"),
         details=row.get("details"),
         day_time_windows=row.get("day_time_windows"),
@@ -245,8 +254,6 @@ def _row_to_question(row: dict) -> QuestionResponse:
         reference_longitude=row.get("reference_longitude"),
         reference_location_label=row.get("reference_location_label"),
         is_auto_title=row.get("is_auto_title", False),
-        min_responses=row.get("min_responses"),
-        show_preliminary_results=row.get("show_preliminary_results", True),
         min_availability_percent=row.get("min_availability_percent"),
         poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
         question_index=row.get("question_index"),
@@ -313,7 +320,8 @@ def _submit_vote_to_question(conn, question_id: str, req: SubmitVoteRequest, now
     `submit_vote` endpoint and the poll batch-vote endpoint. Returns the
     inserted row. Raises HTTPException on validation failures."""
     question = conn.execute(
-        """SELECT p.id, p.question_type, p.poll_id, p.suggestion_deadline_minutes, p.allow_pre_ranking,
+        """SELECT p.id, p.question_type, p.poll_id, p.suggestion_deadline_minutes,
+                  mp.allow_pre_ranking,
                   mp.is_closed, mp.prephase_deadline AS suggestion_deadline,
                   mp.response_deadline
              FROM questions p
@@ -434,7 +442,8 @@ def _edit_vote_on_question(conn, question_id: str, vote_id: str, req: EditVoteRe
         raise HTTPException(status_code=404, detail="Vote not found")
 
     question = conn.execute(
-        """SELECT p.question_type, p.suggestion_deadline_minutes, p.allow_pre_ranking,
+        """SELECT p.question_type, p.suggestion_deadline_minutes,
+                  mp.allow_pre_ranking,
                   mp.is_closed, mp.prephase_deadline AS suggestion_deadline
              FROM questions p
              LEFT JOIN polls mp ON p.poll_id = mp.id

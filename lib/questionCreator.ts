@@ -97,8 +97,10 @@ export function buildQuestionSnapshot(question: Question, poll?: Poll | null) {
     category: question.category,
     options_metadata: question.options_metadata,
     is_auto_title: question.is_auto_title,
-    min_responses: question.min_responses,
-    show_preliminary_results: question.show_preliminary_results,
+    // Migration 098: these fields live on the poll wrapper now.
+    min_responses: poll?.min_responses ?? null,
+    show_preliminary_results: poll?.show_preliminary_results ?? true,
+    allow_pre_ranking: poll?.allow_pre_ranking ?? true,
   };
 }
 

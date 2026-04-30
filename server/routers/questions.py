@@ -286,8 +286,10 @@ def get_accessible_questions(req: AccessibleQuestionsRequest):
         preliminary_question_ids: list[str] = []
         for pid in open_question_ids:
             sp = question_rows_by_id[pid]
-            min_resp = sp.get("min_responses")
-            show_prelim = sp.get("show_preliminary_results", True)
+            mp = wrappers_by_id.get(str(sp["poll_id"]))
+            # Migration 098: these settings live on the poll wrapper now.
+            min_resp = mp.get("min_responses") if mp else None
+            show_prelim = mp.get("show_preliminary_results", True) if mp else True
             if show_prelim and (min_resp is None or response_counts.get(pid, 0) >= min_resp):
                 preliminary_question_ids.append(pid)
         if preliminary_question_ids:

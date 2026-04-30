@@ -151,7 +151,6 @@ class QuestionResponse(BaseModel):
     created_at: str
     updated_at: str
     suggestion_deadline_minutes: int | None = None
-    allow_pre_ranking: bool = True
     auto_close_after: int | None = None
     details: str | None = None
     day_time_windows: list[dict] | None = None
@@ -162,8 +161,6 @@ class QuestionResponse(BaseModel):
     reference_longitude: float | None = None
     reference_location_label: str | None = None
     is_auto_title: bool = False
-    min_responses: int | None = None
-    show_preliminary_results: bool = True
     response_count: int | None = None
     min_availability_percent: int | None = None
     # Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
@@ -251,9 +248,6 @@ class CreateQuestionRequest(BaseModel):
     options_metadata: dict | None = None
     context: str | None = None
     suggestion_deadline_minutes: int | None = None
-    allow_pre_ranking: bool = True
-    min_responses: int | None = None
-    show_preliminary_results: bool = True
     min_availability_percent: int = 95
     day_time_windows: list[dict] | None = None
     duration_window: dict | None = None
@@ -287,6 +281,13 @@ class CreatePollRequest(BaseModel):
     # Optional explicit title; when absent, derived from question categories
     # and `context` via algorithms.poll_title.generate_poll_title.
     title: str | None = None
+    # Poll-level results-display + ranked-choice settings. Migration 098 lifted
+    # these from per-question to per-poll: they describe how the poll as a
+    # whole behaves (when can voters see results, can ranked-choice voters
+    # pre-rank during the suggestion phase) so they live on the wrapper.
+    min_responses: int | None = None
+    show_preliminary_results: bool = True
+    allow_pre_ranking: bool = True
     questions: list[CreateQuestionRequest] = Field(..., min_length=1)
 
 
@@ -307,6 +308,10 @@ class PollResponse(BaseModel):
     title: str
     created_at: str
     updated_at: str
+    # Poll-level results-display + ranked-choice settings (migration 098).
+    min_responses: int | None = None
+    show_preliminary_results: bool = True
+    allow_pre_ranking: bool = True
     questions: list[QuestionResponse]
     # Poll-level voter aggregates (Phase 3.2).
     # Per CLAUDE.md → "Addressability paradigm", poll-scoped data lives

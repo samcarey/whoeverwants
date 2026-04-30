@@ -35,7 +35,6 @@ export interface Question {
   // suggestion_deadline) live on the parent Poll. Resolve via
   // questionCache.getPollForQuestion() or accept a Poll prop.
   suggestion_deadline_minutes?: number | null;
-  allow_pre_ranking?: boolean;
   auto_close_after?: number;
   details?: string;
   day_time_windows?: DayTimeWindow[] | null;
@@ -46,8 +45,6 @@ export interface Question {
   reference_longitude?: number | null;
   reference_location_label?: string | null;
   is_auto_title?: boolean;
-  min_responses?: number | null;
-  show_preliminary_results?: boolean;
   response_count?: number | null;
   min_availability_percent?: number | null;
   // Phase 2.5: poll wrapper this question belongs to. Phase 4 backfilled
@@ -145,6 +142,10 @@ export interface Poll {
   title: string;
   created_at: string;
   updated_at: string;
+  // Migration 098: poll-level results-display + ranked-choice settings.
+  min_responses?: number | null;
+  show_preliminary_results?: boolean;
+  allow_pre_ranking?: boolean;
   questions: Question[];
   // Poll-level voter aggregates (Phase 3.2). Use these instead of
   // iterating questions — see CLAUDE.md → "Addressability paradigm".

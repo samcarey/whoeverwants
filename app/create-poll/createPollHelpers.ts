@@ -31,9 +31,6 @@ export interface QuestionDraft {
   refLongitude?: number;
   refLocationLabel: string;
   searchRadius: number;
-  minResponses: number;
-  showPreliminaryResults: boolean;
-  allowPreRanking: boolean;
   durationMinValue: number | null;
   durationMaxValue: number | null;
   durationMinEnabled: boolean;
@@ -58,9 +55,6 @@ export function emptyDraft(opts: { mode?: 'question' | 'time'; category?: string
     refLongitude: undefined,
     refLocationLabel: '',
     searchRadius: 25,
-    minResponses: 1,
-    showPreliminaryResults: true,
-    allowPreRanking: true,
     durationMinValue: 1,
     durationMaxValue: 2,
     durationMinEnabled: true,
@@ -89,6 +83,20 @@ export function draftIsSuggestionMode(d: QuestionDraft): boolean {
 /** True when at least one draft needs the poll-level suggestion/availability cutoff. */
 export function anyDraftUsesPrephase(drafts: QuestionDraft[]): boolean {
   return drafts.some(d => draftDbQuestionType(d) === 'time' || draftIsSuggestionMode(d));
+}
+
+/** True when at least one draft is a ranked_choice question — these are
+ *  the only ones for which "min responses to show preliminary results" is
+ *  meaningful (yes/no shows results immediately, time questions don't have
+ *  preliminary results). */
+export function anyDraftIsRankedChoice(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftDbQuestionType(d) === 'ranked_choice');
+}
+
+/** True when at least one draft is in suggestion mode — the only case where
+ *  "allow pre-ranking during the suggestion phase" is meaningful. */
+export function anyDraftIsSuggestionMode(drafts: QuestionDraft[]): boolean {
+  return drafts.some(d => draftIsSuggestionMode(d));
 }
 
 /**
@@ -127,13 +135,8 @@ export function draftToQuestionParams(
     params.reference_longitude = d.refLongitude;
     params.reference_location_label = d.refLocationLabel;
   }
-  if (dbType === 'ranked_choice') {
-    params.min_responses = d.minResponses;
-    params.show_preliminary_results = d.showPreliminaryResults;
-  }
   if (dbType === 'ranked_choice' && filledOptions.length === 0) {
     params.suggestion_deadline_minutes = prephaseMinutes != null ? Math.round(prephaseMinutes) : 120;
-    params.allow_pre_ranking = d.allowPreRanking;
   }
   if (dbType === 'time') {
     if (d.dayTimeWindows.length > 0) {
@@ -443,6 +446,10 @@ export function questionDataToPollRequest(
     follow_up_to: questionData.follow_up_to,
     title: questionData.title,
     context: questionData.details,
+    // Migration 098: poll-level results-display + ranked-choice settings.
+    min_responses: questionData.min_responses,
+    show_preliminary_results: questionData.show_preliminary_results,
+    allow_pre_ranking: questionData.allow_pre_ranking,
     questions: [
       ...additionalQuestions,
       {
@@ -451,9 +458,6 @@ export function questionDataToPollRequest(
         options: questionData.options,
         options_metadata: questionData.options_metadata,
         suggestion_deadline_minutes: questionData.suggestion_deadline_minutes,
-        allow_pre_ranking: questionData.allow_pre_ranking,
-        min_responses: questionData.min_responses,
-        show_preliminary_results: questionData.show_preliminary_results,
         min_availability_percent: questionData.min_availability_percent,
         day_time_windows: questionData.day_time_windows,
         duration_window: questionData.duration_window,
