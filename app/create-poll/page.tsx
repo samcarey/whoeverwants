@@ -1634,23 +1634,9 @@ export function CreateQuestionContent() {
               </div>
             </div>
 
-            {/* "+ Question" button — commits the inline form to the staged
-                list and resets the form for the next question. Disabled
-                until the in-progress form is valid. */}
-            <div className="px-3 pb-2 flex justify-center">
-              <button
-                type="button"
-                onClick={() => stageCurrentQuestion()}
-                disabled={isLoading || !!getCurrentQuestionFormError()}
-                className="h-9 px-4 rounded-full text-sm font-medium border border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-300 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {editingDraftIndex !== null ? 'Save Question' : '+ Question'}
-              </button>
-            </div>
-
             {/* Divider — separates the per-question form (above) from the
                 poll-level settings (below). */}
-            <hr className="mx-3 border-t border-gray-200 dark:border-gray-700" />
+            <hr className="mx-3 mt-2 border-t border-gray-200 dark:border-gray-700" />
 
             {/* Settings — voting cutoff, suggestion/availability cutoff,
                 notes, voter name. Always visible so the user can configure
