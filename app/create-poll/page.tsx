@@ -1728,11 +1728,13 @@ export function CreateQuestionContent() {
                     )}
                   </div>
 
-                  <CompactNameField
-                    name={creatorName}
-                    setName={setCreatorName}
-                    disabled={isLoading}
-                  />
+                  {!creatorName.trim() && (
+                    <CompactNameField
+                      name={creatorName}
+                      setName={setCreatorName}
+                      disabled={isLoading}
+                    />
+                  )}
                 </form>
 
                 {(error || (validationError && drafts.length > 0)) && (
