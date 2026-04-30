@@ -530,9 +530,19 @@ export function CreateQuestionContent() {
     return false;
   }, [title, forField, category, options, questionType, dayTimeWindows]);
 
-  // Validates only the per-question fields the top modal can edit.
-  // Used to gate the "+ Question" button. Different from getValidationErrorFor
-  // (which validates poll-level fields too).
+  // Lighter gate for the inline save-as-draft check button: enabled once the
+  // user has provided enough signal that they meant to start a question (a
+  // chosen category, a "for X" context, or 2+ options). Click still runs full
+  // validation via stageCurrentQuestion and surfaces any per-question error.
+  const inlineFormHasDraftableContent =
+    category !== 'custom' ||
+    forField.trim() !== '' ||
+    options.filter(o => o.trim() !== '').length >= 2;
+
+  // Validates only the per-question fields the top modal can edit. Used by
+  // stageCurrentQuestion + the auto-stage path on Submit + the projected-
+  // drafts preview. Different from getValidationErrorFor (which validates
+  // poll-level fields too).
   const getCurrentQuestionFormError = (): string | null => {
     const dbQuestionType = getQuestionType();
     if (dbQuestionType === 'yes_no') {
@@ -1585,47 +1595,49 @@ export function CreateQuestionContent() {
             {/* Inline question form — sits right below the staged list (or
                 at the top of the card when no questions are staged yet),
                 acting as the next item to be added. The form is flush with
-                the surrounding dashed card (no inner white-card wrapper) —
-                a horizontal divider below the "+ Question" button separates
-                the per-question form from the poll-level settings. */}
-            <div className={`px-3 ${hasDrafts ? 'pt-2' : 'pt-3'} pb-2`}>
-              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 select-none">
+                the surrounding dashed card (no inner white-card wrapper);
+                the save check-button on the right of the title row stages
+                it. A horizontal divider below the form separates the per-
+                question fields from the poll-level settings. */}
+            <div className={`px-3 ${hasDrafts ? 'pt-1.5' : 'pt-2'} pb-2`}>
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5 select-none">
                 Add Question
               </div>
-              {questionType === 'question' ? (
-                <CategoryForLine
-                  category={category}
-                  onCategoryChange={handleCategoryChange}
-                  forField={forField}
-                  onForFieldChange={setForField}
-                  generatedCategoryText={generatedCategoryFromOptions}
-                  disabled={isLoading}
-                />
-              ) : (
-                <AnimatedTitle title={title} initialDelay={0} />
-              )}
+              <div className="relative">
+                <div className="pr-12">
+                  {questionType === 'question' ? (
+                    <CategoryForLine
+                      category={category}
+                      onCategoryChange={handleCategoryChange}
+                      forField={forField}
+                      onForFieldChange={setForField}
+                      generatedCategoryText={generatedCategoryFromOptions}
+                      disabled={isLoading}
+                    />
+                  ) : (
+                    <AnimatedTitle title={title} initialDelay={0} />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => stageCurrentQuestion()}
+                  disabled={isLoading || !inlineFormHasDraftableContent}
+                  aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question as draft'}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-blue-600 dark:text-blue-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              </div>
               <div className="mt-3">
                 {questionFormBody}
               </div>
             </div>
 
-            {/* "+ Question" button — commits the inline form to the staged
-                list and resets the form for the next question. Disabled
-                until the in-progress form is valid. */}
-            <div className="px-3 pb-2 flex justify-center">
-              <button
-                type="button"
-                onClick={() => stageCurrentQuestion()}
-                disabled={isLoading || !!getCurrentQuestionFormError()}
-                className="h-9 px-4 rounded-full text-sm font-medium border border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-300 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {editingDraftIndex !== null ? 'Save Question' : '+ Question'}
-              </button>
-            </div>
-
             {/* Divider — separates the per-question form (above) from the
                 poll-level settings (below). */}
-            <hr className="mx-3 border-t border-gray-200 dark:border-gray-700" />
+            <hr className="mx-3 mt-2 border-t border-gray-200 dark:border-gray-700" />
 
             {/* Settings — voting cutoff, suggestion/availability cutoff,
                 notes, voter name. Always visible so the user can configure
