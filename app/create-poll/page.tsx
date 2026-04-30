@@ -530,6 +530,16 @@ export function CreateQuestionContent() {
     return false;
   }, [title, forField, category, options, questionType, dayTimeWindows]);
 
+  // Gate for the inline check-circle "save as draft" button: enabled as soon
+  // as the user has provided enough signal that they meant to start a new
+  // question (a chosen category, a "for X" context, or 2+ options).
+  // Clicking still runs full validation via stageCurrentQuestion and surfaces
+  // any per-question error; this gate is just the "is it worth offering" line.
+  const inlineFormHasDraftableContent =
+    category !== 'custom' ||
+    forField.trim() !== '' ||
+    options.filter(o => o.trim() !== '').length >= 2;
+
   // Validates only the per-question fields the top modal can edit.
   // Used to gate the "+ Question" button. Different from getValidationErrorFor
   // (which validates poll-level fields too).
@@ -1610,7 +1620,7 @@ export function CreateQuestionContent() {
                 <button
                   type="button"
                   onClick={() => stageCurrentQuestion()}
-                  disabled={isLoading || !!getCurrentQuestionFormError()}
+                  disabled={isLoading || !inlineFormHasDraftableContent}
                   aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question as draft'}
                   className="absolute right-0 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
