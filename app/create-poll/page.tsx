@@ -1592,18 +1592,33 @@ export function CreateQuestionContent() {
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 select-none">
                 Add Question
               </div>
-              {questionType === 'question' ? (
-                <CategoryForLine
-                  category={category}
-                  onCategoryChange={handleCategoryChange}
-                  forField={forField}
-                  onForFieldChange={setForField}
-                  generatedCategoryText={generatedCategoryFromOptions}
-                  disabled={isLoading}
-                />
-              ) : (
-                <AnimatedTitle title={title} initialDelay={0} />
-              )}
+              <div className="relative">
+                <div className="pr-12">
+                  {questionType === 'question' ? (
+                    <CategoryForLine
+                      category={category}
+                      onCategoryChange={handleCategoryChange}
+                      forField={forField}
+                      onForFieldChange={setForField}
+                      generatedCategoryText={generatedCategoryFromOptions}
+                      disabled={isLoading}
+                    />
+                  ) : (
+                    <AnimatedTitle title={title} initialDelay={0} />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => stageCurrentQuestion()}
+                  disabled={isLoading || !!getCurrentQuestionFormError()}
+                  aria-label={editingDraftIndex !== null ? 'Save question edits' : 'Save question as draft'}
+                  className="absolute right-0 top-1/2 -translate-y-1/2 flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-blue-500 text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              </div>
               <div className="mt-3">
                 {questionFormBody}
               </div>
