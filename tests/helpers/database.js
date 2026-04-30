@@ -85,6 +85,10 @@ export async function apiCreateTestQuestion(params) {
     thread_title,
     prephase_deadline: suggestion_deadline,
     prephase_deadline_minutes: suggestion_deadline_minutes,
+    // Migration 098: poll-level results-display + ranked-choice settings.
+    min_responses,
+    show_preliminary_results,
+    allow_pre_ranking,
     questions: [
       {
         question_type: question_type || 'yes_no',
@@ -92,9 +96,6 @@ export async function apiCreateTestQuestion(params) {
         options,
         options_metadata,
         suggestion_deadline_minutes,
-        allow_pre_ranking,
-        min_responses,
-        show_preliminary_results,
         min_availability_percent: min_availability_percent ?? 95,
         day_time_windows,
         duration_window,

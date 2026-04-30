@@ -21,9 +21,6 @@ export interface CreateQuestionParams {
   options_metadata?: OptionsMetadata | null;
   context?: string | null;
   suggestion_deadline_minutes?: number | null;
-  allow_pre_ranking?: boolean;
-  min_responses?: number | null;
-  show_preliminary_results?: boolean;
   min_availability_percent?: number;
   day_time_windows?: any[] | null;
   duration_window?: any | null;
@@ -46,6 +43,10 @@ export interface CreatePollParams {
   /** Multi-line description with link support. Maps to polls.details. */
   details?: string | null;
   title?: string | null;
+  // Migration 098: poll-level results-display + ranked-choice settings.
+  min_responses?: number | null;
+  show_preliminary_results?: boolean;
+  allow_pre_ranking?: boolean;
   questions: CreateQuestionParams[];
 }
 

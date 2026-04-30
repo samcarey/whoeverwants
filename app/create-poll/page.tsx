@@ -53,6 +53,8 @@ import {
   draftDbQuestionType,
   draftToQuestionParams,
   anyDraftUsesPrephase,
+  anyDraftIsRankedChoice,
+  anyDraftIsSuggestionMode,
   deriveDraftTitle,
   draftCardLabels,
   draftPollPreview,
@@ -355,11 +357,12 @@ export function CreateQuestionContent() {
         dayTimeWindows,
         minResponses,
         showPreliminaryResults,
+        allowPreRanking,
         drafts,
       };
       localStorage.setItem('questionFormState', JSON.stringify(formState));
     }
-  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, drafts]);
+  }, [title, questionType, details, options, deadlineOption, customDate, customTime, creatorName, isAutoTitle, category, forField, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minResponses, showPreliminaryResults, allowPreRanking, drafts]);
 
   // Get default date/time values (client-side only to avoid hydration mismatch)
   const getDefaultDateTime = () => {
@@ -406,6 +409,7 @@ export function CreateQuestionContent() {
           if (formState.dayTimeWindows !== undefined) setDayTimeWindows(formState.dayTimeWindows);
           if (formState.minResponses !== undefined) setMinResponses(formState.minResponses);
           if (formState.showPreliminaryResults !== undefined) setShowPreliminaryResults(formState.showPreliminaryResults);
+          if (formState.allowPreRanking !== undefined) setAllowPreRanking(formState.allowPreRanking);
           if (Array.isArray(formState.drafts)) setDrafts(formState.drafts);
 
           return formState;
@@ -449,6 +453,16 @@ export function CreateQuestionContent() {
     || questionType === 'time'
     || category === 'time';
   const pollHasPrephase = anyDraftUsesPrephase(drafts) || inlineFormUsesPrephase;
+
+  // Migration 098: poll-level results-display + ranked-choice settings.
+  // The min-responses + show-results pair is meaningful iff the poll
+  // contains at least one ranked_choice question. The "allow pre-rank"
+  // toggle further requires at least one suggestion-mode question.
+  const inlineFormIsRankedChoice = questionType === 'question'
+    && category !== 'yes_no'
+    && category !== 'time';
+  const pollHasRankedChoice = anyDraftIsRankedChoice(drafts) || inlineFormIsRankedChoice;
+  const pollHasSuggestionMode = anyDraftIsSuggestionMode(drafts) || isSuggestionMode;
 
   // Validates the whole poll at submit time: drafts exist + poll-level
   // cutoffs are sane. Per-question fields are validated when each draft is
@@ -578,6 +592,8 @@ export function CreateQuestionContent() {
   };
 
   // Read the current per-question form state into a QuestionDraft snapshot.
+  // Migration 098: minResponses / showPreliminaryResults / allowPreRanking
+  // live at the poll level (not per-draft).
   const readCurrentDraft = useCallback((): QuestionDraft => ({
     questionType,
     title,
@@ -590,16 +606,13 @@ export function CreateQuestionContent() {
     refLongitude,
     refLocationLabel,
     searchRadius,
-    minResponses,
-    showPreliminaryResults,
-    allowPreRanking,
     durationMinValue,
     durationMaxValue,
     durationMinEnabled,
     durationMaxEnabled,
     dayTimeWindows: [...dayTimeWindows],
     minimumParticipation,
-  }), [questionType, title, isAutoTitle, category, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, minResponses, showPreliminaryResults, allowPreRanking, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
+  }), [questionType, title, isAutoTitle, category, forField, options, optionsMetadata, refLatitude, refLongitude, refLocationLabel, searchRadius, durationMinValue, durationMaxValue, durationMinEnabled, durationMaxEnabled, dayTimeWindows, minimumParticipation]);
 
   // Push a draft into the per-question form state for editing.
   const applyDraftToState = useCallback((d: QuestionDraft) => {
@@ -614,9 +627,6 @@ export function CreateQuestionContent() {
     setRefLongitude(d.refLongitude);
     setRefLocationLabel(d.refLocationLabel);
     setSearchRadius(d.searchRadius);
-    setMinResponses(d.minResponses);
-    setShowPreliminaryResults(d.showPreliminaryResults);
-    setAllowPreRanking(d.allowPreRanking);
     setDurationMinValue(d.durationMinValue);
     setDurationMaxValue(d.durationMaxValue);
     setDurationMinEnabled(d.durationMinEnabled);
@@ -816,6 +826,7 @@ export function CreateQuestionContent() {
           }
           if (duplicateData.min_responses != null) setMinResponses(duplicateData.min_responses);
           if (duplicateData.show_preliminary_results != null) setShowPreliminaryResults(duplicateData.show_preliminary_results);
+          if (duplicateData.allow_pre_ranking != null) setAllowPreRanking(duplicateData.allow_pre_ranking);
 
           // Don't clean up the duplicate data yet - keep it until question is created
           // so that refresh doesn't lose the data
@@ -1159,6 +1170,10 @@ export function CreateQuestionContent() {
           title: wrapperTitle,
           context: null,
           details: details.trim() || null,
+          // Migration 098: poll-level results-display + ranked-choice settings.
+          min_responses: minResponses,
+          show_preliminary_results: showPreliminaryResults,
+          allow_pre_ranking: allowPreRanking,
           questions: questionsForRequest,
         });
       } catch (apiError: any) {
@@ -1475,35 +1490,6 @@ export function CreateQuestionContent() {
       )}
 
       {category === 'yes_no' && titleField}
-
-      {questionType === 'question' && category !== 'time' && isPreferenceQuestion && (
-        <CompactMinResponsesField
-          value={minResponses}
-          setValue={(val) => {
-            setMinResponses(val);
-            saveUserMinResponses(val);
-          }}
-          showPreliminary={showPreliminaryResults}
-          setShowPreliminary={setShowPreliminaryResults}
-          disabled={isLoading}
-        />
-      )}
-
-      {/* Allow pre-ranking: per-section setting for ranked_choice in suggestion mode */}
-      {questionType === 'question' && category !== 'time' && isSuggestionMode && (
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={allowPreRanking}
-            onChange={(e) => setAllowPreRanking(e.target.checked)}
-            disabled={isLoading}
-            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <span className="text-sm text-gray-600 dark:text-gray-400">
-            allow pre-rank during suggestion phase
-          </span>
-        </label>
-      )}
     </form>
   );
 
@@ -1660,6 +1646,39 @@ export function CreateQuestionContent() {
                   />
 
                   {pollHasPrephase && suggestionCutoffField}
+
+                  {/* Migration 098: poll-level results-display settings.
+                      Min responses + "then show results" apply to every
+                      ranked_choice question of the poll. The "allow pre-
+                      rank during suggestion phase" toggle is shown only when
+                      at least one question is in suggestion mode. */}
+                  {pollHasRankedChoice && (
+                    <CompactMinResponsesField
+                      value={minResponses}
+                      setValue={(val) => {
+                        setMinResponses(val);
+                        saveUserMinResponses(val);
+                      }}
+                      showPreliminary={showPreliminaryResults}
+                      setShowPreliminary={setShowPreliminaryResults}
+                      disabled={isLoading}
+                    />
+                  )}
+
+                  {pollHasSuggestionMode && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowPreRanking}
+                        onChange={(e) => setAllowPreRanking(e.target.checked)}
+                        disabled={isLoading}
+                        className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        allow pre-rank during suggestion phase
+                      </span>
+                    </label>
+                  )}
 
                   {/* Notes — multi-line longer description. */}
                   <div>

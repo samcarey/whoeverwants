@@ -161,8 +161,9 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
     || (currentTime ? currentTime < new Date(effectiveSuggestionDeadline!) : true)
   );
   const canSubmitSuggestions = hasSuggestionPhase && inSuggestionPhase;
+  // Migration 098: allow_pre_ranking lives on the poll wrapper now.
   const canSubmitRankings = question.question_type === 'ranked_choice' && (
-    !hasSuggestionPhase || !inSuggestionPhase || question.allow_pre_ranking !== false
+    !hasSuggestionPhase || !inSuggestionPhase || poll.allow_pre_ranking !== false
   );
 
   // Time question phase helpers: availability phase while options haven't been generated yet
@@ -254,12 +255,13 @@ const QuestionBallot = forwardRef<QuestionBallotHandle, QuestionBallotProps>(fun
   const [responseCount, setResponseCount] = useState<number>(question.response_count ?? 0);
 
   // Whether preliminary results should be shown (open question, threshold met)
+  // Migration 098: these settings live on the poll wrapper now.
   const showPrelimResults = useMemo(() => {
     if (isQuestionClosed) return false; // Closed questions show results via the normal path
-    if (!question.show_preliminary_results) return false;
-    const minResp = question.min_responses ?? 1;
+    if (poll.show_preliminary_results === false) return false;
+    const minResp = poll.min_responses ?? 1;
     return responseCount >= minResp;
-  }, [isQuestionClosed, question.show_preliminary_results, question.min_responses, responseCount]);
+  }, [isQuestionClosed, poll.show_preliminary_results, poll.min_responses, responseCount]);
 
   // Mark question as voted: writes both the votedQuestions flag and questionVoteIds in
   // one call. Listeners that re-read localStorage on QUESTION_VOTES_CHANGED_EVENT
