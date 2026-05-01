@@ -624,8 +624,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // When a card expands, adjust scroll so the expanded card fits on screen
   // without disturbing the user's view more than necessary:
   //   1. On initial mount with an expanded question (/p/<id>/ or after creating a
-  //      question), always align the card top flush with the bottom of the top
-  //      bar — that's the entry target the user navigated to.
+  //      question):
+  //        a. If the URL's poll is awaiting a response (open + at least one
+  //           not-yet-responded question), align the card top flush with the
+  //           bottom of the top bar — that's the gold-outlined card the user
+  //           was directed to from the home list.
+  //        b. Otherwise (no polls in the thread are awaiting; the URL fell
+  //           back to the newest poll), align the draft poll form's top with
+  //           the bottom of the top bar instead, so the user lands on the
+  //           place to compose a follow-up.
   //   2. Otherwise, if the compact header is hidden behind the fixed top bar,
   //      scroll up so it sits flush with the bar.
   //   3. Otherwise, if the card's bottom (after expansion) extends below the
@@ -669,8 +676,32 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
     let targetDelta = 0;
     if (isInitialExpand) {
-      targetDelta = cardTopY - visibleTopY;
       hasHandledInitialExpandRef.current = true;
+      // If the URL's poll has at least one not-yet-responded question (the
+      // "gold outline" rule the home page used to pick this URL), focus on
+      // the expanded card. Otherwise the URL fell back to the newest poll
+      // because nothing in the thread is awaiting; align the draft poll
+      // form's top with the bottom of the top bar instead.
+      const targetPoll = thread?.polls.find(
+        (mp) => mp.questions.some((sp) => sp.id === expandedQuestionId),
+      ) ?? null;
+      const pollIsOpen = !targetPoll
+        ? false
+        : (targetPoll.response_deadline
+            ? new Date(targetPoll.response_deadline) > new Date()
+            : true) && !targetPoll.is_closed;
+      const pollHasAwaitingQuestion = !!targetPoll && pollIsOpen
+        && targetPoll.questions.some(
+          (sp) => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
+        );
+      if (pollHasAwaitingQuestion) {
+        targetDelta = cardTopY - visibleTopY;
+      } else {
+        const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
+        targetDelta = draftPortal
+          ? draftPortal.getBoundingClientRect().top - visibleTopY
+          : cardTopY - visibleTopY;
+      }
     } else if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
     } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
@@ -700,6 +731,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
+    // The initial-expand branch reads thread / votedQuestionIds /
+    // abstainedQuestionIds from the closure but is gated by
+    // hasHandledInitialExpandRef so it only runs once shortly after first
+    // load — capturing stale values on subsequent renders is fine. Adding
+    // them as deps would refire the secondary scroll branches on every vote.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedQuestionId, headerHeight]);
 
   // Listen for question:updated events (fired when close/reopen happens from within

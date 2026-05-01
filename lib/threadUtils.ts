@@ -62,8 +62,51 @@ export interface Thread {
   /** The latest poll in the thread (kept for callsites that need
    *  wrapper-level fields like is_closed / response_deadline). */
   latestPoll: Poll;
+  /** The poll the thread URL should target — oldest open poll with at least
+   *  one not-yet-responded question (matches the per-question gold-outline
+   *  rule), falling back to the newest poll when nothing is awaiting. */
+  targetedPoll: Poll;
   /** Estimated count of anonymous respondents (max across polls). */
   anonymousRespondentCount: number;
+}
+
+/**
+ * Pick the poll a thread's URL should target. Mirrors the per-question
+ * gold-outline rule (open poll + at least one question the user hasn't
+ * voted on or abstained from). Among those, picks the oldest by
+ * created_at so the user lands on the question that's been waiting longest.
+ * Falls back to the newest poll in the thread when nothing is awaiting.
+ */
+function pickTargetedPoll(
+  polls: Poll[],
+  votedQuestionIds: Set<string>,
+  abstainedQuestionIds: Set<string>,
+  now: Date,
+): Poll {
+  let oldestAwaiting: Poll | null = null;
+  let oldestAwaitingMs = Infinity;
+  let newest: Poll = polls[0];
+  let newestMs = -Infinity;
+  for (const mp of polls) {
+    const createdMs = new Date(mp.created_at).getTime();
+    if (createdMs > newestMs) {
+      newestMs = createdMs;
+      newest = mp;
+    }
+    const isOpen = mp.response_deadline
+      ? new Date(mp.response_deadline) > now && !mp.is_closed
+      : !mp.is_closed;
+    if (!isOpen) continue;
+    const hasAwaiting = mp.questions.some(
+      sp => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
+    );
+    if (!hasAwaiting) continue;
+    if (createdMs < oldestAwaitingMs) {
+      oldestAwaitingMs = createdMs;
+      oldestAwaiting = mp;
+    }
+  }
+  return oldestAwaiting ?? newest;
 }
 
 /**
@@ -259,6 +302,8 @@ function buildThreadFromPolls(
     0,
   );
 
+  const targetedPoll = pickTargetedPoll(polls, votedQuestionIds, abstainedQuestionIds, now);
+
   return {
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
@@ -275,6 +320,7 @@ function buildThreadFromPolls(
     latestActivityMs,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
+    targetedPoll,
     anonymousRespondentCount,
   };
 }
@@ -304,9 +350,12 @@ export function findThreadByQuestionId(threads: Thread[], questionId: string): T
   return threads.find(t => t.questions.some(p => p.id === questionId));
 }
 
-/** Get the route id (poll short_id or first question id) for a thread. */
+/** Get the route id for a thread. Targets the oldest open poll with at least
+ *  one not-yet-responded question (matches the per-question gold-outline
+ *  rule); falls back to the newest poll when nothing is awaiting. */
 export function getThreadRouteId(thread: Thread): string {
-  return thread.polls[0].short_id || thread.rootQuestionId;
+  const target = thread.targetedPoll;
+  return target.short_id || target.questions[0]?.id || thread.rootQuestionId;
 }
 
 /**
