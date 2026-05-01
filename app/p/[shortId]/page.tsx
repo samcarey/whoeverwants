@@ -151,8 +151,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return () => { document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR); };
   }, [thread]);
 
-  // Signal to the view transition helper that this page's content is rendered.
-  usePageReady(!!thread && !loading);
+  // Signal to the view transition helper that this page's content is
+  // rendered AND its initial scroll position has been applied. Without the
+  // scroll-applied gate, `navigateWithTransition` captures the destination
+  // snapshot before the initial useLayoutEffect fires, so the view
+  // transition animates to a scrollY=0 frame that the browser then jumps
+  // away from once the layout effect lands. With it, the snapshot includes
+  // the final scroll position and the user sees zero motion after the
+  // slide-in completes.
+  const [initialScrollApplied, setInitialScrollApplied] = useState(false);
+  usePageReady(!!thread && !loading && initialScrollApplied);
 
   // Prefetch question page routes for all questions in this thread. Phase 5b:
   // short_id lives on the poll wrapper, so the friendly URL uses the
@@ -631,11 +639,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     hasHandledInitialExpandRef.current = true;
     if (initialExpandedQuestionId) {
       const card = cardRefs.current.get(initialExpandedQuestionId);
-      if (!card) return;
-      const cardTopY = card.getBoundingClientRect().top;
-      const targetDelta = cardTopY - headerHeight;
-      if (targetDelta !== 0) {
-        window.scrollTo(0, window.scrollY + targetDelta);
+      if (card) {
+        const cardTopY = card.getBoundingClientRect().top;
+        const targetDelta = cardTopY - headerHeight;
+        if (targetDelta !== 0) {
+          window.scrollTo(0, window.scrollY + targetDelta);
+        }
       }
     } else {
       // No expand → land at the bottom of the document so the draft poll
@@ -644,6 +653,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // the form.
       window.scrollTo(0, document.documentElement.scrollHeight);
     }
+    setInitialScrollApplied(true);
     // Reset on cleanup so React StrictMode's mount→cleanup→mount in dev
     // doesn't permanently disable the initial scroll.
     return () => {
