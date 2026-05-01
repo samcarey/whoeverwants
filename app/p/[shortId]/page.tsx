@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync } from "react-dom";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, isPollOpen, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
@@ -151,8 +151,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return () => { document.body.removeAttribute(THREAD_LATEST_QUESTION_ID_ATTR); };
   }, [thread]);
 
-  // Signal to the view transition helper that this page's content is rendered.
-  usePageReady(!!thread && !loading);
+  // Signal to the view transition helper that this page's content is
+  // rendered AND its initial scroll position has been applied. Without the
+  // scroll-applied gate, `navigateWithTransition` captures the destination
+  // snapshot before the initial useLayoutEffect fires, so the view
+  // transition animates to a scrollY=0 frame that the browser then jumps
+  // away from once the layout effect lands. With it, the snapshot includes
+  // the final scroll position and the user sees zero motion after the
+  // slide-in completes.
+  const [initialScrollApplied, setInitialScrollApplied] = useState(false);
+  usePageReady(!!thread && !loading && initialScrollApplied);
 
   // Prefetch question page routes for all questions in this thread. Phase 5b:
   // short_id lives on the poll wrapper, so the friendly URL uses the
@@ -458,23 +466,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // exists once `thread` is non-null.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
 
-  // Auto-scroll to the bottom once on initial load so newest questions are visible.
-  // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
-  // measured, otherwise scrollHeight lags). Gated on a ref so subsequent
-  // thread-state mutations (question:updated events, re-fetches) can't re-fire it
-  // — that yanked the user back to the bottom mid-scroll.
-  // Skipped when entering on an expanded question (/p/<id>/) — the expand-scroll
-  // effect below positions that card flush with the top bar instead.
-  const initialScrollDoneRef = useRef(false);
-  useEffect(() => {
-    if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {
-      initialScrollDoneRef.current = true;
-      if (initialExpandedQuestionId) return;
-      requestAnimationFrame(() => {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-      });
-    }
-  }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -621,64 +612,87 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
   }, [thread, visibleQuestionIds]);
 
-  // When a card expands, adjust scroll so the expanded card fits on screen
-  // without disturbing the user's view more than necessary:
-  //   1. On initial mount with an expanded question (/p/<id>/ or after creating a
-  //      question), always align the card top flush with the bottom of the top
-  //      bar — that's the entry target the user navigated to.
-  //   2. Otherwise, if the compact header is hidden behind the fixed top bar,
-  //      scroll up so it sits flush with the bar.
-  //   3. Otherwise, if the card's bottom (after expansion) extends below the
-  //      bottom bar, scroll down just enough to reveal it — but never far
-  //      enough to push the compact header above the top bar.
+  // Scroll positioning has two distinct paths:
   //
-  // The scroll runs concurrently with the 300ms grid-rows expand animation:
-  // we manually rAF-animate scrollTop with the same easing, which keeps the
-  // two visuals synchronized and sidesteps the scrollTo-clamping issue (the
-  // list's scrollHeight grows proportionally as the card expands, so each
-  // intermediate target is always within bounds).
+  //   A. INITIAL — fired exactly once per mount in `useLayoutEffect` so the
+  //      target position is in place before the browser paints. No animation,
+  //      no waiting on async portals: the user sees the destination already
+  //      scrolled to where it should be, never a "scroll into place" frame
+  //      after the page renders. With a header-height-of-0 first commit (the
+  //      ResizeObserver inside `useMeasuredHeight` schedules a synchronous
+  //      state update on its first run), React flushes a second commit before
+  //      paint and this layout effect fires there with the real headerHeight.
+  //
+  //   B. SUBSEQUENT — fired on every later expand (user taps a collapsed card)
+  //      via `useEffect`, with the original rAF-driven scroll animation that
+  //      runs alongside the 300ms grid-rows expand.
+  //
+  // For (A) we always scroll: if the linked poll is awaiting, align the card
+  // top flush with the bottom of the top bar; otherwise bake in the bottom
+  // scroll position so the draft poll form sits against the viewport bottom
+  // (with the trimmed paddingBottom this leaves only a thin margin below it).
   const hasHandledInitialExpandRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!thread || loading) return;
+    if (headerHeight === 0) return;
+    if (hasHandledInitialExpandRef.current) return;
+    hasHandledInitialExpandRef.current = true;
+    if (initialExpandedQuestionId) {
+      const card = cardRefs.current.get(initialExpandedQuestionId);
+      if (card) {
+        const cardTopY = card.getBoundingClientRect().top;
+        const targetDelta = cardTopY - headerHeight;
+        if (targetDelta !== 0) {
+          window.scrollTo(0, window.scrollY + targetDelta);
+        }
+      }
+    } else {
+      // No expand → land at the bottom of the document so the draft poll
+      // form is in view. With the thread-like content paddingBottom trimmed
+      // to 0.5rem the bottom scroll position leaves only a thin margin below
+      // the form.
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    }
+    setInitialScrollApplied(true);
+    // No cleanup return: useRef persists across React StrictMode's
+    // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
+    // semantics. A cleanup that reset the ref would fire on every dep change
+    // (e.g. `thread` updating from an async accessible-polls refresh) and
+    // re-apply the scroll against the new — taller — page, producing a
+    // visible "settle further down" jump after the user already saw the
+    // page in the right position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, loading, headerHeight, initialExpandedQuestionId]);
+
+  // (B) Subsequent-expand scroll animation. Only fires when expandedQuestionId
+  // changes AFTER the initial layout has settled (the initial-expand path
+  // above handles the first render). Keeps the rAF-driven smooth scroll that
+  // runs alongside the 300ms grid-rows expand transition.
   useEffect(() => {
     if (!expandedQuestionId) return;
-    // Wait for the fixed-header height measurement so visibleTopY is correct
-    // before we compute the target scroll position.
     if (headerHeight === 0) return;
+    if (expandedQuestionId === initialExpandedQuestionId) return;
     const card = cardRefs.current.get(expandedQuestionId);
     if (!card) return;
 
-    // Measure once, up front, using the overflow-hidden wrapper's scrollHeight
-    // (which reflects the natural content size regardless of grid-row state).
     const wrapper = expandedWrapperRefs.current.get(expandedQuestionId);
     const expandedContentHeight = wrapper?.scrollHeight ?? 0;
     const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
-    // Visible area is [headerHeight, innerHeight]. The floating "+" overlays the
-    // bottom-right corner but doesn't consume horizontal flow, so we don't shrink
-    // the usable area for it — an expanded card's bottom may sit under the FAB,
-    // which is acceptable.
     const visibleTopY = headerHeight;
     const visibleBottomY = window.innerHeight;
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
-
-    const isInitialExpand =
-      !hasHandledInitialExpandRef.current &&
-      expandedQuestionId === initialExpandedQuestionId;
-
     const BOTTOM_GAP = 12;
 
     let targetDelta = 0;
-    if (isInitialExpand) {
-      targetDelta = cardTopY - visibleTopY;
-      hasHandledInitialExpandRef.current = true;
-    } else if (cardTopY < visibleTopY) {
+    if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
     } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
       const overshoot = finalCardBottomY + BOTTOM_GAP - visibleBottomY;
       const slack = cardTopY - visibleTopY;
       targetDelta = Math.min(overshoot, slack);
     }
-
     if (targetDelta === 0) return;
 
     const startScrollY = window.scrollY;
@@ -686,21 +700,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const DURATION = 300; // matches the grid-rows CSS transition
     const startTime = performance.now();
     let rafId: number | null = null;
-
     const tick = (now: number) => {
       const elapsed = now - startTime;
       const t = Math.min(elapsed / DURATION, 1);
-      // ease-out cubic — matches the feel of the CSS transition
       const eased = 1 - Math.pow(1 - t, 3);
       window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
       if (t < 1) rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
-
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [expandedQuestionId, headerHeight]);
+  }, [expandedQuestionId, headerHeight, initialExpandedQuestionId]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local thread state so downstream UI —
@@ -1789,7 +1800,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 function PollPageInner() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const shortId = params.shortId as string;
+  // The `thread=1` query param is set by the home page's ThreadList when it
+  // picks a URL via the thread-level rule (oldest open+unresponded poll, or
+  // newest as fallback). Without the flag, the URL is treated as a direct
+  // share and the linked poll is always expanded; with the flag, we suppress
+  // the auto-expand when nothing about the linked poll is actionable
+  // (voted on AND closed).
+  const fromThreadList = searchParams.get(THREAD_QUERY_PARAM) !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
   // and the useEffect below (which depends on resolvedInitial) would refire
@@ -1870,6 +1889,24 @@ function PollPageInner() {
     return () => { cancelled = true; };
   }, [shortId, router, resolvedInitial]);
 
+  // When the URL came from the home thread-list (`?thread=1`) and the
+  // linked poll is voted on AND closed already, skip the auto-expand —
+  // there's nothing actionable, so let ThreadContent's "scroll to draft
+  // form" path land the user on the place to compose a follow-up.
+  const suppressExpand = useMemo(() => {
+    if (!resolved) return false;
+    if (!fromThreadList) return false;
+    if (typeof window === 'undefined') return false;
+    const cachedPoll = resolved.question.poll_id
+      ? getCachedPollById(resolved.question.poll_id)
+      : null;
+    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
+    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
+    return cachedPoll.questions.some(
+      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
+    );
+  }, [fromThreadList, resolved]);
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1904,7 +1941,7 @@ function PollPageInner() {
   return (
     <ThreadContent
       threadId={resolved.rootRouteId}
-      initialExpandedQuestionId={resolved.question.id}
+      initialExpandedQuestionId={suppressExpand ? null : resolved.question.id}
     />
   );
 }

@@ -20,6 +20,12 @@ import {
 } from './questionCache';
 import { isUuidLike } from './questionId';
 
+/** Query-param key set by the home `ThreadList` on its `/p/<id>` links to
+ *  flag that the URL was picked by the thread-level rule (not a direct
+ *  share). `PollPageInner` reads this and may skip the auto-expand when
+ *  the linked poll is voted+closed already. */
+export const THREAD_QUERY_PARAM = 'thread';
+
 /** Build a poll_id → Poll lookup Map. The first occurrence per
  *  poll wins, so callers can prepend a known-current wrapper to override
  *  an entry already in the cache. */
@@ -62,8 +68,67 @@ export interface Thread {
   /** The latest poll in the thread (kept for callsites that need
    *  wrapper-level fields like is_closed / response_deadline). */
   latestPoll: Poll;
+  /** The poll the thread URL should target — oldest open poll with at least
+   *  one not-yet-responded question (matches the per-question gold-outline
+   *  rule), falling back to the newest poll when nothing is awaiting. */
+  targetedPoll: Poll;
   /** Estimated count of anonymous respondents (max across polls). */
   anonymousRespondentCount: number;
+}
+
+/** True iff the poll wrapper is open: not manually closed AND no
+ *  response_deadline has passed. */
+export function isPollOpen(poll: Poll, now: Date = new Date()): boolean {
+  if (poll.is_closed) return false;
+  if (!poll.response_deadline) return true;
+  return new Date(poll.response_deadline) > now;
+}
+
+/** True iff the poll is open AND at least one of its sub-questions is
+ *  un-responded by the viewer — the poll-level analogue of the per-question
+ *  gold-outline rule. */
+export function pollHasAwaitingQuestion(
+  poll: Poll,
+  votedQuestionIds: Set<string>,
+  abstainedQuestionIds: Set<string>,
+  now: Date = new Date(),
+): boolean {
+  if (!isPollOpen(poll, now)) return false;
+  return poll.questions.some(
+    sp => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
+  );
+}
+
+/**
+ * Pick the poll a thread's URL should target. Mirrors the per-question
+ * gold-outline rule (open poll + at least one question the user hasn't
+ * voted on or abstained from). Among those, picks the oldest by
+ * created_at so the user lands on the question that's been waiting longest.
+ * Falls back to the newest poll in the thread when nothing is awaiting.
+ */
+function pickTargetedPoll(
+  polls: Poll[],
+  votedQuestionIds: Set<string>,
+  abstainedQuestionIds: Set<string>,
+  now: Date,
+): Poll {
+  let oldestAwaiting: Poll | null = null;
+  let oldestAwaitingMs = Infinity;
+  let newest: Poll = polls[0];
+  let newestMs = -Infinity;
+  for (const mp of polls) {
+    const createdMs = new Date(mp.created_at).getTime();
+    if (createdMs > newestMs) {
+      newestMs = createdMs;
+      newest = mp;
+    }
+    if (!pollHasAwaitingQuestion(mp, votedQuestionIds, abstainedQuestionIds, now)) continue;
+    if (createdMs < oldestAwaitingMs) {
+      oldestAwaitingMs = createdMs;
+      oldestAwaiting = mp;
+    }
+  }
+  return oldestAwaiting ?? newest;
 }
 
 /**
@@ -259,6 +324,8 @@ function buildThreadFromPolls(
     0,
   );
 
+  const targetedPoll = pickTargetedPoll(polls, votedQuestionIds, abstainedQuestionIds, now);
+
   return {
     rootQuestionId: questions[0].id,
     rootPollId: polls[0].id,
@@ -275,6 +342,7 @@ function buildThreadFromPolls(
     latestActivityMs,
     latestQuestion: questions[questions.length - 1],
     latestPoll,
+    targetedPoll,
     anonymousRespondentCount,
   };
 }
@@ -304,9 +372,12 @@ export function findThreadByQuestionId(threads: Thread[], questionId: string): T
   return threads.find(t => t.questions.some(p => p.id === questionId));
 }
 
-/** Get the route id (poll short_id or first question id) for a thread. */
+/** Get the route id for a thread. Targets the oldest open poll with at least
+ *  one not-yet-responded question (matches the per-question gold-outline
+ *  rule); falls back to the newest poll when nothing is awaiting. */
 export function getThreadRouteId(thread: Thread): string {
-  return thread.polls[0].short_id || thread.rootQuestionId;
+  const target = thread.targetedPoll;
+  return target.short_id || target.questions[0]?.id || thread.rootQuestionId;
 }
 
 /**

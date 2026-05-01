@@ -228,9 +228,16 @@ function TemplateInner({ children }: AppTemplateProps) {
 
         <div
           className={`max-w-4xl mx-auto ${(pathname === '/' || isThreadLikePage) ? '-mx-4 sm:mx-auto sm:px-4' : 'px-4'} ${isThreadLikePage ? '' : (isSettingsPage || pathname === '/') ? 'pt-0.5 pb-6' : 'py-6'}`}
-          style={(pathname === '/' || isThreadLikePage)
+          style={pathname === '/'
+            // Home reserves enough room for the floating "+" FAB to clear the
+            // last card.
             ? { paddingBottom: '6rem' }
-            : undefined}
+            // Thread-like pages have no floating chrome past the draft form,
+            // so a thin margin is plenty — the draft form is already the last
+            // thing in the list.
+            : isThreadLikePage
+              ? { paddingBottom: '0.5rem' }
+              : undefined}
         >
           {children}
         </div>
