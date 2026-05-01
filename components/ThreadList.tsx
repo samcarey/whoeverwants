@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Poll } from "@/lib/types";
-import { buildThreads, getThreadRouteId, Thread } from "@/lib/threadUtils";
+import { buildThreads, getThreadRouteId, THREAD_QUERY_PARAM, Thread } from "@/lib/threadUtils";
 import { loadVotedQuestions } from "@/lib/votedQuestionsStorage";
 import ThreadListItem from "@/components/ThreadListItem";
 import { usePrefetch } from "@/lib/prefetch";
@@ -41,7 +41,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
   // Prefetch thread page routes for all visible threads on mount
   useEffect(() => {
     if (threads.length === 0) return;
-    const hrefs = threads.map(t => `/p/${getThreadRouteId(t)}?thread=1`);
+    const hrefs = threads.map(t => `/p/${getThreadRouteId(t)}?${THREAD_QUERY_PARAM}=1`);
     prefetchBatch(hrefs, { priority: "low" });
   }, [threads, prefetchBatch]);
 
@@ -92,7 +92,7 @@ export default function ThreadList({ polls }: ThreadListProps) {
           // the home thread-list pick (not a direct deep-link), so it can
           // suppress auto-expanding the linked poll when nothing about it is
           // actionable (voted on AND closed).
-          navigateWithTransition(router, `/p/${routeId}?thread=1`, 'forward');
+          navigateWithTransition(router, `/p/${routeId}?${THREAD_QUERY_PARAM}=1`, 'forward');
         };
 
         const handleTouchStart = (e: React.TouchEvent) => {

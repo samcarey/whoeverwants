@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, isPollOpen, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
@@ -1808,7 +1808,7 @@ function PollPageInner() {
   // share and the linked poll is always expanded; with the flag, we suppress
   // the auto-expand when nothing about the linked poll is actionable
   // (voted on AND closed).
-  const fromThreadList = searchParams.get('thread') !== null;
+  const fromThreadList = searchParams.get(THREAD_QUERY_PARAM) !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
   // and the useEffect below (which depends on resolvedInitial) would refire
@@ -1924,25 +1924,18 @@ function PollPageInner() {
   // linked poll is voted on AND closed already, skip the auto-expand —
   // there's nothing actionable, so let ThreadContent's "scroll to draft
   // form" path land the user on the place to compose a follow-up.
-  const suppressExpand = (() => {
+  const suppressExpand = useMemo(() => {
     if (!fromThreadList) return false;
     if (typeof window === 'undefined') return false;
     const cachedPoll = resolved.question.poll_id
       ? getCachedPollById(resolved.question.poll_id)
       : null;
-    const isClosed = cachedPoll
-      ? !!cachedPoll.is_closed || (
-          !!cachedPoll.response_deadline
-          && new Date(cachedPoll.response_deadline) < new Date()
-        )
-      : false;
-    if (!isClosed) return false;
+    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    const subQuestions = cachedPoll?.questions ?? [resolved.question];
-    return subQuestions.some(
+    return cachedPoll.questions.some(
       sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
     );
-  })();
+  }, [fromThreadList, resolved.question.poll_id, resolved.question.id]);
 
   return (
     <ThreadContent

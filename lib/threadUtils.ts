@@ -20,6 +20,12 @@ import {
 } from './questionCache';
 import { isUuidLike } from './questionId';
 
+/** Query-param key set by the home `ThreadList` on its `/p/<id>` links to
+ *  flag that the URL was picked by the thread-level rule (not a direct
+ *  share). `PollPageInner` reads this and may skip the auto-expand when
+ *  the linked poll is voted+closed already. */
+export const THREAD_QUERY_PARAM = 'thread';
+
 /** Build a poll_id → Poll lookup Map. The first occurrence per
  *  poll wins, so callers can prepend a known-current wrapper to override
  *  an entry already in the cache. */
@@ -70,6 +76,29 @@ export interface Thread {
   anonymousRespondentCount: number;
 }
 
+/** True iff the poll wrapper is open: not manually closed AND no
+ *  response_deadline has passed. */
+export function isPollOpen(poll: Poll, now: Date = new Date()): boolean {
+  if (poll.is_closed) return false;
+  if (!poll.response_deadline) return true;
+  return new Date(poll.response_deadline) > now;
+}
+
+/** True iff the poll is open AND at least one of its sub-questions is
+ *  un-responded by the viewer — the poll-level analogue of the per-question
+ *  gold-outline rule. */
+export function pollHasAwaitingQuestion(
+  poll: Poll,
+  votedQuestionIds: Set<string>,
+  abstainedQuestionIds: Set<string>,
+  now: Date = new Date(),
+): boolean {
+  if (!isPollOpen(poll, now)) return false;
+  return poll.questions.some(
+    sp => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
+  );
+}
+
 /**
  * Pick the poll a thread's URL should target. Mirrors the per-question
  * gold-outline rule (open poll + at least one question the user hasn't
@@ -93,14 +122,7 @@ function pickTargetedPoll(
       newestMs = createdMs;
       newest = mp;
     }
-    const isOpen = mp.response_deadline
-      ? new Date(mp.response_deadline) > now && !mp.is_closed
-      : !mp.is_closed;
-    if (!isOpen) continue;
-    const hasAwaiting = mp.questions.some(
-      sp => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
-    );
-    if (!hasAwaiting) continue;
+    if (!pollHasAwaitingQuestion(mp, votedQuestionIds, abstainedQuestionIds, now)) continue;
     if (createdMs < oldestAwaitingMs) {
       oldestAwaitingMs = createdMs;
       oldestAwaiting = mp;
