@@ -654,11 +654,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       window.scrollTo(0, document.documentElement.scrollHeight);
     }
     setInitialScrollApplied(true);
-    // Reset on cleanup so React StrictMode's mount→cleanup→mount in dev
-    // doesn't permanently disable the initial scroll.
-    return () => {
-      hasHandledInitialExpandRef.current = false;
-    };
+    // No cleanup return: useRef persists across React StrictMode's
+    // mount→cleanup→mount cycle, so the ref check above guarantees fire-once
+    // semantics. A cleanup that reset the ref would fire on every dep change
+    // (e.g. `thread` updating from an async accessible-polls refresh) and
+    // re-apply the scroll against the new — taller — page, producing a
+    // visible "settle further down" jump after the user already saw the
+    // page in the right position.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
