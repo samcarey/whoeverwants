@@ -1889,6 +1889,24 @@ function PollPageInner() {
     return () => { cancelled = true; };
   }, [shortId, router, resolvedInitial]);
 
+  // When the URL came from the home thread-list (`?thread=1`) and the
+  // linked poll is voted on AND closed already, skip the auto-expand —
+  // there's nothing actionable, so let ThreadContent's "scroll to draft
+  // form" path land the user on the place to compose a follow-up.
+  const suppressExpand = useMemo(() => {
+    if (!resolved) return false;
+    if (!fromThreadList) return false;
+    if (typeof window === 'undefined') return false;
+    const cachedPoll = resolved.question.poll_id
+      ? getCachedPollById(resolved.question.poll_id)
+      : null;
+    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
+    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
+    return cachedPoll.questions.some(
+      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
+    );
+  }, [fromThreadList, resolved]);
+
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1919,23 +1937,6 @@ function PollPageInner() {
       </div>
     );
   }
-
-  // When the URL came from the home thread-list (`?thread=1`) and the
-  // linked poll is voted on AND closed already, skip the auto-expand —
-  // there's nothing actionable, so let ThreadContent's "scroll to draft
-  // form" path land the user on the place to compose a follow-up.
-  const suppressExpand = useMemo(() => {
-    if (!fromThreadList) return false;
-    if (typeof window === 'undefined') return false;
-    const cachedPoll = resolved.question.poll_id
-      ? getCachedPollById(resolved.question.poll_id)
-      : null;
-    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
-    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    return cachedPoll.questions.some(
-      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
-    );
-  }, [fromThreadList, resolved.question.poll_id, resolved.question.id]);
 
   return (
     <ThreadContent
