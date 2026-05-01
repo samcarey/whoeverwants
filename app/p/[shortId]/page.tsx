@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
-import { flushSync } from "react-dom";
+import { flushSync, createPortal } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
@@ -905,6 +905,112 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedQuestionId, thread]);
 
+  // Scroll-helper buttons. Two contextual nudges sit on the viewport edges:
+  //   - Down arrow (bottom): when the always-on draft poll form is scrolled
+  //     off below the viewport, tap to align its Submit button mid-screen.
+  //   - Up arrow (just below header): when there exist open polls the viewer
+  //     hasn't responded to AND every awaiting card is scrolled off above,
+  //     tap to align the oldest awaiting card's top with the bottom of the
+  //     fixed header.
+  // The draft Submit button is portaled in by CreateQuestionContent (lazy
+  // mount), so the visibility check uses a runtime querySelector and a
+  // MutationObserver re-evaluates on portal childList changes — without it
+  // the button would mount silently and the down arrow would only appear
+  // after the next scroll event.
+  const [scrollHelpers, setScrollHelpers] = useState<{
+    showUp: boolean;
+    showDown: boolean;
+    oldestAwaitingId: string | null;
+  }>({ showUp: false, showDown: false, oldestAwaitingId: null });
+  const oldestAwaitingIdRef = useRef<string | null>(null);
+  oldestAwaitingIdRef.current = scrollHelpers.oldestAwaitingId;
+
+  useEffect(() => {
+    if (!thread || typeof window === 'undefined') return;
+    const evaluate = () => {
+      const viewportTop = headerHeight;
+      const viewportBottom = window.innerHeight;
+      let oldestAwaitingId: string | null = null;
+      let anyAwaitingAbove = false;
+      let anyAwaitingInView = false;
+      // Walk anchors in DOM order; threadQuestions sorts awaiting cards last
+      // by created_at ascending, so the FIRST awaiting we encounter is the
+      // oldest awaiting.
+      for (const group of groupedThreadQuestions) {
+        const question = group.anchor;
+        if (!isAwaitingResponse(question)) continue;
+        const card = cardRefs.current.get(question.id);
+        if (!card) continue;
+        const r = card.getBoundingClientRect();
+        const visible = r.bottom > viewportTop && r.top < viewportBottom;
+        if (visible) {
+          anyAwaitingInView = true;
+        } else if (r.bottom <= viewportTop) {
+          anyAwaitingAbove = true;
+          if (oldestAwaitingId === null) oldestAwaitingId = question.id;
+        }
+      }
+      const showUp = anyAwaitingAbove && !anyAwaitingInView;
+
+      const submitBtn = document.querySelector('[aria-label="Submit poll"]') as HTMLElement | null;
+      let showDown = false;
+      if (submitBtn) {
+        const r = submitBtn.getBoundingClientRect();
+        showDown = r.top >= viewportBottom;
+      }
+
+      setScrollHelpers((prev) => {
+        if (
+          prev.showUp === showUp &&
+          prev.showDown === showDown &&
+          prev.oldestAwaitingId === oldestAwaitingId
+        ) {
+          return prev;
+        }
+        return { showUp, showDown, oldestAwaitingId };
+      });
+    };
+    evaluate();
+    window.addEventListener('scroll', evaluate, { passive: true });
+    window.addEventListener('resize', evaluate, { passive: true });
+    // Catch the lazy-mount of CreateQuestionContent so the down arrow
+    // appears without requiring the user to scroll first.
+    const observer = new MutationObserver(() => evaluate());
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      window.removeEventListener('scroll', evaluate);
+      window.removeEventListener('resize', evaluate);
+      observer.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, groupedThreadQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
+
+  const scrollToDraftSubmit = () => {
+    const submitBtn = document.querySelector('[aria-label="Submit poll"]') as HTMLElement | null;
+    if (!submitBtn) return;
+    const r = submitBtn.getBoundingClientRect();
+    const targetY = window.scrollY + r.top + r.height / 2 - window.innerHeight / 2;
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
+  };
+
+  const scrollToOldestAwaiting = () => {
+    const id = oldestAwaitingIdRef.current;
+    if (!id) return;
+    const card = cardRefs.current.get(id);
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    const targetY = window.scrollY + r.top - headerHeight;
+    window.scrollTo({ top: targetY, behavior: 'smooth' });
+  };
+
+  // Portal target for the scroll-helper buttons. Resolved after mount to
+  // avoid SSR mismatches; the buttons render outside the responsive-scaling
+  // container so `position: fixed` is relative to the real viewport.
+  const [scrollHelperPortal, setScrollHelperPortal] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setScrollHelperPortal(document.getElementById('floating-fab-portal'));
+  }, []);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -1790,6 +1896,42 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         }}
         onCancel={() => setPendingPollSubmit(null)}
       />
+
+      {/* Scroll-helper buttons — rendered via the floating-fab-portal so
+          `position: fixed` is relative to the real viewport (outside the
+          responsive-scaling container's transform on desktop). Visibility
+          is driven by the scroll/resize/MutationObserver effect above. */}
+      {scrollHelperPortal && createPortal(
+        <>
+          {scrollHelpers.showUp && (
+            <button
+              type="button"
+              onClick={scrollToOldestAwaiting}
+              aria-label="Scroll to next poll awaiting your response"
+              className="fixed left-1/2 -translate-x-1/2 z-40 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
+              style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              </svg>
+            </button>
+          )}
+          {scrollHelpers.showDown && (
+            <button
+              type="button"
+              onClick={scrollToDraftSubmit}
+              aria-label="Scroll to draft poll"
+              className="fixed left-1/2 -translate-x-1/2 z-40 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
+              style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          )}
+        </>,
+        scrollHelperPortal,
+      )}
     </>
   );
 }
