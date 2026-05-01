@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync } from "react-dom";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
@@ -458,22 +458,52 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // exists once `thread` is non-null.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
 
-  // Auto-scroll to the bottom once on initial load so newest questions are visible.
-  // Waits for headerHeight > 0 (paddingTop applies once the fixed header is
-  // measured, otherwise scrollHeight lags). Gated on a ref so subsequent
-  // thread-state mutations (question:updated events, re-fetches) can't re-fire it
-  // — that yanked the user back to the bottom mid-scroll.
+  // When the page mounts without an auto-expanded card (the URL came from the
+  // home thread-list AND the linked poll is voted+closed, so PollPageInner
+  // passed initialExpandedQuestionId=null), scroll the draft poll form's top
+  // flush with the bottom of the top bar so the user lands on the place to
+  // compose a follow-up. The portal is populated asynchronously by
+  // CreateQuestionContent, so wait via MutationObserver before computing the
+  // scroll target — otherwise the page is too short to scroll and the
+  // adjustment silently clamps to 0.
+  // Gated on a ref so subsequent thread-state mutations can't re-fire it
+  // (which would yank the user back mid-scroll).
   // Skipped when entering on an expanded question (/p/<id>/) — the expand-scroll
   // effect below positions that card flush with the top bar instead.
   const initialScrollDoneRef = useRef(false);
   useEffect(() => {
-    if (thread && !loading && headerHeight > 0 && !initialScrollDoneRef.current) {
-      initialScrollDoneRef.current = true;
-      if (initialExpandedQuestionId) return;
-      requestAnimationFrame(() => {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-      });
+    if (!thread || loading) return;
+    if (headerHeight === 0) return;
+    if (initialScrollDoneRef.current) return;
+    if (initialExpandedQuestionId) return;
+    initialScrollDoneRef.current = true;
+    const fire = () => {
+      const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
+      if (!draftPortal) return;
+      const top = draftPortal.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo(0, Math.max(0, top - headerHeight));
+    };
+    const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
+    if (!draftPortal) return;
+    if (draftPortal.children.length > 0) {
+      fire();
+      return;
     }
+    const observer = new MutationObserver(() => {
+      if (draftPortal.children.length > 0) {
+        observer.disconnect();
+        fire();
+      }
+    });
+    observer.observe(draftPortal, { childList: true });
+    const timeoutId = window.setTimeout(() => {
+      observer.disconnect();
+      fire();
+    }, 1500);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timeoutId);
+    };
   }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
@@ -1874,7 +1904,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 function PollPageInner() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const shortId = params.shortId as string;
+  // The `thread=1` query param is set by the home page's ThreadList when
+  // it picks a fallback URL (no awaiting polls in the thread). Tells us we
+  // can skip auto-expanding the linked poll when nothing about it is
+  // actionable — voted on AND closed.
+  const fromThreadList = searchParams.get('thread') !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
   // and the useEffect below (which depends on resolvedInitial) would refire
@@ -1986,10 +2022,35 @@ function PollPageInner() {
     );
   }
 
+  // When the URL came from the home thread-list (`?thread=1`) and the
+  // linked poll is voted on AND closed already, skip the auto-expand —
+  // there's nothing actionable, so let ThreadContent's "scroll to draft
+  // form" path land the user on the place to compose a follow-up.
+  const suppressExpand = (() => {
+    if (!fromThreadList) return false;
+    if (typeof window === 'undefined') return false;
+    const cachedPoll = resolved.question.poll_id
+      ? getCachedPollById(resolved.question.poll_id)
+      : null;
+    const isClosed = cachedPoll
+      ? !!cachedPoll.is_closed || (
+          !!cachedPoll.response_deadline
+          && new Date(cachedPoll.response_deadline) < new Date()
+        )
+      : false;
+    if (!isClosed) return false;
+    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
+    const subQuestions = cachedPoll?.questions ?? [resolved.question];
+    const someResponded = subQuestions.some(
+      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
+    );
+    return someResponded;
+  })();
+
   return (
     <ThreadContent
       threadId={resolved.rootRouteId}
-      initialExpandedQuestionId={resolved.question.id}
+      initialExpandedQuestionId={suppressExpand ? null : resolved.question.id}
     />
   );
 }
