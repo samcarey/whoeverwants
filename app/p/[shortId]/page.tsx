@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, Suspense } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync } from "react-dom";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
@@ -458,54 +458,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // exists once `thread` is non-null.
   const [headerRef, headerHeight] = useMeasuredHeight<HTMLDivElement>([thread]);
 
-  // When the page mounts without an auto-expanded card (the URL came from the
-  // home thread-list AND the linked poll is voted+closed, so PollPageInner
-  // passed initialExpandedQuestionId=null), scroll to the bottom of the
-  // document so the draft poll form is in view and the user lands on the
-  // place to compose a follow-up. The thread-like content padding-bottom
-  // is trimmed to ~0.5rem so this leaves only a thin margin below the form
-  // rather than dead space.
-  // Skipped when entering on an expanded question (/p/<id>/) — the expand-scroll
-  // effect below positions that card flush with the top bar instead.
-  const initialScrollDoneRef = useRef(false);
-  useEffect(() => {
-    if (!thread || loading) return;
-    if (headerHeight === 0) return;
-    if (initialScrollDoneRef.current) return;
-    if (initialExpandedQuestionId) return;
-    initialScrollDoneRef.current = true;
-    // The draft portal is portaled in async by CreateQuestionContent (lazy-
-    // loaded module). At the moment this effect fires, document.scrollHeight
-    // is still equal to the viewport height — there's nothing to scroll yet.
-    // Poll on a short interval until the page actually grows past the
-    // viewport (i.e. the portal has populated AND its layout has settled),
-    // then scrollTo. Hard cap at 2s as a safety net.
-    let cancelled = false;
-    const start = Date.now();
-    const POLL_INTERVAL = 50;
-    const MAX_WAIT = 2000;
-    const tick = () => {
-      if (cancelled) return;
-      const docH = document.documentElement.scrollHeight;
-      const viewH = window.innerHeight;
-      const elapsed = Date.now() - start;
-      if (docH > viewH || elapsed >= MAX_WAIT) {
-        window.scrollTo(0, docH);
-        return;
-      }
-      window.setTimeout(tick, POLL_INTERVAL);
-    };
-    window.setTimeout(tick, POLL_INTERVAL);
-    return () => {
-      cancelled = true;
-      // Reset the done ref too: when React StrictMode tears the effect down
-      // (or `thread` updates mid-wait), the next effect run should be free
-      // to start a fresh poll. Without this, StrictMode's mount→cleanup→
-      // mount cycle silently disables the scroll for the rest of the page's
-      // lifetime.
-      initialScrollDoneRef.current = false;
-    };
-  }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
   // Set up a shared IntersectionObserver so cards pre-mount their expanded
   // content when they scroll into view. rootMargin prefetches slightly early.
@@ -652,171 +604,102 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
   }, [thread, visibleQuestionIds]);
 
-  // When a card expands, adjust scroll so the expanded card fits on screen
-  // without disturbing the user's view more than necessary:
-  //   1. On initial mount with an expanded question (/p/<id>/ or after creating a
-  //      question):
-  //        a. If the URL's poll is awaiting a response (open + at least one
-  //           not-yet-responded question), align the card top flush with the
-  //           bottom of the top bar — that's the gold-outlined card the user
-  //           was directed to from the home list.
-  //        b. Otherwise (no polls in the thread are awaiting; the URL fell
-  //           back to the newest poll), align the draft poll form's top with
-  //           the bottom of the top bar instead, so the user lands on the
-  //           place to compose a follow-up.
-  //   2. Otherwise, if the compact header is hidden behind the fixed top bar,
-  //      scroll up so it sits flush with the bar.
-  //   3. Otherwise, if the card's bottom (after expansion) extends below the
-  //      bottom bar, scroll down just enough to reveal it — but never far
-  //      enough to push the compact header above the top bar.
+  // Scroll positioning has two distinct paths:
   //
-  // The scroll runs concurrently with the 300ms grid-rows expand animation:
-  // we manually rAF-animate scrollTop with the same easing, which keeps the
-  // two visuals synchronized and sidesteps the scrollTo-clamping issue (the
-  // list's scrollHeight grows proportionally as the card expands, so each
-  // intermediate target is always within bounds).
+  //   A. INITIAL — fired exactly once per mount in `useLayoutEffect` so the
+  //      target position is in place before the browser paints. No animation,
+  //      no waiting on async portals: the user sees the destination already
+  //      scrolled to where it should be, never a "scroll into place" frame
+  //      after the page renders. With a header-height-of-0 first commit (the
+  //      ResizeObserver inside `useMeasuredHeight` schedules a synchronous
+  //      state update on its first run), React flushes a second commit before
+  //      paint and this layout effect fires there with the real headerHeight.
+  //
+  //   B. SUBSEQUENT — fired on every later expand (user taps a collapsed card)
+  //      via `useEffect`, with the original rAF-driven scroll animation that
+  //      runs alongside the 300ms grid-rows expand.
+  //
+  // For (A) we always scroll: if the linked poll is awaiting, align the card
+  // top flush with the bottom of the top bar; otherwise bake in the bottom
+  // scroll position so the draft poll form sits against the viewport bottom
+  // (with the trimmed paddingBottom this leaves only a thin margin below it).
   const hasHandledInitialExpandRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!thread || loading) return;
+    if (headerHeight === 0) return;
+    if (hasHandledInitialExpandRef.current) return;
+    hasHandledInitialExpandRef.current = true;
+    if (initialExpandedQuestionId) {
+      const card = cardRefs.current.get(initialExpandedQuestionId);
+      if (!card) return;
+      const cardTopY = card.getBoundingClientRect().top;
+      const targetDelta = cardTopY - headerHeight;
+      if (targetDelta !== 0) {
+        window.scrollTo(0, window.scrollY + targetDelta);
+      }
+    } else {
+      // No expand → land at the bottom of the document so the draft poll
+      // form is in view. With the thread-like content paddingBottom trimmed
+      // to 0.5rem the bottom scroll position leaves only a thin margin below
+      // the form.
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    }
+    // Reset on cleanup so React StrictMode's mount→cleanup→mount in dev
+    // doesn't permanently disable the initial scroll.
+    return () => {
+      hasHandledInitialExpandRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thread, loading, headerHeight, initialExpandedQuestionId]);
+
+  // (B) Subsequent-expand scroll animation. Only fires when expandedQuestionId
+  // changes AFTER the initial layout has settled (the initial-expand path
+  // above handles the first render). Keeps the rAF-driven smooth scroll that
+  // runs alongside the 300ms grid-rows expand transition.
   useEffect(() => {
     if (!expandedQuestionId) return;
-    // Wait for the fixed-header height measurement so visibleTopY is correct
-    // before we compute the target scroll position.
     if (headerHeight === 0) return;
+    if (expandedQuestionId === initialExpandedQuestionId) return;
     const card = cardRefs.current.get(expandedQuestionId);
     if (!card) return;
 
-    // Measure once, up front, using the overflow-hidden wrapper's scrollHeight
-    // (which reflects the natural content size regardless of grid-row state).
     const wrapper = expandedWrapperRefs.current.get(expandedQuestionId);
     const expandedContentHeight = wrapper?.scrollHeight ?? 0;
     const wrapperCurrent = wrapper?.getBoundingClientRect().height ?? 0;
     const compactHeight = card.getBoundingClientRect().height - wrapperCurrent;
-    // Visible area is [headerHeight, innerHeight]. The floating "+" overlays the
-    // bottom-right corner but doesn't consume horizontal flow, so we don't shrink
-    // the usable area for it — an expanded card's bottom may sit under the FAB,
-    // which is acceptable.
     const visibleTopY = headerHeight;
     const visibleBottomY = window.innerHeight;
     const cardTopY = card.getBoundingClientRect().top;
     const finalCardBottomY = cardTopY + compactHeight + expandedContentHeight;
-
-    const isInitialExpand =
-      !hasHandledInitialExpandRef.current &&
-      expandedQuestionId === initialExpandedQuestionId;
-
     const BOTTOM_GAP = 12;
 
     let targetDelta = 0;
-    let scrollToDraftPortal = false;
-    if (isInitialExpand) {
-      hasHandledInitialExpandRef.current = true;
-      // If the URL's poll has at least one not-yet-responded question (the
-      // "gold outline" rule the home page used to pick this URL), focus on
-      // the expanded card. Otherwise the URL fell back to the newest poll
-      // because nothing in the thread is awaiting; align the draft poll
-      // form's top with the bottom of the top bar instead.
-      const targetPoll = thread?.polls.find(
-        (mp) => mp.questions.some((sp) => sp.id === expandedQuestionId),
-      ) ?? null;
-      const pollIsOpen = !targetPoll
-        ? false
-        : (targetPoll.response_deadline
-            ? new Date(targetPoll.response_deadline) > new Date()
-            : true) && !targetPoll.is_closed;
-      const pollHasAwaitingQuestion = !!targetPoll && pollIsOpen
-        && targetPoll.questions.some(
-          (sp) => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id),
-        );
-      if (pollHasAwaitingQuestion) {
-        targetDelta = cardTopY - visibleTopY;
-      } else {
-        // The draft poll card is portaled in asynchronously by
-        // CreateQuestionContent, so the portal div may still be empty (and
-        // the page too short to scroll) at this moment. Defer the scroll
-        // computation until the portal has children — fall back to a fixed
-        // delay if it never populates so the effect can't hang indefinitely.
-        scrollToDraftPortal = true;
-      }
-    } else if (cardTopY < visibleTopY) {
+    if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
     } else if (finalCardBottomY + BOTTOM_GAP > visibleBottomY) {
       const overshoot = finalCardBottomY + BOTTOM_GAP - visibleBottomY;
       const slack = cardTopY - visibleTopY;
       targetDelta = Math.min(overshoot, slack);
     }
+    if (targetDelta === 0) return;
 
+    const startScrollY = window.scrollY;
+    const targetScrollY = startScrollY + targetDelta;
+    const DURATION = 300; // matches the grid-rows CSS transition
+    const startTime = performance.now();
     let rafId: number | null = null;
-    let waitTimeoutId: number | null = null;
-
-    const animateScrollDelta = (delta: number) => {
-      if (delta === 0) return;
-      const startScrollY = window.scrollY;
-      const targetScrollY = startScrollY + delta;
-      const DURATION = 300; // matches the grid-rows CSS transition
-      const startTime = performance.now();
-      const tick = (now: number) => {
-        const elapsed = now - startTime;
-        const t = Math.min(elapsed / DURATION, 1);
-        // ease-out cubic — matches the feel of the CSS transition
-        const eased = 1 - Math.pow(1 - t, 3);
-        window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
-        if (t < 1) rafId = requestAnimationFrame(tick);
-      };
-      rafId = requestAnimationFrame(tick);
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / DURATION, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
+      if (t < 1) rafId = requestAnimationFrame(tick);
     };
-
-    if (scrollToDraftPortal) {
-      // Wait for the draft portal to have content (it's portaled in
-      // asynchronously by CreateQuestionContent, so the page is initially
-      // too short to scroll). Cap the wait so the effect can't hang.
-      const fireDraftScroll = () => {
-        const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
-        const delta = draftPortal
-          ? draftPortal.getBoundingClientRect().top - visibleTopY
-          : cardTopY - visibleTopY;
-        animateScrollDelta(delta);
-      };
-      const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
-      if (draftPortal && draftPortal.children.length > 0) {
-        fireDraftScroll();
-      } else if (draftPortal) {
-        const observer = new MutationObserver(() => {
-          if (draftPortal.children.length > 0) {
-            observer.disconnect();
-            if (waitTimeoutId !== null) {
-              window.clearTimeout(waitTimeoutId);
-              waitTimeoutId = null;
-            }
-            fireDraftScroll();
-          }
-        });
-        observer.observe(draftPortal, { childList: true });
-        waitTimeoutId = window.setTimeout(() => {
-          observer.disconnect();
-          fireDraftScroll();
-        }, 1500);
-        return () => {
-          observer.disconnect();
-          if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
-          if (rafId !== null) cancelAnimationFrame(rafId);
-        };
-      } else {
-        animateScrollDelta(cardTopY - visibleTopY);
-      }
-    } else {
-      animateScrollDelta(targetDelta);
-    }
-
+    rafId = requestAnimationFrame(tick);
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
-      if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
     };
-    // The initial-expand branch reads thread / votedQuestionIds /
-    // abstainedQuestionIds from the closure but is gated by
-    // hasHandledInitialExpandRef so it only runs once shortly after first
-    // load — capturing stale values on subsequent renders is fine. Adding
-    // them as deps would refire the secondary scroll branches on every vote.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedQuestionId, headerHeight]);
+  }, [expandedQuestionId, headerHeight, initialExpandedQuestionId]);
 
   // Listen for question:updated events (fired when close/reopen happens from within
   // a card). Merge the updates into our local thread state so downstream UI —
