@@ -460,14 +460,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
   // When the page mounts without an auto-expanded card (the URL came from the
   // home thread-list AND the linked poll is voted+closed, so PollPageInner
-  // passed initialExpandedQuestionId=null), scroll the draft poll form's top
-  // flush with the bottom of the top bar so the user lands on the place to
-  // compose a follow-up. The portal is populated asynchronously by
-  // CreateQuestionContent, so wait via MutationObserver before computing the
-  // scroll target — otherwise the page is too short to scroll and the
-  // adjustment silently clamps to 0.
-  // Gated on a ref so subsequent thread-state mutations can't re-fire it
-  // (which would yank the user back mid-scroll).
+  // passed initialExpandedQuestionId=null), scroll to the bottom of the
+  // document so the draft poll form is in view and the user lands on the
+  // place to compose a follow-up. The thread-like content padding-bottom
+  // is trimmed to ~0.5rem so this leaves only a thin margin below the form
+  // rather than dead space.
   // Skipped when entering on an expanded question (/p/<id>/) — the expand-scroll
   // effect below positions that card flush with the top bar instead.
   const initialScrollDoneRef = useRef(false);
@@ -477,32 +474,36 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (initialScrollDoneRef.current) return;
     if (initialExpandedQuestionId) return;
     initialScrollDoneRef.current = true;
-    const fire = () => {
-      const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
-      if (!draftPortal) return;
-      const top = draftPortal.getBoundingClientRect().top + window.scrollY;
-      window.scrollTo(0, Math.max(0, top - headerHeight));
-    };
-    const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
-    if (!draftPortal) return;
-    if (draftPortal.children.length > 0) {
-      fire();
-      return;
-    }
-    const observer = new MutationObserver(() => {
-      if (draftPortal.children.length > 0) {
-        observer.disconnect();
-        fire();
+    // The draft portal is portaled in async by CreateQuestionContent (lazy-
+    // loaded module). At the moment this effect fires, document.scrollHeight
+    // is still equal to the viewport height — there's nothing to scroll yet.
+    // Poll on a short interval until the page actually grows past the
+    // viewport (i.e. the portal has populated AND its layout has settled),
+    // then scrollTo. Hard cap at 2s as a safety net.
+    let cancelled = false;
+    const start = Date.now();
+    const POLL_INTERVAL = 50;
+    const MAX_WAIT = 2000;
+    const tick = () => {
+      if (cancelled) return;
+      const docH = document.documentElement.scrollHeight;
+      const viewH = window.innerHeight;
+      const elapsed = Date.now() - start;
+      if (docH > viewH || elapsed >= MAX_WAIT) {
+        window.scrollTo(0, docH);
+        return;
       }
-    });
-    observer.observe(draftPortal, { childList: true });
-    const timeoutId = window.setTimeout(() => {
-      observer.disconnect();
-      fire();
-    }, 1500);
+      window.setTimeout(tick, POLL_INTERVAL);
+    };
+    window.setTimeout(tick, POLL_INTERVAL);
     return () => {
-      observer.disconnect();
-      window.clearTimeout(timeoutId);
+      cancelled = true;
+      // Reset the done ref too: when React StrictMode tears the effect down
+      // (or `thread` updates mid-wait), the next effect run should be free
+      // to start a fresh poll. Without this, StrictMode's mount→cleanup→
+      // mount cycle silently disables the scroll for the rest of the page's
+      // lifetime.
+      initialScrollDoneRef.current = false;
     };
   }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
@@ -1906,10 +1907,12 @@ function PollPageInner() {
   const params = useParams();
   const searchParams = useSearchParams();
   const shortId = params.shortId as string;
-  // The `thread=1` query param is set by the home page's ThreadList when
-  // it picks a fallback URL (no awaiting polls in the thread). Tells us we
-  // can skip auto-expanding the linked poll when nothing about it is
-  // actionable — voted on AND closed.
+  // The `thread=1` query param is set by the home page's ThreadList when it
+  // picks a URL via the thread-level rule (oldest open+unresponded poll, or
+  // newest as fallback). Without the flag, the URL is treated as a direct
+  // share and the linked poll is always expanded; with the flag, we suppress
+  // the auto-expand when nothing about the linked poll is actionable
+  // (voted on AND closed).
   const fromThreadList = searchParams.get('thread') !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
@@ -2041,10 +2044,9 @@ function PollPageInner() {
     if (!isClosed) return false;
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
     const subQuestions = cachedPoll?.questions ?? [resolved.question];
-    const someResponded = subQuestions.some(
+    return subQuestions.some(
       sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
     );
-    return someResponded;
   })();
 
   return (
