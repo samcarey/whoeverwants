@@ -675,6 +675,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const BOTTOM_GAP = 12;
 
     let targetDelta = 0;
+    let scrollToDraftPortal = false;
     if (isInitialExpand) {
       hasHandledInitialExpandRef.current = true;
       // If the URL's poll has at least one not-yet-responded question (the
@@ -697,10 +698,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       if (pollHasAwaitingQuestion) {
         targetDelta = cardTopY - visibleTopY;
       } else {
-        const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
-        targetDelta = draftPortal
-          ? draftPortal.getBoundingClientRect().top - visibleTopY
-          : cardTopY - visibleTopY;
+        // The draft poll card is portaled in asynchronously by
+        // CreateQuestionContent, so the portal div may still be empty (and
+        // the page too short to scroll) at this moment. Defer the scroll
+        // computation until the portal has children — fall back to a fixed
+        // delay if it never populates so the effect can't hang indefinitely.
+        scrollToDraftPortal = true;
       }
     } else if (cardTopY < visibleTopY) {
       targetDelta = cardTopY - visibleTopY;
@@ -710,26 +713,71 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       targetDelta = Math.min(overshoot, slack);
     }
 
-    if (targetDelta === 0) return;
-
-    const startScrollY = window.scrollY;
-    const targetScrollY = startScrollY + targetDelta;
-    const DURATION = 300; // matches the grid-rows CSS transition
-    const startTime = performance.now();
     let rafId: number | null = null;
+    let waitTimeoutId: number | null = null;
 
-    const tick = (now: number) => {
-      const elapsed = now - startTime;
-      const t = Math.min(elapsed / DURATION, 1);
-      // ease-out cubic — matches the feel of the CSS transition
-      const eased = 1 - Math.pow(1 - t, 3);
-      window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
-      if (t < 1) rafId = requestAnimationFrame(tick);
+    const animateScrollDelta = (delta: number) => {
+      if (delta === 0) return;
+      const startScrollY = window.scrollY;
+      const targetScrollY = startScrollY + delta;
+      const DURATION = 300; // matches the grid-rows CSS transition
+      const startTime = performance.now();
+      const tick = (now: number) => {
+        const elapsed = now - startTime;
+        const t = Math.min(elapsed / DURATION, 1);
+        // ease-out cubic — matches the feel of the CSS transition
+        const eased = 1 - Math.pow(1 - t, 3);
+        window.scrollTo(0, startScrollY + (targetScrollY - startScrollY) * eased);
+        if (t < 1) rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
     };
-    rafId = requestAnimationFrame(tick);
+
+    if (scrollToDraftPortal) {
+      // Wait for the draft portal to have content (it's portaled in
+      // asynchronously by CreateQuestionContent, so the page is initially
+      // too short to scroll). Cap the wait so the effect can't hang.
+      const fireDraftScroll = () => {
+        const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
+        const delta = draftPortal
+          ? draftPortal.getBoundingClientRect().top - visibleTopY
+          : cardTopY - visibleTopY;
+        animateScrollDelta(delta);
+      };
+      const draftPortal = document.getElementById(DRAFT_POLL_PORTAL_ID);
+      if (draftPortal && draftPortal.children.length > 0) {
+        fireDraftScroll();
+      } else if (draftPortal) {
+        const observer = new MutationObserver(() => {
+          if (draftPortal.children.length > 0) {
+            observer.disconnect();
+            if (waitTimeoutId !== null) {
+              window.clearTimeout(waitTimeoutId);
+              waitTimeoutId = null;
+            }
+            fireDraftScroll();
+          }
+        });
+        observer.observe(draftPortal, { childList: true });
+        waitTimeoutId = window.setTimeout(() => {
+          observer.disconnect();
+          fireDraftScroll();
+        }, 1500);
+        return () => {
+          observer.disconnect();
+          if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
+          if (rafId !== null) cancelAnimationFrame(rafId);
+        };
+      } else {
+        animateScrollDelta(cardTopY - visibleTopY);
+      }
+    } else {
+      animateScrollDelta(targetDelta);
+    }
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      if (waitTimeoutId !== null) window.clearTimeout(waitTimeoutId);
     };
     // The initial-expand branch reads thread / votedQuestionIds /
     // abstainedQuestionIds from the closure but is gated by
