@@ -318,6 +318,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // synthetic click both fire after release). Same pattern as
   // touchJustHandled — kept separate so we don't conflate semantically.
   const swipeJustHandled = useRef(false);
+  // Question id of the card currently past the abstain threshold (or null).
+  // Drives the reveal layer's "faint → bold" transition: ref-based haptic
+  // tracking fires once per crossing; this state value triggers the
+  // re-render that flips the visual.
+  const [swipeThresholdQuestionId, setSwipeThresholdQuestionId] = useState<string | null>(null);
   // Pixel distance past which release commits to abstain. 30% of card
   // width is large enough to require intent but small enough to feel snappy.
   const SWIPE_ABSTAIN_THRESHOLD_RATIO = 0.3;
@@ -1274,6 +1279,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               swipeRef.current.swiping = false;
               swipeRef.current.pastAbstainPoint = false;
               swipeRef.current.offsetPx = 0;
+              setSwipeThresholdQuestionId(null);
               touchStartPos.current = null;
               isScrolling.current = false;
             };
@@ -1304,6 +1310,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 swipeRef.current.swiping = false;
                 swipeRef.current.pastAbstainPoint = false;
                 swipeRef.current.offsetPx = 0;
+                setSwipeThresholdQuestionId(null);
               }
             };
 
@@ -1319,20 +1326,26 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 const cardEl = cardFrameRefs.current.get(question.id);
                 if (!cardEl) return;
                 // Resist rightward overshoot (rubber-band) so the gesture
-                // feels anchored to leftward intent.
-                const offset = dx > 0 ? dx * 0.3 : dx;
+                // feels anchored to leftward intent. Clamp leftward motion
+                // at the abstain threshold so the card doesn't slide any
+                // further once the user has done enough — the bold reveal
+                // text becomes the "you're committed" signal instead.
+                const threshold = swipeRef.current.cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
+                let offset = dx > 0 ? dx * 0.3 : dx;
+                if (offset < -threshold) offset = -threshold;
                 swipeRef.current.offsetPx = offset;
                 cardEl.style.transition = 'none';
                 cardEl.style.transform = `translateX(${offset}px)`;
-                const threshold = swipeRef.current.cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
-                const past = -offset >= threshold;
+                const past = -dx >= threshold;
                 if (past && !swipeRef.current.pastAbstainPoint) {
                   swipeRef.current.pastAbstainPoint = true;
+                  setSwipeThresholdQuestionId(question.id);
                   if ('vibrate' in navigator) {
                     try { navigator.vibrate(15); } catch {}
                   }
                 } else if (!past && swipeRef.current.pastAbstainPoint) {
                   swipeRef.current.pastAbstainPoint = false;
+                  setSwipeThresholdQuestionId(null);
                 }
                 return;
               }
@@ -1408,14 +1421,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      so non-awaiting cards can't accidentally drag. */}
                 {swipeEligible && (
                   <div
-                    className="absolute inset-0 rounded-2xl flex items-center justify-end pr-5 text-amber-600 dark:text-amber-400 font-semibold pointer-events-none select-none"
+                    className="absolute inset-0 rounded-2xl flex items-center justify-end pr-5 text-amber-600 dark:text-amber-400 pointer-events-none select-none"
                     aria-hidden="true"
                   >
-                    <span className="flex items-center gap-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                    <span
+                      className={`flex flex-col items-center leading-none transition-all duration-200 ${swipeThresholdQuestionId === question.id ? 'opacity-100 font-bold' : 'opacity-50 font-light'}`}
+                    >
+                      <span>Abstain</span>
+                      <svg className="w-4 h-4 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5M12 19l-7-7 7-7" />
                       </svg>
-                      <span>abstain</span>
                     </span>
                   </div>
                 )}
