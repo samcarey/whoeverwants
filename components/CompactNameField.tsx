@@ -46,15 +46,7 @@ export default function CompactNameField({ name, setName, disabled = false, maxL
   }
 
   if (name.trim()) {
-    return (
-      <button
-        type="button"
-        onClick={() => setIsEditing(true)}
-        className="block text-sm font-medium text-left"
-      >
-        Your Name: <span className="font-normal text-blue-600 dark:text-blue-400">{name.trim()}</span>
-      </button>
-    );
+    return null;
   }
 
   return (
