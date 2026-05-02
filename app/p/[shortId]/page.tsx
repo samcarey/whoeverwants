@@ -1326,17 +1326,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 const cardEl = cardFrameRefs.current.get(question.id);
                 if (!cardEl) return;
                 // Resist rightward overshoot (rubber-band) so the gesture
-                // feels anchored to leftward intent. Clamp leftward motion
-                // at the abstain threshold so the card doesn't slide any
-                // further once the user has done enough — the bold reveal
-                // text becomes the "you're committed" signal instead.
-                const threshold = swipeRef.current.cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
-                let offset = dx > 0 ? dx * 0.3 : dx;
-                if (offset < -threshold) offset = -threshold;
+                // feels anchored to leftward intent. Leftward motion is
+                // unbounded — past the abstain threshold the bold reveal
+                // text becomes the "you're committed" signal but the card
+                // still tracks the finger.
+                const offset = dx > 0 ? dx * 0.3 : dx;
                 swipeRef.current.offsetPx = offset;
                 cardEl.style.transition = 'none';
                 cardEl.style.transform = `translateX(${offset}px)`;
-                const past = -dx >= threshold;
+                const threshold = swipeRef.current.cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
+                const past = -offset >= threshold;
                 if (past && !swipeRef.current.pastAbstainPoint) {
                   swipeRef.current.pastAbstainPoint = true;
                   setSwipeThresholdQuestionId(question.id);
