@@ -290,11 +290,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const [pressedQuestionId, setPressedQuestionId] = useState<string | null>(null);
 
   // Swipe-to-abstain state. Only one card can be swiped at a time, so a
-  // single shared ref tracks the active gesture. Per-frame transforms are
-  // written directly to the cardFrame DOM ref for 60fps responsiveness;
-  // React state is only used for "card is currently animating" cleanup
-  // (so the touch-handled flag suppresses the synthesized click) and for
-  // marking a poll as in-flight so we don't re-fire on rapid taps.
+  // single shared ref tracks the active gesture. Per-frame transforms go
+  // straight to the cardFrame DOM ref for 60fps; the bold-text state below
+  // re-renders only on threshold crossings (driven by `pastAbstainPoint`).
   const swipeRef = useRef<{
     questionId: string | null;
     pollId: string | null;
@@ -302,8 +300,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     startX: number;
     startY: number;
     offsetPx: number;
-    swiping: boolean;          // crossed horizontal threshold
-    pastAbstainPoint: boolean; // crossed abstain threshold (for haptic)
+    swiping: boolean;
+    pastAbstainPoint: boolean;
   }>({
     questionId: null,
     pollId: null,
@@ -314,20 +312,20 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     swiping: false,
     pastAbstainPoint: false,
   });
-  // Suppress tap/expand for ~400ms after a swipe ends (the touchend +
-  // synthetic click both fire after release). Same pattern as
-  // touchJustHandled — kept separate so we don't conflate semantically.
+  // Mirrors `touchJustHandled` for the swipe gesture so the synthesized
+  // click after the touchend doesn't toggle expand.
   const swipeJustHandled = useRef(false);
-  // Question id of the card currently past the abstain threshold (or null).
-  // Drives the reveal layer's "faint → bold" transition: ref-based haptic
-  // tracking fires once per crossing; this state value triggers the
-  // re-render that flips the visual.
   const [swipeThresholdQuestionId, setSwipeThresholdQuestionId] = useState<string | null>(null);
-  // Pixel distance past which release commits to abstain. 30% of card
-  // width is large enough to require intent but small enough to feel snappy.
   const SWIPE_ABSTAIN_THRESHOLD_RATIO = 0.3;
-  // Threshold for entering swipe mode at all (vs scrolling/tapping).
   const SWIPE_DIRECTION_THRESHOLD_PX = 12;
+  const resetSwipeRef = () => {
+    swipeRef.current.questionId = null;
+    swipeRef.current.pollId = null;
+    swipeRef.current.swiping = false;
+    swipeRef.current.pastAbstainPoint = false;
+    swipeRef.current.offsetPx = 0;
+    setSwipeThresholdQuestionId(null);
+  };
 
   // On cache hit, defer the background refresh via requestIdleCallback so it
   // doesn't compete with React commit during a view transition.
@@ -1229,14 +1227,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               toggleExpand();
             };
 
-            // Past-threshold release: animate the card off-screen left, then
-            // submit a batched abstain for every un-responded sub-question.
-            // We deliberately hold the cardFrame inline transform until after
-            // the API call to avoid a snap when isAwaiting flips off and the
-            // reveal layer unmounts under the still-translated card. Resetting
-            // transform inside the same setState batch as the localStorage
-            // sync (driven via the QUESTION_VOTES_CHANGED_EVENT listener)
-            // produces a single coherent commit-and-restore frame.
+            // The slide-off animation has to complete BEFORE submitSwipeAbstain
+            // fires; otherwise the optimistic isAwaiting flip unmounts the
+            // reveal layer mid-transition and leaves a still-translated card
+            // visible against an empty wrapper. setTimeout matches the 220ms
+            // animation duration.
             const finalizeSwipe = () => {
               const cardEl = cardFrameRefs.current.get(question.id);
               if (!cardEl) return;
@@ -1257,11 +1252,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                   try { navigator.vibrate(20); } catch {}
                 }
                 window.setTimeout(() => {
-                  // Fire abstain. The vote-changed event will sync
-                  // votedQuestionIds/abstainedQuestionIds → this card's
-                  // isAwaiting flips false → the reveal layer unmounts.
-                  // Clear the inline transform so React owns the card's
-                  // position again.
                   cardEl.style.transition = 'none';
                   cardEl.style.transform = '';
                   void submitSwipeAbstain(pollId, subs);
@@ -1274,12 +1264,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                   cardEl.style.transform = '';
                 }, 200);
               }
-              swipeRef.current.questionId = null;
-              swipeRef.current.pollId = null;
-              swipeRef.current.swiping = false;
-              swipeRef.current.pastAbstainPoint = false;
-              swipeRef.current.offsetPx = 0;
-              setSwipeThresholdQuestionId(null);
+              resetSwipeRef();
               touchStartPos.current = null;
               isScrolling.current = false;
             };
@@ -1305,12 +1290,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               touchStartPos.current = null;
               isScrolling.current = false;
               if (swipeRef.current.questionId === question.id) {
-                swipeRef.current.questionId = null;
-                swipeRef.current.pollId = null;
-                swipeRef.current.swiping = false;
-                swipeRef.current.pastAbstainPoint = false;
-                swipeRef.current.offsetPx = 0;
-                setSwipeThresholdQuestionId(null);
+                resetSwipeRef();
               }
             };
 
@@ -1410,14 +1390,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
                 <div className="col-start-2 row-start-2 min-w-0 relative">
-                {/* Swipe-to-abstain reveal layer. Sits underneath the
-                     cardFrame and is fully covered when the card is at
-                     translateX(0). Drag-left exposes the right edge
-                     of this layer ("← abstain"); release past 30% of
-                     card width commits a batched abstain on every
-                     un-responded sub-question of the poll. Mounted only
-                     while the card is swipe-eligible (golden border on)
-                     so non-awaiting cards can't accidentally drag. */}
+                {/* Swipe-to-abstain reveal layer (covered by the cardFrame
+                     until the user drags left). Mounted only while
+                     swipe-eligible so non-awaiting cards can't drag. */}
                 {swipeEligible && (
                   <div
                     className="absolute inset-0 rounded-2xl flex items-center justify-end pr-5 text-amber-600 dark:text-amber-400 pointer-events-none select-none"

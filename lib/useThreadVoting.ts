@@ -114,6 +114,26 @@ export function useThreadVoting({
     },
   ).current;
 
+  // Shared post-`apiSubmitPollVotes` sync used by every poll-vote write path.
+  // Per CLAUDE.md, localStorage flags must be written BEFORE dispatching
+  // QUESTION_VOTES_CHANGED_EVENT — listeners (e.g. the thread page's golden
+  // border re-evaluator) read localStorage in the handler.
+  const syncStateAfterPollVotes = (returnedVotes: ApiVote[], voter_name: string | null) => {
+    for (const v of returnedVotes) {
+      setStoredVoteId(v.question_id, v.id);
+      setVotedQuestionFlag(v.question_id, v.is_abstain ? "abstained" : true);
+    }
+    const fresh = loadVotedQuestions();
+    setVotedQuestionIds(fresh.votedQuestionIds);
+    setAbstainedQuestionIds(fresh.abstainedQuestionIds);
+    if (voter_name) saveUserName(voter_name);
+    for (const v of returnedVotes) {
+      window.dispatchEvent(
+        new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: v.question_id } }),
+      );
+    }
+  };
+
   const buildYesNoPollItems = (subQuestions: Question[]): PollVoteItem[] => {
     const items: PollVoteItem[] = [];
     for (const sp of subQuestions) {
@@ -191,14 +211,6 @@ export function useThreadVoting({
         if (v) prepared.commit(v);
       }
 
-      for (const v of returnedVotes) {
-        setStoredVoteId(v.question_id, v.id);
-        setVotedQuestionFlag(v.question_id, v.is_abstain ? "abstained" : true);
-      }
-      const fresh = loadVotedQuestions();
-      setVotedQuestionIds(fresh.votedQuestionIds);
-      setAbstainedQuestionIds(fresh.abstainedQuestionIds);
-
       setPendingPollChoices((prev) => {
         let mutated = false;
         for (const sp of subQuestions) {
@@ -213,14 +225,7 @@ export function useThreadVoting({
         return next;
       });
 
-      if (voter_name) saveUserName(voter_name);
-
-      for (const v of returnedVotes) {
-        window.dispatchEvent(
-          new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: v.question_id } }),
-        );
-      }
-
+      syncStateAfterPollVotes(returnedVotes, voter_name);
       setPendingPollSubmit(null);
     } catch (err: unknown) {
       console.error("Poll vote submit failed:", err);
@@ -242,11 +247,8 @@ export function useThreadVoting({
   };
 
   // Swipe-to-abstain on a thread card. Submits a single batched abstain for
-  // every un-responded sub-question of the poll. Reuses the existing
-  // optimistic-update + cache-invalidation pattern (apiSubmitPollVotes
-  // cascades the cache, then we sync localStorage flags + voted/abstained
-  // sets, then fire QUESTION_VOTES_CHANGED_EVENT). Caller does the slide-off
-  // animation; this function is the data side of the gesture.
+  // every un-responded sub-question of the poll. The caller drives the
+  // slide-off animation; this function is the data side of the gesture.
   const submitSwipeAbstain = async (
     pollId: string,
     subQuestions: Question[],
@@ -254,39 +256,19 @@ export function useThreadVoting({
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
     const items: PollVoteItem[] = subQuestions
       .filter((sp) => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id))
-      .map((sp) => ({
-        question_id: sp.id,
-        vote_id: null,
-        vote_type: sp.question_type,
-        is_abstain: true,
-        is_ranking_abstain: false,
-        yes_no_choice: null,
-        ranked_choices: null,
-        ranked_choice_tiers: null,
-        suggestions: null,
-        options_metadata: null,
-        voter_day_time_windows: null,
-        voter_duration: null,
-        liked_slots: null,
-        disliked_slots: null,
-      }));
+      .map((sp) =>
+        buildPollVoteItem(
+          { vote_type: sp.question_type, is_abstain: true },
+          sp.id,
+          null,
+          { questionType: sp.question_type, canSubmitSuggestions: false, isEditing: false },
+        ),
+      );
     if (items.length === 0) return { ok: true };
     try {
       const voter_name = getUserName()?.trim() || null;
       const returned = await apiSubmitPollVotes(pollId, { voter_name, items });
-      for (const v of returned) {
-        setStoredVoteId(v.question_id, v.id);
-        setVotedQuestionFlag(v.question_id, "abstained");
-      }
-      const fresh = loadVotedQuestions();
-      setVotedQuestionIds(fresh.votedQuestionIds);
-      setAbstainedQuestionIds(fresh.abstainedQuestionIds);
-      if (voter_name) saveUserName(voter_name);
-      for (const v of returned) {
-        window.dispatchEvent(
-          new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: v.question_id } }),
-        );
-      }
+      syncStateAfterPollVotes(returned, voter_name);
       return { ok: true };
     } catch (err) {
       console.error("Swipe abstain failed:", err);
