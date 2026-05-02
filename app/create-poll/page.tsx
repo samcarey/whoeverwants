@@ -1540,7 +1540,7 @@ export function CreateQuestionContent() {
           </div>
           <div
             data-draft-poll-card
-            className="mx-1.5 rounded-lg border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
+            className="mx-1.5 rounded-3xl border-2 border-dashed border-blue-400 dark:border-blue-500 bg-blue-50/40 dark:bg-blue-900/10"
           >
             {/* Staged questions list — sits at the top of the card with the
                 inline form appearing right below it (as if the form is the

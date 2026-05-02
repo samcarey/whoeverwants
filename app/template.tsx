@@ -233,10 +233,11 @@ function TemplateInner({ children }: AppTemplateProps) {
             // last card.
             ? { paddingBottom: '6rem' }
             // Thread-like pages have no floating chrome past the draft form,
-            // so a thin margin is plenty — the draft form is already the last
-            // thing in the list.
+            // but the draft card's outer dashed border shouldn't visually
+            // touch the screen edge at scroll-bottom — give it a small
+            // breather below.
             : isThreadLikePage
-              ? { paddingBottom: '0.5rem' }
+              ? { paddingBottom: '4.5rem' }
               : undefined}
         >
           {children}
