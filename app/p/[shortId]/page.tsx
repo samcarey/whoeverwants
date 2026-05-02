@@ -58,7 +58,7 @@ const suggestionPhaseRespondentFilter = (v: ApiVote) =>
 const SUBMIT_POLL_SELECTOR = '[aria-label="Submit poll"]';
 
 const SCROLL_HELPER_BUTTON_CLASS =
-  'fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
+  'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
 function ScrollHelperButton({
   direction,
@@ -73,7 +73,7 @@ function ScrollHelperButton({
   const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
   return (
     <button type="button" onClick={onClick} className={SCROLL_HELPER_BUTTON_CLASS} style={style} {...rest}>
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+      <svg className="w-[1.35rem] h-[1.35rem]" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d={path} />
       </svg>
     </button>
@@ -936,13 +936,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // Scroll-helper buttons. Two contextual nudges sit on the viewport edges:
   //   - Down arrow (bottom): when the always-on draft poll form is scrolled
   //     off below the viewport, tap to align its Submit button mid-screen.
-  //   - Up arrow (just below header): when there exist open polls the viewer
-  //     hasn't responded to AND at least one is scrolled off above the
-  //     viewport, tap to align the oldest such card's top with the bottom
-  //     of the fixed header.
-  // The "any-above" gate (rather than the stricter "none-visible") matches
-  // the practical scenario: most threads aren't tall enough below the
-  // awaiting block to push every awaiting card above the viewport.
+  //   - Up arrow (just below header): when NO awaiting card is visible in
+  //     the viewport AND at least one awaiting card sits above it, tap to
+  //     align the oldest such card's top with the bottom of the fixed header.
   const [scrollHelpers, setScrollHelpers] = useState<{
     showUp: boolean;
     showDown: boolean;
@@ -957,6 +953,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       const viewportTop = headerHeight;
       const viewportBottom = window.innerHeight;
       let oldestAwaitingAboveId: string | null = null;
+      let anyAwaitingVisible = false;
       // threadQuestions sorts awaiting cards last by created_at ascending, so
       // the FIRST awaiting we encounter above the viewport is the oldest.
       for (const group of groupedThreadQuestions) {
@@ -967,9 +964,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         const r = card.getBoundingClientRect();
         if (r.bottom <= viewportTop) {
           if (oldestAwaitingAboveId === null) oldestAwaitingAboveId = question.id;
+        } else if (r.top < viewportBottom) {
+          anyAwaitingVisible = true;
         }
       }
-      const showUp = oldestAwaitingAboveId !== null;
+      const showUp = !anyAwaitingVisible && oldestAwaitingAboveId !== null;
       const submitBtn = document.querySelector(SUBMIT_POLL_SELECTOR) as HTMLElement | null;
       const showDown = !!submitBtn && submitBtn.getBoundingClientRect().top >= viewportBottom;
       setScrollHelpers((prev) => (
