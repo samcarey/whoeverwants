@@ -250,6 +250,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     handleWrapperSubmitStateChange,
     confirmPollSubmit,
     confirmVoteChange,
+    submitSwipeAbstain,
   } = useThreadVoting({ thread, setVotedQuestionIds, setAbstainedQuestionIds });
   // Prevents the synthetic click from firing after touchend already toggled expansion on mobile
   const touchJustHandled = useRef(false);
@@ -287,6 +288,41 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
   const [pressedQuestionId, setPressedQuestionId] = useState<string | null>(null);
+
+  // Swipe-to-abstain state. Only one card can be swiped at a time, so a
+  // single shared ref tracks the active gesture. Per-frame transforms are
+  // written directly to the cardFrame DOM ref for 60fps responsiveness;
+  // React state is only used for "card is currently animating" cleanup
+  // (so the touch-handled flag suppresses the synthesized click) and for
+  // marking a poll as in-flight so we don't re-fire on rapid taps.
+  const swipeRef = useRef<{
+    questionId: string | null;
+    pollId: string | null;
+    cardWidth: number;
+    startX: number;
+    startY: number;
+    offsetPx: number;
+    swiping: boolean;          // crossed horizontal threshold
+    pastAbstainPoint: boolean; // crossed abstain threshold (for haptic)
+  }>({
+    questionId: null,
+    pollId: null,
+    cardWidth: 0,
+    startX: 0,
+    startY: 0,
+    offsetPx: 0,
+    swiping: false,
+    pastAbstainPoint: false,
+  });
+  // Suppress tap/expand for ~400ms after a swipe ends (the touchend +
+  // synthetic click both fire after release). Same pattern as
+  // touchJustHandled — kept separate so we don't conflate semantically.
+  const swipeJustHandled = useRef(false);
+  // Pixel distance past which release commits to abstain. 30% of card
+  // width is large enough to require intent but small enough to feel snappy.
+  const SWIPE_ABSTAIN_THRESHOLD_RATIO = 0.3;
+  // Threshold for entering swipe mode at all (vs scrolling/tapping).
+  const SWIPE_DIRECTION_THRESHOLD_PX = 12;
 
   // On cache hit, defer the background refresh via requestIdleCallback so it
   // doesn't compete with React commit during a view transition.
@@ -1138,6 +1174,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             const wrapperCloseReason = wrapper?.close_reason ?? null;
             const wrapperUpdatedAt = wrapper?.updated_at ?? question.updated_at;
 
+            const isExpanded = expandedQuestionId === question.id;
+            // Swipe-to-abstain is only allowed when the golden border is on:
+            // open poll, anchor un-responded, card collapsed. Multi-question
+            // polls where the user has voted on q1 but not q2 are skipped
+            // (anchor not awaiting) — by then they've engaged with the poll.
+            const swipeEligible = isAwaiting && !isExpanded && !isClosed && !!group.pollId;
+
             const handleTouchStart = (e: React.TouchEvent) => {
               isLongPress.current = false;
               isScrolling.current = false;
@@ -1146,8 +1189,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 x: e.touches[0].clientX,
                 y: e.touches[0].clientY,
               };
+              const cardEl = cardFrameRefs.current.get(question.id);
+              swipeRef.current = {
+                questionId: question.id,
+                pollId: group.pollId,
+                cardWidth: cardEl?.offsetWidth ?? 0,
+                startX: e.touches[0].clientX,
+                startY: e.touches[0].clientY,
+                offsetPx: 0,
+                swiping: false,
+                pastAbstainPoint: false,
+              };
               longPressTimer.current = setTimeout(() => {
-                if (!isScrolling.current) {
+                if (!isScrolling.current && !swipeRef.current.swiping) {
                   isLongPress.current = true;
                   if ('vibrate' in navigator) {
                     try { navigator.vibrate(50); } catch {}
@@ -1166,14 +1220,73 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             };
 
             const handleClick = () => {
-              if (touchJustHandled.current) return;
+              if (touchJustHandled.current || swipeJustHandled.current) return;
               toggleExpand();
+            };
+
+            // Past-threshold release: animate the card off-screen left, then
+            // submit a batched abstain for every un-responded sub-question.
+            // We deliberately hold the cardFrame inline transform until after
+            // the API call to avoid a snap when isAwaiting flips off and the
+            // reveal layer unmounts under the still-translated card. Resetting
+            // transform inside the same setState batch as the localStorage
+            // sync (driven via the QUESTION_VOTES_CHANGED_EVENT listener)
+            // produces a single coherent commit-and-restore frame.
+            const finalizeSwipe = () => {
+              const cardEl = cardFrameRefs.current.get(question.id);
+              if (!cardEl) return;
+              const offset = swipeRef.current.offsetPx;
+              const cardWidth = swipeRef.current.cardWidth;
+              const threshold = cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
+              const shouldCommit = -offset >= threshold && !!swipeRef.current.pollId;
+
+              swipeJustHandled.current = true;
+              setTimeout(() => { swipeJustHandled.current = false; }, 400);
+
+              if (shouldCommit && swipeRef.current.pollId) {
+                const pollId = swipeRef.current.pollId;
+                const subs = group.subQuestions;
+                cardEl.style.transition = 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)';
+                cardEl.style.transform = `translateX(-${cardWidth}px)`;
+                if ('vibrate' in navigator) {
+                  try { navigator.vibrate(20); } catch {}
+                }
+                window.setTimeout(() => {
+                  // Fire abstain. The vote-changed event will sync
+                  // votedQuestionIds/abstainedQuestionIds → this card's
+                  // isAwaiting flips false → the reveal layer unmounts.
+                  // Clear the inline transform so React owns the card's
+                  // position again.
+                  cardEl.style.transition = 'none';
+                  cardEl.style.transform = '';
+                  void submitSwipeAbstain(pollId, subs);
+                }, 220);
+              } else {
+                cardEl.style.transition = 'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)';
+                cardEl.style.transform = 'translateX(0)';
+                window.setTimeout(() => {
+                  cardEl.style.transition = '';
+                  cardEl.style.transform = '';
+                }, 200);
+              }
+              swipeRef.current.questionId = null;
+              swipeRef.current.pollId = null;
+              swipeRef.current.swiping = false;
+              swipeRef.current.pastAbstainPoint = false;
+              swipeRef.current.offsetPx = 0;
+              touchStartPos.current = null;
+              isScrolling.current = false;
             };
 
             const handleTouchEnd = () => {
               if (longPressTimer.current) {
                 clearTimeout(longPressTimer.current);
                 longPressTimer.current = null;
+              }
+              if (swipeRef.current.swiping && swipeRef.current.questionId === question.id) {
+                finalizeSwipe();
+                setPressedQuestionId(null);
+                return;
               }
               if (!isScrolling.current && !isLongPress.current) {
                 setPressedQuestionId(null);
@@ -1185,13 +1298,48 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               }
               touchStartPos.current = null;
               isScrolling.current = false;
+              if (swipeRef.current.questionId === question.id) {
+                swipeRef.current.questionId = null;
+                swipeRef.current.pollId = null;
+                swipeRef.current.swiping = false;
+                swipeRef.current.pastAbstainPoint = false;
+                swipeRef.current.offsetPx = 0;
+              }
             };
 
             const handleTouchMove = (e: React.TouchEvent) => {
               if (!touchStartPos.current) return;
-              const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
-              const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
-              if (deltaX > 10 || deltaY > 10) {
+              const dx = e.touches[0].clientX - touchStartPos.current.x;
+              const dy = e.touches[0].clientY - touchStartPos.current.y;
+              const adx = Math.abs(dx);
+              const ady = Math.abs(dy);
+
+              // Already swiping: keep transforming the card with the finger.
+              if (swipeRef.current.swiping && swipeRef.current.questionId === question.id) {
+                const cardEl = cardFrameRefs.current.get(question.id);
+                if (!cardEl) return;
+                // Resist rightward overshoot (rubber-band) so the gesture
+                // feels anchored to leftward intent.
+                const offset = dx > 0 ? dx * 0.3 : dx;
+                swipeRef.current.offsetPx = offset;
+                cardEl.style.transition = 'none';
+                cardEl.style.transform = `translateX(${offset}px)`;
+                const threshold = swipeRef.current.cardWidth * SWIPE_ABSTAIN_THRESHOLD_RATIO;
+                const past = -offset >= threshold;
+                if (past && !swipeRef.current.pastAbstainPoint) {
+                  swipeRef.current.pastAbstainPoint = true;
+                  if ('vibrate' in navigator) {
+                    try { navigator.vibrate(15); } catch {}
+                  }
+                } else if (!past && swipeRef.current.pastAbstainPoint) {
+                  swipeRef.current.pastAbstainPoint = false;
+                }
+                return;
+              }
+
+              // Not yet swiping. Cancel long-press / pressed-state on
+              // significant motion (matches pre-swipe behavior).
+              if (adx > 10 || ady > 10) {
                 isScrolling.current = true;
                 setPressedQuestionId(null);
                 if (longPressTimer.current) {
@@ -1199,9 +1347,21 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                   longPressTimer.current = null;
                 }
               }
+              // Enter swipe mode iff motion is horizontal-dominant + leftward
+              // AND the card is currently swipe-eligible. Right-only motion
+              // never engages swipe mode (so right-swipe is a non-action).
+              if (
+                swipeEligible &&
+                !swipeRef.current.swiping &&
+                swipeRef.current.questionId === question.id &&
+                adx > SWIPE_DIRECTION_THRESHOLD_PX &&
+                adx > ady * 1.5 &&
+                dx < 0
+              ) {
+                swipeRef.current.swiping = true;
+              }
             };
 
-            const isExpanded = expandedQuestionId === question.id;
             // Suppress the status row + voter circles + countdown for a
             // freshly-submitted placeholder card while it FLIP-animates into
             // its slot. Once POLL_HYDRATED_EVENT swaps the placeholder for
@@ -1237,12 +1397,34 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      Creator + date moved to row 3 alongside respondents
                      (commit d44c6f4 on main). Row 1 is intentionally empty. */}
 
+                <div className="col-start-2 row-start-2 min-w-0 relative">
+                {/* Swipe-to-abstain reveal layer. Sits underneath the
+                     cardFrame and is fully covered when the card is at
+                     translateX(0). Drag-left exposes the right edge
+                     of this layer ("← abstain"); release past 30% of
+                     card width commits a batched abstain on every
+                     un-responded sub-question of the poll. Mounted only
+                     while the card is swipe-eligible (golden border on)
+                     so non-awaiting cards can't accidentally drag. */}
+                {swipeEligible && (
+                  <div
+                    className="absolute inset-0 rounded-2xl bg-amber-500 dark:bg-amber-600 flex items-center justify-end pr-5 text-white font-semibold pointer-events-none select-none shadow-sm"
+                    aria-hidden="true"
+                  >
+                    <span className="flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5M12 19l-7-7 7-7" />
+                      </svg>
+                      <span>abstain</span>
+                    </span>
+                  </div>
+                )}
                 <div
                   ref={(el) => {
                     if (el) cardFrameRefs.current.set(question.id, el);
                     else cardFrameRefs.current.delete(question.id);
                   }}
-                  className={`col-start-2 row-start-2 min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isPlaceholder ? 'card-pending-enter' : ''} transition-colors select-none relative`}
+                  className={`min-w-0 px-2 pt-1.5 ${isExpanded ? 'pb-1.5' : 'pb-0.5'} rounded-2xl border shadow-sm ${isAwaiting ? 'border-amber-400 dark:border-amber-500' : 'border-gray-200 dark:border-gray-800'} ${pressedQuestionId === question.id ? 'bg-blue-100 dark:bg-blue-900/40' : 'bg-gray-100 dark:bg-gray-900'} ${!isExpanded ? 'hover:bg-gray-200 dark:hover:bg-gray-800 active:bg-blue-100 dark:active:bg-blue-900/40' : ''} ${isPlaceholder ? 'card-pending-enter' : ''} transition-colors select-none relative`}
                 >
                   {/* Compact header — click/touch + long-press live here so they work
                        whether the card is collapsed or expanded without interfering
@@ -1690,6 +1872,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                       </div>
                     );
                   })()}
+                </div>
                 </div>
 
                 {/* Creator + pub date on the left, respondents on the right.

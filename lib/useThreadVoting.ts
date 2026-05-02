@@ -241,6 +241,60 @@ export function useThreadVoting({
     }
   };
 
+  // Swipe-to-abstain on a thread card. Submits a single batched abstain for
+  // every un-responded sub-question of the poll. Reuses the existing
+  // optimistic-update + cache-invalidation pattern (apiSubmitPollVotes
+  // cascades the cache, then we sync localStorage flags + voted/abstained
+  // sets, then fire QUESTION_VOTES_CHANGED_EVENT). Caller does the slide-off
+  // animation; this function is the data side of the gesture.
+  const submitSwipeAbstain = async (
+    pollId: string,
+    subQuestions: Question[],
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
+    const items: PollVoteItem[] = subQuestions
+      .filter((sp) => !votedQuestionIds.has(sp.id) && !abstainedQuestionIds.has(sp.id))
+      .map((sp) => ({
+        question_id: sp.id,
+        vote_id: null,
+        vote_type: sp.question_type,
+        is_abstain: true,
+        is_ranking_abstain: false,
+        yes_no_choice: null,
+        ranked_choices: null,
+        ranked_choice_tiers: null,
+        suggestions: null,
+        options_metadata: null,
+        voter_day_time_windows: null,
+        voter_duration: null,
+        liked_slots: null,
+        disliked_slots: null,
+      }));
+    if (items.length === 0) return { ok: true };
+    try {
+      const voter_name = getUserName()?.trim() || null;
+      const returned = await apiSubmitPollVotes(pollId, { voter_name, items });
+      for (const v of returned) {
+        setStoredVoteId(v.question_id, v.id);
+        setVotedQuestionFlag(v.question_id, "abstained");
+      }
+      const fresh = loadVotedQuestions();
+      setVotedQuestionIds(fresh.votedQuestionIds);
+      setAbstainedQuestionIds(fresh.abstainedQuestionIds);
+      if (voter_name) saveUserName(voter_name);
+      for (const v of returned) {
+        window.dispatchEvent(
+          new CustomEvent(QUESTION_VOTES_CHANGED_EVENT, { detail: { questionId: v.question_id } }),
+        );
+      }
+      return { ok: true };
+    } catch (err) {
+      console.error("Swipe abstain failed:", err);
+      const message = err instanceof Error ? err.message : "Submit failed.";
+      return { ok: false, error: message };
+    }
+  };
+
   const confirmVoteChange = async () => {
     if (!pendingVoteChange) return;
     const { questionId, newChoice } = pendingVoteChange;
@@ -325,5 +379,6 @@ export function useThreadVoting({
     handleWrapperSubmitStateChange,
     confirmPollSubmit,
     confirmVoteChange,
+    submitSwipeAbstain,
   };
 }
