@@ -1908,10 +1908,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               type="button"
               onClick={scrollToOldestAwaiting}
               aria-label="Scroll to next poll awaiting your response"
-              className="fixed left-1/2 -translate-x-1/2 z-40 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
+              className="fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
               style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
               </svg>
             </button>
@@ -1921,10 +1921,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               type="button"
               onClick={scrollToDraftSubmit}
               aria-label="Scroll to draft poll"
-              className="fixed left-1/2 -translate-x-1/2 z-40 w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
+              className="fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
               style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
