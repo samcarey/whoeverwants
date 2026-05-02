@@ -1408,7 +1408,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                      so non-awaiting cards can't accidentally drag. */}
                 {swipeEligible && (
                   <div
-                    className="absolute inset-0 rounded-2xl bg-amber-500 dark:bg-amber-600 flex items-center justify-end pr-5 text-white font-semibold pointer-events-none select-none shadow-sm"
+                    className="absolute inset-0 rounded-2xl flex items-center justify-end pr-5 text-amber-600 dark:text-amber-400 font-semibold pointer-events-none select-none"
                     aria-hidden="true"
                   >
                     <span className="flex items-center gap-2">
