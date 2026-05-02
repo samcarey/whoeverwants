@@ -909,9 +909,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   //   - Down arrow (bottom): when the always-on draft poll form is scrolled
   //     off below the viewport, tap to align its Submit button mid-screen.
   //   - Up arrow (just below header): when there exist open polls the viewer
-  //     hasn't responded to AND every awaiting card is scrolled off above,
-  //     tap to align the oldest awaiting card's top with the bottom of the
-  //     fixed header.
+  //     hasn't responded to AND at least one is scrolled off above the
+  //     viewport, tap to align the oldest such card's top with the bottom
+  //     of the fixed header.
+  // The "any-above" gate (rather than the stricter "none-visible") matches
+  // the practical scenario: most threads aren't tall enough below the
+  // awaiting block to push every awaiting card above the viewport, so a
+  // strict gate almost never triggers. Showing as soon as the user has
+  // scrolled past at least one awaiting card surfaces the affordance when
+  // it's actually useful.
   // The draft Submit button is portaled in by CreateQuestionContent (lazy
   // mount), so the visibility check uses a runtime querySelector and a
   // MutationObserver re-evaluates on portal childList changes — without it
@@ -930,27 +936,21 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const evaluate = () => {
       const viewportTop = headerHeight;
       const viewportBottom = window.innerHeight;
-      let oldestAwaitingId: string | null = null;
-      let anyAwaitingAbove = false;
-      let anyAwaitingInView = false;
+      let oldestAwaitingAboveId: string | null = null;
       // Walk anchors in DOM order; threadQuestions sorts awaiting cards last
-      // by created_at ascending, so the FIRST awaiting we encounter is the
-      // oldest awaiting.
+      // by created_at ascending, so the FIRST awaiting we encounter that's
+      // above the viewport is the oldest awaiting that's been scrolled past.
       for (const group of groupedThreadQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
         const card = cardRefs.current.get(question.id);
         if (!card) continue;
         const r = card.getBoundingClientRect();
-        const visible = r.bottom > viewportTop && r.top < viewportBottom;
-        if (visible) {
-          anyAwaitingInView = true;
-        } else if (r.bottom <= viewportTop) {
-          anyAwaitingAbove = true;
-          if (oldestAwaitingId === null) oldestAwaitingId = question.id;
+        if (r.bottom <= viewportTop) {
+          if (oldestAwaitingAboveId === null) oldestAwaitingAboveId = question.id;
         }
       }
-      const showUp = anyAwaitingAbove && !anyAwaitingInView;
+      const showUp = oldestAwaitingAboveId !== null;
 
       const submitBtn = document.querySelector('[aria-label="Submit poll"]') as HTMLElement | null;
       let showDown = false;
@@ -963,11 +963,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         if (
           prev.showUp === showUp &&
           prev.showDown === showDown &&
-          prev.oldestAwaitingId === oldestAwaitingId
+          prev.oldestAwaitingId === oldestAwaitingAboveId
         ) {
           return prev;
         }
-        return { showUp, showDown, oldestAwaitingId };
+        return { showUp, showDown, oldestAwaitingId: oldestAwaitingAboveId };
       });
     };
     evaluate();
