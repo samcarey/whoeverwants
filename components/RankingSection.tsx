@@ -270,7 +270,7 @@ export default function RankingSection({
 
       {showBallot && !wrapperHandlesSubmit && (
         <>
-          <div className="mt-4">
+          <div className="mt-4 empty:hidden">
             <CompactNameField name={voterName} setName={setVoterName} />
           </div>
           <button

@@ -1762,7 +1762,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                                   onTouchEnd={stopBubble}
                                   onTouchMove={stopBubble}
                                 >
-                                  <div className="mb-3">
+                                  <div className="mb-3 empty:hidden">
                                     <CompactNameField
                                       name={voterNameVal}
                                       setName={(name: string) => setPollVoterName(pollId, name)}
@@ -1837,7 +1837,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                                   onTouchEnd={stopBubble}
                                   onTouchMove={stopBubble}
                                 >
-                                  <div className="mb-3">
+                                  <div className="mb-3 empty:hidden">
                                     <CompactNameField
                                       name={voterNameVal}
                                       setName={(name: string) => setPollVoterName(pollId, name)}
