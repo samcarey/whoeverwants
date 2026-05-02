@@ -52,11 +52,6 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
-// Selector for the draft poll's Submit button rendered by CreateQuestionContent
-// (in app/create-poll/page.tsx). Used by the scroll-helper buttons below to
-// detect visibility and to scroll to it.
-const SUBMIT_POLL_SELECTOR = '[aria-label="Submit poll"]';
-
 const SCROLL_HELPER_BUTTON_CLASS =
   'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
@@ -640,25 +635,64 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
   }, [thread, visibleQuestionIds]);
 
-  // Scroll positioning has two distinct paths:
+  // ===================================================================
+  // Thread-page scroll strategy (single source of truth — keep cohesive)
+  // ===================================================================
+  // Three scroll surfaces all serve the same goal: keep the viewer's
+  // attention on whichever poll most likely wants their input next. The
+  // "awaiting set" = open polls the viewer has neither voted on nor
+  // abstained from.
   //
-  //   A. INITIAL — fired exactly once per mount in `useLayoutEffect` so the
-  //      target position is in place before the browser paints. No animation,
-  //      no waiting on async portals: the user sees the destination already
-  //      scrolled to where it should be, never a "scroll into place" frame
-  //      after the page renders. With a header-height-of-0 first commit (the
-  //      ResizeObserver inside `useMeasuredHeight` schedules a synchronous
-  //      state update on its first run), React flushes a second commit before
-  //      paint and this layout effect fires there with the real headerHeight.
+  // 1. INITIAL load (`useLayoutEffect` below, fires once per mount):
+  //    - URL targets a specific poll → scroll its expanded card's top
+  //      flush with the bottom of the fixed header.
+  //    - URL is the empty thread route → land at the document bottom
+  //      so the always-on draft poll form is visible.
+  //    Runs synchronously before paint via a fire-once `useRef` guard so
+  //    the first painted frame is already at the destination — never an
+  //    "in-place then scroll" two-frame flicker. Cleanup intentionally
+  //    omitted; useRef persists across StrictMode mount→cleanup→mount,
+  //    and a cleanup that reset the ref would re-fire on every
+  //    dep-change (e.g. async accessible-polls refresh) and re-scroll
+  //    against a now-taller page.
   //
-  //   B. SUBSEQUENT — fired on every later expand (user taps a collapsed card)
-  //      via `useEffect`, with the original rAF-driven scroll animation that
-  //      runs alongside the 300ms grid-rows expand.
+  // 2. TAP-EXPAND (`useEffect` further below, fires after initial layout
+  //    has settled): smoothly scrolls (rAF, ease-out cubic, 300ms —
+  //    matching the grid-rows expand transition) only enough to keep the
+  //    just-expanded card onscreen — align top to header if cut off
+  //    above, or trim the bottom overshoot otherwise (capped by
+  //    available slack so the top never disappears behind the header).
   //
-  // For (A) we always scroll: if the linked poll is awaiting, align the card
-  // top flush with the bottom of the top bar; otherwise bake in the bottom
-  // scroll position so the draft poll form sits against the viewport bottom
-  // (with the trimmed paddingBottom this leaves only a thin margin below it).
+  // 3. SCROLL-HELPER ARROWS (mutually exclusive, up takes precedence):
+  //    Two fixed buttons portaled into `#floating-fab-portal`. Both
+  //    point at a single awaiting card and align that card's top flush
+  //    with the bottom of the fixed header on tap.
+  //
+  //      - UP (just below header) shows when:
+  //          • no awaiting poll has ANY part visible in the viewport, AND
+  //          • at least one awaiting poll sits wholly above it.
+  //        Targets the OLDEST above-the-fold awaiting poll (= first in
+  //        DOM order, since awaiting cards sort by created_at ASC at the
+  //        bottom of the thread list).
+  //
+  //      - DOWN (above the bottom safe-area inset) shows when:
+  //          • no awaiting poll is FULLY visible, AND
+  //          • no awaiting poll has any part above the viewport
+  //            (otherwise the user should scroll up, not down), AND
+  //          • at least one awaiting poll has its bottom below the
+  //            viewport bottom (wholly below or bottom-clipped).
+  //        Targets the FIRST such below-the-fold awaiting poll.
+  //
+  //    The visibility evaluator is wired to scroll/resize AND a
+  //    body-subtree MutationObserver because vote-driven re-renders flip
+  //    a card's awaiting state without firing scroll, and CSS expand
+  //    transitions move card rects without firing resize. All reads are
+  //    rAF-coalesced so a mutation burst doesn't trigger N forced
+  //    layouts via getBoundingClientRect().
+  //
+  // ===================================================================
+  // Initial-load scroll (path 1).
+  // ===================================================================
   const hasHandledInitialExpandRef = useRef(false);
   useLayoutEffect(() => {
     if (!thread || loading) return;
@@ -692,10 +726,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
-  // (B) Subsequent-expand scroll animation. Only fires when expandedQuestionId
-  // changes AFTER the initial layout has settled (the initial-expand path
-  // above handles the first render). Keeps the rAF-driven smooth scroll that
-  // runs alongside the 300ms grid-rows expand transition.
+  // ===================================================================
+  // Tap-expand smooth scroll (path 2 — see strategy block above). Only
+  // fires when expandedQuestionId changes AFTER the initial layout has
+  // settled; the initial-expand path above handles the first render.
+  // ===================================================================
   useEffect(() => {
     if (!expandedQuestionId) return;
     if (headerHeight === 0) return;
@@ -933,17 +968,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedQuestionId, thread]);
 
-  // Scroll-helper buttons. Two contextual nudges sit on the viewport edges:
-  //   - Down arrow (bottom): when the always-on draft poll form is scrolled
-  //     off below the viewport, tap to align its Submit button mid-screen.
-  //   - Up arrow (just below header): when NO awaiting card is visible in
-  //     the viewport AND at least one awaiting card sits above it, tap to
-  //     align the oldest such card's top with the bottom of the fixed header.
+  // ===================================================================
+  // Scroll-helper arrow visibility (path 3 — see strategy block above).
+  // ===================================================================
   const [scrollHelpers, setScrollHelpers] = useState<{
     showUp: boolean;
     showDown: boolean;
-    oldestAwaitingId: string | null;
-  }>({ showUp: false, showDown: false, oldestAwaitingId: null });
+    upTargetId: string | null;
+    downTargetId: string | null;
+  }>({ showUp: false, showDown: false, upTargetId: null, downTargetId: null });
 
   useEffect(() => {
     if (!thread || typeof window === 'undefined') return;
@@ -952,35 +985,61 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       rafId = null;
       const viewportTop = headerHeight;
       const viewportBottom = window.innerHeight;
-      let oldestAwaitingAboveId: string | null = null;
-      let anyAwaitingVisible = false;
-      // threadQuestions sorts awaiting cards last by created_at ascending, so
-      // the FIRST awaiting we encounter above the viewport is the oldest.
+      let upTargetId: string | null = null;
+      let downTargetId: string | null = null;
+      let anyInView = false;
+      let anyFullyVisible = false;
+      let anyAbove = false; // wholly above OR top-clipped (partially above)
+      // threadQuestions sorts awaiting cards last by created_at ASC, so the
+      // FIRST wholly-above match is the oldest above-the-fold awaiting card,
+      // and the FIRST below-the-fold match is the closest one beneath the
+      // viewport (oldest among those still to be reached).
       for (const group of groupedThreadQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
         const card = cardRefs.current.get(question.id);
         if (!card) continue;
         const r = card.getBoundingClientRect();
-        if (r.bottom <= viewportTop) {
-          if (oldestAwaitingAboveId === null) oldestAwaitingAboveId = question.id;
-        } else if (r.top < viewportBottom) {
-          anyAwaitingVisible = true;
+        const wholeAbove = r.bottom <= viewportTop;
+        const wholeBelow = r.top >= viewportBottom;
+        if (wholeAbove) {
+          if (upTargetId === null) upTargetId = question.id;
+          anyAbove = true;
+          continue;
+        }
+        if (wholeBelow) {
+          if (downTargetId === null) downTargetId = question.id;
+          continue;
+        }
+        // Card overlaps the viewport (partial or full).
+        anyInView = true;
+        const topClipped = r.top < viewportTop;
+        const bottomClipped = r.bottom > viewportBottom;
+        if (!topClipped && !bottomClipped) anyFullyVisible = true;
+        if (topClipped) anyAbove = true;
+        if (bottomClipped && !topClipped && downTargetId === null) {
+          downTargetId = question.id;
         }
       }
-      const showUp = !anyAwaitingVisible && oldestAwaitingAboveId !== null;
-      const submitBtn = document.querySelector(SUBMIT_POLL_SELECTOR) as HTMLElement | null;
-      const showDown = !!submitBtn && submitBtn.getBoundingClientRect().top >= viewportBottom;
+      const showUp = !anyInView && upTargetId !== null;
+      // Down arrow is suppressed when up shows (up takes precedence) and
+      // when any awaiting poll sits above — scrolling down wouldn't help
+      // reach them.
+      const showDown =
+        !showUp && !anyFullyVisible && !anyAbove && downTargetId !== null;
       setScrollHelpers((prev) => (
-        prev.showUp === showUp && prev.showDown === showDown && prev.oldestAwaitingId === oldestAwaitingAboveId
+        prev.showUp === showUp &&
+        prev.showDown === showDown &&
+        prev.upTargetId === upTargetId &&
+        prev.downTargetId === downTargetId
           ? prev
-          : { showUp, showDown, oldestAwaitingId: oldestAwaitingAboveId }
+          : { showUp, showDown, upTargetId, downTargetId }
       ));
     };
-    // rAF-coalesce: the MutationObserver on body subtree fires on every DOM
-    // mutation (vote-driven re-renders, expand/collapse, etc.). Without
-    // coalescing each fire would force-layout via getBoundingClientRect on
-    // every awaiting card + the submit button.
+    // rAF-coalesce: a body-subtree MutationObserver fires on every DOM
+    // mutation (vote-driven re-renders, expand/collapse animations,
+    // countdown text updates). Without coalescing each burst would force a
+    // layout via getBoundingClientRect on every awaiting card.
     const schedule = () => {
       if (rafId !== null) return;
       rafId = requestAnimationFrame(evaluate);
@@ -988,9 +1047,9 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     evaluate();
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule, { passive: true });
-    // Body subtree catches the lazy-mount of CreateQuestionContent (whose
-    // draft card portals in via DRAFT_POLL_PORTAL_ID) AND vote-driven DOM
-    // changes that flip a card's awaiting state.
+    // Body subtree catches vote-driven DOM changes that flip a card's
+    // awaiting state plus expand/collapse height transitions that move
+    // card rects without firing scroll/resize.
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => {
@@ -1002,16 +1061,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, groupedThreadQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
 
-  const scrollToDraftSubmit = () => {
-    const submitBtn = document.querySelector(SUBMIT_POLL_SELECTOR) as HTMLElement | null;
-    if (!submitBtn) return;
-    const r = submitBtn.getBoundingClientRect();
-    const targetY = window.scrollY + r.top + r.height / 2 - window.innerHeight / 2;
-    window.scrollTo({ top: targetY, behavior: 'smooth' });
-  };
-
-  const scrollToOldestAwaiting = () => {
-    const id = scrollHelpers.oldestAwaitingId;
+  // Both arrows use the same action: align the target card's top flush
+  // with the bottom of the fixed header. For wholly-above / wholly-below
+  // cards this brings them just below the header; for bottom-clipped
+  // partial-below cards this scrolls down by the exact amount needed to
+  // reveal the rest (which lands the bottom at viewport bottom when the
+  // card fits in the viewport).
+  const scrollAwaitingToHeader = (id: string | null) => {
     if (!id) return;
     const card = cardRefs.current.get(id);
     if (!card) return;
@@ -1921,7 +1977,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           {scrollHelpers.showUp && (
             <ScrollHelperButton
               direction="up"
-              onClick={scrollToOldestAwaiting}
+              onClick={() => scrollAwaitingToHeader(scrollHelpers.upTargetId)}
               aria-label="Scroll to next poll awaiting your response"
               style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
             />
@@ -1929,8 +1985,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           {scrollHelpers.showDown && (
             <ScrollHelperButton
               direction="down"
-              onClick={scrollToDraftSubmit}
-              aria-label="Scroll to draft poll"
+              onClick={() => scrollAwaitingToHeader(scrollHelpers.downTargetId)}
+              aria-label="Scroll to next poll awaiting your response"
               style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
             />
           )}
