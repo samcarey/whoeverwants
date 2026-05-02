@@ -237,7 +237,7 @@ function TemplateInner({ children }: AppTemplateProps) {
             // touch the screen edge at scroll-bottom — give it a small
             // breather below.
             : isThreadLikePage
-              ? { paddingBottom: '1.5rem' }
+              ? { paddingBottom: '4.5rem' }
               : undefined}
         >
           {children}
