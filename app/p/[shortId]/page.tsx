@@ -1005,20 +1005,17 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         if (wholeAbove) {
           if (upTargetId === null) upTargetId = question.id;
           anyAbove = true;
-          continue;
-        }
-        if (wholeBelow) {
+        } else if (wholeBelow) {
           if (downTargetId === null) downTargetId = question.id;
-          continue;
-        }
-        // Card overlaps the viewport (partial or full).
-        anyInView = true;
-        const topClipped = r.top < viewportTop;
-        const bottomClipped = r.bottom > viewportBottom;
-        if (!topClipped && !bottomClipped) anyFullyVisible = true;
-        if (topClipped) anyAbove = true;
-        if (bottomClipped && !topClipped && downTargetId === null) {
-          downTargetId = question.id;
+        } else {
+          anyInView = true;
+          const topClipped = r.top < viewportTop;
+          const bottomClipped = r.bottom > viewportBottom;
+          if (!topClipped && !bottomClipped) anyFullyVisible = true;
+          if (topClipped) anyAbove = true;
+          if (bottomClipped && !topClipped && downTargetId === null) {
+            downTargetId = question.id;
+          }
         }
       }
       const showUp = !anyInView && upTargetId !== null;
