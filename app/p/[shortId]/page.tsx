@@ -52,6 +52,34 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
+// Selector for the draft poll's Submit button rendered by CreateQuestionContent
+// (in app/create-poll/page.tsx). Used by the scroll-helper buttons below to
+// detect visibility and to scroll to it.
+const SUBMIT_POLL_SELECTOR = '[aria-label="Submit poll"]';
+
+const SCROLL_HELPER_BUTTON_CLASS =
+  'fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
+
+function ScrollHelperButton({
+  direction,
+  onClick,
+  style,
+  ...rest
+}: {
+  direction: 'up' | 'down';
+  onClick: () => void;
+  style: React.CSSProperties;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'style' | 'type' | 'className'>) {
+  const path = direction === 'up' ? 'M5 15l7-7 7 7' : 'M19 9l-7 7-7-7';
+  return (
+    <button type="button" onClick={onClick} className={SCROLL_HELPER_BUTTON_CLASS} style={style} {...rest}>
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+      </svg>
+    </button>
+  );
+}
+
 // Inverse grid-rows clip for compact pills in the thread card header:
 // full height when collapsed, 0 when expanded, animating in lockstep
 // with the heavy-content expand clip below. The pill sits directly at the
@@ -914,32 +942,23 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   //     of the fixed header.
   // The "any-above" gate (rather than the stricter "none-visible") matches
   // the practical scenario: most threads aren't tall enough below the
-  // awaiting block to push every awaiting card above the viewport, so a
-  // strict gate almost never triggers. Showing as soon as the user has
-  // scrolled past at least one awaiting card surfaces the affordance when
-  // it's actually useful.
-  // The draft Submit button is portaled in by CreateQuestionContent (lazy
-  // mount), so the visibility check uses a runtime querySelector and a
-  // MutationObserver re-evaluates on portal childList changes — without it
-  // the button would mount silently and the down arrow would only appear
-  // after the next scroll event.
+  // awaiting block to push every awaiting card above the viewport.
   const [scrollHelpers, setScrollHelpers] = useState<{
     showUp: boolean;
     showDown: boolean;
     oldestAwaitingId: string | null;
   }>({ showUp: false, showDown: false, oldestAwaitingId: null });
-  const oldestAwaitingIdRef = useRef<string | null>(null);
-  oldestAwaitingIdRef.current = scrollHelpers.oldestAwaitingId;
 
   useEffect(() => {
     if (!thread || typeof window === 'undefined') return;
+    let rafId: number | null = null;
     const evaluate = () => {
+      rafId = null;
       const viewportTop = headerHeight;
       const viewportBottom = window.innerHeight;
       let oldestAwaitingAboveId: string | null = null;
-      // Walk anchors in DOM order; threadQuestions sorts awaiting cards last
-      // by created_at ascending, so the FIRST awaiting we encounter that's
-      // above the viewport is the oldest awaiting that's been scrolled past.
+      // threadQuestions sorts awaiting cards last by created_at ascending, so
+      // the FIRST awaiting we encounter above the viewport is the oldest.
       for (const group of groupedThreadQuestions) {
         const question = group.anchor;
         if (!isAwaitingResponse(question)) continue;
@@ -951,42 +970,41 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         }
       }
       const showUp = oldestAwaitingAboveId !== null;
-
-      const submitBtn = document.querySelector('[aria-label="Submit poll"]') as HTMLElement | null;
-      let showDown = false;
-      if (submitBtn) {
-        const r = submitBtn.getBoundingClientRect();
-        showDown = r.top >= viewportBottom;
-      }
-
-      setScrollHelpers((prev) => {
-        if (
-          prev.showUp === showUp &&
-          prev.showDown === showDown &&
-          prev.oldestAwaitingId === oldestAwaitingAboveId
-        ) {
-          return prev;
-        }
-        return { showUp, showDown, oldestAwaitingId: oldestAwaitingAboveId };
-      });
+      const submitBtn = document.querySelector(SUBMIT_POLL_SELECTOR) as HTMLElement | null;
+      const showDown = !!submitBtn && submitBtn.getBoundingClientRect().top >= viewportBottom;
+      setScrollHelpers((prev) => (
+        prev.showUp === showUp && prev.showDown === showDown && prev.oldestAwaitingId === oldestAwaitingAboveId
+          ? prev
+          : { showUp, showDown, oldestAwaitingId: oldestAwaitingAboveId }
+      ));
+    };
+    // rAF-coalesce: the MutationObserver on body subtree fires on every DOM
+    // mutation (vote-driven re-renders, expand/collapse, etc.). Without
+    // coalescing each fire would force-layout via getBoundingClientRect on
+    // every awaiting card + the submit button.
+    const schedule = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(evaluate);
     };
     evaluate();
-    window.addEventListener('scroll', evaluate, { passive: true });
-    window.addEventListener('resize', evaluate, { passive: true });
-    // Catch the lazy-mount of CreateQuestionContent so the down arrow
-    // appears without requiring the user to scroll first.
-    const observer = new MutationObserver(() => evaluate());
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+    // Body subtree catches the lazy-mount of CreateQuestionContent (whose
+    // draft card portals in via DRAFT_POLL_PORTAL_ID) AND vote-driven DOM
+    // changes that flip a card's awaiting state.
+    const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => {
-      window.removeEventListener('scroll', evaluate);
-      window.removeEventListener('resize', evaluate);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
       observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, groupedThreadQuestions, headerHeight, votedQuestionIds, abstainedQuestionIds]);
 
   const scrollToDraftSubmit = () => {
-    const submitBtn = document.querySelector('[aria-label="Submit poll"]') as HTMLElement | null;
+    const submitBtn = document.querySelector(SUBMIT_POLL_SELECTOR) as HTMLElement | null;
     if (!submitBtn) return;
     const r = submitBtn.getBoundingClientRect();
     const targetY = window.scrollY + r.top + r.height / 2 - window.innerHeight / 2;
@@ -994,12 +1012,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   };
 
   const scrollToOldestAwaiting = () => {
-    const id = oldestAwaitingIdRef.current;
+    const id = scrollHelpers.oldestAwaitingId;
     if (!id) return;
     const card = cardRefs.current.get(id);
     if (!card) return;
-    const r = card.getBoundingClientRect();
-    const targetY = window.scrollY + r.top - headerHeight;
+    const targetY = window.scrollY + card.getBoundingClientRect().top - headerHeight;
     window.scrollTo({ top: targetY, behavior: 'smooth' });
   };
 
@@ -1899,35 +1916,24 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 
       {/* Scroll-helper buttons — rendered via the floating-fab-portal so
           `position: fixed` is relative to the real viewport (outside the
-          responsive-scaling container's transform on desktop). Visibility
-          is driven by the scroll/resize/MutationObserver effect above. */}
+          responsive-scaling container's transform on desktop). */}
       {scrollHelperPortal && createPortal(
         <>
           {scrollHelpers.showUp && (
-            <button
-              type="button"
+            <ScrollHelperButton
+              direction="up"
               onClick={scrollToOldestAwaiting}
               aria-label="Scroll to next poll awaiting your response"
-              className="fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
               style={{ top: `calc(${headerHeight}px + 0.5rem)` }}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
+            />
           )}
           {scrollHelpers.showDown && (
-            <button
-              type="button"
+            <ScrollHelperButton
+              direction="down"
               onClick={scrollToDraftSubmit}
               aria-label="Scroll to draft poll"
-              className="fixed left-1/2 -translate-x-1/2 z-40 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity"
               style={{ bottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+            />
           )}
         </>,
         scrollHelperPortal,
