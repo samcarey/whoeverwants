@@ -612,6 +612,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               changed = true;
             }
           }
+          if (changed) console.log('[scroll-debug] visible++', { added: newlyVisible.length, total: next.size });
           return changed ? next : prev;
         });
       },
@@ -1152,6 +1153,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
           let changed = false;
           const next = new Set(prev);
           for (const k of additions!) if (!next.has(k)) { next.add(k); changed = true; }
+          if (changed) console.log('[scroll-debug] mounted++', { added: additions!.size, total: next.size });
           return changed ? next : prev;
         });
       },
@@ -1199,20 +1201,19 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (typeof window === 'undefined' || !thread) return;
     if (userInteractedRef.current) return;
     if (initialExpandedQuestionId === null) {
-      // Bottom-pin mode: keep scrollY at max as the doc grows.
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       if (Math.abs(window.scrollY - max) > 0.5) {
+        console.log('[scroll-debug] pin->bottom', { from: window.scrollY, to: max });
         window.scrollTo(0, max);
       }
       return;
     }
-    // Card-anchor mode: re-pin the URL-targeted card's top to headerHeight
-    // every time layout changes, until the user interacts.
     if (headerHeight === 0) return;
     const card = cardRefs.current.get(initialExpandedQuestionId);
     if (!card || !card.isConnected) return;
     const desiredScrollY = card.offsetTop - headerHeight;
     if (Math.abs(window.scrollY - desiredScrollY) > 0.5) {
+      console.log('[scroll-debug] pin->card', { from: window.scrollY, to: desiredScrollY });
       window.scrollTo(0, Math.max(0, desiredScrollY));
     }
   };
@@ -1226,7 +1227,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = () => { userInteractedRef.current = true; };
+    const disable = (e: Event) => {
+      if (!userInteractedRef.current) console.log('[scroll-debug] interacted', { type: e.type });
+      userInteractedRef.current = true;
+    };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
@@ -1237,6 +1241,41 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       window.removeEventListener('pointerdown', disable, { capture: true } as any);
       window.removeEventListener('wheel', disable, { capture: true } as any);
       window.removeEventListener('keydown', disable, { capture: true } as any);
+    };
+  }, []);
+
+  // [scroll-debug] sample scrollY on every frame during scroll to detect
+  // big jumps (programmatic vs natural). Logs once per ~100ms or per big
+  // jump (>30px in one frame, suggesting a non-momentum jump).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let lastScrollY = window.scrollY;
+    let lastLogAt = 0;
+    let scrolling = false;
+    let stopTimer: number | undefined;
+    const onScroll = () => {
+      const now = performance.now();
+      const y = window.scrollY;
+      const dy = y - lastScrollY;
+      if (!scrolling) {
+        scrolling = true;
+        console.log('[scroll-debug] scroll-start', { y, max: document.documentElement.scrollHeight - window.innerHeight, interacted: userInteractedRef.current });
+      }
+      if (Math.abs(dy) > 30 || now - lastLogAt > 200) {
+        console.log('[scroll-debug] scroll', { y, dy, t: Math.round(now - lastLogAt) });
+        lastLogAt = now;
+      }
+      lastScrollY = y;
+      if (stopTimer) clearTimeout(stopTimer);
+      stopTimer = window.setTimeout(() => {
+        scrolling = false;
+        console.log('[scroll-debug] scroll-end', { y: window.scrollY });
+      }, 150);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (stopTimer) clearTimeout(stopTimer);
     };
   }, []);
 
@@ -1340,14 +1379,15 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // reach them.
       const showDown =
         !showUp && !anyFullyVisible && !anyAbove && downTargetId !== null;
-      setScrollHelpers((prev) => (
-        prev.showUp === showUp &&
-        prev.showDown === showDown &&
-        prev.upTargetId === upTargetId &&
-        prev.downTargetId === downTargetId
-          ? prev
-          : { showUp, showDown, upTargetId, downTargetId }
-      ));
+      setScrollHelpers((prev) => {
+        const same =
+          prev.showUp === showUp &&
+          prev.showDown === showDown &&
+          prev.upTargetId === upTargetId &&
+          prev.downTargetId === downTargetId;
+        if (!same) console.log('[scroll-debug] helpers', { showUp, showDown });
+        return same ? prev : { showUp, showDown, upTargetId, downTargetId };
+      });
     };
     // rAF-coalesce: a body-subtree MutationObserver fires on every DOM
     // mutation (vote-driven re-renders, expand/collapse animations,
