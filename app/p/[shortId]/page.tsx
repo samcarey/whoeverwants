@@ -6,7 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, isPollOpen, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, pollHasAwaitingQuestion, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
@@ -2261,10 +2261,15 @@ function PollPageInner() {
     return () => { cancelled = true; };
   }, [shortId, router, resolvedInitial]);
 
-  // When the URL came from the home thread-list (`?thread=1`) and the
-  // linked poll is voted on AND closed already, skip the auto-expand —
-  // there's nothing actionable, so let ThreadContent's "scroll to draft
-  // form" path land the user on the place to compose a follow-up.
+  // When the URL came from the home thread-list (`?thread=1`), the picker
+  // returns either (a) the oldest awaiting poll, or (b) the newest poll as a
+  // fallback when nothing is awaiting. In case (b) — every poll responded to,
+  // or every poll closed — we want to skip auto-expand so ThreadContent's
+  // "no initial expand → scroll to bottom of document" path lands the user
+  // on the draft poll form instead of an irrelevant expanded card.
+  // `pollHasAwaitingQuestion(linkedPoll)` distinguishes the two cases: it
+  // returns true iff the linked poll itself is open with at least one
+  // unresponded question, which is exactly case (a).
   const suppressExpand = useMemo(() => {
     if (!resolved) return false;
     if (!fromThreadList) return false;
@@ -2272,11 +2277,9 @@ function PollPageInner() {
     const cachedPoll = resolved.question.poll_id
       ? getCachedPollById(resolved.question.poll_id)
       : null;
-    if (!cachedPoll || isPollOpen(cachedPoll)) return false;
+    if (!cachedPoll) return false;
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    return cachedPoll.questions.some(
-      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
-    );
+    return !pollHasAwaitingQuestion(cachedPoll, votedQuestionIds, abstainedQuestionIds);
   }, [fromThreadList, resolved]);
 
   if (error) {
