@@ -321,13 +321,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialThread) return new Set();
-    // Mount every group from the start. The progressive "mount as cards
-    // enter the IO buffer" approach traded scroll smoothness for memory:
-    // each entry into the buffer triggered a setState that re-rendered every
-    // card in the .map (the parent isn't memoized), and on dev that's
-    // ~200ms per render → visible stutter on scroll. Mounting all upfront
-    // pays a single initial-render cost, then no scroll-time mounts.
-    return new Set(initialThread.questions.map(q => groupKeyFor(q)));
+    // Seed with the URL-anchored group only — keeps initial paint cheap
+    // (one card rendered) even for very long threads. The progressive-fill
+    // effect below mounts the rest in idle-time batches around the anchor.
+    const initial = new Set<string>();
+    const target = initialExpandedQuestionId
+      ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
+      : null;
+    const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
+    if (seed) initial.add(groupKeyFor(seed));
+    return initial;
   });
 
   // Long press state
@@ -1047,14 +1050,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return groupedThreadQuestions[groupedThreadQuestions.length - 1].key;
   }, [groupedThreadQuestions, initialExpandedQuestionId]);
 
-  // Mount every group + drop keys for groups that no longer exist (forget,
-  // error reload, etc.). Mount-all upfront — no progressive virtualization —
-  // because the per-card-mount setState was the major scroll-stutter source
-  // (each entry into the IO buffer triggered a 25-card re-render).
+  // Drop mountedGroupKeys entries for groups that no longer exist (forget,
+  // error reload). Always include the anchor. Progressive fill below adds
+  // the rest of the keys.
   useEffect(() => {
     if (groupedThreadQuestions.length === 0) return;
+    const validKeys = new Set(groupedThreadQuestions.map(g => g.key));
     setMountedGroupKeys(prev => {
-      const next = new Set(groupedThreadQuestions.map(g => g.key));
+      const next = new Set<string>();
+      for (const k of prev) if (validKeys.has(k)) next.add(k);
+      if (anchorGroupKey) next.add(anchorGroupKey);
       if (next.size === prev.size) {
         let same = true;
         for (const k of next) if (!prev.has(k)) { same = false; break; }
@@ -1062,7 +1067,64 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       }
       return next;
     });
-  }, [groupedThreadQuestions]);
+  }, [groupedThreadQuestions, anchorGroupKey]);
+
+  // Progressive fill: after first paint, mount remaining groups in idle-time
+  // batches, prioritizing the cards closest to the anchor so the user sees
+  // surrounding content fill in first. Batches of N groups per idle tick keep
+  // each setState's re-render bounded; once all are mounted, no more setState
+  // fires, so subsequent scroll is steady. For very long threads this still
+  // loads everything (memory grows linearly with thread size) — a real
+  // bounded-memory window would need each card extracted into a
+  // React.memo'd component (TODO when threads hit ~hundreds of polls;
+  // see CLAUDE.md "Thread-Page Layout Stability"). The progressive fill
+  // matches the "polls get loaded in around it" UX from the spec.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (groupedThreadQuestions.length === 0) return;
+    if (mountedGroupKeys.size >= groupedThreadQuestions.length) return;
+    const anchorIdx = anchorGroupKey
+      ? groupedThreadQuestions.findIndex(g => g.key === anchorGroupKey)
+      : 0;
+    // Build a queue ordered by distance from anchor.
+    const queue: string[] = [];
+    const len = groupedThreadQuestions.length;
+    for (let d = 1; queue.length < len; d++) {
+      const before = anchorIdx - d;
+      const after = anchorIdx + d;
+      if (after < len) queue.push(groupedThreadQuestions[after].key);
+      if (before >= 0) queue.push(groupedThreadQuestions[before].key);
+      if (before < 0 && after >= len) break;
+    }
+    const BATCH = 4;
+    let cancelled = false;
+    let cursor = 0;
+    const ric: ((cb: () => void) => number) =
+      (window as any).requestIdleCallback?.bind(window)
+      ?? ((cb: () => void) => window.setTimeout(cb, 16));
+    const tick = () => {
+      if (cancelled) return;
+      const batch = queue.slice(cursor, cursor + BATCH).filter(k => !mountedGroupKeys.has(k));
+      cursor += BATCH;
+      if (batch.length > 0) {
+        setMountedGroupKeys(prev => {
+          const next = new Set(prev);
+          for (const k of batch) next.add(k);
+          return next;
+        });
+      }
+      if (cursor < queue.length) ric(tick);
+    };
+    const handle = ric(tick);
+    return () => {
+      cancelled = true;
+      if ((window as any).cancelIdleCallback) (window as any).cancelIdleCallback(handle);
+    };
+    // We deliberately omit mountedGroupKeys from deps so this effect runs
+    // once per groupedThreadQuestions change rather than on each batch
+    // setState; the cursor + filter handle resumption.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupedThreadQuestions, anchorGroupKey]);
 
   // ResizeObserver: keep groupHeightById in sync with each rendered group's
   // actual height (mounted card OR placeholder). Placeholders use these
