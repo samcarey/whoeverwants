@@ -52,6 +52,13 @@ import type { Thread } from "@/lib/threadUtils";
 const suggestionPhaseRespondentFilter = (v: ApiVote) =>
   !!(v.suggestions && v.suggestions.length > 0) || !!v.is_abstain;
 
+// Default placeholder height for not-yet-measured groups in the virtualized
+// thread list. Tuned to typical compact yes_no card height; the ResizeObserver
+// replaces this with the measured value as soon as a group has been mounted
+// once. Subsequent unmounts use the measured height, so unmount→remount cycles
+// don't shift the document layout.
+const ESTIMATED_GROUP_HEIGHT = 110;
+
 const SCROLL_HELPER_BUTTON_CLASS =
   'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
@@ -273,6 +280,34 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // + confirmation modal flow the per-question Submit used to invoke.
   const subQuestionBallotRefs = useRef<Map<string, QuestionBallotHandle>>(new Map());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+
+  // === Windowed virtualization ===
+  // Only mount cards within ~2 viewport heights of the visible region. Cards
+  // outside collapse to a measured-height placeholder div. Bounds DOM weight
+  // on long threads and keeps the URL-targeted card's offsetTop stable as
+  // cards above mount/unmount: the placeholder takes the same height the
+  // card occupied, so swapping placeholder↔card shifts the document layout
+  // only by (estimated→actual) on first mount, which the layout-shift
+  // compensation effect absorbs into scrollY.
+  const groupHeightById = useRef<Map<string, number>>(new Map());
+  const groupWindowObserverRef = useRef<IntersectionObserver | null>(null);
+  const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
+  // Last-render offsetTop of the layout-shift compensation anchor (the
+  // URL-targeted card if mounted, else the topmost mounted card). When
+  // a render shifts the anchor's offsetTop — e.g. a card above mounts and
+  // its actual height differs from the placeholder estimate — we scrollBy
+  // the delta so the anchor stays at the same viewport position.
+  const compensationAnchorRef = useRef<{ id: string; offsetTop: number } | null>(null);
+  const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
+    if (!initialThread) return new Set();
+    const initial = new Set<string>();
+    const target = initialExpandedQuestionId
+      ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
+      : null;
+    const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
+    if (seed) initial.add(seed.poll_id ?? `solo-${seed.id}`);
+    return initial;
+  });
 
   // Long press state
   const [modalQuestion, setModalQuestion] = useState<Question | null>(null);
@@ -766,6 +801,92 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, [thread, loading, headerHeight, initialExpandedQuestionId]);
 
   // ===================================================================
+  // Window IntersectionObserver: tracks which group wrappers are within
+  // ±2 viewport heights of the visible region. Activated only after the
+  // initial scroll lands so the observer's first measurements reflect the
+  // user's intended scroll position rather than the pre-scroll scrollY=0.
+  // ===================================================================
+  useEffect(() => {
+    if (!thread || !initialScrollApplied) return;
+    if (typeof IntersectionObserver === 'undefined' || typeof window === 'undefined') return;
+    const buffer = window.innerHeight * 2;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let additions: Set<string> | null = null;
+        let removals: Set<string> | null = null;
+        for (const entry of entries) {
+          const key = (entry.target as HTMLElement).dataset.groupKey;
+          if (!key) continue;
+          if (entry.isIntersecting) {
+            (additions ??= new Set()).add(key);
+          } else {
+            (removals ??= new Set()).add(key);
+          }
+        }
+        if (!additions && !removals) return;
+        setMountedGroupKeys((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          if (additions) for (const k of additions) if (!next.has(k)) { next.add(k); changed = true; }
+          if (removals) for (const k of removals) {
+            if (k === anchorGroupKey) continue;  // anchor stays mounted always
+            if (next.has(k)) { next.delete(k); changed = true; }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { root: null, rootMargin: `${buffer}px 0px` },
+    );
+    groupWindowObserverRef.current = observer;
+    cardRefs.current.forEach(el => {
+      if (el.dataset.groupKey) observer.observe(el);
+    });
+    return () => {
+      observer.disconnect();
+      groupWindowObserverRef.current = null;
+    };
+  }, [!!thread, initialScrollApplied, anchorGroupKey]);
+
+  // ===================================================================
+  // Layout-shift compensation: keep the URL-targeted (or topmost-mounted)
+  // card's offsetTop stable across mount/unmount/measurement-change cycles
+  // by scroll-compensating any change. Without this, cards mounting above
+  // the anchor with H_actual ≠ H_estimate would shift the anchor's viewport
+  // position. Runs after every render; user scrolls between renders aren't
+  // disturbed because we only react to anchor offsetTop deltas, not scrollY.
+  // ===================================================================
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined' || !thread) return;
+    let urlAnchorEl: HTMLDivElement | null = null;
+    let topMostId: string | null = null;
+    let topMostTop = Infinity;
+    cardRefs.current.forEach((el, id) => {
+      if (!el.isConnected) return;
+      if (id === initialExpandedQuestionId) urlAnchorEl = el;
+      if (el.offsetTop < topMostTop) {
+        topMostTop = el.offsetTop;
+        topMostId = id;
+      }
+    });
+    const pickedId = urlAnchorEl ? initialExpandedQuestionId : topMostId;
+    const pickedTop = urlAnchorEl ? (urlAnchorEl as HTMLElement).offsetTop : topMostTop;
+    if (!pickedId || !isFinite(pickedTop)) {
+      compensationAnchorRef.current = null;
+      return;
+    }
+    const prev = compensationAnchorRef.current;
+    if (prev && prev.id === pickedId) {
+      const delta = pickedTop - prev.offsetTop;
+      if (Math.abs(delta) > 0.5) {
+        window.scrollBy(0, delta);
+      }
+    }
+    // After (potential) compensation, offsetTop relative to doc is unchanged
+    // (we only adjusted scrollY). Capture for the next render's diff.
+    compensationAnchorRef.current = { id: pickedId, offsetTop: pickedTop };
+  });
+
+  // ===================================================================
   // Tap-expand smooth scroll (path 2 — see strategy block above). Only
   // fires when expandedQuestionId changes AFTER the initial layout has
   // settled; the initial-expand path above handles the first render.
@@ -962,6 +1083,67 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     }
     return groups;
   }, [threadQuestions, pollWrapperMap]);
+
+  // === Virtualization helpers (anchor + observer wiring) ===
+  // The URL-targeted group is the layout-shift compensation anchor + the
+  // initial mount seed. When the URL signals "no expand" (suppressExpand →
+  // null), fall back to the last group so the document stays pinned to the
+  // bottom while cards above mount.
+  const anchorGroupKey = useMemo(() => {
+    if (groupedThreadQuestions.length === 0) return null;
+    if (initialExpandedQuestionId) {
+      const found = groupedThreadQuestions.find(g =>
+        g.subQuestions.some(p => p.id === initialExpandedQuestionId)
+      );
+      if (found) return found.key;
+    }
+    return groupedThreadQuestions[groupedThreadQuestions.length - 1].key;
+  }, [groupedThreadQuestions, initialExpandedQuestionId]);
+
+  // Maintain mountedGroupKeys against churn: drop keys that no longer exist
+  // (forget, error reload), always keep the anchor mounted. Window expansion
+  // additions come from the IntersectionObserver below.
+  useEffect(() => {
+    if (groupedThreadQuestions.length === 0) return;
+    const validKeys = new Set(groupedThreadQuestions.map(g => g.key));
+    setMountedGroupKeys(prev => {
+      const next = new Set<string>();
+      for (const k of prev) if (validKeys.has(k)) next.add(k);
+      if (anchorGroupKey) next.add(anchorGroupKey);
+      if (next.size === prev.size) {
+        let same = true;
+        for (const k of next) if (!prev.has(k)) { same = false; break; }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [groupedThreadQuestions, anchorGroupKey]);
+
+  // ResizeObserver: keep groupHeightById in sync with each rendered group's
+  // actual height (mounted card OR placeholder). Placeholders use these
+  // measurements so unmounting a card doesn't shift the document.
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const el = entry.target as HTMLElement;
+        const key = el.dataset.groupKey;
+        if (!key) continue;
+        const h = el.offsetHeight;
+        if (h <= 0) continue;
+        if (groupHeightById.current.get(key) === h) continue;
+        groupHeightById.current.set(key, h);
+      }
+    });
+    groupSizeObserverRef.current = ro;
+    cardRefs.current.forEach(el => {
+      if (el.dataset.groupKey) ro.observe(el);
+    });
+    return () => {
+      ro.disconnect();
+      groupSizeObserverRef.current = null;
+    };
+  }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
   // wrapper's voter_names may have shifted. Refresh affected poll
@@ -1164,6 +1346,42 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       {/* paddingTop reserves space for the fixed header above. */}
       <div className="pb-2" style={{ paddingTop: `calc(${headerHeight}px + 0.5rem)` }}>
         {groupedThreadQuestions.map((group) => {
+            // Virtualized window: groups outside ±2 viewport heights of the
+            // visible region render as a measured-height placeholder div. The
+            // anchor (URL-targeted card or last group when suppressExpand) is
+            // always in mountedGroupKeys so its compact-form measurements feed
+            // the layout-shift compensation effect from the very first paint.
+            if (!mountedGroupKeys.has(group.key)) {
+              const measured = groupHeightById.current.get(group.key);
+              const placeholderHeight = measured ?? ESTIMATED_GROUP_HEIGHT;
+              const anchorId = group.anchor.id;
+              return (
+                <div
+                  key={`placeholder-${group.key}`}
+                  ref={(el) => {
+                    if (el) {
+                      el.dataset.questionId = anchorId;
+                      el.dataset.groupKey = group.key;
+                      cardRefs.current.set(anchorId, el);
+                      groupSizeObserverRef.current?.observe(el);
+                      groupWindowObserverRef.current?.observe(el);
+                      intersectionObserverRef.current?.observe(el);
+                    } else {
+                      const prev = cardRefs.current.get(anchorId);
+                      if (prev) {
+                        intersectionObserverRef.current?.unobserve(prev);
+                        groupSizeObserverRef.current?.unobserve(prev);
+                        groupWindowObserverRef.current?.unobserve(prev);
+                      }
+                      cardRefs.current.delete(anchorId);
+                    }
+                  }}
+                  className="ml-0 mr-1.5 mb-3"
+                  style={{ height: placeholderHeight }}
+                  aria-hidden="true"
+                />
+              );
+            }
             const question = group.anchor;
             const isMultiGroup = group.subQuestions.length > 1;
             const wrapper = group.poll;
@@ -1367,11 +1585,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
                 ref={(el) => {
                   if (el) {
                     el.dataset.questionId = question.id;
+                    el.dataset.groupKey = group.key;
                     cardRefs.current.set(question.id, el);
                     intersectionObserverRef.current?.observe(el);
+                    groupSizeObserverRef.current?.observe(el);
+                    groupWindowObserverRef.current?.observe(el);
                   } else {
                     const prev = cardRefs.current.get(question.id);
-                    if (prev) intersectionObserverRef.current?.unobserve(prev);
+                    if (prev) {
+                      intersectionObserverRef.current?.unobserve(prev);
+                      groupSizeObserverRef.current?.unobserve(prev);
+                      groupWindowObserverRef.current?.unobserve(prev);
+                    }
                     cardRefs.current.delete(question.id);
                   }
                 }}
