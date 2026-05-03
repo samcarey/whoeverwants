@@ -719,7 +719,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // ===================================================================
   // Thread-page scroll strategy (single source of truth — keep cohesive)
   // ===================================================================
-  // Three scroll surfaces all serve the same goal: keep the viewer's
+  // Four scroll surfaces all serve the same goal: keep the viewer's
   // attention on whichever poll most likely wants their input next. The
   // "awaiting set" = open polls the viewer has neither voted on nor
   // abstained from.
@@ -736,6 +736,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   //    and a cleanup that reset the ref would re-fire on every
   //    dep-change (e.g. async accessible-polls refresh) and re-scroll
   //    against a now-taller page.
+  //
+  // 1b. ANCHOR PIN (`applyScrollAdjustmentRef`, called from layout effect
+  //    AND ResizeObserver): until the user first interacts (wheel,
+  //    touchstart, keydown), each layout settling re-applies the path-1
+  //    target. Without this, cards above the URL anchor mounting from
+  //    placeholder→card with a different actual height would slide the
+  //    anchor away from the top, and async content (draft form, fonts)
+  //    would shift the bottom-pin'd page off the bottom. Gating on user
+  //    interaction (rather than scrollY deltas) avoids fighting the
+  //    browser's silent scrollY clamp when the doc shrinks — that clamp
+  //    fires a scroll event indistinguishable from a user gesture, but
+  //    no wheel/touch/keydown happens.
   //
   // 2. TAP-EXPAND (`useEffect` further below, fires after initial layout
   //    has settled): smoothly scrolls (rAF, ease-out cubic, 300ms —
