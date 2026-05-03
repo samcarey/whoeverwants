@@ -1064,15 +1064,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         groupHeightById.current.set(key, h);
         layoutDirty = true;
       }
-      // Re-apply bottom-pin on layout-only changes (e.g. async content
-      // landing in a card grows it without a React re-render). Without this,
-      // the pin only fires on React renders and the user is left at the
-      // pre-growth scroll position when the doc keeps growing post-layout.
-      if (layoutDirty && bottomPinActiveRef.current) {
-        const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-        if (Math.abs(window.scrollY - max) > 0.5) {
-          window.scrollTo(0, max);
-        }
+      // Re-apply scroll adjustment on layout-only changes (async content
+      // filling cards, draft form mounting, fonts/images settling). Without
+      // this, neither bottom-pin nor card-anchor compensation re-fires when
+      // doc size changes outside React's render cycle.
+      if (layoutDirty) {
+        applyScrollAdjustmentRef.current();
       }
     });
     groupSizeObserverRef.current = ro;
@@ -1138,20 +1135,25 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, [!!thread, initialScrollApplied, anchorGroupKey]);
 
   // ===================================================================
-  // Layout-shift compensation: keep the URL-targeted (or topmost-mounted)
-  // card's offsetTop stable across mount/unmount/measurement-change cycles
-  // by scroll-compensating any change. Without this, cards mounting above
-  // the anchor with H_actual ≠ H_estimate would shift the anchor's viewport
-  // position. Runs after every render; user scrolls between renders aren't
-  // disturbed because we only react to anchor offsetTop deltas, not scrollY.
+  // Layout-shift compensation + bottom-pin. One unified function called
+  // from both useLayoutEffect (every render) and the ResizeObserver (every
+  // layout change, including async growth that doesn't trigger a render).
+  //
+  // - Card-anchor mode (initialExpandedQuestionId set): track the URL
+  //   anchor's offsetTop. When it changes — e.g. cards above mount with
+  //   H_actual ≠ H_estimate — scrollBy the delta so the anchor stays at
+  //   the same viewport position. User scrolls between calls aren't
+  //   disturbed because we only react to offsetTop deltas, not scrollY.
+  //
+  // - Bottom-pin mode (initialExpandedQuestionId null, suppressExpand):
+  //   as the doc grows, keep scrollY at max so the user lands on the
+  //   draft form. The pin disables once the user scrolls >50px above
+  //   bottom.
   // ===================================================================
-  useLayoutEffect(() => {
+  const applyScrollAdjustmentRef = useRef<() => void>(() => {});
+  applyScrollAdjustmentRef.current = () => {
     if (typeof window === 'undefined' || !thread) return;
     if (initialExpandedQuestionId === null) {
-      // Bottom-pin mode: as cards mount and the doc grows, keep scrollY at
-      // max so the user lands on the draft form even when the initial
-      // scroll-to-scrollHeight saturated against a still-short doc. The pin
-      // disables when the user scrolls >50px above bottom.
       if (!bottomPinActiveRef.current) return;
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       if (Math.abs(window.scrollY - max) > 0.5) {
@@ -1183,9 +1185,10 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         window.scrollBy(0, delta);
       }
     }
-    // After (potential) compensation, offsetTop relative to doc is unchanged
-    // (we only adjusted scrollY). Capture for the next render's diff.
     compensationAnchorRef.current = { id: pickedId, offsetTop: pickedTop };
+  };
+  useLayoutEffect(() => {
+    applyScrollAdjustmentRef.current();
   });
 
   // Disable bottom-pin once the user scrolls away from the bottom. We only
