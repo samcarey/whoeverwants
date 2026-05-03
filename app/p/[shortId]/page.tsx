@@ -298,6 +298,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // its actual height differs from the placeholder estimate — we scrollBy
   // the delta so the anchor stays at the same viewport position.
   const compensationAnchorRef = useRef<{ id: string; offsetTop: number } | null>(null);
+  // suppressExpand mode (initialExpandedQuestionId === null) pins scrollY to
+  // the bottom of the doc as cards above mount and the doc grows. The pin
+  // stays active until the user scrolls away from bottom (>50px). Without
+  // this, the initial `scrollTo(0, scrollHeight)` runs against a short doc
+  // (most groups still placeholders) and saturates at 0; subsequent doc
+  // growth doesn't re-apply the bottom-scroll, leaving the user at the top.
+  const bottomPinActiveRef = useRef(initialExpandedQuestionId === null);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialThread) return new Set();
     const initial = new Set<string>();
@@ -1116,6 +1123,18 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // ===================================================================
   useLayoutEffect(() => {
     if (typeof window === 'undefined' || !thread) return;
+    if (initialExpandedQuestionId === null) {
+      // Bottom-pin mode: as cards mount and the doc grows, keep scrollY at
+      // max so the user lands on the draft form even when the initial
+      // scroll-to-scrollHeight saturated against a still-short doc. The pin
+      // disables when the user scrolls >50px above bottom.
+      if (!bottomPinActiveRef.current) return;
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      if (Math.abs(window.scrollY - max) > 0.5) {
+        window.scrollTo(0, max);
+      }
+      return;
+    }
     let urlAnchorEl: HTMLDivElement | null = null;
     let topMostId: string | null = null;
     let topMostTop = Infinity;
@@ -1144,6 +1163,23 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     // (we only adjusted scrollY). Capture for the next render's diff.
     compensationAnchorRef.current = { id: pickedId, offsetTop: pickedTop };
   });
+
+  // Disable bottom-pin once the user scrolls away from the bottom. We only
+  // care about scroll events that originate from user gestures — our own
+  // scrollTo(0, max) calls leave scrollY at exactly max, so the threshold
+  // doesn't trip.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onScroll = () => {
+      if (!bottomPinActiveRef.current) return;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (window.scrollY < max - 50) {
+        bottomPinActiveRef.current = false;
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
   // wrapper's voter_names may have shifted. Refresh affected poll
