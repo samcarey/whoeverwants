@@ -1131,28 +1131,27 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (!thread || !initialScrollApplied) return;
     if (typeof IntersectionObserver === 'undefined' || typeof window === 'undefined') return;
     const buffer = window.innerHeight * 2;
+    // Mount-only window: groups within ±2vh of the viewport get added to
+    // mountedGroupKeys, but we never unmount on scroll. Each setState +
+    // re-render walks the entire .map, so unmounting cards that have already
+    // been mounted (and would just remount when the user scrolls back) trades
+    // a tiny memory win for visible scroll stutter on long threads. The
+    // initial gating (only the anchor mounts on first paint) is enough to
+    // keep the page responsive on cold loads.
     const observer = new IntersectionObserver(
       (entries) => {
         let additions: Set<string> | null = null;
-        let removals: Set<string> | null = null;
         for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
           const key = (entry.target as HTMLElement).dataset.groupKey;
           if (!key) continue;
-          if (entry.isIntersecting) {
-            (additions ??= new Set()).add(key);
-          } else {
-            (removals ??= new Set()).add(key);
-          }
+          (additions ??= new Set()).add(key);
         }
-        if (!additions && !removals) return;
+        if (!additions) return;
         setMountedGroupKeys((prev) => {
           let changed = false;
           const next = new Set(prev);
-          if (additions) for (const k of additions) if (!next.has(k)) { next.add(k); changed = true; }
-          if (removals) for (const k of removals) {
-            if (k === anchorGroupKey) continue;  // anchor stays mounted always
-            if (next.has(k)) { next.delete(k); changed = true; }
-          }
+          for (const k of additions!) if (!next.has(k)) { next.add(k); changed = true; }
           return changed ? next : prev;
         });
       },
@@ -1166,7 +1165,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       observer.disconnect();
       groupWindowObserverRef.current = null;
     };
-  }, [!!thread, initialScrollApplied, anchorGroupKey]);
+  }, [!!thread, initialScrollApplied]);
 
   // ===================================================================
   // Layout-shift compensation + bottom-pin. One unified function called
