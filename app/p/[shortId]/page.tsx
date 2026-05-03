@@ -297,14 +297,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // a render shifts the anchor's offsetTop — e.g. a card above mounts and
   // its actual height differs from the placeholder estimate — we scrollBy
   // the delta so the anchor stays at the same viewport position.
-  const compensationAnchorRef = useRef<{ id: string; offsetTop: number } | null>(null);
-  // suppressExpand mode (initialExpandedQuestionId === null) pins scrollY to
-  // the bottom of the doc as cards above mount and the doc grows. The pin
-  // stays active until the user scrolls away from bottom (>50px). Without
-  // this, the initial `scrollTo(0, scrollHeight)` runs against a short doc
-  // (most groups still placeholders) and saturates at 0; subsequent doc
-  // growth doesn't re-apply the bottom-scroll, leaving the user at the top.
-  const bottomPinActiveRef = useRef(initialExpandedQuestionId === null);
+  // Both anchor modes (card-anchor and bottom-pin) keep their pin active
+  // until the user explicitly interacts (wheel, touch, keyboard). This is
+  // intentionally cruder than tracking scrollY deltas: layout shifts above
+  // the anchor cause the browser to silently clamp scrollY when the doc
+  // shrinks, which a delta-based compensator can't distinguish from a user
+  // scroll. Gating on user input is unambiguous — until the user touches
+  // anything, every layout settling re-pins.
+  const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialThread) return new Set();
     const initial = new Set<string>();
@@ -780,13 +780,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
-    console.log('[init-scroll] start', { initialExpandedQuestionId: initialExpandedQuestionId?.slice(0,8), scrollY: window.scrollY, headerHeight });
     if (initialExpandedQuestionId) {
       const card = cardRefs.current.get(initialExpandedQuestionId);
       if (card) {
         const cardTopY = card.getBoundingClientRect().top;
         const targetDelta = cardTopY - headerHeight;
-        console.log('[init-scroll]', { cardTopY, targetDelta, willScrollTo: window.scrollY + targetDelta });
         if (targetDelta !== 0) {
           window.scrollTo(0, window.scrollY + targetDelta);
         }
@@ -1155,62 +1153,44 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const applyScrollAdjustmentRef = useRef<() => void>(() => {});
   applyScrollAdjustmentRef.current = () => {
     if (typeof window === 'undefined' || !thread) return;
+    if (userInteractedRef.current) return;
     if (initialExpandedQuestionId === null) {
-      if (!bottomPinActiveRef.current) return;
+      // Bottom-pin mode: keep scrollY at max as the doc grows.
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       if (Math.abs(window.scrollY - max) > 0.5) {
         window.scrollTo(0, max);
       }
       return;
     }
-    let urlAnchorEl: HTMLDivElement | null = null;
-    let topMostId: string | null = null;
-    let topMostTop = Infinity;
-    cardRefs.current.forEach((el, id) => {
-      if (!el.isConnected) return;
-      if (id === initialExpandedQuestionId) urlAnchorEl = el;
-      if (el.offsetTop < topMostTop) {
-        topMostTop = el.offsetTop;
-        topMostId = id;
-      }
-    });
-    const pickedId = urlAnchorEl ? initialExpandedQuestionId : topMostId;
-    const pickedTop = urlAnchorEl ? (urlAnchorEl as HTMLElement).offsetTop : topMostTop;
-    if (!pickedId || !isFinite(pickedTop)) {
-      compensationAnchorRef.current = null;
-      return;
+    // Card-anchor mode: re-pin the URL-targeted card's top to headerHeight
+    // every time layout changes, until the user interacts.
+    if (headerHeight === 0) return;
+    const card = cardRefs.current.get(initialExpandedQuestionId);
+    if (!card || !card.isConnected) return;
+    const desiredScrollY = card.offsetTop - headerHeight;
+    if (Math.abs(window.scrollY - desiredScrollY) > 0.5) {
+      window.scrollTo(0, Math.max(0, desiredScrollY));
     }
-    const prev = compensationAnchorRef.current;
-    if (prev && prev.id === pickedId) {
-      const delta = pickedTop - prev.offsetTop;
-      console.log('[scroll-adj]', { pickedId: pickedId.slice(0,8), pickedTop, prevTop: prev.offsetTop, delta, scrollY: window.scrollY, mounted: cardRefs.current.size });
-      if (Math.abs(delta) > 0.5) {
-        window.scrollBy(0, delta);
-      }
-    } else {
-      console.log('[scroll-adj] init', { pickedId: pickedId?.slice(0,8), pickedTop, scrollY: window.scrollY, mounted: cardRefs.current.size });
-    }
-    compensationAnchorRef.current = { id: pickedId, offsetTop: pickedTop };
   };
   useLayoutEffect(() => {
     applyScrollAdjustmentRef.current();
   });
 
-  // Disable bottom-pin once the user scrolls away from the bottom. We only
-  // care about scroll events that originate from user gestures — our own
-  // scrollTo(0, max) calls leave scrollY at exactly max, so the threshold
-  // doesn't trip.
+  // Disable both pins on first user interaction. We listen to wheel /
+  // touchstart / keydown rather than scroll because programmatic scrolls
+  // (our own scrollTo, browser clamp on doc shrink) also fire scroll events
+  // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onScroll = () => {
-      if (!bottomPinActiveRef.current) return;
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      if (window.scrollY < max - 50) {
-        bottomPinActiveRef.current = false;
-      }
+    const disable = () => { userInteractedRef.current = true; };
+    window.addEventListener('wheel', disable, { passive: true });
+    window.addEventListener('touchstart', disable, { passive: true });
+    window.addEventListener('keydown', disable, { passive: true });
+    return () => {
+      window.removeEventListener('wheel', disable);
+      window.removeEventListener('touchstart', disable);
+      window.removeEventListener('keydown', disable);
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   // Refetch on vote-change events: when any question's votes change, the
