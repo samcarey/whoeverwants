@@ -1046,6 +1046,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
+      let anyChanged = false;
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
         const key = el.dataset.groupKey;
@@ -1054,6 +1055,17 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         if (h <= 0) continue;
         if (groupHeightById.current.get(key) === h) continue;
         groupHeightById.current.set(key, h);
+        anyChanged = true;
+      }
+      // Re-apply bottom-pin on layout-only changes (e.g. async content
+      // landing in a card grows it without a React re-render). Without this,
+      // the pin only fires on React renders and the user is left at the
+      // pre-growth scroll position when the doc keeps growing post-layout.
+      if (anyChanged && bottomPinActiveRef.current) {
+        const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        if (Math.abs(window.scrollY - max) > 0.5) {
+          window.scrollTo(0, max);
+        }
       }
     });
     groupSizeObserverRef.current = ro;
@@ -1130,7 +1142,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // disables when the user scrolls >50px above bottom.
       if (!bottomPinActiveRef.current) return;
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      console.log('[bottom-pin]', { scrollY: window.scrollY, max, scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight });
       if (Math.abs(window.scrollY - max) > 0.5) {
         window.scrollTo(0, max);
       }
