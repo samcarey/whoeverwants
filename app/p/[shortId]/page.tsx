@@ -1087,7 +1087,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
         }
         const key = el.dataset.groupKey;
         if (!key) continue;
-        const h = el.offsetHeight;
+        // Use borderBoxSize to avoid the forced layout that el.offsetHeight
+        // triggers per entry — during iOS URL-bar transitions every observed
+        // card fires at once, and 26 forced layouts back-to-back stutters
+        // the scroll. Round to 1px so sub-pixel jitter doesn't churn.
+        const blockSize = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        const h = Math.round(blockSize);
         if (h <= 0) continue;
         if (groupHeightById.current.get(key) === h) continue;
         groupHeightById.current.set(key, h);
