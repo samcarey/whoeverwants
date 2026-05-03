@@ -293,26 +293,23 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // on long threads; placeholders take the same height the card occupied so
   // mount/unmount cycles don't shift the document layout.
   const groupHeightById = useRef<Map<string, number>>(new Map());
-  const groupWindowObserverRef = useRef<IntersectionObserver | null>(null);
   const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
   // Shared ref-callback wiring for both placeholder and real card divs:
   // both register in cardRefs (so the existing scroll-helper logic that
   // iterates cardRefs works regardless of mount state) and observe via the
-  // visibleQuestionIds + groupSize + groupWindow observers.
+  // visibleQuestionIds + groupSize observers.
   const attachCardEl = (el: HTMLElement, anchorId: string, groupKey: string) => {
     el.dataset.questionId = anchorId;
     el.dataset.groupKey = groupKey;
     cardRefs.current.set(anchorId, el as HTMLDivElement);
     intersectionObserverRef.current?.observe(el);
     groupSizeObserverRef.current?.observe(el);
-    groupWindowObserverRef.current?.observe(el);
   };
   const detachCardEl = (anchorId: string) => {
     const prev = cardRefs.current.get(anchorId);
     if (prev) {
       intersectionObserverRef.current?.unobserve(prev);
       groupSizeObserverRef.current?.unobserve(prev);
-      groupWindowObserverRef.current?.unobserve(prev);
     }
     cardRefs.current.delete(anchorId);
   };
@@ -324,13 +321,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialThread) return new Set();
-    const initial = new Set<string>();
-    const target = initialExpandedQuestionId
-      ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
-      : null;
-    const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
-    if (seed) initial.add(groupKeyFor(seed));
-    return initial;
+    // Mount every group from the start. The progressive "mount as cards
+    // enter the IO buffer" approach traded scroll smoothness for memory:
+    // each entry into the buffer triggered a setState that re-rendered every
+    // card in the .map (the parent isn't memoized), and on dev that's
+    // ~200ms per render → visible stutter on scroll. Mounting all upfront
+    // pays a single initial-render cost, then no scroll-time mounts.
+    return new Set(initialThread.questions.map(q => groupKeyFor(q)));
   });
 
   // Long press state
@@ -612,7 +609,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               changed = true;
             }
           }
-          if (changed) console.log('[scroll-debug] visible++', { added: newlyVisible.length, total: next.size });
           return changed ? next : prev;
         });
       },
@@ -1051,16 +1047,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     return groupedThreadQuestions[groupedThreadQuestions.length - 1].key;
   }, [groupedThreadQuestions, initialExpandedQuestionId]);
 
-  // Maintain mountedGroupKeys against churn: drop keys that no longer exist
-  // (forget, error reload), always keep the anchor mounted. Window expansion
-  // additions come from the IntersectionObserver below.
+  // Mount every group + drop keys for groups that no longer exist (forget,
+  // error reload, etc.). Mount-all upfront — no progressive virtualization —
+  // because the per-card-mount setState was the major scroll-stutter source
+  // (each entry into the IO buffer triggered a 25-card re-render).
   useEffect(() => {
     if (groupedThreadQuestions.length === 0) return;
-    const validKeys = new Set(groupedThreadQuestions.map(g => g.key));
     setMountedGroupKeys(prev => {
-      const next = new Set<string>();
-      for (const k of prev) if (validKeys.has(k)) next.add(k);
-      if (anchorGroupKey) next.add(anchorGroupKey);
+      const next = new Set(groupedThreadQuestions.map(g => g.key));
       if (next.size === prev.size) {
         let same = true;
         for (const k of next) if (!prev.has(k)) { same = false; break; }
@@ -1068,7 +1062,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       }
       return next;
     });
-  }, [groupedThreadQuestions, anchorGroupKey]);
+  }, [groupedThreadQuestions]);
 
   // ResizeObserver: keep groupHeightById in sync with each rendered group's
   // actual height (mounted card OR placeholder). Placeholders use these
@@ -1123,64 +1117,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   }, []);
 
   // ===================================================================
-  // Window IntersectionObserver: tracks which group wrappers are within
-  // ±2 viewport heights of the visible region. Activated only after the
-  // initial scroll lands so the observer's first measurements reflect the
-  // user's intended scroll position rather than the pre-scroll scrollY=0.
-  // ===================================================================
-  useEffect(() => {
-    if (!thread || !initialScrollApplied) return;
-    if (typeof IntersectionObserver === 'undefined' || typeof window === 'undefined') return;
-    const buffer = window.innerHeight * 2;
-    // Mount-only window: groups within ±2vh of the viewport get added to
-    // mountedGroupKeys, but we never unmount on scroll. Each setState +
-    // re-render walks the entire .map, so unmounting cards that have already
-    // been mounted (and would just remount when the user scrolls back) trades
-    // a tiny memory win for visible scroll stutter on long threads. The
-    // initial gating (only the anchor mounts on first paint) is enough to
-    // keep the page responsive on cold loads.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        let additions: Set<string> | null = null;
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const key = (entry.target as HTMLElement).dataset.groupKey;
-          if (!key) continue;
-          (additions ??= new Set()).add(key);
-        }
-        if (!additions) return;
-        setMountedGroupKeys((prev) => {
-          let changed = false;
-          const next = new Set(prev);
-          for (const k of additions!) if (!next.has(k)) { next.add(k); changed = true; }
-          if (changed) console.log('[scroll-debug] mounted++', { added: additions!.size, total: next.size });
-          return changed ? next : prev;
-        });
-      },
-      { root: null, rootMargin: `${buffer}px 0px` },
-    );
-    groupWindowObserverRef.current = observer;
-    cardRefs.current.forEach(el => {
-      if (el.dataset.groupKey) observer.observe(el);
-    });
-    return () => {
-      observer.disconnect();
-      groupWindowObserverRef.current = null;
-    };
-  }, [!!thread, initialScrollApplied]);
-
-  // Disconnect the window observer once every group is mounted — there's
-  // nothing left to add, so leaving the observer firing on every scroll
-  // (each fire allocates entries + walks the setMountedGroupKeys updater
-  // for a no-op result) is pure waste.
-  useEffect(() => {
-    if (groupedThreadQuestions.length === 0) return;
-    if (mountedGroupKeys.size < groupedThreadQuestions.length) return;
-    groupWindowObserverRef.current?.disconnect();
-    groupWindowObserverRef.current = null;
-  }, [mountedGroupKeys, groupedThreadQuestions]);
-
-  // ===================================================================
   // Layout-shift compensation + bottom-pin. One unified function called
   // from both useLayoutEffect (every render) and the ResizeObserver (every
   // layout change, including async growth that doesn't trigger a render).
@@ -1203,7 +1139,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (initialExpandedQuestionId === null) {
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       if (Math.abs(window.scrollY - max) > 0.5) {
-        console.log('[scroll-debug] pin->bottom', { from: window.scrollY, to: max });
         window.scrollTo(0, max);
       }
       return;
@@ -1213,7 +1148,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (!card || !card.isConnected) return;
     const desiredScrollY = card.offsetTop - headerHeight;
     if (Math.abs(window.scrollY - desiredScrollY) > 0.5) {
-      console.log('[scroll-debug] pin->card', { from: window.scrollY, to: desiredScrollY });
       window.scrollTo(0, Math.max(0, desiredScrollY));
     }
   };
@@ -1227,10 +1161,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // and would falsely disable the pin during initial layout settling.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const disable = (e: Event) => {
-      if (!userInteractedRef.current) console.log('[scroll-debug] interacted', { type: e.type });
-      userInteractedRef.current = true;
-    };
+    const disable = () => { userInteractedRef.current = true; };
     // pointerdown covers mouse + touch + pen on every platform (including
     // iOS where touchstart sometimes doesn't bubble during scroll-engaged
     // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
@@ -1241,41 +1172,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       window.removeEventListener('pointerdown', disable, { capture: true } as any);
       window.removeEventListener('wheel', disable, { capture: true } as any);
       window.removeEventListener('keydown', disable, { capture: true } as any);
-    };
-  }, []);
-
-  // [scroll-debug] sample scrollY on every frame during scroll to detect
-  // big jumps (programmatic vs natural). Logs once per ~100ms or per big
-  // jump (>30px in one frame, suggesting a non-momentum jump).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let lastScrollY = window.scrollY;
-    let lastLogAt = 0;
-    let scrolling = false;
-    let stopTimer: number | undefined;
-    const onScroll = () => {
-      const now = performance.now();
-      const y = window.scrollY;
-      const dy = y - lastScrollY;
-      if (!scrolling) {
-        scrolling = true;
-        console.log('[scroll-debug] scroll-start', { y, max: document.documentElement.scrollHeight - window.innerHeight, interacted: userInteractedRef.current });
-      }
-      if (Math.abs(dy) > 30 || now - lastLogAt > 200) {
-        console.log('[scroll-debug] scroll', { y, dy, t: Math.round(now - lastLogAt) });
-        lastLogAt = now;
-      }
-      lastScrollY = y;
-      if (stopTimer) clearTimeout(stopTimer);
-      stopTimer = window.setTimeout(() => {
-        scrolling = false;
-        console.log('[scroll-debug] scroll-end', { y: window.scrollY });
-      }, 150);
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      if (stopTimer) clearTimeout(stopTimer);
     };
   }, []);
 
@@ -1379,15 +1275,14 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // reach them.
       const showDown =
         !showUp && !anyFullyVisible && !anyAbove && downTargetId !== null;
-      setScrollHelpers((prev) => {
-        const same =
-          prev.showUp === showUp &&
-          prev.showDown === showDown &&
-          prev.upTargetId === upTargetId &&
-          prev.downTargetId === downTargetId;
-        if (!same) console.log('[scroll-debug] helpers', { showUp, showDown });
-        return same ? prev : { showUp, showDown, upTargetId, downTargetId };
-      });
+      setScrollHelpers((prev) => (
+        prev.showUp === showUp &&
+        prev.showDown === showDown &&
+        prev.upTargetId === upTargetId &&
+        prev.downTargetId === downTargetId
+          ? prev
+          : { showUp, showDown, upTargetId, downTargetId }
+      ));
     };
     // rAF-coalesce: a body-subtree MutationObserver fires on every DOM
     // mutation (vote-driven re-renders, expand/collapse animations,
