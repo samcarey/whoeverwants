@@ -780,11 +780,13 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     if (headerHeight === 0) return;
     if (hasHandledInitialExpandRef.current) return;
     hasHandledInitialExpandRef.current = true;
+    console.log('[init-scroll] start', { initialExpandedQuestionId: initialExpandedQuestionId?.slice(0,8), scrollY: window.scrollY, headerHeight });
     if (initialExpandedQuestionId) {
       const card = cardRefs.current.get(initialExpandedQuestionId);
       if (card) {
         const cardTopY = card.getBoundingClientRect().top;
         const targetDelta = cardTopY - headerHeight;
+        console.log('[init-scroll]', { cardTopY, targetDelta, willScrollTo: window.scrollY + targetDelta });
         if (targetDelta !== 0) {
           window.scrollTo(0, window.scrollY + targetDelta);
         }
