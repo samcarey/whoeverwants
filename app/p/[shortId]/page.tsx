@@ -1181,9 +1181,12 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const prev = compensationAnchorRef.current;
     if (prev && prev.id === pickedId) {
       const delta = pickedTop - prev.offsetTop;
+      console.log('[scroll-adj]', { pickedId: pickedId.slice(0,8), pickedTop, prevTop: prev.offsetTop, delta, scrollY: window.scrollY, mounted: cardRefs.current.size });
       if (Math.abs(delta) > 0.5) {
         window.scrollBy(0, delta);
       }
+    } else {
+      console.log('[scroll-adj] init', { pickedId: pickedId?.slice(0,8), pickedTop, scrollY: window.scrollY, mounted: cardRefs.current.size });
     }
     compensationAnchorRef.current = { id: pickedId, offsetTop: pickedTop };
   };
