@@ -1227,13 +1227,16 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const disable = () => { userInteractedRef.current = true; };
-    window.addEventListener('wheel', disable, { passive: true });
-    window.addEventListener('touchstart', disable, { passive: true });
-    window.addEventListener('keydown', disable, { passive: true });
+    // pointerdown covers mouse + touch + pen on every platform (including
+    // iOS where touchstart sometimes doesn't bubble during scroll-engaged
+    // gestures). Keep wheel + keydown for trackpads and keyboard scrolls.
+    window.addEventListener('pointerdown', disable, { passive: true, capture: true });
+    window.addEventListener('wheel', disable, { passive: true, capture: true });
+    window.addEventListener('keydown', disable, { passive: true, capture: true });
     return () => {
-      window.removeEventListener('wheel', disable);
-      window.removeEventListener('touchstart', disable);
-      window.removeEventListener('keydown', disable);
+      window.removeEventListener('pointerdown', disable, { capture: true } as any);
+      window.removeEventListener('wheel', disable, { capture: true } as any);
+      window.removeEventListener('keydown', disable, { capture: true } as any);
     };
   }, []);
 
