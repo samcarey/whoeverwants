@@ -1046,24 +1046,30 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver((entries) => {
-      let anyChanged = false;
+      let layoutDirty = false;
       for (const entry of entries) {
         const el = entry.target as HTMLElement;
+        if (el === document.documentElement) {
+          // The doc itself resized — usually means content below the cards
+          // (draft poll portal filling in, async-loaded images/fonts) just
+          // landed. Trigger pin recheck regardless of card-height changes.
+          layoutDirty = true;
+          continue;
+        }
         const key = el.dataset.groupKey;
         if (!key) continue;
         const h = el.offsetHeight;
         if (h <= 0) continue;
         if (groupHeightById.current.get(key) === h) continue;
         groupHeightById.current.set(key, h);
-        anyChanged = true;
+        layoutDirty = true;
       }
       // Re-apply bottom-pin on layout-only changes (e.g. async content
       // landing in a card grows it without a React re-render). Without this,
       // the pin only fires on React renders and the user is left at the
       // pre-growth scroll position when the doc keeps growing post-layout.
-      if (anyChanged && bottomPinActiveRef.current) {
+      if (layoutDirty && bottomPinActiveRef.current) {
         const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-        console.log('[ro-pin]', { anyChanged, scrollY: window.scrollY, max, scrollHeight: document.documentElement.scrollHeight });
         if (Math.abs(window.scrollY - max) > 0.5) {
           window.scrollTo(0, max);
         }
@@ -1073,6 +1079,11 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     cardRefs.current.forEach(el => {
       if (el.dataset.groupKey) ro.observe(el);
     });
+    // Also observe the document element so post-card growth (the draft poll
+    // portal filling in, async-mounted images, fonts loading) triggers
+    // bottom-pin re-application even though those don't go through cards.
+    const docEl = document.documentElement;
+    if (docEl) ro.observe(docEl);
     return () => {
       ro.disconnect();
       groupSizeObserverRef.current = null;
@@ -1143,7 +1154,6 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // disables when the user scrolls >50px above bottom.
       if (!bottomPinActiveRef.current) return;
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      console.log('[layout-pin]', { scrollY: window.scrollY, max, scrollHeight: document.documentElement.scrollHeight });
       if (Math.abs(window.scrollY - max) > 0.5) {
         window.scrollTo(0, max);
       }
