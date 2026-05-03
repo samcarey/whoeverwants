@@ -1167,6 +1167,17 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     };
   }, [!!thread, initialScrollApplied]);
 
+  // Disconnect the window observer once every group is mounted — there's
+  // nothing left to add, so leaving the observer firing on every scroll
+  // (each fire allocates entries + walks the setMountedGroupKeys updater
+  // for a no-op result) is pure waste.
+  useEffect(() => {
+    if (groupedThreadQuestions.length === 0) return;
+    if (mountedGroupKeys.size < groupedThreadQuestions.length) return;
+    groupWindowObserverRef.current?.disconnect();
+    groupWindowObserverRef.current = null;
+  }, [mountedGroupKeys, groupedThreadQuestions]);
+
   // ===================================================================
   // Layout-shift compensation + bottom-pin. One unified function called
   // from both useLayoutEffect (every render) and the ResizeObserver (every
