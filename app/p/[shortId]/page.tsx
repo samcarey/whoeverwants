@@ -2,11 +2,11 @@
 
 import { useEffect, useLayoutEffect, useState, useRef, useMemo, Suspense } from "react";
 import { flushSync, createPortal } from "react-dom";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import { Question } from "@/lib/types";
 import { getAccessiblePolls } from "@/lib/simpleQuestionQueries";
 import { discoverRelatedQuestions } from "@/lib/questionDiscovery";
-import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId, pollHasAwaitingQuestion, THREAD_QUERY_PARAM } from "@/lib/threadUtils";
+import { buildThreadFromPollDown, buildThreadSyncFromCache, buildPollMap, findThreadRootRouteId } from "@/lib/threadUtils";
 import { apiGetQuestionById, apiGetQuestionByShortId, apiGetQuestionResults, apiGetVotes, apiClosePoll, apiReopenPoll, apiCutoffPollAvailability, apiGetPollById, apiGetPollByShortId, ApiError, QUESTION_VOTES_CHANGED_EVENT } from "@/lib/api";
 import type { Poll } from "@/lib/types";
 import { useThreadVoting, type PreparedNonYesNoEntry } from "@/lib/useThreadVoting";
@@ -2440,15 +2440,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
 function PollPageInner() {
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
   const shortId = params.shortId as string;
-  // The `thread=1` query param is set by the home page's ThreadList when it
-  // picks a URL via the thread-level rule (oldest open+unresponded poll, or
-  // newest as fallback). Without the flag, the URL is treated as a direct
-  // share and the linked poll is always expanded; with the flag, we suppress
-  // the auto-expand when nothing about the linked poll is actionable
-  // (voted on AND closed).
-  const fromThreadList = searchParams.get(THREAD_QUERY_PARAM) !== null;
 
   // Memo on shortId — without it the IIFE allocates a new object every render,
   // and the useEffect below (which depends on resolvedInitial) would refire
@@ -2532,23 +2524,26 @@ function PollPageInner() {
   // When the URL came from the home thread-list (`?thread=1`), the picker
   // returns either (a) the oldest awaiting poll, or (b) the newest poll as a
   // fallback when nothing is awaiting. In case (b) — every poll responded to,
-  // or every poll closed — we want to skip auto-expand so ThreadContent's
-  // "no initial expand → scroll to bottom of document" path lands the user
-  // on the draft poll form instead of an irrelevant expanded card.
-  // `pollHasAwaitingQuestion(linkedPoll)` distinguishes the two cases: it
-  // returns true iff the linked poll itself is open with at least one
-  // unresponded question, which is exactly case (a).
+  // Suppress auto-expand when the user has already responded to every
+  // question in the linked poll (single-question voted/abstained, or
+  // every sub-question of a multi-question poll responded). Refresh,
+  // back-nav from /info, and create-poll redirects all land here without
+  // `?thread=1`, so we can't use that flag as the gate — the only
+  // reliable signal is "the user is done with this poll, show them the
+  // draft form instead of an already-responded card". A closed poll the
+  // user never voted on still expands so they see the results.
   const suppressExpand = useMemo(() => {
     if (!resolved) return false;
-    if (!fromThreadList) return false;
     if (typeof window === 'undefined') return false;
     const cachedPoll = resolved.question.poll_id
       ? getCachedPollById(resolved.question.poll_id)
       : null;
     if (!cachedPoll) return false;
     const { votedQuestionIds, abstainedQuestionIds } = loadVotedQuestions();
-    return !pollHasAwaitingQuestion(cachedPoll, votedQuestionIds, abstainedQuestionIds);
-  }, [fromThreadList, resolved]);
+    return cachedPoll.questions.every(
+      sp => votedQuestionIds.has(sp.id) || abstainedQuestionIds.has(sp.id),
+    );
+  }, [resolved]);
 
   if (error) {
     return (
