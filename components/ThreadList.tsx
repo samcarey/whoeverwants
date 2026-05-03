@@ -20,19 +20,22 @@ interface ThreadListProps {
 export default function ThreadList({ polls }: ThreadListProps) {
   const router = useRouter();
   const { prefetchBatch } = usePrefetch();
-  const [votedQuestionIds, setVotedQuestionIds] = useState<Set<string>>(new Set());
-  const [abstainedQuestionIds, setAbstainedQuestionIds] = useState<Set<string>>(new Set());
+  // Load voted/abstained synchronously so the very first render's
+  // buildThreads call sees the real voted state. Initializing these as
+  // empty Sets and loading via useEffect made `pickTargetedPoll` treat
+  // every question as awaiting on first render, so getThreadRouteId
+  // pointed at the chronologically oldest poll (the thread root) instead
+  // of the oldest unresponded open poll — clicks and prefetches that
+  // raced React's post-effect re-render landed on the root URL.
+  const [{ votedQuestionIds, abstainedQuestionIds }] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { votedQuestionIds: new Set<string>(), abstainedQuestionIds: new Set<string>() };
+    }
+    return loadVotedQuestions();
+  });
   const [pressedThreadId, setPressedThreadId] = useState<string | null>(null);
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isScrolling = useRef(false);
-
-  // Load voted/abstained from localStorage
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const { votedQuestionIds: voted, abstainedQuestionIds: abstained } = loadVotedQuestions();
-    setVotedQuestionIds(voted);
-    setAbstainedQuestionIds(abstained);
-  }, []);
 
   const threads = useMemo(() => {
     return buildThreads(polls, votedQuestionIds, abstainedQuestionIds);
