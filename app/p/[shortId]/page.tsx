@@ -1130,6 +1130,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       // disables when the user scrolls >50px above bottom.
       if (!bottomPinActiveRef.current) return;
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      console.log('[bottom-pin]', { scrollY: window.scrollY, max, scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight });
       if (Math.abs(window.scrollY - max) > 0.5) {
         window.scrollTo(0, max);
       }
