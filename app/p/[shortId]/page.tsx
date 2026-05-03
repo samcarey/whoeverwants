@@ -59,6 +59,12 @@ const suggestionPhaseRespondentFilter = (v: ApiVote) =>
 // don't shift the document layout.
 const ESTIMATED_GROUP_HEIGHT = 110;
 
+// Group key for `groupedThreadQuestions` — questions of the same poll share
+// poll_id; legacy (non-poll) questions get a unique `solo-` prefix so they
+// don't collide. Used in the .map() loop's key + virtualization mountedKeys.
+const groupKeyFor = (q: { id: string; poll_id?: string | null }): string =>
+  q.poll_id ?? `solo-${q.id}`;
+
 const SCROLL_HELPER_BUTTON_CLASS =
   'fixed left-1/2 -translate-x-1/2 z-40 w-[2.475rem] h-[2.475rem] rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md flex items-center justify-center transition-opacity';
 
@@ -284,26 +290,37 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
   // === Windowed virtualization ===
   // Only mount cards within ~2 viewport heights of the visible region. Cards
   // outside collapse to a measured-height placeholder div. Bounds DOM weight
-  // on long threads and keeps the URL-targeted card's offsetTop stable as
-  // cards above mount/unmount: the placeholder takes the same height the
-  // card occupied, so swapping placeholder↔card shifts the document layout
-  // only by (estimated→actual) on first mount, which the layout-shift
-  // compensation effect absorbs into scrollY.
+  // on long threads; placeholders take the same height the card occupied so
+  // mount/unmount cycles don't shift the document layout.
   const groupHeightById = useRef<Map<string, number>>(new Map());
   const groupWindowObserverRef = useRef<IntersectionObserver | null>(null);
   const groupSizeObserverRef = useRef<ResizeObserver | null>(null);
-  // Last-render offsetTop of the layout-shift compensation anchor (the
-  // URL-targeted card if mounted, else the topmost mounted card). When
-  // a render shifts the anchor's offsetTop — e.g. a card above mounts and
-  // its actual height differs from the placeholder estimate — we scrollBy
-  // the delta so the anchor stays at the same viewport position.
+  // Shared ref-callback wiring for both placeholder and real card divs:
+  // both register in cardRefs (so the existing scroll-helper logic that
+  // iterates cardRefs works regardless of mount state) and observe via the
+  // visibleQuestionIds + groupSize + groupWindow observers.
+  const attachCardEl = (el: HTMLElement, anchorId: string, groupKey: string) => {
+    el.dataset.questionId = anchorId;
+    el.dataset.groupKey = groupKey;
+    cardRefs.current.set(anchorId, el as HTMLDivElement);
+    intersectionObserverRef.current?.observe(el);
+    groupSizeObserverRef.current?.observe(el);
+    groupWindowObserverRef.current?.observe(el);
+  };
+  const detachCardEl = (anchorId: string) => {
+    const prev = cardRefs.current.get(anchorId);
+    if (prev) {
+      intersectionObserverRef.current?.unobserve(prev);
+      groupSizeObserverRef.current?.unobserve(prev);
+      groupWindowObserverRef.current?.unobserve(prev);
+    }
+    cardRefs.current.delete(anchorId);
+  };
   // Both anchor modes (card-anchor and bottom-pin) keep their pin active
-  // until the user explicitly interacts (wheel, touch, keyboard). This is
-  // intentionally cruder than tracking scrollY deltas: layout shifts above
-  // the anchor cause the browser to silently clamp scrollY when the doc
-  // shrinks, which a delta-based compensator can't distinguish from a user
-  // scroll. Gating on user input is unambiguous — until the user touches
-  // anything, every layout settling re-pins.
+  // until the user explicitly interacts (wheel, touch, keyboard). The earlier
+  // delta-based approach (track prev offsetTop, scrollBy diff) couldn't
+  // distinguish a real user scroll from the browser's silent scrollY clamp
+  // when the doc shrinks; gating on real input events sidesteps that.
   const userInteractedRef = useRef(false);
   const [mountedGroupKeys, setMountedGroupKeys] = useState<Set<string>>(() => {
     if (!initialThread) return new Set();
@@ -312,7 +329,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
       ? initialThread.questions.find(p => p.id === initialExpandedQuestionId)
       : null;
     const seed = target ?? initialThread.questions[initialThread.questions.length - 1] ?? null;
-    if (seed) initial.add(seed.poll_id ?? `solo-${seed.id}`);
+    if (seed) initial.add(groupKeyFor(seed));
     return initial;
   });
 
@@ -995,7 +1012,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
     const groups: Group[] = [];
     const seen = new Set<string>();
     for (const question of threadQuestions) {
-      const groupKey = question.poll_id ?? `solo-${question.id}`;
+      const groupKey = groupKeyFor(question);
       if (seen.has(groupKey)) continue;
       seen.add(groupKey);
       const subQuestions = question.poll_id
@@ -1418,25 +1435,8 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
               return (
                 <div
                   key={`placeholder-${group.key}`}
-                  ref={(el) => {
-                    if (el) {
-                      el.dataset.questionId = anchorId;
-                      el.dataset.groupKey = group.key;
-                      cardRefs.current.set(anchorId, el);
-                      groupSizeObserverRef.current?.observe(el);
-                      groupWindowObserverRef.current?.observe(el);
-                      intersectionObserverRef.current?.observe(el);
-                    } else {
-                      const prev = cardRefs.current.get(anchorId);
-                      if (prev) {
-                        intersectionObserverRef.current?.unobserve(prev);
-                        groupSizeObserverRef.current?.unobserve(prev);
-                        groupWindowObserverRef.current?.unobserve(prev);
-                      }
-                      cardRefs.current.delete(anchorId);
-                    }
-                  }}
-                  className="ml-0 mr-1.5 mb-3"
+                  ref={(el) => { el ? attachCardEl(el, anchorId, group.key) : detachCardEl(anchorId); }}
+                  className="mr-1.5 mb-3"
                   style={{ height: placeholderHeight }}
                   aria-hidden="true"
                 />
@@ -1642,24 +1642,7 @@ export function ThreadContent({ threadId, initialExpandedQuestionId = null }: Th
             return (
               <div
                 key={question.id}
-                ref={(el) => {
-                  if (el) {
-                    el.dataset.questionId = question.id;
-                    el.dataset.groupKey = group.key;
-                    cardRefs.current.set(question.id, el);
-                    intersectionObserverRef.current?.observe(el);
-                    groupSizeObserverRef.current?.observe(el);
-                    groupWindowObserverRef.current?.observe(el);
-                  } else {
-                    const prev = cardRefs.current.get(question.id);
-                    if (prev) {
-                      intersectionObserverRef.current?.unobserve(prev);
-                      groupSizeObserverRef.current?.unobserve(prev);
-                      groupWindowObserverRef.current?.unobserve(prev);
-                    }
-                    cardRefs.current.delete(question.id);
-                  }
-                }}
+                ref={(el) => { el ? attachCardEl(el, question.id, group.key) : detachCardEl(question.id); }}
                 className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
               >
                 {/* mt-[4px] sits closer to cap-to-baseline centering (5px)
