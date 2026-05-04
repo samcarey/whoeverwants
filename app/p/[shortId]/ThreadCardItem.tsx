@@ -32,9 +32,10 @@ import {
   relativeTime,
 } from "@/lib/questionListUtils";
 import { formatCreationTimestamp } from "@/lib/timeUtils";
-import { getUserName } from "@/lib/userProfile";
+import { getUserInitials, getUserName } from "@/lib/userProfile";
 import ClientOnly from "@/components/ClientOnly";
 import VoterList from "@/components/VoterList";
+import { nameToColor } from "@/components/RespondentCircles";
 import FloatingCopyLinkButton from "@/components/FloatingCopyLinkButton";
 import CompactNameField from "@/components/CompactNameField";
 import QuestionBallot, { type QuestionBallotHandle } from "@/components/QuestionBallot";
@@ -589,11 +590,25 @@ function ThreadCardItemImpl(props: ThreadCardItemProps) {
       ref={setCardEl}
       className="ml-0 mr-1.5 mb-3 grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-0.5"
     >
-      {/* mt-[4px] sits closer to cap-to-baseline centering (5px) than
-          line-box centering (9px); emoji glyphs feel slightly low at the
-          pure line-box center, so we bias upward. */}
-      <div className="col-start-1 row-start-2 flex items-center justify-center text-lg leading-none h-7 mt-[4px]">
-        {getCategoryIcon(question, isClosed)}
+      {/* The poll-title row's left slot shows the creator's initials in a
+          colored circle (mirroring the page-header RespondentCircles look)
+          rather than a category emoji. The per-question category icons
+          inside the expanded card still use the emoji style. The h-7
+          circle's vertical center sits 0.75px below the poll title's
+          first-line text center — same offset the previous emoji icon
+          used, so the visual position is unchanged. */}
+      <div className="col-start-1 row-start-2 flex items-center justify-center mt-[4px]">
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white font-bold text-xs select-none"
+          style={{
+            backgroundColor: wrapper?.creator_name?.trim()
+              ? nameToColor(wrapper.creator_name)
+              : '#9CA3AF',
+          }}
+          aria-hidden="true"
+        >
+          {getUserInitials(wrapper?.creator_name ?? null)}
+        </div>
       </div>
 
       {/* Row 1 used to hold the above-card status label; the label now lives

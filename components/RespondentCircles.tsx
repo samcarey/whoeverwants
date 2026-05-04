@@ -23,7 +23,7 @@ const COLORS = [
   '#EA580C', '#DC2626', '#DB2777', '#9333EA', '#7C3AED',
 ];
 
-function nameToColor(name: string): string {
+export function nameToColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = ((hash << 5) - hash) + name.charCodeAt(i);
