@@ -267,7 +267,7 @@ export default function SuggestionVotingInterface({
 
   return (
     <>
-      <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg mb-2">
+      <div className="mt-4 mb-2">
         {/* Existing suggestions - all can be toggled in edit mode */}
         {filteredExistingSuggestions.length > 0 && (
           <div className="mb-3">
